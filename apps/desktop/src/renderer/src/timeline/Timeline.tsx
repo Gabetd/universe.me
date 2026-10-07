@@ -16,6 +16,7 @@ import { TimeField } from '../components/fields'
 import { useTimelineOwner, useUi } from '../store'
 import { ROW_H, laneAt, layoutTimeline, type PlacedItem, type TimelineLayout } from './layout'
 import { TimeScale, fitRange, panRange, snap, zoomRange, type TimeRange } from './scale'
+import { EFFECT_LABELS } from '../components/EventEffects'
 import { ArrowMarkers, LINK_STYLE, WARN_COLOR } from './linkStyle'
 import { useNow, usePlayhead, useTimelineView } from './timelineStore'
 
@@ -423,6 +424,9 @@ interface EventBarProps {
 
 function EventBar({ placed, selected, dimmed, onPointerDown, onHandlePointerDown, onConnectorPointerDown }: EventBarProps) {
   const ev = placed.item
+  const allEffects = useUi((s) => s.timeline.effects)
+  // What it does to structures, one icon per kind of effect.
+  const effectIcons = [...new Set(allEffects.filter((e) => e.eventId === ev.id).map((e) => EFFECT_LABELS[e.type].icon))].join('')
   const instant = ev.end === null
   const fuzzy = ev.precision === 'approx' || ev.precision === 'century'
   const classes = ['tl-event', instant ? 'instant' : 'span', selected && 'selected', dimmed && 'dimmed', fuzzy && 'fuzzy'].filter(Boolean).join(' ')
@@ -442,6 +446,7 @@ function EventBar({ placed, selected, dimmed, onPointerDown, onHandlePointerDown
       {instant && <span className="tl-diamond" />}
       <span className="tl-event-label">
         {ev.locations.length > 0 && '📍 '}
+        {effectIcons && <span className="tl-effect-icons" title="Effects on structures">{effectIcons} </span>}
         {ev.title}
       </span>
       <span className="tl-handle end" title={instant ? 'Drag to give it a duration' : undefined} onPointerDown={(e) => onHandlePointerDown(e, ev, 'end')} />

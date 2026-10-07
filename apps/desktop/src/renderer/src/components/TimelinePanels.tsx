@@ -3,6 +3,7 @@ import { useUi, type TimelineSelection } from '../store'
 import { locationLabel } from '../timeline/labels'
 import { useEditor } from '../world/editorStore'
 import { ColorField, TagsField, TextField, TimeField } from './fields'
+import { EventEffects } from './EventEffects'
 import { NotesEditor } from './NotesEditor'
 
 const PRECISION_LABELS: Record<Precision, string> = { exact: 'Exact time', day: 'Day', year: 'Year', century: 'Century', approx: 'Approximate' }
@@ -145,6 +146,8 @@ function EventPanel({ event }: { event: TimelineEvent }) {
           </div>
         </div>
       )}
+
+      {onWorld && <EventEffects event={event} />}
 
       <div className="field">
         <span>Causes and effects</span>

@@ -1,4 +1,5 @@
 import type { Command, LatLon, Region, TerrainParams, WorldInfo } from '@universe/core'
+import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
 import { TerrainModel, shapeKey, type BaseTerrain, type Vec3 } from '@universe/procgen'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -25,6 +26,9 @@ export interface SurfaceViewProps {
   /** Where the selected event happened; the views turn to it whenever `key` changes. */
   focus?: LatLon & { key: string }
   onPinClick(eventId: string): void
+  /** Structures at the playhead (and selected or previewed ones that aren't standing). */
+  structures: PlacedStructure[]
+  onStructureClick(structureId: string): void
   onPointerDown(dir: Vec3): boolean
   onPointerMove(dir: Vec3): void
   onDoubleClick(): void

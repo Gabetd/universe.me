@@ -43,6 +43,11 @@ export const useTimelineView = create<TimelineViewState>((set) => ({
 /** The story's "now" on a timeline: 0 (year 0) until the user sets it. */
 export const useNow = (ownerId: string | undefined) => useUi((s) => s.timeline.timelines.find((t) => t.id === ownerId)?.now ?? 0)
 
+/** The playhead's time on a timeline, outside React. */
+export function playheadOf(ownerId: string): number {
+  return useTimelineView.getState().playheads[ownerId] ?? useUi.getState().timeline.timelines.find((t) => t.id === ownerId)?.now ?? 0
+}
+
 /** The playhead's time on a timeline; it starts at "now". */
 export function usePlayhead(ownerId: string | undefined): number {
   const now = useNow(ownerId)

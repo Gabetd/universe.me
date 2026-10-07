@@ -25,9 +25,9 @@ export function Workspace() {
     // Tools with their own keys (region drawing) handle them in the capture phase and preventDefault.
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || isEditingText()) return
-      const { selectedId, selectedRegionId, timelineSelection: tl, project: p, execute, nodes: all } = useUi.getState()
+      const { selectedId, selectedRegionId, selectedStructureId, timelineSelection: tl, project: p, execute, nodes: all } = useUi.getState()
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        // Most specific first: timeline records, then a region, then the node it's all on.
+        // Most specific first: timeline records, then a region or structure, then the node it's all on.
         const deletes: Command[] = tl ? tl.ids.map((id) => ({ type: `${tl.kind}.delete`, payload: { id } }) as Command) : []
         const command = deletes.length
           ? deletes.length === 1
@@ -35,6 +35,8 @@ export function Workspace() {
             : ({ type: 'batch', payload: { commands: deletes } } as const)
           : selectedRegionId
           ? ({ type: 'region.delete', payload: { id: selectedRegionId } } as const)
+          : selectedStructureId
+          ? ({ type: 'structure.delete', payload: { id: selectedStructureId } } as const)
           : selectedId && selectedId !== p?.rootId
             ? ({ type: 'node.delete', payload: { id: selectedId } } as const)
             : undefined

@@ -2,8 +2,12 @@ import type { LatLon } from '@universe/core'
 import { BIOME, type BrushTool } from '@universe/procgen'
 import { create } from 'zustand'
 
-/** `locate` picks a point for an event's location (`locateEventId`). */
-export type EditorTool = 'navigate' | BrushTool | 'region' | 'locate'
+/**
+ * `locate` picks a point for an event's location (`locateEventId`), `place`
+ * puts down a structure (`placeBlueprintId`), `move` picks a new spot for one
+ * (`moveStructureId`).
+ */
+export type EditorTool = 'navigate' | BrushTool | 'region' | 'locate' | 'place' | 'move'
 export type SurfaceView = 'globe' | 'map'
 /** The canvas shows the world's events as cards rather than its surface. */
 type EditorView = SurfaceView | 'canvas'
@@ -24,6 +28,8 @@ interface EditorState {
   draft: LatLon[]
   /** The event the `locate` tool adds a location to. */
   locateEventId: string | null
+  placeBlueprintId: string
+  moveStructureId: string | null
   set(patch: Partial<Omit<EditorState, 'set'>>): void
 }
 
@@ -38,7 +44,9 @@ export const useEditor = create<EditorState>((set) => ({
   exaggeration: 25,
   draft: [],
   locateEventId: null,
+  placeBlueprintId: 'builtin:castle',
+  moveStructureId: null,
   set: (patch) => set(patch)
 }))
 
-export const isBrushTool = (tool: EditorTool): tool is BrushTool => tool !== 'navigate' && tool !== 'region' && tool !== 'locate'
+export const isBrushTool = (tool: EditorTool): tool is BrushTool => !['navigate', 'region', 'locate', 'place', 'move'].includes(tool)

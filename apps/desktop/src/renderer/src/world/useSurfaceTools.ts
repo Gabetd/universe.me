@@ -3,6 +3,7 @@ import { angleBetween, dirToLatLon, type TerrainModel, type Vec3 } from '@univer
 import { useCallback, useEffect, useRef } from 'react'
 import { isEditingText } from '../input'
 import { useUi } from '../store'
+import { playheadOf } from '../timeline/timelineStore'
 import { isBrushTool, useEditor } from './editorStore'
 
 type Commit = (command: Extract<Command, { type: 'terrain.patch' }>) => Promise<void>
@@ -39,7 +40,18 @@ export function useSurfaceTools(worldId: string, model: TerrainModel | undefined
   /** Returns true if the press was used by a tool (so the view shouldn't rotate or pan). */
   const pointerDown = useCallback(
     (dir: Vec3): boolean => {
-      const { tool, radiusKm, strength, biome, draft, locateEventId, set } = useEditor.getState()
+      const { tool, radiusKm, strength, biome, draft, locateEventId, placeBlueprintId, moveStructureId, set } = useEditor.getState()
+      const { execute } = useUi.getState()
+      if (tool === 'place') {
+        // Built at the playhead's moment; the tool stays on for placing more.
+        void execute({ type: 'structure.create', payload: { ownerId: worldId, blueprintId: placeBlueprintId, ...roundLatLon(dir), builtAt: playheadOf(worldId) } })
+        return true
+      }
+      if (tool === 'move') {
+        set({ tool: 'navigate', moveStructureId: null })
+        if (moveStructureId) void execute({ type: 'structure.update', payload: { id: moveStructureId, patch: roundLatLon(dir) } })
+        return true
+      }
       if (tool === 'region') {
         set({ draft: [...draft, roundLatLon(dir)] })
         return true
@@ -58,7 +70,7 @@ export function useSurfaceTools(worldId: string, model: TerrainModel | undefined
       dab(dir)
       return true
     },
-    [model, dab]
+    [model, dab, worldId]
   )
 
   const pointerMove = useCallback(
@@ -78,13 +90,13 @@ export function useSurfaceTools(worldId: string, model: TerrainModel | undefined
     await useUi.getState().execute({ type: 'region.create', payload: { worldId, points: draft } })
   }, [worldId])
 
-  // Region drawing keys: Enter saves, Backspace removes the last point, Escape cancels.
+  // Region drawing keys: Enter saves, Backspace removes the last point, Escape cancels (as it does picking and placing).
   // Capture phase plus preventDefault, so the workspace's own Backspace/Escape shortcuts skip these presses.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const { tool, draft, set } = useEditor.getState()
-      if (tool === 'locate' && e.key === 'Escape') {
-        set({ tool: 'navigate', locateEventId: null })
+      if ((tool === 'locate' || tool === 'place' || tool === 'move') && e.key === 'Escape') {
+        set({ tool: 'navigate', locateEventId: null, moveStructureId: null })
         e.preventDefault()
         return
       }

@@ -1,9 +1,15 @@
+import { useMemo } from 'react'
 import { regionAt, type Region, type RegionPatch, type SpatialNode, type WorldSettingsPatch } from '@universe/core'
 import { useUi, useWorld } from '../store'
 import { ColorField, CommitSlider, TextField } from './fields'
 import { NotesEditor } from './NotesEditor'
 import { RegionHistory } from './RegionHistory'
+import { StructurePanel } from './StructurePanel'
 import { WorldGenPanel } from './WorldGenPanel'
+import { EROSION_SPEED, stateAt } from '@universe/core'
+import { STAGE_COLORS } from '../world/structureLook'
+import { useConditionCurves } from '../world/useStructures'
+import { useEditor } from '../world/editorStore'
 import { usePlayhead } from '../timeline/timelineStore'
 
 /** Inspector section for a world: generation settings, terrain resets, and regions. */
@@ -11,6 +17,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
   const { info, regions } = useWorld(world.id)
   const selectedRegion = useUi((s) => s.regions.find((r) => r.id === s.selectedRegionId))
   const selectRegion = useUi((s) => s.selectRegion)
+  const selectedStructure = useUi((s) => s.timeline.structures.find((x) => x.id === s.selectedStructureId))
   const execute = useUi((s) => s.execute)
   const changes = useUi((s) => s.timeline.changes)
   const playhead = usePlayhead(world.id)
@@ -21,6 +28,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
   return (
     <>
       {selectedRegion && <RegionForm key={`${selectedRegion.id}:${selectedRegion.updatedAt}`} region={selectedRegion} />}
+      {selectedStructure && <StructurePanel key={`${selectedStructure.id}:${selectedStructure.updatedAt}`} structure={selectedStructure} />}
 
       <WorldGenPanel world={world} settings={settings} />
 
@@ -33,6 +41,8 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
           <button onClick={() => void execute({ type: 'terrain.reset', payload: { worldId: world.id, layer: 'biome' } })}>Reset painting</button>
         </div>
       </section>
+
+      <StructureList worldId={world.id} erosionSpeed={settings.erosionSpeed} onErosionSpeed={(erosionSpeed) => update({ erosionSpeed })} />
 
       <section className="inspector-section">
         <h3>Regions</h3>
@@ -82,6 +92,49 @@ function RegionForm({ region }: { region: Region }) {
       <button className="danger" onClick={() => void execute({ type: 'region.delete', payload: { id: region.id } })}>
         Delete region
       </button>
+    </section>
+  )
+}
+
+/** The world's structures, coloured by condition at the playhead, and how fast things weather here. */
+function StructureList({ worldId, erosionSpeed, onErosionSpeed }: { worldId: string; erosionSpeed: number; onErosionSpeed(v: number): void }) {
+  const all = useUi((s) => s.timeline.structures)
+  const structures = useMemo(() => all.filter((x) => x.ownerId === worldId), [all, worldId])
+  const selectedId = useUi((s) => s.selectedStructureId)
+  const selectStructure = useUi((s) => s.selectStructure)
+  const { curves } = useConditionCurves(worldId)
+  const playhead = usePlayhead(worldId)
+  return (
+    <section className="inspector-section" aria-label="Structures">
+      <h3>Structures</h3>
+      {structures.length === 0 ? (
+        <p className="muted small">
+          None yet.{' '}
+          <button className="link" onClick={() => useEditor.getState().set({ tool: 'place', view: useEditor.getState().surfaceView })}>
+            Pick 🏰
+          </button>{' '}
+          and click on the world to place one.
+        </p>
+      ) : (
+        <ul className="region-list">
+          {structures.map((x) => {
+            const state = stateAt(curves.get(x.id)!, playhead)
+            return (
+              <li key={x.id}>
+                <button
+                  className={`link region-row${x.id === selectedId ? ' selected' : ''}${state.exists ? '' : ' absent'}`}
+                  title={state.exists ? undefined : 'Not standing at the playhead'}
+                  onClick={() => selectStructure(x.id)}
+                >
+                  <span className="swatch" style={{ background: STAGE_COLORS[state.stage] }} />
+                  {state.name}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      <CommitSlider label="Erosion speed" unit="×" min={EROSION_SPEED.min} max={EROSION_SPEED.max} step={EROSION_SPEED.step} value={erosionSpeed} onCommit={onErosionSpeed} />
     </section>
   )
 }

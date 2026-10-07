@@ -4,7 +4,7 @@ import type { Command } from './commands'
 import { RECORD_KINDS, type RecordKind, type RecordOf } from './records'
 import { Id } from './schema'
 import type { Store } from './store'
-import { BUILTIN_BLUEPRINTS, type Blueprint } from './structures'
+import { findBlueprint, type Blueprint } from './structures'
 import { stripUndefined } from './util'
 
 /** Creating, updating and deleting records of any kind (records.ts), with each kind's checks. */
@@ -67,7 +67,7 @@ const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>) => vo
 
 /** A blueprint by id: a built-in one or one in the project's library. */
 export function blueprintOf(store: Store, id: string): Blueprint {
-  const found = BUILTIN_BLUEPRINTS.find((b) => b.id === id) ?? store.records('blueprint').get(id)
+  const found = findBlueprint([], id) ?? store.records('blueprint').get(id)
   if (!found || found.deletedAt) throw new CommandError(`Blueprint ${id} does not exist`)
   return found
 }

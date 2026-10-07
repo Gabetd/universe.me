@@ -7,7 +7,9 @@ import { GlobeView } from './GlobeView'
 import { MapView } from './MapView'
 import { useSurfaceTools } from './useSurfaceTools'
 import { useTerrain, type SurfaceViewProps } from './useTerrain'
+import { useStructuresAt } from './useStructures'
 import { useWorldAtTime } from './useWorldAtTime'
+import { BUILTIN_BLUEPRINTS } from '@universe/core'
 
 const TOOLS: { tool: EditorTool; label: string; icon: string; hint: string }[] = [
   { tool: 'navigate', label: 'Navigate', icon: '✋', hint: 'Drag to rotate or pan, scroll to zoom. Click a region to select it.' },
@@ -18,8 +20,13 @@ const TOOLS: { tool: EditorTool; label: string; icon: string; hint: string }[] =
   { tool: 'paint', label: 'Paint biome', icon: '🖌', hint: 'Drag to paint the selected biome.' },
   { tool: 'erase', label: 'Erase biome', icon: '⌫', hint: 'Drag to return painted cells to the automatic biome.' },
   { tool: 'region', label: 'Draw region', icon: '⬠', hint: 'Click to add points. Enter or double-click saves, Backspace removes a point, Esc cancels.' },
-  { tool: 'locate', label: 'Place event', icon: '📍', hint: 'Click where the selected event happens. Esc cancels.' }
+  { tool: 'place', label: 'Place structure', icon: '🏰', hint: 'Click to place the chosen blueprint, built at the playhead. Esc stops placing.' },
+  { tool: 'locate', label: 'Place event', icon: '📍', hint: 'Click where the selected event happens. Esc cancels.' },
+  { tool: 'move', label: 'Move structure', icon: '✥', hint: 'Click the structure’s new spot. Esc cancels.' }
 ]
+
+/** Tools started from the inspector rather than the toolbar. */
+const PICK_TOOLS: EditorTool[] = ['locate', 'move']
 
 /** WebGL can be missing (old GPUs, remote desktops); the map still works without it. */
 const hasWebGL = (() => {
@@ -33,7 +40,9 @@ const hasWebGL = (() => {
 export function WorldEditor({ world }: { world: SpatialNode }) {
   const { info, regions: allRegions } = useWorld(world.id)
   const { regions, pins, highlightRegionIds, focus } = useWorldAtTime(world.id, allRegions)
-  const { view, tool, radiusKm, strength, biome, exaggeration, set } = useEditor()
+  const { view, tool, radiusKm, strength, biome, exaggeration, placeBlueprintId, set } = useEditor()
+  const structures = useStructuresAt(world.id)
+  const library = useUi((s) => s.timeline.blueprints)
   const { model, change, error, bump, commit } = useTerrain(world.id, world.seed, info)
   const { pointerDown, pointerMove, finishRegion } = useSurfaceTools(world.id, model, bump, commit)
   const activeView = hasWebGL || view === 'canvas' ? view : 'map'
@@ -48,6 +57,8 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
     highlightRegionIds,
     focus,
     onPinClick: (eventId) => useUi.getState().selectTimeline({ kind: 'event', ids: [eventId] }),
+    structures,
+    onStructureClick: (id) => useUi.getState().selectStructure(id),
     onPointerDown: pointerDown,
     onPointerMove: pointerMove,
     onDoubleClick: () => void finishRegion()
@@ -74,12 +85,21 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
         </div>
         {onSurface && (
           <div className="segmented" role="group" aria-label="Tool">
-            {TOOLS.filter((t) => t.tool !== 'locate').map((t) => (
+            {TOOLS.filter((t) => !PICK_TOOLS.includes(t.tool)).map((t) => (
               <button key={t.tool} aria-pressed={tool === t.tool} title={t.label} aria-label={t.label} onClick={() => set({ tool: t.tool, draft: [] })}>
                 {t.icon}
               </button>
             ))}
           </div>
+        )}
+        {onSurface && tool === 'place' && (
+          <select aria-label="Blueprint to place" value={placeBlueprintId} onChange={(e) => set({ placeBlueprintId: e.target.value })}>
+            {[...BUILTIN_BLUEPRINTS, ...library].map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
         )}
         {onSurface && isBrushTool(tool) && (
           <>

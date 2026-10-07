@@ -176,6 +176,9 @@ const tower = (x: number, z: number, h: number, r: number, material: Material = 
   part('cone', roof, [r * 2.4, r * 2, r * 2.4], [x, h, z], '#5b3a2a')
 ]
 
+/** A blueprint by id among the built-in ones and a project's own. */
+export const findBlueprint = (library: Blueprint[], id: string): Blueprint | undefined => BUILTIN_BLUEPRINTS.find((b) => b.id === id) ?? library.find((b) => b.id === id)
+
 /** Blueprints every project has. Users copy one to make their own version. */
 export const BUILTIN_BLUEPRINTS: Blueprint[] = [
   builtin('castle', 'Castle', true, ['castle', 'fortification'], [

@@ -10,6 +10,9 @@ const BlueprintFields = Blueprint.pick({ name: true, parts: true, model: true, m
 const StructureFields = Structure.pick({
   name: true, blueprintId: true, lat: true, lon: true, rotation: true, scale: true, builtAt: true, maintained: true, neverDecays: true, label: true, notes: true, tags: true
 })
+export type StructurePatch = Partial<z.infer<typeof StructureFields>>
+export type EffectPatch = Partial<z.infer<typeof EffectFields>>
+
 const EffectFields = EventEffect.pick({ type: true, target: true, filter: true, amount: true, maintained: true, rename: true, blueprintId: true })
 
 export const STRUCTURE_COMMANDS = [

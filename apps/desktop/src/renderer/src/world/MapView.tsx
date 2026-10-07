@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor } from './editorStore'
+import { STAGE_COLORS } from './structureLook'
 import type { SurfaceViewProps } from './useTerrain'
 
 const W = 1024
@@ -37,7 +38,7 @@ function insidePolygon(x: number, y: number, poly: [number, number][]): boolean 
   return inside
 }
 
-export function MapView({ model, change, regions, pins, highlightRegionIds, focus, onPinClick, onPointerDown, onPointerMove, onDoubleClick }: SurfaceViewProps) {
+export function MapView({ model, change, regions, pins, highlightRegionIds, focus, onPinClick, structures, onStructureClick, onPointerDown, onPointerMove, onDoubleClick }: SurfaceViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const terrain = useRef<{ canvas: HTMLCanvasElement; image: ImageData } | null>(null)
   const view = useRef<View | null>(null)
@@ -64,7 +65,7 @@ export function MapView({ model, change, regions, pins, highlightRegionIds, focu
 
   useEffect(() => {
     dirty.current = true
-  }, [regions, selectedRegionId, draft, pins, highlightRegionIds])
+  }, [regions, selectedRegionId, draft, pins, highlightRegionIds, structures])
 
   // Bring the selected event's place to the middle of the view, on the next frame (the view may not be sized yet).
   const pendingFocus = useRef<LatLon | null>(null)
@@ -146,6 +147,30 @@ export function MapView({ model, change, regions, pins, highlightRegionIds, focu
           c.fillRect(x + shift - 2.5 / scale, y - 2.5 / scale, 5 / scale, 5 / scale)
         }
       }
+      for (const { structure, state, selected, hit } of structures) {
+        const [x, y] = toMap(structure)
+        const r = (selected ? 6 : 5) / scale
+        c.globalAlpha = state.exists ? 1 : 0.35
+        c.fillStyle = STAGE_COLORS[state.stage]
+        c.fillRect(x + shift - r, y - r, r * 2, r * 2)
+        c.strokeStyle = selected ? '#ffffff' : '#05070d'
+        c.lineWidth = 1.5 / scale
+        c.strokeRect(x + shift - r, y - r, r * 2, r * 2)
+        if (hit !== undefined) {
+          c.beginPath()
+          c.arc(x + shift, y, r + 4 / scale, 0, Math.PI * 2)
+          c.strokeStyle = `rgba(255, 90, 90, ${0.35 + 0.6 * hit})`
+          c.lineWidth = 2 / scale
+          c.stroke()
+        }
+        c.globalAlpha = 1
+        if ((structure.label && state.exists) || selected) {
+          c.font = `${selected ? 700 : 500} ${11 / scale}px system-ui, sans-serif`
+          c.textAlign = 'left'
+          c.fillStyle = '#ffffff'
+          c.fillText(state.name, x + shift + r + 4 / scale, y + 4 / scale)
+        }
+      }
       for (const pin of pins) {
         const [x, y] = toMap(pin)
         const r = (pin.selected ? 6 : pin.active ? 5 : 3.5) / scale
@@ -181,7 +206,7 @@ export function MapView({ model, change, regions, pins, highlightRegionIds, focu
 
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [model, regions, pins, highlightRegionIds])
+  }, [model, regions, pins, highlightRegionIds, structures])
 
   /** Pointer position in map pixels (x wrapped to [0, W)), or null outside the map vertically. */
   const mapPoint = (e: React.PointerEvent | React.MouseEvent): [number, number] | null => {
@@ -217,6 +242,12 @@ export function MapView({ model, change, regions, pins, highlightRegionIds, focu
             return [-W, 0, W].some((s) => Math.hypot((x + s - p[0]) * v.scale, (y - p[1]) * v.scale) <= 8)
           })
           if (pin) return onPinClick(pin.eventId)
+          const near = (q: LatLon) => {
+            const [x, y] = toMap(q)
+            return [-W, 0, W].some((s) => Math.hypot((x + s - p[0]) * v.scale, (y - p[1]) * v.scale) <= 9)
+          }
+          const structure = structures.find((st) => near(st.structure))
+          if (structure) return onStructureClick(structure.structure.id)
           const hit = regions.find((r) => [-W, 0, W].some((s) => insidePolygon(p[0] + s, p[1], polygon(r.points))))
           useUi.getState().selectRegion(hit?.id ?? null)
         }
