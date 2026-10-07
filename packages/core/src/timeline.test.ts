@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { CommandBus, MemoryStore, createRootUniverse, fromParts, regionAt, timelineWarnings, causalChain, timelineOwner } from './index'
+import { CommandBus, MemoryStore, createRootUniverse, eventPlace, fromParts, regionAt, timelineWarnings, causalChain, timelineOwner } from './index'
 
 let store: MemoryStore
 let bus: CommandBus
@@ -45,6 +45,29 @@ describe('events', () => {
     expect(() =>
       bus.execute({ type: 'event.create', payload: { ownerId: planetId, start: 0, locations: [{ kind: 'point', lat: 0, lon: 0 }] } })
     ).toThrow(/world surface/)
+  })
+
+  it('moves and hides its canvas card, undoably, including on events saved before the canvas existed', () => {
+    const id = event('Old', 0)
+    const { canvas: _c, canvasHidden: _h, ...legacy } = store.records('event').get(id)!
+    store.records('event').update(legacy)
+    bus.execute({ type: 'event.update', payload: { id, patch: { canvas: { x: 40, y: -20 }, canvasHidden: true } } })
+    expect(store.records('event').get(id)).toMatchObject({ canvas: { x: 40, y: -20 }, canvasHidden: true })
+    bus.undo()
+    expect(store.records('event').get(id)).toMatchObject({ canvas: null, canvasHidden: null })
+  })
+
+  it('knows where it happened: a point, or the middle of a region', () => {
+    const at = (locations: object[]) => store.records('event').get(event('E', 0, null, { locations }))!
+    expect(eventPlace(at([]), [])).toBeUndefined()
+    expect(eventPlace(at([{ kind: 'point', lat: 10, lon: 20 }]), [])).toEqual({ lat: 10, lon: 20 })
+    const regionId = bus.execute({
+      type: 'region.create',
+      payload: { worldId, name: 'Strait', points: [{ lat: 0, lon: 170 }, { lat: 0, lon: -170 }, { lat: 10, lon: 180 }] }
+    }).targetId!
+    const place = eventPlace(at([{ kind: 'region', regionId }]), store.regions.all())!
+    expect(place.lat).toBeCloseTo(3.33, 1)
+    expect(Math.abs(place.lon)).toBeCloseTo(180, 5)
   })
 
   it('marks the owning world as changed', () => {

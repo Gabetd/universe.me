@@ -61,7 +61,8 @@ export function liveRecord<K extends RecordKind>(store: Store, kind: K, id: stri
 export function previousValues<R extends object, P extends Partial<R>>(record: R, patch: P): P {
   const previous: Partial<R> = {}
   for (const key of Object.keys(patch) as (keyof P & keyof R)[]) {
-    if (patch[key] !== undefined) previous[key] = record[key]
+    // A field the record doesn't have yet (added in a later version) is undone to null.
+    if (patch[key] !== undefined) previous[key] = record[key] ?? (null as R[keyof P & keyof R])
   }
   return previous as P
 }

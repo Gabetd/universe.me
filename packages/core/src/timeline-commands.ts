@@ -20,7 +20,7 @@ import { stripUndefined } from './util'
 
 /** Fields of a record kind that commands may set. */
 const EventFields = TimelineEvent.pick({
-  title: true, start: true, end: true, precision: true, laneId: true, groupId: true, color: true, notes: true, tags: true, locations: true
+  title: true, start: true, end: true, precision: true, laneId: true, groupId: true, color: true, notes: true, tags: true, locations: true, canvas: true, canvasHidden: true
 })
 const EraFields = Era.pick({ name: true, start: true, end: true, color: true, notes: true })
 const ChangeFields = EntityChange.pick({ at: true, change: true, patch: true, causeEventId: true, note: true })
@@ -169,7 +169,9 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
       color: p.color ?? pickColor(ctx),
       notes: p.notes ?? '',
       tags: p.tags ?? [],
-      locations: p.locations ?? []
+      locations: p.locations ?? [],
+      canvas: p.canvas ?? null,
+      canvasHidden: p.canvasHidden ?? false
     }),
   'event.update': (store, { id, patch }, ctx) => update(store, 'event', ctx, id, patch),
   // Links can't outlive their events, so they go (and come back) with them.

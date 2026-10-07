@@ -1,7 +1,7 @@
 import type { SpatialNode } from './schema'
 import type { Time } from './time'
 import { ORDERED_LINKS, type EntityChange, type EventGroup, type EventLink, type TimelineData, type TimelineEvent } from './timeline'
-import type { Region } from './world'
+import type { LatLon, Region } from './world'
 
 /**
  * The node whose timeline goes with a selection: a world's own, the world of
@@ -142,4 +142,32 @@ export function timelineWarnings(data: Pick<TimelineData, 'events' | 'links' | '
     }
   }
   return warnings
+}
+
+/**
+ * Where an event happened, as one point: its first point location, or the
+ * middle of its first region (averaged on the sphere, so it works across the
+ * date line). Undefined if it has no location.
+ */
+export function eventPlace(event: TimelineEvent, regions: Region[]): LatLon | undefined {
+  for (const loc of event.locations) {
+    if (loc.kind === 'point') return { lat: loc.lat, lon: loc.lon }
+    const points = regions.find((r) => r.id === loc.regionId)?.points
+    if (points?.length) return sphericalMean(points)
+  }
+  return undefined
+}
+
+function sphericalMean(points: LatLon[]): LatLon {
+  let x = 0
+  let y = 0
+  let z = 0
+  for (const p of points) {
+    const lat = (p.lat * Math.PI) / 180
+    const lon = (p.lon * Math.PI) / 180
+    x += Math.cos(lat) * Math.cos(lon)
+    y += Math.cos(lat) * Math.sin(lon)
+    z += Math.sin(lat)
+  }
+  return { lat: (Math.atan2(z, Math.hypot(x, y)) * 180) / Math.PI, lon: (Math.atan2(y, x) * 180) / Math.PI }
 }

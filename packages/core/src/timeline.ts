@@ -36,7 +36,11 @@ export const TimelineEvent = z.object({
   notes: z.string(),
   tags: z.array(z.string()),
   /** Where it happens: points or regions on the owning world. */
-  locations: z.array(EventLocation)
+  locations: z.array(EventLocation),
+  /** Where its card sits on the world's canvas; unset or null lays it out automatically. */
+  canvas: z.object({ x: z.number(), y: z.number() }).nullable().optional(),
+  /** Every event gets a card on the canvas unless hidden. Older events don't have these fields. */
+  canvasHidden: z.boolean().nullable().optional()
 })
 export type TimelineEvent = z.infer<typeof TimelineEvent>
 
