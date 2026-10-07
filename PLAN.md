@@ -114,7 +114,7 @@ Universe
 
 ### 4.3 Time
 
-- **Canonical time** is a signed 64-bit integer count of seconds from the world's epoch (year 0). This handles deep past and far future without floating-point drift.
+- **Canonical time** is a count of seconds from the world's epoch (year 0), stored as a float64. Whole seconds are exact within ±285 million years, and deep-time dates (billions of years) keep far more precision than they could ever be known to. (Chosen over int64 so times stay plain JSON numbers end to end.)
 - **Calendars** are derived from the simulation (day = rotation period, year = orbital period, months = moon synodic periods) and can be customized (named months, eras, leap rules). A world can have several calendars (e.g., two cultures).
 - **Moon cycles** come from orbital params via `packages/sim`. Moon phase, eclipses, and tides can be shown at any timestamp and turned into timeline events automatically ("Total eclipse").
 
@@ -365,11 +365,13 @@ Each milestone ends with something you can launch and demo.
 - Storage: terrain is saved as *edits on top of the generated base* (Int16 height deltas + painted biome ids, zlib-compressed per face), so changing the seed or generation settings keeps the user's sculpting.
 - Deferred: dragging region vertices to reshape (redraw for now), seamless lighting across cube-face edges, quadtree LOD for close-up detail.
 
-### M2 — Timeline (2–3 weeks)
-- Timeline component: zoom/pan over large ranges, lanes, eras, create/move/resize events.
-- Event locations (point/region) with map ↔ timeline highlighting.
-- Causal links with arrows; event groups (collapse/expand); consistency warnings.
-- Playhead drives a time-aware viewport (`EntityChange`).
+### M2 — Timeline (2–3 weeks) — *done*
+- [x] Timeline component: zoom/pan from minutes to billions of years, lanes, eras, create/move/resize events, a "Now" marker and a playhead. Dates are typed freely ("1204", "15 Mar 1204", "c. 1200", "13th century", "4.5 billion years ago") with a precision.
+- [x] Event locations (point/region) with map ↔ timeline highlighting: pins on the globe and map, the selected event's regions highlighted and the globe turned toward it; selecting a region highlights its events.
+- [x] Causal links with arrows (drag between events); event groups (collapse/expand); consistency warnings (effect before cause, causal loops, changes outside their cause's time, events in regions that don't exist yet).
+- [x] Playhead drives a time-aware viewport (`EntityChange`): regions are founded, renamed and dissolved over time, each change optionally caused by an event.
+- Storage: every timeline record kind lives in one `records` table as JSON. A `batch` command applies several commands as one undo step (used for grouping and cascading deletes).
+- Deferred: reshaping region borders over time (needs vertex editing), reordering lanes by drag, calendars from the star system (M4; an Earth-like default until then).
 
 ### M3 — Structures (2 weeks)
 - Blueprint library + primitive-based blueprint builder; glTF import.

@@ -4,13 +4,18 @@ A desktop worldbuilding app: build universes, galaxies, star systems and
 worlds, give them histories on a timeline, and (soon) let Claude Code help
 through an API. See [PLAN.md](PLAN.md) for the full design and roadmap.
 
-**Status:** M0 (Foundations) and M1 (Worlds & globe) are done. You can
-create `.universe` project files and build the universe tree (cluster →
-galaxy → star system → planet → moon / world surface). Each world surface
-gets generated continents, oceans and mountains you can view as a 3D globe
-or a flat map. You can sculpt the terrain, paint biomes, set the sea level,
-draw named regions, and write rich-text notes. Everything can be undone.
-The timeline is a placeholder until M2.
+**Status:** M0 (Foundations), M1 (Worlds & globe) and M2 (Timeline) are
+done. You can create `.universe` project files and build the universe tree
+(cluster → galaxy → star system → planet → moon / world surface). Each world
+surface gets generated continents, oceans and mountains you can view as a 3D
+globe or a flat map. You can sculpt the terrain, paint biomes, set the sea
+level, draw named regions, and write rich-text notes.
+
+Every world (and every other node) has a timeline: past on the left, future
+on the right. Add events and eras, drag them around, link causes to effects,
+group events, and place them on the map. Move the playhead and the map shows
+the world as of then: regions founded, renamed and dissolved over time.
+Everything can be undone.
 
 ## Download and run
 

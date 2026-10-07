@@ -60,6 +60,24 @@ test('build a history: events, dates, links, groups, eras and warnings', async (
   await expect.poll(async () => (await timeline(page)).links.length).toBe(1)
   await expect(page.locator('.tl-link')).toHaveCount(1)
 
+  // Drag a span to move it in time (one undo step), and the wheel zooms the ruler.
+  const startOf = async (title: string) => (await timeline(page)).events.find((e) => e.title === title)!.start
+  const before = await startOf('The Long War')
+  const bar = (await eventBar(page, 'The Long War').boundingBox())!
+  await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(bar.x + bar.width / 2 + 80, bar.y + bar.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await expect.poll(() => startOf('The Long War')).toBeGreaterThan(before)
+  await page.getByRole('button', { name: '↶ Undo' }).click()
+  await expect.poll(() => startOf('The Long War')).toBe(before)
+  const firstTick = () => page.locator('.tl-tick').first().textContent()
+  const tickBefore = await firstTick()
+  await page.mouse.move(bar.x + bar.width / 2, bar.y + 40)
+  await page.mouse.wheel(0, 600)
+  await expect.poll(firstTick).not.toBe(tickBefore)
+  await page.getByRole('button', { name: 'Fit' }).click()
+
   // A third event, added by double-clicking the track, made to come before its cause.
   const track = (await page.getByTestId('timeline-track').boundingBox())!
   await page.mouse.dblclick(track.x + track.width * 0.9, track.y + 10)

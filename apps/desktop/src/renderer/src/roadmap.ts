@@ -11,7 +11,7 @@ export interface Milestone {
 export const ROADMAP: Milestone[] = [
   { id: 'M0', title: 'Foundations', status: 'done', summary: 'App shell, .universe project files, undo/redo, the universe tree' },
   { id: 'M1', title: 'Worlds & globe', status: 'done', summary: 'Generated terrain, globe + map views, sculpting, biomes, regions' },
-  { id: 'M2', title: 'Timeline', status: 'planned', summary: 'Events, causal links, groups, locations, time-aware view' },
+  { id: 'M2', title: 'Timeline', status: 'done', summary: 'Events, causal links, groups, locations, time-aware view' },
   { id: 'M3', title: 'Structures', status: 'planned', summary: 'Blueprints, placement, notes, event effects, maintained/weathered' },
   { id: 'M4', title: 'Star systems & sim', status: 'planned', summary: 'Orbits, calendars, moon phases, climate, erosion' },
   { id: 'M5', title: 'Scale navigation', status: 'planned', summary: 'Galaxies, clusters, seamless zoom between levels' },
