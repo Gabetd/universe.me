@@ -9,8 +9,8 @@ export interface Milestone {
 }
 
 export const ROADMAP: Milestone[] = [
-  { id: 'M0', title: 'Foundations', status: 'active', summary: 'App shell, .universe project files, undo/redo, the universe tree' },
-  { id: 'M1', title: 'Worlds & globe', status: 'planned', summary: 'Generated terrain, globe + map views, sculpting, biomes, regions' },
+  { id: 'M0', title: 'Foundations', status: 'done', summary: 'App shell, .universe project files, undo/redo, the universe tree' },
+  { id: 'M1', title: 'Worlds & globe', status: 'done', summary: 'Generated terrain, globe + map views, sculpting, biomes, regions' },
   { id: 'M2', title: 'Timeline', status: 'planned', summary: 'Events, causal links, groups, locations, time-aware view' },
   { id: 'M3', title: 'Structures', status: 'planned', summary: 'Blueprints, placement, notes, event effects, maintained/weathered' },
   { id: 'M4', title: 'Star systems & sim', status: 'planned', summary: 'Orbits, calendars, moon phases, climate, erosion' },

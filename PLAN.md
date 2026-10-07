@@ -39,7 +39,7 @@ API.
 | 3D rendering | **Three.js via react-three-fiber + drei** | Globe, star systems, and galaxy views. Logarithmic depth buffer and floating origin to handle huge scale ranges. |
 | 2D map | **Canvas/WebGL layer** (PixiJS) over equirectangular projection | Fast painting and placement on a flat map view. |
 | Timeline | Custom **Canvas/SVG** component (d3-scale, d3-zoom) | Needs custom zoom over very large time ranges, lanes, and link drawing. |
-| Rich text | **TipTap** (ProseMirror) | Notes on structures, events, and entities, with @-mentions linking to other entities. |
+| Rich text | **TipTap** (ProseMirror) | Notes on structures, events, and entities, stored as HTML. @-mentions linking to other entities come later. |
 | Storage | **SQLite** via Node's built-in `node:sqlite` + asset folder | One `.universe` project file. Transactional, queryable, and simple to back up. Built into Electron and Node, so there's no native module to rebuild per OS. FTS5 is included. |
 | Validation / schema | **Zod** | One schema shared by the UI, REST API, and MCP tool definitions. |
 | Local API | **Fastify** inside the Electron main process | REST + WebSocket change feed, bound to 127.0.0.1. |
@@ -62,7 +62,7 @@ universe.me/
 │  ├─ core/                 # domain model, Zod schemas, commands, queries (no UI)
 │  ├─ db/                   # SQLite schema, migrations, repositories
 │  ├─ sim/                  # orbital mechanics, calendars, climate/biome, ecosystem
-│  ├─ procgen/              # seeded terrain, galaxy, starfield generation
+│  ├─ procgen/              # seeded cube-sphere terrain, biomes, brushes, map rendering
 │  ├─ timeline-ui/          # timeline React component
 │  ├─ editor-3d/            # r3f scenes: globe, system, galaxy, cluster
 │  ├─ api/                  # Fastify REST + WS routes (thin layer over core)
@@ -351,17 +351,19 @@ Keep it simple and deterministic:
 
 Each milestone ends with something you can launch and demo.
 
-### M0 — Foundations (1–2 weeks) — *in progress*
+### M0 — Foundations (1–2 weeks) — *done*
 - [x] Monorepo, Electron + Vite + React skeleton, CI (lint, typecheck, test, e2e, build installers for Windows/macOS/Linux).
 - [x] `core` command bus with undo/redo, Zod schemas, SQLite + migrations, command history log.
 - [x] Create/open/save-a-copy `.universe` project, recent projects. Main layout (breadcrumb, outline, viewport, inspector, timeline placeholder).
 - [x] Universe tree editing (cluster → galaxy → system → planet → moon/world) with a seeded 2D placeholder viewport.
 - [ ] Code signing (Windows certificate, Apple Developer ID). Deferred to M8; builds are unsigned until then.
 
-### M1 — Worlds & globe (2–3 weeks)
-- Create world on a body; procedural terrain from seed on a cube-sphere; globe + 2D map views.
-- Terrain sculpt tools, sea level, biome painting, region polygons.
-- Inspector + rich text notes on any entity.
+### M1 — Worlds & globe (2–3 weeks) — *done*
+- [x] Create world on a body; procedural terrain from seed on a cube-sphere (6 × 256² cells, generated in a Web Worker); globe + 2D map views.
+- [x] Terrain sculpt tools (raise, lower, smooth, flatten), sea level, biome painting/erasing, region polygons. Each stroke is one undoable command.
+- [x] Inspector + rich text notes (TipTap, stored as HTML) on nodes and regions; world generation settings.
+- Storage: terrain is saved as *edits on top of the generated base* (Int16 height deltas + painted biome ids, zlib-compressed per face), so changing the seed or generation settings keeps the user's sculpting.
+- Deferred: dragging region vertices to reshape (redraw for now), seamless lighting across cube-face edges, quadtree LOD for close-up detail.
 
 ### M2 — Timeline (2–3 weeks)
 - Timeline component: zoom/pan over large ranges, lanes, eras, create/move/resize events.

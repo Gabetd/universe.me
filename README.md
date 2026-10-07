@@ -4,11 +4,13 @@ A desktop worldbuilding app: build universes, galaxies, star systems and
 worlds, give them histories on a timeline, and (soon) let Claude Code help
 through an API. See [PLAN.md](PLAN.md) for the full design and roadmap.
 
-**Status:** M0 (Foundations) is in progress. You can create and open
-`.universe` project files, build the universe tree (cluster → galaxy → star
-system → planet → moon / world surface), edit names, tags, seeds and notes,
-and undo or redo any change. The viewport is a 2D sketch that M1 and M5
-replace with real 3D scenes. The timeline is a placeholder until M2.
+**Status:** M0 (Foundations) and M1 (Worlds & globe) are done. You can
+create `.universe` project files and build the universe tree (cluster →
+galaxy → star system → planet → moon / world surface). Each world surface
+gets generated continents, oceans and mountains you can view as a 3D globe
+or a flat map. You can sculpt the terrain, paint biomes, set the sea level,
+draw named regions, and write rich-text notes. Everything can be undone.
+The timeline is a placeholder until M2.
 
 ## Download and run
 
@@ -46,6 +48,7 @@ Electron downloads its binary the first time it runs.
 apps/desktop/      Electron app: main process, preload bridge, React renderer
 packages/core/     Domain model, Zod schemas, command bus with undo/redo, queries
 packages/db/       .universe project files on SQLite (Node's built-in node:sqlite)
+packages/procgen/  Seeded terrain generation, biomes, brushes, map rendering (pure TS)
 ```
 
 All edits go through the command bus in `packages/core`, so the UI and
