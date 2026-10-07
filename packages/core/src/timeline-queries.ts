@@ -14,6 +14,12 @@ export function timelineOwner(nodes: SpatialNode[], selectedId: string | null): 
   return nodes.find((n) => n.parentId === node.id && n.kind === 'world') ?? node
 }
 
+/** One owner's slice of the project's timeline records. */
+export function timelineOf(data: TimelineData, ownerId: string): TimelineData {
+  const own = Object.fromEntries(Object.entries(data).map(([key, list]) => [key, (list as { ownerId: string }[]).filter((r) => r.ownerId === ownerId)]))
+  return own as TimelineData
+}
+
 /** Start and end of an event; an instant ends where it starts. */
 export const eventSpan = (e: TimelineEvent): [Time, Time] => [e.start, e.end ?? e.start]
 
@@ -54,16 +60,19 @@ export function regionsAt(regions: Region[], changes: EntityChange[], t: Time): 
  * downstream (its effects). Contains `eventId` itself only if it's in a loop.
  */
 export function causalChain(links: EventLink[], eventId: string, direction: 'up' | 'down'): Set<string> {
+  // Index the links once, so the walk is linear in the number of links.
+  const next = new Map<string, string[]>()
+  for (const l of links) {
+    const [a, b] = direction === 'down' ? [l.fromId, l.toId] : [l.toId, l.fromId]
+    next.set(a, [...(next.get(a) ?? []), b])
+  }
   const seen = new Set<string>()
   const stack = [eventId]
   while (stack.length) {
-    const id = stack.pop()!
-    for (const l of links) {
-      const next = direction === 'down' ? (l.fromId === id ? l.toId : undefined) : l.toId === id ? l.fromId : undefined
-      if (next && !seen.has(next)) {
-        seen.add(next)
-        if (next !== eventId) stack.push(next)
-      }
+    for (const id of next.get(stack.pop()!) ?? []) {
+      if (seen.has(id)) continue
+      seen.add(id)
+      if (id !== eventId) stack.push(id)
     }
   }
   return seen

@@ -2,7 +2,7 @@ import type { NodePatch, SpatialNode } from '@universe/core'
 import { useEffect, useRef } from 'react'
 import { KIND_ICONS, addOptions, kindLabel } from '../kinds'
 import { selectNode, useUi } from '../store'
-import { NumberInput, TextField } from './fields'
+import { NumberInput, TagsField, TextField } from './fields'
 import { NotesEditor } from './NotesEditor'
 import { TimelineInspector } from './TimelinePanels'
 import { WorldPanel } from './WorldPanel'
@@ -27,12 +27,6 @@ export function Inspector() {
   )
 }
 
-const parseTags = (text: string) =>
-  text
-    .split(',')
-    .map((t) => t.trim())
-    .filter(Boolean)
-
 function NodeForm({ node }: { node: SpatialNode }) {
   const nodes = useUi((s) => s.nodes)
   const execute = useUi((s) => s.execute)
@@ -48,15 +42,7 @@ function NodeForm({ node }: { node: SpatialNode }) {
           <span>{KIND_ICONS[node.kind]}</span> {kindLabel(node, nodes)}
         </div>
         <TextField label="Name" value={node.name} required onCommit={(name) => update({ name })} />
-        <TextField
-          label="Tags"
-          placeholder="comma, separated"
-          value={node.tags.join(', ')}
-          onCommit={(text) => {
-            const tags = parseTags(text)
-            if (tags.join('\u0000') !== node.tags.join('\u0000')) update({ tags })
-          }}
-        />
+        <TagsField label="Tags" tags={node.tags} onCommit={(tags) => update({ tags })} />
         <label className="field">
           <span>Seed</span>
           <div className="field-row">

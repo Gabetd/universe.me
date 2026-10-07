@@ -1,7 +1,7 @@
 import { LINK_TYPES, PRECISIONS, type Command, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type TimelineEvent } from '@universe/core'
 import { useUi, type TimelineSelection } from '../store'
 import { useEditor } from '../world/editorStore'
-import { TextField, TimeField } from './fields'
+import { TagsField, TextField, TimeField } from './fields'
 import { NotesEditor } from './NotesEditor'
 
 const PRECISION_LABELS: Record<Precision, string> = { exact: 'Exact time', day: 'Day', year: 'Year', century: 'Century', approx: 'Approximate' }
@@ -12,12 +12,6 @@ const LINK_LABELS: Record<LinkType, [string, string]> = {
   precedes: ['precedes', 'preceded by'],
   related: ['related to', 'related to']
 }
-
-const parseTags = (text: string) =>
-  text
-    .split(',')
-    .map((t) => t.trim())
-    .filter(Boolean)
 
 /** Inspector section for what's selected on the timeline. */
 export function TimelineInspector({ selection }: { selection: TimelineSelection }) {
@@ -208,7 +202,7 @@ function EventPanel({ event }: { event: TimelineEvent }) {
         </div>
       )}
 
-      <TextField label="Event tags" placeholder="comma, separated" value={event.tags.join(', ')} onCommit={(text) => update({ tags: parseTags(text) })} />
+      <TagsField label="Event tags" tags={event.tags} onCommit={(tags) => update({ tags })} />
       <div className="field">
         <span>Event notes</span>
         <NotesEditor label="Event notes" value={event.notes} onCommit={(notes) => update({ notes })} />

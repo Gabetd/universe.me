@@ -20,6 +20,24 @@ export function TextField(props: { label: string; value: string; placeholder?: s
   )
 }
 
+/** Comma-separated tags; saves only if the list actually changed. */
+export function TagsField(props: { label: string; tags: string[]; onCommit(tags: string[]): void }) {
+  return (
+    <TextField
+      label={props.label}
+      placeholder="comma, separated"
+      value={props.tags.join(', ')}
+      onCommit={(text) => {
+        const tags = text
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean)
+        if (tags.join('\u0000') !== props.tags.join('\u0000')) props.onCommit(tags)
+      }}
+    />
+  )
+}
+
 /** A range slider that saves once on release, not on every pixel of a drag (each save is an undo step). */
 export function CommitSlider(props: { label: string; unit?: string; min: number; max: number; step: number; value: number; onCommit(v: number): void }) {
   const [draft, setDraft] = useState<number | null>(null)

@@ -2,6 +2,7 @@ import {
   causalChain,
   formatTime,
   timeTicks,
+  timelineOf,
   timelineWarnings,
   type Command,
   type EventGroup,
@@ -48,17 +49,15 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
   const selection = useUi((s) => s.timelineSelection)
   const selectedRegionId = useUi((s) => s.selectedRegionId)
   const { execute, selectTimeline } = useUi.getState()
-  const own = useMemo(() => {
-    const mine = <T extends { ownerId: string }>(list: T[]) => list.filter((r) => r.ownerId === owner.id)
-    return { events: mine(data.events), links: mine(data.links), groups: mine(data.groups), lanes: mine(data.lanes), eras: mine(data.eras), changes: mine(data.changes) }
-  }, [data, owner.id])
+  const own = useMemo(() => timelineOf(data, owner.id), [data, owner.id])
   const warnings = useMemo(() => timelineWarnings(own, regions), [own, regions])
   const warnedLinks = useMemo(() => new Set(warnings.flatMap((w) => w.refs.filter((r) => r.kind === 'link').map((r) => r.id))), [warnings])
 
   const now = useNow(owner.id)
   const playhead = usePlayhead(owner.id)
-  const view = useTimelineView()
-  const storedRange = view.ranges[owner.id]
+  // Only this timeline's range: other timelines' view changes don't re-render it.
+  const storedRange = useTimelineView((s) => s.ranges[owner.id])
+  const view = useTimelineView.getState()
   const range = storedRange ?? initialRange(own.events, now)
   const setRange = (r: TimeRange) => view.setRange(owner.id, r)
   // Remember the first view, so zooming and panning have something to start from.

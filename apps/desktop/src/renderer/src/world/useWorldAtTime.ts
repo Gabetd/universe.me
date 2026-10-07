@@ -1,4 +1,4 @@
-import { isActiveAt, regionsAt, type Region } from '@universe/core'
+import { isActiveAt, regionsAt, timelineOf, type Region } from '@universe/core'
 import { useMemo } from 'react'
 import { useUi } from '../store'
 import { usePlayhead, useTimelineView } from '../timeline/timelineStore'
@@ -27,11 +27,10 @@ export function useWorldAtTime(worldId: string, regions: Region[]) {
   const range = useTimelineView((s) => s.ranges[worldId])
 
   return useMemo(() => {
-    const changes = timeline.changes.filter((c) => c.ownerId === worldId)
+    const { events, changes } = timelineOf(timeline, worldId)
     const selected = new Set(selection?.kind === 'event' ? selection.ids : [])
     // Instants count as "now" within 2% of the visible span, so they don't flash by while scrubbing.
     const slack = range ? (range.t1 - range.t0) * 0.02 : 0
-    const events = timeline.events.filter((e) => e.ownerId === worldId)
     const pins: EventPin[] = events.flatMap((e) =>
       e.locations.flatMap((loc) =>
         loc.kind === 'point'
