@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Runs the local copy of the CI pipelines before every push (scripts/ci-local.sh).
+# Enable once per clone: git config core.hooksPath .githooks
+# Skip in an emergency: git push --no-verify
+exec bash "$(git rev-parse --show-toplevel)/scripts/ci-local.sh"

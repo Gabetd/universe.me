@@ -358,6 +358,7 @@ Each milestone ends with something you can launch and demo.
 - [x] Universe tree editing (cluster → galaxy → system → planet → moon/world) with a seeded 2D placeholder viewport.
 - [ ] Code signing (Windows certificate, Apple Developer ID). Deferred to M8; builds are unsigned until then.
 - [x] *Added after M2:* self-update. Each CI build is versioned `0.1.<run>` and publishes an `update.json` manifest (file names, sizes, SHA-512) with the installers. The app checks it at launch and hourly (and from Help → Check for Updates); a dismissable banner offers the new version, and **Upgrade now** downloads, verifies and installs it, then restarts, with no further input: NSIS installer run silently, portable exe swapped, macOS `.app` replaced from the zip, AppImage replaced in place. A `.deb` install needs the system password (root).
+- [x] *Added after M2:* local only. All data lives in the project's SQLite file (built into the app via `node:sqlite`, no server). The main process cancels every network request except the app's own files and the self-updater's download from this repo's GitHub release; pages can't reach the network at all, and links open in the browser instead of the app window.
 
 ### M1 — Worlds & globe (2–3 weeks) — *done*
 - [x] Create world on a body; procedural terrain from seed on a cube-sphere (6 × 256² cells, generated in a Web Worker); globe + 2D map views.

@@ -1,5 +1,6 @@
 import { join } from 'node:path'
-import { BrowserWindow, Menu, app, dialog, ipcMain, shell, type MenuItemConstructorOptions } from 'electron'
+import { BrowserWindow, Menu, app, dialog, ipcMain, session as electronSession, shell, type MenuItemConstructorOptions } from 'electron'
+import { isAllowedRequest } from '../shared/offline'
 import { IPC, type AppState, type BuildInfo, type MenuAction, type Result } from '../shared/api'
 import { Session } from './session'
 import { Updater } from './updater'
@@ -39,6 +40,12 @@ function createWindow(): void {
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) void shell.openExternal(url)
     return { action: 'deny' }
+  })
+  // A link in a note must never turn the app window into a web page.
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith('file:') || (process.env.ELECTRON_RENDERER_URL && url.startsWith(process.env.ELECTRON_RENDERER_URL))) return
+    event.preventDefault()
+    if (url.startsWith('https://')) void shell.openExternal(url)
   })
 
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -241,7 +248,22 @@ app.on('open-file', (event, path) => {
   else pendingOpen = path
 })
 
+/** Nothing leaves this computer: every request but the app's own files (and the update download) is cancelled. */
+function keepOffline(): void {
+  const extra = [process.env.ELECTRON_RENDERER_URL, process.env.UNIVERSE_UPDATE_URL]
+    .filter((u): u is string => !!u && u !== 'off')
+    .map((u) => new URL(u).origin + '/')
+  // Dev server hot reload uses a websocket on the same host.
+  if (process.env.ELECTRON_RENDERER_URL) extra.push(process.env.ELECTRON_RENDERER_URL.replace(/^http/, 'ws'))
+  electronSession.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    const allowed = isAllowedRequest(details.url, details.webContentsId !== undefined, extra)
+    if (!allowed) console.warn(`Blocked a network request to ${details.url}`)
+    callback({ cancel: !allowed })
+  })
+}
+
 app.whenReady().then(() => {
+  keepOffline()
   session = new Session(app.getPath('userData'))
   registerIpc()
   buildMenu()
