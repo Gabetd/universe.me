@@ -1,0 +1,18 @@
+{
+  "name": "@universe/procgen",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Seeded procedural generation: cube-sphere terrain, biomes, brushes. Pure TS, runs in Node, browsers and workers.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@universe/core": "workspace:*",
+    "simplex-noise": "^4.0.3"
+  }
+}
