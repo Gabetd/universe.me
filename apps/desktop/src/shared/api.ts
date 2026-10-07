@@ -35,6 +35,14 @@ export interface WorldTerrain extends TerrainLayers {
   revision: number
 }
 
+/** A file the user picked, read for adding to the project. */
+export interface PickedFile {
+  name: string
+  mime: string
+  /** Base64, ready for an `asset.add` command. */
+  data: string
+}
+
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
 
 export type MenuAction = 'undo' | 'redo'
@@ -49,6 +57,9 @@ export interface UniverseApi {
   closeProject(): Promise<AppState>
   execute(command: unknown): Promise<Result<AppState>>
   getTerrain(worldId: string): Promise<Result<WorldTerrain>>
+  /** Asks for a .glb/.gltf file and reads it. Null if cancelled. The renderer then adds it with `asset.add`. */
+  pickModel(): Promise<Result<PickedFile | null>>
+  getAsset(id: string): Promise<Result<{ mime: string; data: Uint8Array }>>
   undo(): Promise<Result<AppState>>
   redo(): Promise<Result<AppState>>
   onState(listener: (state: AppState) => void): () => void
@@ -69,6 +80,8 @@ export const IPC = {
   closeProject: 'project:close',
   execute: 'cmd:execute',
   terrain: 'world:terrain',
+  pickModel: 'asset:pick-model',
+  getAsset: 'asset:get',
   undo: 'cmd:undo',
   redo: 'cmd:redo',
   stateChanged: 'state:changed',

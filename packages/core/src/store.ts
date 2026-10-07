@@ -44,8 +44,23 @@ export interface RecordRepository<T> {
   update(record: T): void
 }
 
+/** A file kept inside the project (an imported glTF model). Assets are immutable. */
+export interface Asset {
+  id: Id
+  name: string
+  mime: string
+  data: Uint8Array
+}
+
+export interface AssetRepository {
+  get(id: Id): Asset | undefined
+  put(asset: Asset): void
+  remove(id: Id): void
+}
+
 export interface Store {
   nodes: NodeRepository
+  assets: AssetRepository
   worlds: WorldRepository
   regions: RegionRepository
   records<K extends RecordKind>(kind: K): RecordRepository<RecordOf<K>>
@@ -76,6 +91,13 @@ export class MemoryStore implements Store {
   private settings = new Map<Id, WorldSettings>()
   private layers = new Map<string, Uint8Array>()
   private revisions = new Map<Id, number>()
+  private assetRows = new Map<Id, Asset>()
+
+  assets: AssetRepository = {
+    get: (id) => clone(this.assetRows.get(id)),
+    put: (asset) => void this.assetRows.set(asset.id, clone(asset)),
+    remove: (id) => void this.assetRows.delete(id)
+  }
 
   nodes: NodeRepository = {
     get: this.nodeTable.get,
@@ -113,7 +135,8 @@ export class MemoryStore implements Store {
       records: [...this.recordTables.values()].map((t) => new Map(t.rows)),
       settings: new Map(this.settings),
       layers: new Map(this.layers),
-      revisions: new Map(this.revisions)
+      revisions: new Map(this.revisions),
+      assets: new Map(this.assetRows)
     }
     try {
       return fn()
@@ -124,6 +147,7 @@ export class MemoryStore implements Store {
       this.settings = snapshot.settings
       this.layers = snapshot.layers
       this.revisions = snapshot.revisions
+      this.assetRows = snapshot.assets
       throw err
     }
   }

@@ -20,14 +20,14 @@ export function blueprintExtent(b: Blueprint): number {
 }
 
 /**
- * The parts still standing at a condition: from Damaged down, the most
- * fragile parts (shortest-lived material, then highest up) go first, down to
- * the sturdiest third at the end.
+ * The parts still standing at a condition. Parts are ranked from most fragile
+ * (shortest-lived material, then highest up) to sturdiest; the most fragile
+ * falls when the structure becomes Damaged (45), the rest at evenly lower
+ * conditions, and the sturdiest stays to the end.
  */
 export function standingParts(parts: BlueprintPart[], condition: number): BlueprintPart[] {
   if (condition >= 45 || parts.length < 2) return parts
-  const keep = Math.max(1, Math.ceil(parts.length * (0.35 + 0.65 * (condition / 45))))
-  const sturdiest = [...parts].sort((a, b) => MATERIAL_INFO[b.material].halfLifeYears - MATERIAL_INFO[a.material].halfLifeYears || a.at[1] - b.at[1])
-  const kept = new Set(sturdiest.slice(0, keep))
-  return parts.filter((p) => kept.has(p))
+  const fragileFirst = [...parts].sort((a, b) => MATERIAL_INFO[a.material].halfLifeYears - MATERIAL_INFO[b.material].halfLifeYears || b.at[1] - a.at[1])
+  const fallen = new Set(fragileFirst.filter((_, rank) => condition < 45 * (1 - rank / (parts.length - 1))))
+  return parts.filter((p) => !fallen.has(p))
 }

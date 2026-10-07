@@ -4,6 +4,7 @@ import { useUi, useWorld } from '../store'
 import { ColorField, CommitSlider, TextField } from './fields'
 import { NotesEditor } from './NotesEditor'
 import { RegionHistory } from './RegionHistory'
+import { BlueprintLibrary } from './BlueprintLibrary'
 import { StructurePanel } from './StructurePanel'
 import { WorldGenPanel } from './WorldGenPanel'
 import { EROSION_SPEED, stateAt } from '@universe/core'
@@ -43,6 +44,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
       </section>
 
       <StructureList worldId={world.id} erosionSpeed={settings.erosionSpeed} onErosionSpeed={(erosionSpeed) => update({ erosionSpeed })} />
+      <BlueprintLibrary />
 
       <section className="inspector-section">
         <h3>Regions</h3>

@@ -1343,3 +1343,97 @@ input[type='color'] {
 .effect-preview {
   margin: 0;
 }
+
+/* Blueprints */
+.blueprint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 6px;
+}
+.blueprint-actions {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: #03050bcc;
+}
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px #000a;
+}
+.blueprint-builder {
+  width: min(1100px, 94vw);
+  height: min(720px, 90vh);
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  overflow: hidden;
+}
+.blueprint-preview {
+  position: relative;
+  min-height: 0;
+}
+.blueprint-preview > div:first-child {
+  position: absolute !important;
+  inset: 0;
+}
+.blueprint-age {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: #0b0e17cc;
+}
+.blueprint-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  overflow: auto;
+  border-left: 1px solid var(--border);
+}
+.part-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.part-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #10162a;
+}
+.part-row input[type='color'] {
+  width: 40px;
+  flex: none;
+}
+.vec-row {
+  display: grid;
+  grid-template-columns: 34px repeat(4, 1fr);
+  gap: 4px;
+  align-items: center;
+}
+.vec-row input {
+  padding: 4px 6px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: auto;
+}

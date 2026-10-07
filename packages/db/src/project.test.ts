@@ -27,6 +27,24 @@ describe('Project', () => {
     expect(p.store.nodes.get(info.rootId)?.kind).toBe('universe')
   })
 
+  it('keeps imported files and structures inside the project file, with undo', () => {
+    const path = join(dir, 'assets.universe')
+    const p = Project.create(path, 'A')
+    const bytes = new Uint8Array([103, 108, 84, 70, 2, 0, 0, 0])
+    p.bus.execute({ type: 'asset.add', payload: { id: 'model-1', name: 'tower.glb', mime: 'model/gltf-binary', data: bytesToBase64(bytes) } })
+    p.bus.execute({ type: 'blueprint.create', payload: { ownerId: p.info().rootId, name: 'Tower', model: { assetId: 'model-1', material: 'stone', heightM: 30 } } })
+    p.close()
+    const reopened = track(Project.open(path))
+    expect(reopened.store.assets.get('model-1')).toMatchObject({ name: 'tower.glb', data: bytes })
+    expect(reopened.store.records('blueprint').all().map((b) => b.name)).toEqual(['Tower'])
+    // Undoing the import (in the same session) takes the file back out, and redo restores it.
+    reopened.bus.execute({ type: 'asset.add', payload: { id: 'model-2', name: 'b.glb', mime: 'model/gltf-binary', data: bytesToBase64(bytes) } })
+    reopened.bus.undo()
+    expect(reopened.store.assets.get('model-2')).toBeUndefined()
+    reopened.bus.redo()
+    expect(reopened.store.assets.get('model-2')?.data).toEqual(bytes)
+  })
+
   it('persists commands across close and reopen', () => {
     const path = join(dir, 'b.universe')
     const p = Project.create(path, 'B')

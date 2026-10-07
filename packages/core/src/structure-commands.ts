@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { CommandError, liveRecord, liveWorld } from './command-kit'
 import type { Command, HandlerMap } from './commands'
 import { NewId, blueprintOf, create, deleteWith, live, update } from './record-kit'
+import { base64ToBytes, bytesToBase64 } from './encoding'
 import { Id } from './schema'
 import { Blueprint, EventEffect, MaintenanceChange, Structure } from './structures'
 import { Time } from './time'
@@ -34,6 +35,10 @@ export const STRUCTURE_COMMANDS = [
   }),
   z.object({ type: z.literal('maintenance.update'), payload: z.object({ id: Id, patch: MaintenanceChange.pick({ at: true, maintained: true, causeEventId: true }).partial() }) }),
   z.object({ type: z.literal('maintenance.delete'), payload: z.object({ id: Id }) }),
+
+  /** Keeps a file (an imported model) in the project. `data` is base64. */
+  z.object({ type: z.literal('asset.add'), payload: z.object({ id: Id, name: z.string().min(1).max(260), mime: z.string().min(1), data: z.string().min(1) }) }),
+  z.object({ type: z.literal('asset.remove'), payload: z.object({ id: Id }) }),
 
   z.object({ type: z.literal('effect.create'), payload: EffectFields.partial().extend({ ...NewId, eventId: Id, type: EventEffect.shape.type, target: EventEffect.shape.target }) }),
   z.object({ type: z.literal('effect.update'), payload: z.object({ id: Id, patch: EffectFields.partial() }) }),
@@ -94,6 +99,18 @@ export const structureHandlers: HandlerMap<StructureCommand> = {
   },
   'maintenance.update': (store, { id, patch }, ctx) => update(store, 'maintenance', ctx, id, patch),
   'maintenance.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'maintenance', id }),
+
+  'asset.add'(store, { id, name, mime, data }) {
+    if (store.assets.get(id)) throw new CommandError(`Asset ${id} already exists`)
+    store.assets.put({ id, name, mime, data: base64ToBytes(data) })
+    return { inverse: { type: 'asset.remove', payload: { id } } }
+  },
+  'asset.remove'(store, { id }) {
+    const asset = store.assets.get(id)
+    if (!asset) throw new CommandError(`Asset ${id} does not exist`)
+    store.assets.remove(id)
+    return { inverse: { type: 'asset.add', payload: { id, name: asset.name, mime: asset.mime, data: bytesToBase64(asset.data) } } }
+  },
 
   'effect.create': (store, { id, eventId, ...p }, ctx) =>
     create(store, 'effect', ctx, liveRecord(store, 'event', eventId).ownerId, id, {

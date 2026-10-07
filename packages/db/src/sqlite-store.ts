@@ -2,6 +2,8 @@ import type { DatabaseSync, StatementSync } from 'node:sqlite'
 import { deflateSync, inflateSync } from 'node:zlib'
 import { DEFAULT_WORLD_SETTINGS, mergeWorldSettings } from '@universe/core'
 import type {
+  Asset,
+  AssetRepository,
   HistoryLog,
   HistoryRecord,
   NodeRepository,
@@ -107,6 +109,7 @@ export class SqliteStore implements Store {
   readonly nodes: NodeRepository
   readonly worlds: WorldRepository
   readonly regions: RegionRepository
+  readonly assets: AssetRepository
   private depth = 0
   private readonly recordRepos = new Map<RecordKind, RecordRepository<unknown>>()
   private readonly recordStmts: Record<'get' | 'all' | 'insert' | 'update', StatementSync>
@@ -180,6 +183,20 @@ export class SqliteStore implements Store {
       all: () => (r.all.all() as unknown as RegionRow[]).map(toRegion),
       insert: (region) => void r.insert.run(regionParams(region)),
       update: (region) => updateExisting(r.update, regionParams(region), 'Region')
+    }
+
+    const a = {
+      get: db.prepare('SELECT id, name, mime, data FROM assets WHERE id = ?'),
+      put: db.prepare('INSERT INTO assets (id, name, mime, data) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING'),
+      remove: db.prepare('DELETE FROM assets WHERE id = ?')
+    }
+    this.assets = {
+      get: (id) => {
+        const row = a.get.get(id) as (Omit<Asset, 'data'> & { data: Uint8Array }) | undefined
+        return row && { id: row.id, name: row.name, mime: row.mime, data: new Uint8Array(row.data) }
+      },
+      put: (asset) => void a.put.run(asset.id, asset.name, asset.mime, asset.data),
+      remove: (id) => void a.remove.run(id)
     }
 
     // Timeline records are stored whole as JSON, one table for every kind.

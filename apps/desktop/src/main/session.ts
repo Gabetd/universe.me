@@ -84,6 +84,13 @@ export class Session {
     return { revision: worlds.terrainRevision(worldId), height: layer('height'), biome: layer('biome') }
   }
 
+  /** A file kept in the project, such as an imported model. */
+  asset(id: string): { mime: string; data: Uint8Array } {
+    const asset = this.require().store.assets.get(id)
+    if (!asset) throw new Error('That file is missing from the project')
+    return { mime: asset.mime, data: asset.data }
+  }
+
   private applied(result: ExecuteResult | undefined): AppState {
     this.focus = result?.target
     return this.state()

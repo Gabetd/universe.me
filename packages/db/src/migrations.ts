@@ -74,6 +74,14 @@ export const MIGRATIONS: readonly string[] = [
     PRIMARY KEY (kind, id)
   );
   CREATE INDEX records_owner ON records(kind, owner_id);
+  `,
+  /* 4: files kept in the project, such as imported glTF models */ `
+  CREATE TABLE assets (
+    id   TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    data BLOB NOT NULL
+  );
   `
 ]
 
