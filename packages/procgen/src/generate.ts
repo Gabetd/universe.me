@@ -2,6 +2,7 @@ import { CUBE_FACES, TERRAIN_RES, type TerrainParams } from '@universe/core'
 import { createNoise3D, type NoiseFunction3D } from 'simplex-noise'
 import { cellDirections } from './cubesphere'
 import { rng, subSeed } from './random'
+import { clamp } from './math'
 
 /** The generated (unedited) terrain for a world: meters of height and 0–1 moisture per cell. */
 export interface BaseTerrain {
@@ -24,7 +25,7 @@ function fbm(noise: NoiseFunction3D, x: number, y: number, z: number, octaves: n
 }
 
 const smoothstep = (a: number, b: number, x: number) => {
-  const t = Math.max(0, Math.min(1, (x - a) / (b - a)))
+  const t = clamp((x - a) / (b - a), 0, 1)
   return t * t * (3 - 2 * t)
 }
 

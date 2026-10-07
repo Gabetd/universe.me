@@ -124,6 +124,14 @@ describe('regions', () => {
     expect(store.regions.all()).toHaveLength(1)
   })
 
+  it('targets the region and marks its world as changed', () => {
+    store.nodes.update({ ...store.nodes.get(worldId)!, updatedAt: 'before' })
+    const result = bus.execute({ type: 'region.create', payload: { worldId, points: triangle } })
+    expect(result.target).toEqual({ kind: 'region', id: result.targetId })
+    expect(store.nodes.get(worldId)!.updatedAt).not.toBe('before')
+    expect(bus.undo()!.target).toEqual({ kind: 'node', id: worldId })
+  })
+
   it('needs at least three points on a world', () => {
     expect(() => bus.execute({ type: 'region.create', payload: { worldId, points: triangle.slice(0, 2) } })).toThrow()
     expect(() => bus.execute({ type: 'region.create', payload: { worldId: planetId, points: triangle } })).toThrow(/not a world/)

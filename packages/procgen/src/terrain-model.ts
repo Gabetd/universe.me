@@ -6,11 +6,13 @@ import {
   bytesToBase64,
   readRect,
   type TerrainLayerName,
+  type TerrainLayers,
   type TerrainPatch,
   type WorldSettings
 } from '@universe/core'
 import { BIOME_RGB, autoBiome } from './biomes'
-import { cellDirections, dirToFace, toGrid, type Vec3 } from './cubesphere'
+import { angleBetween, cellDirections, dirToFace, dirToLatLon, faceToDir, toGrid, type Vec3 } from './cubesphere'
+import { clamp } from './math'
 import type { BaseTerrain } from './generate'
 
 export type BrushTool = 'raise' | 'lower' | 'smooth' | 'flatten' | 'paint' | 'erase'
@@ -41,11 +43,15 @@ let latCache: Float32Array[] | undefined
 function cellLatitudes(): Float32Array[] {
   latCache ??= cellDirections().map((d) => {
     const lat = new Float32Array(CELLS)
-    for (let c = 0; c < CELLS; c++) lat[c] = (Math.asin(d[c * 3 + 1]!) * 180) / Math.PI
+    for (let c = 0; c < CELLS; c++) lat[c] = dirToLatLon(d[c * 3]!, d[c * 3 + 1]!, d[c * 3 + 2]!).lat
     return lat
   })
   return latCache
 }
+
+const FACE_CENTERS = Array.from({ length: CUBE_FACES }, (_, f) => faceToDir(f, 0, 0))
+/** Angle from a face's center to its corners: no cell on the face is farther. */
+const FACE_REACH = Math.acos(1 / Math.sqrt(3))
 
 const SHALLOW: Vec3 = [74, 150, 198]
 const DEEP: Vec3 = [12, 38, 80]
@@ -62,7 +68,7 @@ export class TerrainModel {
   constructor(
     public settings: WorldSettings,
     public base: BaseTerrain,
-    layers?: { height?: Uint8Array[]; biome?: Uint8Array[] }
+    layers?: TerrainLayers
   ) {
     this.heightEdits = []
     this.biomeEdits = []
@@ -70,13 +76,18 @@ export class TerrainModel {
   }
 
   /** Replaces the edit layers, e.g. after an undo changed them in the project. */
-  setLayers(layers: { height?: Uint8Array[]; biome?: Uint8Array[] }): void {
+  setLayers(layers: TerrainLayers): void {
     this.heightEdits = Array.from({ length: CUBE_FACES }, (_, f) => {
       const bytes = layers.height?.[f]
       // Copy, so the Int16 view is aligned and independent of the source buffer.
       return bytes ? new Int16Array(bytes.slice().buffer) : new Int16Array(CELLS)
     })
     this.biomeEdits = Array.from({ length: CUBE_FACES }, (_, f) => layers.biome?.[f]?.slice() ?? new Uint8Array(CELLS))
+  }
+
+  /** A distance on the surface in km, as an angle in radians. */
+  angularRadius(km: number): number {
+    return km / this.settings.radiusKm
   }
 
   get isStroking(): boolean {
@@ -105,8 +116,8 @@ export class TerrainModel {
   /** Bilinearly interpolated height in meters for any direction. */
   sampleHeight(x: number, y: number, z: number): number {
     const { face, s, t } = dirToFace(x, y, z)
-    const gx = Math.max(0, Math.min(TERRAIN_RES - 1, toGrid(s)))
-    const gy = Math.max(0, Math.min(TERRAIN_RES - 1, toGrid(t)))
+    const gx = clamp(toGrid(s), 0, TERRAIN_RES - 1)
+    const gy = clamp(toGrid(t), 0, TERRAIN_RES - 1)
     const i0 = Math.floor(gx)
     const j0 = Math.floor(gy)
     const i1 = Math.min(i0 + 1, TERRAIN_RES - 1)
@@ -147,12 +158,14 @@ export class TerrainModel {
     const stroke = this.stroke
     if (!stroke) return []
     const { brush, target } = stroke
-    const radius = brush.radiusKm / this.settings.radiusKm
+    const radius = this.angularRadius(brush.radiusKm)
     const cosRadius = Math.cos(radius)
     const dirs = cellDirections()
     const touched: number[] = []
 
     for (let face = 0; face < CUBE_FACES; face++) {
+      // Most dabs reach one or two faces; skip the rest without scanning their cells.
+      if (angleBetween(FACE_CENTERS[face]!, dir) > radius + FACE_REACH) continue
       const d = dirs[face]!
       const heights = this.heightEdits[face]!
       const biomes = this.biomeEdits[face]!
@@ -234,8 +247,8 @@ const NEIGHBORS = [
   [0, -1]
 ] as const
 
-const clampCell = (v: number) => Math.max(0, Math.min(TERRAIN_RES - 1, v))
-const clampInt16 = (v: number) => Math.max(-32768, Math.min(32767, Math.round(v)))
+const clampCell = (v: number) => clamp(v, 0, TERRAIN_RES - 1)
+const clampInt16 = (v: number) => clamp(Math.round(v), -32768, 32767)
 
 function markDirty(dirty: Map<number, DirtyRect>, face: number, x: number, y: number): void {
   const r = dirty.get(face)

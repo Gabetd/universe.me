@@ -4,6 +4,7 @@ import { base64ToBytes, bytesToBase64 } from './encoding'
 import type { Store } from './store'
 import { stripUndefined } from './util'
 import {
+  CUBE_FACES,
   DEFAULT_WORLD_SETTINGS,
   HexColor,
   LAYER_BYTES_PER_CELL,
@@ -12,6 +13,7 @@ import {
   TERRAIN_RES,
   TerrainLayerName,
   TerrainPatch,
+  emptyLayer,
   WorldSettings,
   WorldSettingsPatch,
   mergeWorldSettings,
@@ -71,11 +73,18 @@ export interface CommandContext {
   randomSeed(): number
 }
 
+/** The entity a command created or touched, so the UI can select it. */
+export interface Target {
+  kind: 'node' | 'region'
+  id: string
+}
+
 export interface HandlerResult {
   /** The command that exactly reverses this one. */
   inverse: Command
-  /** Id of the entity the command created or touched, for selection in the UI. */
-  targetId?: string
+  target?: Target
+  /** Node that owns what changed (a world for its settings, terrain and regions); the bus bumps its `updatedAt`. */
+  owner?: string
 }
 
 export class CommandError extends Error {
@@ -111,13 +120,13 @@ export const handlers: Handlers = {
       updatedAt: now,
       deletedAt: null
     })
-    return { inverse: { type: 'node.delete', payload: { id } }, targetId: id }
+    return { inverse: { type: 'node.delete', payload: { id } }, target: { kind: 'node', id } }
   },
 
   'node.update'(store, { id, patch }, ctx) {
     const node = liveNode(store, id)
     store.nodes.update({ ...node, ...stripUndefined(patch), updatedAt: ctx.now() })
-    return { inverse: { type: 'node.update', payload: { id, patch: previousValues(node, patch) } }, targetId: id }
+    return { inverse: { type: 'node.update', payload: { id, patch: previousValues(node, patch) } }, target: { kind: 'node', id } }
   },
 
   'node.delete'(store, { id }, ctx) {
@@ -131,17 +140,16 @@ export const handlers: Handlers = {
       const n = store.nodes.get(nid)!
       store.nodes.update({ ...n, deletedAt: now, updatedAt: now })
     }
-    return { inverse: { type: 'node.restore', payload: { ids } }, targetId: node.parentId }
+    return { inverse: { type: 'node.restore', payload: { ids } }, target: { kind: 'node', id: node.parentId } }
   },
 
-  'world.update'(store, { id, patch }, ctx) {
+  'world.update'(store, { id, patch }) {
     liveWorld(store, id)
     const previous = store.worlds.getSettings(id) ?? DEFAULT_WORLD_SETTINGS
     const next = WorldSettings.safeParse(mergeWorldSettings(previous, patch))
     if (!next.success) throw new CommandError(`Invalid world settings: ${next.error.issues[0]?.message}`)
     store.worlds.putSettings(id, next.data)
-    touch(store, id, ctx)
-    return { inverse: { type: 'world.update', payload: { id, patch: previous } }, targetId: id }
+    return { inverse: { type: 'world.update', payload: { id, patch: previous } }, target: { kind: 'node', id }, owner: id }
   },
 
   'terrain.patch'(store, { worldId, layer, patches }) {
@@ -166,20 +174,20 @@ export const handlers: Handlers = {
     }
     for (const [index, bytes] of faces) store.worlds.putLayer(worldId, layer, index, bytes)
     store.worlds.bumpTerrainRevision(worldId)
-    return { inverse: { type: 'terrain.patch', payload: { worldId, layer, patches: undo } }, targetId: worldId }
+    return { inverse: { type: 'terrain.patch', payload: { worldId, layer, patches: undo } }, target: { kind: 'node', id: worldId }, owner: worldId }
   },
 
   'terrain.reset'(store, { worldId, layer }) {
     liveWorld(store, worldId)
     const undo: TerrainPatch[] = []
-    for (let face = 0; face < 6; face++) {
+    for (let face = 0; face < CUBE_FACES; face++) {
       const bytes = store.worlds.getLayer(worldId, layer, face)
       if (!bytes) continue
       undo.push({ face, x: 0, y: 0, w: TERRAIN_RES, h: TERRAIN_RES, data: bytesToBase64(bytes) })
       store.worlds.putLayer(worldId, layer, face, emptyLayer(layer))
     }
     store.worlds.bumpTerrainRevision(worldId)
-    return { inverse: { type: 'terrain.patch', payload: { worldId, layer, patches: undo } }, targetId: worldId }
+    return { inverse: { type: 'terrain.patch', payload: { worldId, layer, patches: undo } }, target: { kind: 'node', id: worldId }, owner: worldId }
   },
 
   'region.create'(store, p, ctx) {
@@ -198,27 +206,27 @@ export const handlers: Handlers = {
       updatedAt: now,
       deletedAt: null
     })
-    return { inverse: { type: 'region.delete', payload: { id } }, targetId: id }
+    return { inverse: { type: 'region.delete', payload: { id } }, target: { kind: 'region', id }, owner: p.worldId }
   },
 
   'region.update'(store, { id, patch }, ctx) {
     const region = liveRegion(store, id)
     store.regions.update({ ...region, ...stripUndefined(patch), updatedAt: ctx.now() })
-    return { inverse: { type: 'region.update', payload: { id, patch: previousValues(region, patch) } }, targetId: id }
+    return { inverse: { type: 'region.update', payload: { id, patch: previousValues(region, patch) } }, target: { kind: 'region', id }, owner: region.worldId }
   },
 
   'region.delete'(store, { id }, ctx) {
     const region = liveRegion(store, id)
     const now = ctx.now()
     store.regions.update({ ...region, deletedAt: now, updatedAt: now })
-    return { inverse: { type: 'region.restore', payload: { id } }, targetId: region.worldId }
+    return { inverse: { type: 'region.restore', payload: { id } }, target: { kind: 'node', id: region.worldId }, owner: region.worldId }
   },
 
   'region.restore'(store, { id }, ctx) {
     const region = store.regions.get(id)
     if (!region) throw new CommandError(`Region ${id} does not exist`)
     store.regions.update({ ...region, deletedAt: null, updatedAt: ctx.now() })
-    return { inverse: { type: 'region.delete', payload: { id } }, targetId: id }
+    return { inverse: { type: 'region.delete', payload: { id } }, target: { kind: 'region', id }, owner: region.worldId }
   },
 
   'node.restore'(store, { ids }, ctx) {
@@ -229,7 +237,7 @@ export const handlers: Handlers = {
       store.nodes.update({ ...n, deletedAt: null, updatedAt: now })
     }
     // ids[0] is the root of the restored subtree, so deleting it again re-collects the same set.
-    return { inverse: { type: 'node.delete', payload: { id: ids[0]! } }, targetId: ids[0] }
+    return { inverse: { type: 'node.delete', payload: { id: ids[0]! } }, target: { kind: 'node', id: ids[0]! } }
   }
 }
 
@@ -258,16 +266,6 @@ function liveRegion(store: Store, id: string) {
   const region = store.regions.get(id)
   if (!region || region.deletedAt) throw new CommandError(`Region ${id} does not exist`)
   return region
-}
-
-/** Marks a node as changed when something it owns (settings, terrain) changes. */
-function touch(store: Store, id: string, ctx: CommandContext): void {
-  const node = store.nodes.get(id)!
-  store.nodes.update({ ...node, updatedAt: ctx.now() })
-}
-
-function emptyLayer(layer: TerrainLayerName): Uint8Array {
-  return new Uint8Array(TERRAIN_RES * TERRAIN_RES * LAYER_BYTES_PER_CELL[layer])
 }
 
 /** Distinct, readable-on-dark colors for new regions. */

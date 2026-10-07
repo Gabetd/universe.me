@@ -1,3 +1,4 @@
+export * from './math'
 export * from './random'
 export * from './cubesphere'
 export * from './generate'

@@ -1,4 +1,4 @@
-import { CommandBus, DEFAULT_WORLD_SETTINGS, MemoryStore, TERRAIN_RES, createRootUniverse } from '@universe/core'
+import { CUBE_FACES, CommandBus, DEFAULT_WORLD_SETTINGS, MemoryStore, TERRAIN_RES, createRootUniverse, emptyLayer } from '@universe/core'
 import { beforeAll, describe, expect, it } from 'vitest'
 import {
   TerrainModel,
@@ -140,9 +140,9 @@ describe('TerrainModel brushes', () => {
     bus.execute({ type: 'terrain.patch', payload })
 
     const reloaded = new TerrainModel(DEFAULT_WORLD_SETTINGS, base, {
-      height: [0, 1, 2, 3, 4, 5].map((f) => store.worlds.getLayer(parent, 'height', f) ?? new Uint8Array(TERRAIN_RES * TERRAIN_RES * 2))
+      height: Array.from({ length: CUBE_FACES }, (_, f) => store.worlds.getLayer(parent, 'height', f) ?? emptyLayer('height'))
     })
-    for (let f = 0; f < 6; f++) expect(reloaded.heightEdits[f]).toEqual(model.heightEdits[f])
+    for (let f = 0; f < CUBE_FACES; f++) expect(reloaded.heightEdits[f]).toEqual(model.heightEdits[f])
   })
 
   it('renders an equirectangular map', () => {

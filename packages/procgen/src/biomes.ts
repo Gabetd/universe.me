@@ -1,3 +1,4 @@
+import { clamp } from './math'
 /**
  * Biomes a cell can have. Id 0 ("auto") means "derive from climate"; painted
  * cells store any other id. M4 replaces `autoBiome`'s rough climate with the
@@ -63,7 +64,7 @@ export function autoBiome(latDeg: number, elevation: number, moisture: number): 
   if (temperature < -1) return BIOME.tundra
 
   const band = Math.cos((absLat * Math.PI) / 30)
-  const wet = Math.max(0, Math.min(1, moisture * 0.85 + band * 0.22 + 0.05))
+  const wet = clamp(moisture * 0.85 + band * 0.22 + 0.05, 0, 1)
   if (wet > 0.86 && elevation < 160 && temperature > 6) return BIOME.swamp
   if (temperature < 5) return wet > 0.3 ? BIOME.taiga : BIOME.tundra
   if (temperature < 18) return wet < 0.3 ? BIOME.shrubland : wet < 0.48 ? BIOME.grassland : BIOME.temperateForest

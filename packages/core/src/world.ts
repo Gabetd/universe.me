@@ -95,7 +95,18 @@ export interface WorldInfo {
   terrainRevision: number
 }
 
-export interface Rect {
+/** A world's terrain edit layers: raw bytes per cube face (height = Int16 LE, biome = Uint8). */
+export interface TerrainLayers {
+  height?: Uint8Array[]
+  biome?: Uint8Array[]
+}
+
+/** A blank (all-zero, i.e. unedited) face buffer for a layer. */
+export function emptyLayer(layer: TerrainLayerName): Uint8Array {
+  return new Uint8Array(TERRAIN_RES * TERRAIN_RES * LAYER_BYTES_PER_CELL[layer])
+}
+
+interface Rect {
   x: number
   y: number
   w: number

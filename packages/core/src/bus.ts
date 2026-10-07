@@ -1,5 +1,5 @@
 import { v7 as uuidv7 } from 'uuid'
-import { Command, CommandError, handlers, type CommandContext, type HandlerResult } from './commands'
+import { Command, CommandError, handlers, type CommandContext, type HandlerResult, type Target } from './commands'
 import type { CommandSource } from './schema'
 import type { Store } from './store'
 
@@ -29,6 +29,8 @@ export interface CommandBusOptions {
 export interface ExecuteResult {
   action: HistoryAction
   command: Command
+  target?: Target
+  /** Shorthand for `target.id`. */
   targetId?: string
 }
 
@@ -99,13 +101,17 @@ export class CommandBus {
     return this.store.transaction(() => {
       const handler = handlers[command.type] as (s: Store, p: unknown, c: CommandContext) => HandlerResult
       const result = handler(this.store, command.payload, this.ctx)
+      if (result.owner) {
+        const owner = this.store.nodes.get(result.owner)
+        if (owner) this.store.nodes.update({ ...owner, updatedAt: this.ctx.now() })
+      }
       this.options.log?.append({ action, source, at: this.ctx.now(), command, inverse: result.inverse })
       return result
     })
   }
 
   private finish(action: HistoryAction, command: Command, result: HandlerResult): ExecuteResult {
-    const out: ExecuteResult = { action, command, targetId: result.targetId }
+    const out: ExecuteResult = { action, command, target: result.target, targetId: result.target?.id }
     this.options.onChange?.(out)
     return out
   }

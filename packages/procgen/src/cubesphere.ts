@@ -1,4 +1,5 @@
 import { CUBE_FACES, TERRAIN_RES, type LatLon } from '@universe/core'
+import { clamp } from './math'
 
 /**
  * Cube-sphere grid math. Each face has TERRAIN_RES² cells; cell (i, j) is at
@@ -85,7 +86,7 @@ const DEG = 180 / Math.PI
 
 /** +Y is north; longitude 0 faces +Z and 90°E faces +X. */
 export function dirToLatLon(x: number, y: number, z: number): LatLon {
-  return { lat: Math.asin(Math.max(-1, Math.min(1, y))) * DEG, lon: Math.atan2(x, z) * DEG }
+  return { lat: Math.asin(clamp(y, -1, 1)) * DEG, lon: Math.atan2(x, z) * DEG }
 }
 
 export function latLonToDir(lat: number, lon: number, out: Vec3 = [0, 0, 0]): Vec3 {
@@ -99,5 +100,5 @@ export function latLonToDir(lat: number, lon: number, out: Vec3 = [0, 0, 0]): Ve
 
 /** Angle in radians between two unit vectors. */
 export function angleBetween(a: Vec3, b: Vec3): number {
-  return Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])))
+  return Math.acos(clamp(a[0] * b[0] + a[1] * b[1] + a[2] * b[2], -1, 1))
 }
