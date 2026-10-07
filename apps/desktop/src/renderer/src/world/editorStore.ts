@@ -3,7 +3,7 @@ import { BIOME, type BrushTool } from '@universe/procgen'
 import { create } from 'zustand'
 
 export type EditorTool = 'navigate' | BrushTool | 'region'
-export type EditorView = 'globe' | 'map'
+type EditorView = 'globe' | 'map'
 
 interface EditorState {
   view: EditorView

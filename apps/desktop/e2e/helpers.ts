@@ -73,3 +73,24 @@ export async function writeNotes(page: Page, label: string, text: string): Promi
   await page.keyboard.type(text)
   await page.locator('.panel-title').click()
 }
+
+/** Clicks an item of the real application menu, e.g. menu(app, 'Edit', 'Undo'). */
+export async function menu(app: ElectronApplication, top: string, item: string): Promise<void> {
+  await app.evaluate(({ Menu }, [t, i]) => {
+    Menu.getApplicationMenu()!.items.find((m) => m.label === t)!.submenu!.items.find((m) => m.label === i)!.click()
+  }, [top, item])
+}
+
+export const closeProject = (app: ElectronApplication) => menu(app, 'File', 'Close Project')
+
+/** Drags across the middle of an element with the mouse. */
+export async function drag(page: Page, testId: string, from: [number, number], to: [number, number], button: 'left' | 'right' = 'left') {
+  const box = (await page.getByTestId(testId).boundingBox())!
+  await page.mouse.move(box.x + box.width * from[0], box.y + box.height * from[1])
+  await page.mouse.down({ button })
+  for (let i = 1; i <= 8; i++) {
+    await page.mouse.move(box.x + box.width * (from[0] + ((to[0] - from[0]) * i) / 8), box.y + box.height * (from[1] + ((to[1] - from[1]) * i) / 8))
+  }
+  await page.mouse.up({ button })
+}
+

@@ -1,14 +1,11 @@
 import type { Region, RegionPatch, SpatialNode, WorldSettingsPatch } from '@universe/core'
-import { useMemo } from 'react'
-import { useUi } from '../store'
+import { useUi, useWorld } from '../store'
 import { CommitSlider, NumberInput, TextField } from './fields'
 import { NotesEditor } from './NotesEditor'
 
 /** Inspector section for a world: generation settings, terrain resets, and regions. */
 export function WorldPanel({ world }: { world: SpatialNode }) {
-  const info = useUi((s) => s.worlds.find((w) => w.id === world.id))
-  const allRegions = useUi((s) => s.regions)
-  const regions = useMemo(() => allRegions.filter((r) => r.worldId === world.id), [allRegions, world.id])
+  const { info, regions } = useWorld(world.id)
   const selectedRegion = useUi((s) => s.regions.find((r) => r.id === s.selectedRegionId))
   const selectRegion = useUi((s) => s.selectRegion)
   const execute = useUi((s) => s.execute)
@@ -25,7 +22,6 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
         <CommitSlider label="Sea level" unit=" m" min={-4000} max={4000} step={50} value={settings.seaLevel} onCommit={(v) => update({ seaLevel: v })} />
         <CommitSlider
           label="Continent size"
-          unit=""
           min={0.4}
           max={4}
           step={0.1}

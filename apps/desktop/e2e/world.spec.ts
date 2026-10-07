@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { addChild, inspector, launch, newProject, row, writeNotes, type AppHandle } from './helpers'
+import { addChild, closeProject, drag, inspector, launch, newProject, row, writeNotes, type AppHandle } from './helpers'
 
 let h: AppHandle
 test.beforeEach(async () => {
@@ -15,17 +15,6 @@ const worldState = (page: Page) =>
     const world = s.worlds[0]!
     return { revision: world.terrainRevision, seaLevel: world.settings.seaLevel, regions: s.regions.map((r) => r.name) }
   })
-
-/** Drags across the middle of an element with the mouse. */
-async function drag(page: Page, testId: string, from: [number, number], to: [number, number], button: 'left' | 'right' = 'left') {
-  const box = (await page.getByTestId(testId).boundingBox())!
-  await page.mouse.move(box.x + box.width * from[0], box.y + box.height * from[1])
-  await page.mouse.down({ button })
-  for (let i = 1; i <= 8; i++) {
-    await page.mouse.move(box.x + box.width * (from[0] + ((to[0] - from[0]) * i) / 8), box.y + box.height * (from[1] + ((to[1] - from[1]) * i) / 8))
-  }
-  await page.mouse.up({ button })
-}
 
 test('edit a world: sculpt, paint, undo, draw a region, and keep it after reopening', async () => {
   const { app, page } = h
@@ -91,9 +80,7 @@ test('edit a world: sculpt, paint, undo, draw a region, and keep it after reopen
   await page.screenshot({ path: 'test-results/12-globe-edited.png' })
 
   // Reopen: region, notes and terrain edits are all in the file.
-  await app.evaluate(({ Menu }) => {
-    Menu.getApplicationMenu()!.items.find((i) => i.label === 'File')!.submenu!.items.find((i) => i.label === 'Close Project')!.click()
-  })
+  await closeProject(app)
   await page.getByRole('button', { name: /Terra/ }).click()
   await row(page, 'Terra Surface').click()
   await page.locator('.region-row', { hasText: 'The Dry Reaches' }).click()

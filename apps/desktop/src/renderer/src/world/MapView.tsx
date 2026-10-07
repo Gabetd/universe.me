@@ -1,21 +1,13 @@
-import type { LatLon, Region } from '@universe/core'
-import { brushRows, latLonToDir, pixelToLatLon, renderEquirect, type TerrainModel, type Vec3 } from '@universe/procgen'
+import type { LatLon } from '@universe/core'
+import { brushRows, latLonToDir, latLonToPixel, pixelToLatLon, renderEquirect, type Vec3 } from '@universe/procgen'
 import { useEffect, useRef } from 'react'
 import { useUi } from '../store'
+import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor } from './editorStore'
-import type { TerrainChange } from './useTerrain'
+import type { SurfaceViewProps } from './useTerrain'
 
 const W = 1024
 const H = 512
-
-interface Props {
-  model: TerrainModel
-  change: TerrainChange
-  regions: Region[]
-  onPointerDown(dir: Vec3): boolean
-  onPointerMove(dir: Vec3): void
-  onDoubleClick(): void
-}
 
 interface View {
   scale: number
@@ -25,9 +17,8 @@ interface View {
 
 /** Map pixel coordinates of a point, with longitude unwrapped near `refX` so shapes crossing ±180° stay whole. */
 function toMap(p: LatLon, refX?: number): [number, number] {
-  let x = ((p.lon + 180) / 360) * W
-  if (refX !== undefined) x += Math.round((refX - x) / W) * W
-  return [x, ((90 - p.lat) / 180) * H]
+  const [x, y] = latLonToPixel(p.lat, p.lon, W, H)
+  return [refX === undefined ? x : x + Math.round((refX - x) / W) * W, y]
 }
 
 function polygon(points: LatLon[]): [number, number][] {
@@ -46,7 +37,7 @@ function insidePolygon(x: number, y: number, poly: [number, number][]): boolean 
   return inside
 }
 
-export function MapView({ model, change, regions, onPointerDown, onPointerMove, onDoubleClick }: Props) {
+export function MapView({ model, change, regions, onPointerDown, onPointerMove, onDoubleClick }: SurfaceViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const terrain = useRef<{ canvas: HTMLCanvasElement; image: ImageData } | null>(null)
   const view = useRef<View | null>(null)
@@ -96,7 +87,7 @@ export function MapView({ model, change, regions, onPointerDown, onPointerMove, 
       dirty.current = false
       const v = view.current
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.fillStyle = '#05070d'
+      ctx.fillStyle = SPACE_BG
       ctx.fillRect(0, 0, cw, ch)
       ctx.setTransform(dpr * v.scale, 0, 0, dpr * v.scale, dpr * v.ox, dpr * v.oy)
       ctx.imageSmoothingEnabled = v.scale < 2
@@ -143,7 +134,7 @@ export function MapView({ model, change, regions, onPointerDown, onPointerMove, 
       if (h && isBrushTool(tool)) {
         // The brush is a circle on the planet, so it stretches east-west toward the poles.
         const lat = pixelToLatLon(h[0], h[1], W, H).lat
-        const ry = ((radiusKm / model.settings.radiusKm) * (180 / Math.PI) * H) / 180
+        const ry = (model.angularRadius(radiusKm) / Math.PI) * H
         const rx = Math.min(W / 2, ry / Math.max(0.05, Math.cos((lat * Math.PI) / 180)))
         c.beginPath()
         c.ellipse(h[0] + shift, h[1], rx, ry, 0, 0, Math.PI * 2)

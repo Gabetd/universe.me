@@ -1,4 +1,4 @@
-import type { Command, TerrainParams, WorldInfo } from '@universe/core'
+import type { Command, Region, TerrainParams, WorldInfo } from '@universe/core'
 import { TerrainModel, type BaseTerrain, type Vec3 } from '@universe/procgen'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUi } from '../store'
@@ -7,10 +7,19 @@ import TerrainWorker from './terrain.worker?worker'
 
 /** Which cube faces changed since the last render: views refresh only those. */
 export interface TerrainChange {
-  version: number
   faces: number[] | 'all'
   /** Set when the change is one brush dab, so views can refresh just around it. */
   dab?: { dir: Vec3; radius: number }
+}
+
+/** What the globe and the map views get from the world editor. */
+export interface SurfaceViewProps {
+  model: TerrainModel
+  change: TerrainChange
+  regions: Region[]
+  onPointerDown(dir: Vec3): boolean
+  onPointerMove(dir: Vec3): void
+  onDoubleClick(): void
 }
 
 let worker: Worker | undefined
@@ -20,8 +29,11 @@ const pending = new Map<number, (base: BaseTerrain) => void>()
 const baseCache = new Map<string, Promise<BaseTerrain>>()
 const CACHE_SIZE = 4
 
+/** Identifies the inputs of terrain generation; sea level and radius only recolor, so they're not part of it. */
+const terrainKey = (p: TerrainParams) => `${p.continentScale}:${p.roughness}:${p.mountainHeight}`
+
 function generateBase(seed: number, params: TerrainParams): Promise<BaseTerrain> {
-  const key = `${seed}:${params.continentScale}:${params.roughness}:${params.mountainHeight}`
+  const key = `${seed}:${terrainKey(params)}`
   const cached = baseCache.get(key)
   if (cached) return cached
   if (!worker) {
@@ -52,20 +64,19 @@ async function fetchLayers(worldId: string) {
  */
 export function useTerrain(worldId: string, seed: number, info: WorldInfo | undefined) {
   const [model, setModel] = useState<TerrainModel>()
-  const [change, setChange] = useState<TerrainChange>({ version: 0, faces: 'all' })
+  const [change, setChange] = useState<TerrainChange>({ faces: 'all' })
   const [error, setError] = useState<string>()
   /** Terrain revision the in-memory model matches. */
   const revision = useRef(-1)
+  /** Strokes being saved; their revision bumps are ours, not changes to reload. */
+  const saving = useRef(0)
+  /** The model for effects and callbacks: it's mutated in place (settings, layers), which React state must not be. */
   const modelRef = useRef<TerrainModel>(undefined)
-  const bump = useCallback(
-    (faces: TerrainChange['faces'], dab?: TerrainChange['dab']) => setChange((c) => ({ version: c.version + 1, faces, dab })),
-    []
-  )
+  const bump = useCallback((faces: TerrainChange['faces'], dab?: TerrainChange['dab']) => setChange({ faces, dab }), [])
 
   const settings = info?.settings
   const params = settings?.terrain
-  // Only the terrain params trigger regeneration; sea level and radius just recolor.
-  const paramsKey = params && `${params.continentScale}:${params.roughness}:${params.mountainHeight}`
+  const paramsKey = params && terrainKey(params)
 
   useEffect(() => {
     if (!params) return
@@ -106,17 +117,24 @@ export function useTerrain(worldId: string, seed: number, info: WorldInfo | unde
   const terrainRevision = info?.terrainRevision
   useEffect(() => {
     const m = modelRef.current
-    if (!m || m.isStroking || terrainRevision === undefined || terrainRevision === revision.current) return
+    if (!m || m.isStroking || saving.current > 0 || terrainRevision === undefined || terrainRevision === revision.current) return
     void reload()
   }, [terrainRevision, reload])
 
-  /** Saves a finished brush stroke. The model already has it, so no reload unless saving fails. */
+  /** Saves a finished brush stroke. The model already has it, so it only reloads if saving fails. */
   const commit = useCallback(
     async (command: Extract<Command, { type: 'terrain.patch' }>) => {
-      revision.current = (terrainRevision ?? 0) + 1
-      if (!(await useUi.getState().execute(command))) await reload()
+      saving.current++
+      try {
+        const state = await useUi.getState().execute(command)
+        const saved = state?.worlds.find((w) => w.id === worldId)
+        if (saved) revision.current = saved.terrainRevision
+        else await reload()
+      } finally {
+        saving.current--
+      }
     },
-    [terrainRevision, reload]
+    [worldId, reload]
   )
 
   return { model, change, error, bump, commit }

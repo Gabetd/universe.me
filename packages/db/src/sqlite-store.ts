@@ -152,7 +152,7 @@ export class SqliteStore implements Store {
         const row = w.getLayer.get(id, layer, face) as { data: Uint8Array } | undefined
         return row && new Uint8Array(inflateSync(row.data))
       },
-      putLayer: (id, layer, face, bytes) => void w.putLayer.run(id, layer, face, deflateSync(bytes)),
+      putLayer: (id, layer, face, bytes) => void w.putLayer.run(id, layer, face, deflateSync(bytes, { level: 1 })),
       terrainRevision: (id) => (w.revision.get(id) as { r: number } | undefined)?.r ?? 0,
       bumpTerrainRevision: (id) => void w.bump.run(id)
     }

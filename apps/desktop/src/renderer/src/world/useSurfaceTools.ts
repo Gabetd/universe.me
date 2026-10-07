@@ -1,7 +1,7 @@
 import type { Command } from '@universe/core'
 import { angleBetween, dirToLatLon, type TerrainModel, type Vec3 } from '@universe/procgen'
 import { useCallback, useEffect, useRef } from 'react'
-import { isEditingText } from '../App'
+import { isEditingText } from '../input'
 import { useUi } from '../store'
 import { isBrushTool, useEditor } from './editorStore'
 
@@ -31,7 +31,7 @@ export function useSurfaceTools(worldId: string, model: TerrainModel | undefined
       if (!model) return
       lastDab.current = dir
       const faces = model.dab(dir)
-      if (faces.length) onEdited(faces, { dir, radius: useEditor.getState().radiusKm / model.settings.radiusKm })
+      if (faces.length) onEdited(faces, { dir, radius: model.angularRadius(useEditor.getState().radiusKm) })
     },
     [model, onEdited]
   )
@@ -56,7 +56,7 @@ export function useSurfaceTools(worldId: string, model: TerrainModel | undefined
     (dir: Vec3) => {
       if (!model?.isStroking || !lastDab.current) return
       // Space dabs a quarter of the brush radius apart, so strokes are even at any pointer speed.
-      const spacing = (useEditor.getState().radiusKm / model.settings.radiusKm) * 0.25
+      const spacing = model.angularRadius(useEditor.getState().radiusKm) * 0.25
       if (angleBetween(dir, lastDab.current) >= spacing) dab(dir)
     },
     [model, dab]
@@ -70,6 +70,7 @@ export function useSurfaceTools(worldId: string, model: TerrainModel | undefined
   }, [worldId])
 
   // Region drawing keys: Enter saves, Backspace removes the last point, Escape cancels.
+  // Capture phase plus preventDefault, so the workspace's own Backspace/Escape shortcuts skip these presses.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const { tool, draft, set } = useEditor.getState()
@@ -79,7 +80,6 @@ export function useSurfaceTools(worldId: string, model: TerrainModel | undefined
       else if (e.key === 'Escape') set({ draft: [] })
       else return
       e.preventDefault()
-      e.stopImmediatePropagation()
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { addChild, inspector, launch, newProject, row, writeNotes, type AppHandle } from './helpers'
+import { addChild, closeProject, inspector, menu, launch, newProject, row, writeNotes, type AppHandle } from './helpers'
 
 let h: AppHandle
 test.beforeEach(async () => {
@@ -50,9 +50,7 @@ test('create a universe, build a hierarchy, undo/redo, and reopen it', async () 
   await page.screenshot({ path: 'test-results/03-planet.png' })
 
   // Everything was written to disk: close and reopen from the recent list.
-  await app.evaluate(({ Menu }) => {
-    Menu.getApplicationMenu()!.items.find((i) => i.label === 'File')!.submenu!.items.find((i) => i.label === 'Close Project')!.click()
-  })
+  await closeProject(app)
   await expect(page.getByText('Recent')).toBeVisible()
   await page.getByRole('button', { name: /Aerth Saga/ }).click()
   await expect(row(page, 'Luna')).toHaveCount(1)
@@ -65,4 +63,20 @@ test('rejects a node that does not fit the hierarchy', async () => {
   const rootId = await page.evaluate(() => window.universe.getState().then((s) => s.project!.rootId))
   const result = await page.evaluate((id) => window.universe.execute({ type: 'node.create', payload: { parentId: id, kind: 'world' } }), rootId)
   expect(result).toEqual({ ok: false, error: 'A World cannot be placed inside a Universe' })
+})
+
+test('Edit → Undo goes to the focused notes first, then to the project', async () => {
+  const { app, page } = h
+  await newProject(h, 'Menus')
+  await addChild(page, '+ Galaxy Cluster', 'Virgo')
+  const notes = page.getByRole('textbox', { name: 'Notes', exact: true })
+  await notes.click()
+  await page.keyboard.type('Draft')
+  await menu(app, 'Edit', 'Undo')
+  await expect(notes).not.toContainText('Draft')
+  await expect(row(page, 'Virgo')).toHaveCount(1)
+
+  await page.locator('.panel-title').click()
+  await menu(app, 'Edit', 'Undo')
+  await expect(row(page, 'Virgo')).toHaveCount(0)
 })

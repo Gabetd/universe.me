@@ -1,15 +1,15 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
-import { CUBE_FACES, DEFAULT_WORLD_SETTINGS, LAYER_BYTES_PER_CELL, TERRAIN_RES, type TerrainLayerName } from '@universe/core'
+import { CUBE_FACES, DEFAULT_WORLD_SETTINGS, type ExecuteResult, type Target, type TerrainLayerName } from '@universe/core'
 import { Project } from '@universe/db'
-import type { AppState, TerrainLayers } from '../shared/api'
+import type { AppState, WorldTerrain } from '../shared/api'
 
 const MAX_RECENT = 10
 
 /** Owns the currently open project (one per app instance for now) and the recent-files list. */
 export class Session {
   private project: Project | null = null
-  private focusId: string | undefined
+  private focus: Target | undefined
 
   constructor(private readonly userDataDir: string) {}
 
@@ -34,7 +34,7 @@ export class Session {
       regions: p.store.regions.all().filter((r) => worldIds.has(r.worldId)),
       canUndo: p.bus.canUndo,
       canRedo: p.bus.canRedo,
-      focusId: this.focusId
+      focus: this.focus
     }
   }
 
@@ -57,28 +57,30 @@ export class Session {
   close(): void {
     this.project?.close()
     this.project = null
-    this.focusId = undefined
+    this.focus = undefined
   }
 
   execute(command: unknown): AppState {
-    this.focusId = this.require().bus.execute(command, 'user').targetId
-    return this.state()
-  }
-
-  terrain(worldId: string): TerrainLayers {
-    const { worlds } = this.require().store
-    const layer = (name: TerrainLayerName) =>
-      Array.from({ length: CUBE_FACES }, (_, face) => worlds.getLayer(worldId, name, face) ?? new Uint8Array(TERRAIN_RES * TERRAIN_RES * LAYER_BYTES_PER_CELL[name]))
-    return { revision: worlds.terrainRevision(worldId), height: layer('height'), biome: layer('biome') }
+    return this.applied(this.require().bus.execute(command, 'user'))
   }
 
   undo(): AppState {
-    this.focusId = this.require().bus.undo()?.targetId
-    return this.state()
+    return this.applied(this.require().bus.undo())
   }
 
   redo(): AppState {
-    this.focusId = this.require().bus.redo()?.targetId
+    return this.applied(this.require().bus.redo())
+  }
+
+  /** Edit layers of a world. Unedited faces are left out, so loading a fresh world copies almost nothing. */
+  terrain(worldId: string): WorldTerrain {
+    const { worlds } = this.require().store
+    const layer = (name: TerrainLayerName) => Array.from({ length: CUBE_FACES }, (_, face) => worlds.getLayer(worldId, name, face))
+    return { revision: worlds.terrainRevision(worldId), height: layer('height'), biome: layer('biome') }
+  }
+
+  private applied(result: ExecuteResult | undefined): AppState {
+    this.focus = result?.target
     return this.state()
   }
 

@@ -3,11 +3,13 @@ import { useEffect, useMemo, useRef } from 'react'
 import { hueOf, rng } from '@universe/procgen'
 import { kindLabel } from '../kinds'
 import { selectNode, useUi } from '../store'
+import { SPACE_BG } from '../theme'
 
 /**
- * M0 placeholder viewport: a 2D canvas sketch of the selected level and its
- * children, all derived from seeds. Click a child to zoom in; scroll down or
- * press Escape to zoom out. Replaced by the three.js scenes in M1/M5.
+ * Placeholder viewport for every level above a world surface: a 2D canvas
+ * sketch of the selected level and its children, all derived from seeds.
+ * Click a child to zoom in; scroll down or press Escape to zoom out. Replaced
+ * by three.js scenes in M4/M5. World surfaces open the WorldEditor instead.
  */
 export function Viewport() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -17,13 +19,10 @@ export function Viewport() {
 
   const scene = useMemo(() => {
     if (!node) return undefined
-    // A world is shown on its body, so the view of a world matches the view of its planet.
-    const focus = node.kind === 'world' ? (nodes.find((n) => n.id === node.parentId) ?? node) : node
     return {
       node,
-      focus,
-      children: nodes.filter((n) => n.parentId === focus.id),
-      world: nodes.find((n) => n.parentId === focus.id && n.kind === 'world'),
+      children: nodes.filter((n) => n.parentId === node.id),
+      world: nodes.find((n) => n.parentId === node.id && n.kind === 'world'),
       label: kindLabel(node, nodes)
     }
   }, [node, nodes])
@@ -97,7 +96,6 @@ export function Viewport() {
       </div>
       <div className="viewport-overlay bottom muted small">
         Click to zoom in · Scroll down or Esc to zoom out
-        {scene.node.kind === 'world' && ' · Surface editor arrives in M1'}
       </div>
     </div>
   )
@@ -112,26 +110,25 @@ interface Target {
 
 interface Scene {
   node: SpatialNode
-  focus: SpatialNode
   children: SpatialNode[]
   world: SpatialNode | undefined
 }
 
 function drawScene(ctx: CanvasRenderingContext2D, w: number, h: number, scene: Scene, hoverId: string | null, t: number): Target[] {
-  const { focus, children } = scene
-  ctx.fillStyle = '#05070d'
+  const { node, children } = scene
+  ctx.fillStyle = SPACE_BG
   ctx.fillRect(0, 0, w, h)
-  starfield(ctx, w, h, focus.seed, focus.kind)
+  starfield(ctx, w, h, node.seed, node.kind)
 
   const cx = w / 2
   const cy = h / 2 + 10
   const size = Math.min(w, h)
   const targets: Target[] = []
 
-  switch (focus.kind) {
+  switch (node.kind) {
     case 'universe':
     case 'galaxy_cluster': {
-      const isUniverse = focus.kind === 'universe'
+      const isUniverse = node.kind === 'universe'
       children.forEach((child, i) => {
         const r = rng(child.seed)
         const angle = (i / Math.max(children.length, 1)) * Math.PI * 2 + r() * 0.8
@@ -148,7 +145,7 @@ function drawScene(ctx: CanvasRenderingContext2D, w: number, h: number, scene: S
     }
     case 'galaxy': {
       const radius = size * 0.4
-      spiralGalaxy(ctx, cx, cy, radius, focus.seed, t)
+      spiralGalaxy(ctx, cx, cy, radius, node.seed, t)
       children.forEach((child) => {
         const r = rng(child.seed)
         const arm = Math.floor(r() * 2)
@@ -164,10 +161,10 @@ function drawScene(ctx: CanvasRenderingContext2D, w: number, h: number, scene: S
     }
     case 'star_system':
     case 'body': {
-      const isSystem = focus.kind === 'star_system'
+      const isSystem = node.kind === 'star_system'
       const centerR = size * (isSystem ? 0.05 : 0.12)
-      if (isSystem) star(ctx, cx, cy, centerR, focus.seed)
-      else planet(ctx, cx, cy, centerR, focus.seed, !!scene.world)
+      if (isSystem) star(ctx, cx, cy, centerR, node.seed)
+      else planet(ctx, cx, cy, centerR, node.seed, !!scene.world)
       const orbiting = children.filter((c) => c.kind === 'body')
       orbiting.forEach((child, i) => {
         const r = rng(child.seed)
@@ -188,20 +185,17 @@ function drawScene(ctx: CanvasRenderingContext2D, w: number, h: number, scene: S
       })
       if (!isSystem && scene.world) {
         targets.push({ id: scene.world.id, x: cx, y: cy, r: centerR })
-        label(ctx, `World: ${scene.world.name}`, cx, cy + centerR + 18, scene.world.id === hoverId || scene.node.kind === 'world')
+        label(ctx, `World: ${scene.world.name}`, cx, cy + centerR + 18, scene.world.id === hoverId)
       }
       break
     }
-    case 'world':
-      // Only reached for a world without a parent body, which the model does not allow.
-      break
   }
 
-  if (children.length === 0 && focus.kind !== 'world') {
+  if (children.length === 0) {
     ctx.fillStyle = 'rgba(200,210,240,0.55)'
     ctx.font = '14px system-ui, sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText(`Nothing here yet. Use “Add inside” in the inspector to create a ${childHint(focus.kind)}.`, cx, h - 70)
+    ctx.fillText(`Nothing here yet. Use “Add inside” in the inspector to create a ${childHint(node.kind)}.`, cx, h - 70)
   }
   return targets
 }

@@ -95,10 +95,10 @@ export interface WorldInfo {
   terrainRevision: number
 }
 
-/** A world's terrain edit layers: raw bytes per cube face (height = Int16 LE, biome = Uint8). */
+/** A world's terrain edit layers: raw bytes per cube face (height = Int16 LE, biome = Uint8). A missing face has no edits. */
 export interface TerrainLayers {
-  height?: Uint8Array[]
-  biome?: Uint8Array[]
+  height?: (Uint8Array | undefined)[]
+  biome?: (Uint8Array | undefined)[]
 }
 
 /** A blank (all-zero, i.e. unedited) face buffer for a layer. */

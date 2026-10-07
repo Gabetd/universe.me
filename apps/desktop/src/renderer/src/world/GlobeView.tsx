@@ -1,31 +1,30 @@
-import type { Region } from '@universe/core'
-import { TERRAIN_RES } from '@universe/core'
+import { CUBE_FACES, TERRAIN_RES } from '@universe/core'
 import { faceToDir, latLonToDir, renderFaceTexture, type TerrainModel, type Vec3 } from '@universe/procgen'
 import { Line, OrbitControls, Stars } from '@react-three/drei'
 import { Canvas, useFrame, type ThreeEvent } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useUi } from '../store'
+import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor } from './editorStore'
-import type { TerrainChange } from './useTerrain'
+import type { SurfaceViewProps } from './useTerrain'
 
 /** Vertices per face edge. Heights are sampled from the 256² grid, so 128 keeps the mesh light. */
 const SEGMENTS = 128
 
-interface Props {
-  model: TerrainModel
-  change: TerrainChange
-  regions: Region[]
-  onPointerDown(dir: Vec3): boolean
-  onPointerMove(dir: Vec3): void
-  onDoubleClick(): void
+const ALL_FACES = Array.from({ length: CUBE_FACES }, (_, f) => f)
+
+/** Position just above the surface (or the sea) in direction `dir`, in globe units. */
+function surfacePoint(model: TerrainModel, dir: Vec3, scale: number, lift: number): [number, number, number] {
+  const r = 1 + Math.max(model.sampleHeight(...dir), model.settings.seaLevel) * scale + lift
+  return [dir[0] * r, dir[1] * r, dir[2] * r]
 }
 
-export function GlobeView(props: Props) {
+export function GlobeView(props: SurfaceViewProps) {
   const tool = useEditor((s) => s.tool)
   return (
     <Canvas camera={{ position: [0, 0.6, 3], fov: 45, near: 0.01, far: 200 }} data-testid="globe" gl={{ preserveDrawingBuffer: true }}>
-      <color attach="background" args={['#05070d']} />
+      <color attach="background" args={[SPACE_BG]} />
       <ambientLight intensity={0.45} />
       <directionalLight position={[4, 2, 3]} intensity={2.2} />
       <Stars radius={80} depth={40} count={4000} factor={3} fade speed={0} />
@@ -43,19 +42,26 @@ export function GlobeView(props: Props) {
   )
 }
 
-function Planet({ model, change, regions, onPointerDown, onPointerMove, onDoubleClick }: Props) {
+function Planet({ model, change, regions, onPointerDown, onPointerMove, onDoubleClick }: SurfaceViewProps) {
   const exaggeration = useEditor((s) => s.exaggeration)
-  const faces = useMemo(() => Array.from({ length: 6 }, (_, f) => createFace(f)), [])
+  const faces = useMemo(() => ALL_FACES.map(createFace), [])
   const cursor = useRef<THREE.Mesh>(null)
   const hover = useRef<Vec3 | null>(null)
   const radiusM = model.settings.radiusKm * 1000
   const scale = exaggeration / radiusM
   const seaRadius = 1 + model.settings.seaLevel * scale
 
-  // Rebuild only the faces that changed: geometry heights and texture colors.
+  // Recolor only the faces that changed.
   useEffect(() => {
-    const list = change.faces === 'all' ? [0, 1, 2, 3, 4, 5] : change.faces
-    for (const f of list) updateFace(faces[f]!, model, scale)
+    for (const f of change.faces === 'all' ? ALL_FACES : change.faces) updateTexture(faces[f]!, model)
+  }, [change, faces, model])
+
+  // Reshape the changed faces, or all of them when the relief scale changed (colors don't depend on it).
+  const shapedScale = useRef<number>(undefined)
+  useEffect(() => {
+    const list = scale !== shapedScale.current || change.faces === 'all' ? ALL_FACES : change.faces
+    shapedScale.current = scale
+    for (const f of list) updateGeometry(faces[f]!, model, scale)
   }, [change, faces, model, scale])
 
   useEffect(() => () => faces.forEach((f) => (f.geometry.dispose(), f.texture.dispose())), [faces])
@@ -67,10 +73,9 @@ function Planet({ model, change, regions, onPointerDown, onPointerMove, onDouble
     const dir = hover.current
     c.visible = !!dir && (isBrushTool(tool) || tool === 'region')
     if (!dir) return
-    const r = 1 + Math.max(model.sampleHeight(...dir), model.settings.seaLevel) * scale + 0.002
-    c.position.set(dir[0] * r, dir[1] * r, dir[2] * r)
-    c.lookAt(dir[0] * 2 * r, dir[1] * 2 * r, dir[2] * 2 * r)
-    const size = tool === 'region' ? 0.006 : radiusKm / model.settings.radiusKm
+    c.position.set(...surfacePoint(model, dir, scale, 0.002))
+    c.lookAt(c.position.x * 2, c.position.y * 2, c.position.z * 2)
+    const size = tool === 'region' ? 0.006 : model.angularRadius(radiusKm)
     c.scale.setScalar(size)
   })
 
@@ -110,30 +115,28 @@ function Planet({ model, change, regions, onPointerDown, onPointerMove, onDouble
         <ringGeometry args={[0.92, 1, 48]} />
         <meshBasicMaterial color="#ffffff" transparent opacity={0.85} depthTest={false} />
       </mesh>
-      <RegionLines model={model} regions={regions} scale={scale} />
+      <RegionLines model={model} change={change} regions={regions} scale={scale} />
     </group>
   )
 }
 
-function RegionLines({ model, regions, scale }: { model: TerrainModel; regions: Region[]; scale: number }) {
+function RegionLines({ model, change, regions, scale }: Pick<SurfaceViewProps, 'model' | 'change' | 'regions'> & { scale: number }) {
   const selectedId = useUi((s) => s.selectedRegionId)
   const draft = useEditor((s) => s.draft)
-  const lift = (dir: Vec3): [number, number, number] => {
-    const r = 1 + Math.max(model.sampleHeight(...dir), model.settings.seaLevel) * scale + 0.003
-    return [dir[0] * r, dir[1] * r, dir[2] * r]
-  }
+  // Outlines follow the terrain once a stroke is done, not on every dab of it.
+  const settled = model.isStroking ? 'stroking' : change
+  const outlines = useMemo(
+    () => regions.map((r) => ({ region: r, points: arcPoints([...r.points, r.points[0]!]).map((d) => surfacePoint(model, d, scale, 0.003)) })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `settled` stands in for the terrain heights
+    [regions, model, scale, settled]
+  )
   return (
     <>
-      {regions.map((region) => (
-        <Line
-          key={region.id}
-          points={arcPoints([...region.points, region.points[0]!]).map(lift)}
-          color={region.color}
-          lineWidth={region.id === selectedId ? 4 : 2}
-        />
+      {outlines.map(({ region, points }) => (
+        <Line key={region.id} points={points} color={region.color} lineWidth={region.id === selectedId ? 4 : 2} />
       ))}
       {draft.length > 0 && (
-        <Line points={arcPoints(draft).map(lift)} color="#ffffff" lineWidth={2} dashed dashSize={0.01} gapSize={0.006} />
+        <Line points={arcPoints(draft).map((d) => surfacePoint(model, d, scale, 0.003))} color="#ffffff" lineWidth={2} dashed dashSize={0.01} gapSize={0.006} />
       )}
     </>
   )
@@ -211,7 +214,7 @@ function createFace(index: number): Face {
   return { index, geometry, texture, pixels, dirs }
 }
 
-function updateFace(face: Face, model: TerrainModel, scale: number): void {
+function updateGeometry(face: Face, model: TerrainModel, scale: number): void {
   const pos = face.geometry.getAttribute('position') as THREE.BufferAttribute
   const arr = pos.array as Float32Array
   const d = face.dirs
@@ -225,6 +228,9 @@ function updateFace(face: Face, model: TerrainModel, scale: number): void {
   pos.needsUpdate = true
   face.geometry.computeVertexNormals()
   face.geometry.computeBoundingSphere()
+}
+
+function updateTexture(face: Face, model: TerrainModel): void {
   renderFaceTexture(model, face.index, face.pixels)
   face.texture.needsUpdate = true
 }

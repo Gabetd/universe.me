@@ -1,4 +1,4 @@
-import type { Region, SpatialNode, WorldInfo } from '@universe/core'
+import type { Region, SpatialNode, Target, TerrainLayers, WorldInfo } from '@universe/core'
 
 /** Shared between the main process, the preload bridge and the renderer. Types only. */
 
@@ -24,14 +24,12 @@ export interface AppState {
   canUndo: boolean
   canRedo: boolean
   /** Node or region the last command created or touched, so the UI can select it. */
-  focusId?: string
+  focus?: Target
 }
 
-/** A world's terrain edit layers: raw bytes per cube face (height = Int16 LE, biome = Uint8). */
-export interface TerrainLayers {
+/** A world's edit layers as loaded by the renderer, with the revision they match. */
+export interface WorldTerrain extends TerrainLayers {
   revision: number
-  height: Uint8Array[]
-  biome: Uint8Array[]
 }
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
@@ -47,7 +45,7 @@ export interface UniverseApi {
   saveCopy(): Promise<Result<string | null>>
   closeProject(): Promise<AppState>
   execute(command: unknown): Promise<Result<AppState>>
-  getTerrain(worldId: string): Promise<Result<TerrainLayers>>
+  getTerrain(worldId: string): Promise<Result<WorldTerrain>>
   undo(): Promise<Result<AppState>>
   redo(): Promise<Result<AppState>>
   onState(listener: (state: AppState) => void): () => void

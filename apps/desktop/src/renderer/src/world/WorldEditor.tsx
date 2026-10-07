@@ -1,12 +1,11 @@
 import type { SpatialNode } from '@universe/core'
 import { BIOMES } from '@universe/procgen'
-import { useMemo } from 'react'
-import { useUi } from '../store'
+import { useWorld } from '../store'
 import { isBrushTool, useEditor, type EditorTool } from './editorStore'
 import { GlobeView } from './GlobeView'
 import { MapView } from './MapView'
 import { useSurfaceTools } from './useSurfaceTools'
-import { useTerrain } from './useTerrain'
+import { useTerrain, type SurfaceViewProps } from './useTerrain'
 
 const TOOLS: { tool: EditorTool; label: string; icon: string; hint: string }[] = [
   { tool: 'navigate', label: 'Navigate', icon: '✋', hint: 'Drag to rotate or pan, scroll to zoom. Click a region to select it.' },
@@ -29,16 +28,14 @@ const hasWebGL = (() => {
 })()
 
 export function WorldEditor({ world }: { world: SpatialNode }) {
-  const info = useUi((s) => s.worlds.find((w) => w.id === world.id))
-  const allRegions = useUi((s) => s.regions)
-  const regions = useMemo(() => allRegions.filter((r) => r.worldId === world.id), [allRegions, world.id])
+  const { info, regions } = useWorld(world.id)
   const { view, tool, radiusKm, strength, biome, exaggeration, set } = useEditor()
   const { model, change, error, bump, commit } = useTerrain(world.id, world.seed, info)
   const { pointerDown, pointerMove, finishRegion } = useSurfaceTools(world.id, model, bump, commit)
   const activeView = hasWebGL ? view : 'map'
   const hint = TOOLS.find((t) => t.tool === tool)?.hint
 
-  const viewProps = model && {
+  const viewProps: SurfaceViewProps | undefined = model && {
     model,
     change,
     regions,

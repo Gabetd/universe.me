@@ -1,7 +1,7 @@
 import { ancestry } from '@universe/core'
 import { useEffect } from 'react'
-import { isEditingText } from '../App'
 import { KIND_ICONS } from '../kinds'
+import { isEditingText } from '../input'
 import { redo, selectNode, undo, useUi } from '../store'
 import { ErrorBanner } from './ErrorBanner'
 import { Inspector } from './Inspector'
@@ -20,14 +20,21 @@ export function Workspace() {
   const path = selected ? ancestry(nodes, selected.id) : []
 
   useEffect(() => {
+    // Tools with their own keys (region drawing) handle them in the capture phase and preventDefault.
     const onKey = (e: KeyboardEvent) => {
-      if (isEditingText()) return
+      if (e.defaultPrevented || isEditingText()) return
       const { selectedId, selectedRegionId, project: p, execute, nodes: all } = useUi.getState()
-      if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedRegionId || (selectedId && selectedId !== p?.rootId))) {
-        e.preventDefault()
+      if (e.key === 'Delete' || e.key === 'Backspace') {
         // A selected region is the more specific target than the world it's on.
-        if (selectedRegionId) void execute({ type: 'region.delete', payload: { id: selectedRegionId } })
-        else void execute({ type: 'node.delete', payload: { id: selectedId! } })
+        const command = selectedRegionId
+          ? ({ type: 'region.delete', payload: { id: selectedRegionId } } as const)
+          : selectedId && selectedId !== p?.rootId
+            ? ({ type: 'node.delete', payload: { id: selectedId } } as const)
+            : undefined
+        if (command) {
+          e.preventDefault()
+          void execute(command)
+        }
       }
       if (e.key === 'Escape' && selectedId) {
         // Escape zooms out one level, like the scroll wheel in the viewport.

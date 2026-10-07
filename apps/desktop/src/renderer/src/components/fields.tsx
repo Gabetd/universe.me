@@ -20,7 +20,7 @@ export function TextField(props: { label: string; value: string; placeholder?: s
 }
 
 /** A range slider that saves once on release, not on every pixel of a drag (each save is an undo step). */
-export function CommitSlider(props: { label: string; unit: string; min: number; max: number; step: number; value: number; onCommit(v: number): void }) {
+export function CommitSlider(props: { label: string; unit?: string; min: number; max: number; step: number; value: number; onCommit(v: number): void }) {
   const [draft, setDraft] = useState<number | null>(null)
   const shown = draft ?? props.value
   const commit = () => {

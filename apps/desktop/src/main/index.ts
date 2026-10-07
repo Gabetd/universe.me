@@ -49,9 +49,14 @@ function createWindow(): void {
   }
 }
 
+/** Pushes new state to the renderer (for changes it didn't ask for) and refreshes the window chrome. */
 function broadcast(state: AppState = session.state()): void {
-  win?.setTitle(state.project ? `${state.project.name} — Universe` : 'Universe')
   win?.webContents.send(IPC.stateChanged, state)
+  refreshChrome(state)
+}
+
+function refreshChrome(state: AppState): void {
+  win?.setTitle(state.project ? `${state.project.name} — Universe` : 'Universe')
   buildMenu()
 }
 
@@ -208,8 +213,9 @@ function registerIpc(): void {
   ] as const) {
     ipcMain.handle(channel, (_e, cmd: unknown) =>
       wrap(() => {
+        // The renderer gets the state as the reply, so don't also push it.
         const state = run(cmd)
-        broadcast(state)
+        refreshChrome(state)
         return state
       })
     )
