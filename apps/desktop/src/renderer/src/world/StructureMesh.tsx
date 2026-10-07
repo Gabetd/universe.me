@@ -1,5 +1,5 @@
 import type { Blueprint, BlueprintModel, BlueprintPart, Shape } from '@universe/core'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useModel } from './models'
 import * as THREE from 'three'
 import { standingParts } from './structureLook'
@@ -11,7 +11,9 @@ const GEOMETRIES: Record<Shape, THREE.BufferGeometry> = {
   cone: new THREE.ConeGeometry(0.5, 1, 20).translate(0, 0.5, 0),
   // A four-sided cone turned 45° has a unit square base.
   pyramid: new THREE.ConeGeometry(Math.SQRT1_2, 1, 4).rotateY(Math.PI / 4).translate(0, 0.5, 0),
-  sphere: new THREE.SphereGeometry(0.5, 20, 14).translate(0, 0.5, 0)
+  sphere: new THREE.SphereGeometry(0.5, 20, 14).translate(0, 0.5, 0),
+  // A gable roof: a triangle across x, its ridge running along z.
+  wedge: new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(-0.5, 0), new THREE.Vector2(0.5, 0), new THREE.Vector2(0, 1)]), { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5)
 }
 
 const WEATHERED = new THREE.Color('#6b6455')
@@ -27,16 +29,51 @@ export function BlueprintParts({ blueprint, condition = 100, ghost = false }: { 
 }
 
 function PrimitiveParts({ blueprint, condition, ghost }: { blueprint: Blueprint; condition: number; ghost: boolean }) {
-  const parts = ghost ? blueprint.parts : standingParts(blueprint.parts, condition)
+  const parts = useMemo(() => (ghost ? blueprint.parts : standingParts(blueprint.parts, condition)), [blueprint.parts, condition, ghost])
+  // Parts of the same shape and colour are drawn as one instanced mesh, so a city of thousands of parts stays fast.
+  const groups = useMemo(() => {
+    const byLook = new Map<string, BlueprintPart[]>()
+    for (const p of parts) {
+      const key = `${p.shape}|${p.color}`
+      byLook.set(key, [...(byLook.get(key) ?? []), p])
+    }
+    return [...byLook.values()]
+  }, [parts])
   // Ruins and remnants are lower than the building was.
   const slump = condition < 20 && !ghost ? 0.45 + 0.55 * (condition / 20) : 1
   const age = ghost ? 0 : Math.min(0.65, (1 - condition / 100) * 0.8)
   return (
     <group scale={[1, slump, 1]}>
-      {parts.map((p, i) => (
-        <PartMesh key={i} part={p} age={age} ghost={ghost} />
+      {groups.map((list) => (
+        <PartInstances key={`${list[0]!.shape}|${list[0]!.color}|${list.length}`} parts={list} age={age} ghost={ghost} />
       ))}
     </group>
+  )
+}
+
+const UP = new THREE.Vector3(0, 1, 0)
+
+function PartInstances({ parts, age, ghost }: { parts: BlueprintPart[]; age: number; ghost: boolean }) {
+  const mesh = useRef<THREE.InstancedMesh>(null)
+  const { shape, color } = parts[0]!
+  const tinted = useMemo(() => new THREE.Color(color).lerp(WEATHERED, age), [color, age])
+  useLayoutEffect(() => {
+    const m = mesh.current
+    if (!m) return
+    const matrix = new THREE.Matrix4()
+    const rotation = new THREE.Quaternion()
+    parts.forEach((p, i) => {
+      rotation.setFromAxisAngle(UP, (p.rotation * Math.PI) / 180)
+      m.setMatrixAt(i, matrix.compose(new THREE.Vector3(...p.at), rotation, new THREE.Vector3(...p.size)))
+    })
+    m.instanceMatrix.needsUpdate = true
+    // Clicks and culling use the bounds of all instances.
+    m.computeBoundingSphere()
+  }, [parts])
+  return (
+    <instancedMesh ref={mesh} args={[GEOMETRIES[shape], undefined, parts.length]}>
+      <meshStandardMaterial color={tinted} roughness={0.85} transparent={ghost} opacity={ghost ? 0.25 : 1} depthWrite={!ghost} />
+    </instancedMesh>
   )
 }
 
@@ -72,11 +109,3 @@ function ModelMesh({ model, condition, ghost }: { model: BlueprintModel; conditi
   )
 }
 
-function PartMesh({ part, age, ghost }: { part: BlueprintPart; age: number; ghost: boolean }) {
-  const color = useMemo(() => new THREE.Color(part.color).lerp(WEATHERED, age), [part.color, age])
-  return (
-    <mesh geometry={GEOMETRIES[part.shape]} position={part.at} rotation={[0, (part.rotation * Math.PI) / 180, 0]} scale={part.size}>
-      <meshStandardMaterial color={color} roughness={0.85} transparent={ghost} opacity={ghost ? 0.25 : 1} depthWrite={!ghost} />
-    </mesh>
-  )
-}

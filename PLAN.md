@@ -377,11 +377,13 @@ Each milestone ends with something you can launch and demo.
 - Deferred: reshaping region borders over time (needs vertex editing), reordering lanes by drag, calendars from the star system (M4; an Earth-like default until then).
 - [x] *Added after M2:* a **canvas** per world. Every event on the world's timeline is a node there automatically (laid out in time order until moved); nodes can be dragged, hidden (and shown again), and linked by dragging from one onto another (the same causal links as the timeline). As the playhead moves on, finished events recede into the distance (smaller, dimmer, drawn toward the vanishing point) but stay clickable. Clicking a node goes to when and where it happened: playhead to its start, timeline scrolled to it, and the globe or map turned to its point or region.
 
-### M3 — Structures (2 weeks)
-- Blueprint library + primitive-based blueprint builder; glTF import.
-- Place/move/rotate/scale structures; lifespans tied to events; notes and in-viewport labels.
-- **Event effects on structures**: build/damage/destroy/repair/modify/set_maintenance, with single, region, radius (with falloff) and tag filter targets; effect preview; timeline effect icons.
-- Maintained/Weathered toggle (time-aware `MaintenanceChange`) and condition stages, using a simple fixed decay rate per material until climate exists in M4.
+### M3 — Structures (2 weeks) — *done*
+- [x] Blueprint library + primitive-based blueprint builder (box, cylinder, cone, pyramid, sphere, gable roof; material, colour, size, position, turn; live 3D preview that can be aged); glTF import, stored inside the project file.
+- [x] **Prebuilt blueprints**, generated in code with fixed seeds: stone castle, motte and bailey, hilltop citadel, a vast walled city (≈2,500 parts: walls, towers, citadel, cathedral, palace, market square, streets of houses, fields), village, slum quarter, war camp, nomad camp, harbour town, cathedral, palace, arena, farmstead, windmill, mine, watchtower, house, temple, lighthouse, stone bridge, standing stone, stone circle, ziggurat, pyramid. Drawn with instanced meshes so big ones stay fast.
+- [x] Place (built at the playhead), move, rotate and scale structures; lifespans tied to events (build/destroy effects); notes, tags and in-viewport labels on the globe and map.
+- [x] **Event effects on structures**: build/damage/destroy/repair/modify/set_maintenance, reaching chosen structures, a region, or a radius around the event with optional falloff, filtered by tag or material; live preview of what each effect reaches (and by how much) in the inspector and as rings in the viewport; timeline effect icons.
+- [x] Maintained/Weathered toggle (time-aware `MaintenanceChange`) and condition stages, with a fixed decay rate per material (half-lives from thatch at 25 years to megaliths at 10,000) and a per-world erosion speed, until climate exists in M4. Condition is closed-form between breakpoints; weathered structures erode away in finite time, maintained ones recover. Parts fall away in order of fragility as condition drops; colours weather; ruins slump.
+- [x] Consistency warnings: effects that reach nothing, repairs of structures already gone, maintenance changes before a structure is built.
 
 ### M4 — Star systems & sim (2–3 weeks)
 - Star system editor + orbit view; derived calendars; moon phases/eclipses track on the timeline.

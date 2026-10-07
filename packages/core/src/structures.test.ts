@@ -195,3 +195,20 @@ describe('structure commands', () => {
     expect(() => run('blueprint.create', { ownerId: rootId, name: 'Empty' })).toThrow(/at least one part/)
   })
 })
+
+describe('built-in blueprints', () => {
+  it('are valid, detailed, and the same every time', async () => {
+    const { Blueprint } = await import('./structures')
+    const { BUILTIN_BLUEPRINTS: again } = await import('./builtin-blueprints')
+    for (const b of BUILTIN_BLUEPRINTS) {
+      expect(() => Blueprint.parse(b), b.name).not.toThrow()
+      expect(b.parts.every((p) => p.size.every((v) => v > 0 && Number.isFinite(v)) && p.at.every(Number.isFinite)), b.name).toBe(true)
+    }
+    const count = (id: string) => BUILTIN_BLUEPRINTS.find((b) => b.id === `builtin:${id}`)!.parts.length
+    expect(count('castle')).toBeGreaterThan(80)
+    expect(count('city')).toBeGreaterThan(500)
+    expect(count('slum')).toBeGreaterThan(200)
+    expect(new Set(BUILTIN_BLUEPRINTS.map((b) => b.id)).size).toBe(BUILTIN_BLUEPRINTS.length)
+    expect(again).toBe(BUILTIN_BLUEPRINTS)
+  })
+})

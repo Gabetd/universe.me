@@ -9,7 +9,7 @@ import { HexColor } from './world'
  * are maintained, and what events did to them (condition.ts).
  */
 
-export const MATERIALS = ['thatch', 'wood', 'glass', 'iron', 'steel', 'concrete', 'brick', 'stone', 'megalith', 'magic'] as const
+export const MATERIALS = ['cloth', 'thatch', 'mud', 'wood', 'glass', 'iron', 'steel', 'concrete', 'brick', 'stone', 'earth', 'megalith', 'magic'] as const
 export const Material = z.enum(MATERIALS)
 export type Material = z.infer<typeof Material>
 
@@ -20,7 +20,9 @@ export type Material = z.infer<typeof Material>
  * few thousand, a pyramid in tens of thousands. Magic never decays.
  */
 export const MATERIAL_INFO: Record<Material, { label: string; halfLifeYears: number; color: string }> = {
+  cloth: { label: 'Cloth', halfLifeYears: 6, color: '#d8cdb4' },
   thatch: { label: 'Thatch', halfLifeYears: 25, color: '#c9a95c' },
+  mud: { label: 'Mud brick', halfLifeYears: 45, color: '#a88a62' },
   wood: { label: 'Wood', halfLifeYears: 65, color: '#8b5a2b' },
   glass: { label: 'Glass', halfLifeYears: 150, color: '#9fd3e6' },
   iron: { label: 'Iron', halfLifeYears: 250, color: '#5d5f66' },
@@ -28,11 +30,13 @@ export const MATERIAL_INFO: Record<Material, { label: string; halfLifeYears: num
   concrete: { label: 'Concrete', halfLifeYears: 600, color: '#b5b1a8' },
   brick: { label: 'Brick', halfLifeYears: 900, color: '#a5523a' },
   stone: { label: 'Stone', halfLifeYears: 1500, color: '#a39e93' },
+  earth: { label: 'Earthworks', halfLifeYears: 3000, color: '#7d6b4f' },
   megalith: { label: 'Megalith', halfLifeYears: 10000, color: '#d8c9a3' },
   magic: { label: 'Magic', halfLifeYears: Infinity, color: '#b48cff' }
 }
 
-export const SHAPES = ['box', 'cylinder', 'cone', 'pyramid', 'sphere'] as const
+/** `wedge` is a gable roof: a triangular prism whose ridge runs along its depth (z). */
+export const SHAPES = ['box', 'cylinder', 'cone', 'pyramid', 'sphere', 'wedge'] as const
 export const Shape = z.enum(SHAPES)
 export type Shape = z.infer<typeof Shape>
 
@@ -148,70 +152,3 @@ export function stageOf(condition: number): Stage {
   if (condition <= 0) return 'destroyed'
   return STAGES.find((s) => condition >= s.from)?.stage ?? 'remnant'
 }
-
-const part = (shape: Shape, material: Material, size: [number, number, number], at: [number, number, number] = [0, 0, 0], color?: string): BlueprintPart => ({
-  shape,
-  material,
-  color: color ?? MATERIAL_INFO[material].color,
-  size,
-  at,
-  rotation: 0
-})
-
-const builtin = (id: string, name: string, maintainedByDefault: boolean, tags: string[], parts: BlueprintPart[]): Blueprint => ({
-  id: `builtin:${id}`,
-  ownerId: '',
-  createdAt: '',
-  updatedAt: '',
-  deletedAt: null,
-  name,
-  parts,
-  model: null,
-  maintainedByDefault,
-  tags
-})
-
-const tower = (x: number, z: number, h: number, r: number, material: Material = 'stone', roof: Material = 'wood'): BlueprintPart[] => [
-  part('cylinder', material, [r * 2, h, r * 2], [x, 0, z]),
-  part('cone', roof, [r * 2.4, r * 2, r * 2.4], [x, h, z], '#5b3a2a')
-]
-
-/** A blueprint by id among the built-in ones and a project's own. */
-export const findBlueprint = (library: Blueprint[], id: string): Blueprint | undefined => BUILTIN_BLUEPRINTS.find((b) => b.id === id) ?? library.find((b) => b.id === id)
-
-/** Blueprints every project has. Users copy one to make their own version. */
-export const BUILTIN_BLUEPRINTS: Blueprint[] = [
-  builtin('castle', 'Castle', true, ['castle', 'fortification'], [
-    part('box', 'stone', [40, 10, 4], [0, 0, -20]),
-    part('box', 'stone', [40, 10, 4], [0, 0, 20]),
-    part('box', 'stone', [4, 10, 40], [-20, 0, 0]),
-    part('box', 'stone', [4, 10, 40], [20, 0, 0]),
-    part('box', 'stone', [14, 22, 14], [0, 0, 0]),
-    part('pyramid', 'wood', [15, 7, 15], [0, 22, 0], '#5b3a2a'),
-    ...tower(-20, -20, 16, 4),
-    ...tower(20, -20, 16, 4),
-    ...tower(-20, 20, 16, 4),
-    ...tower(20, 20, 16, 4)
-  ]),
-  builtin('tower', 'Watchtower', true, ['tower', 'fortification'], tower(0, 0, 24, 4)),
-  builtin('house', 'House', true, ['house', 'dwelling'], [
-    part('box', 'wood', [8, 4, 6]),
-    part('pyramid', 'thatch', [9, 3, 7], [0, 4, 0])
-  ]),
-  builtin('temple', 'Temple', true, ['temple', 'religious'], [
-    part('box', 'stone', [24, 1.5, 14]),
-    ...[-10, -5, 0, 5, 10].flatMap((x) => [part('cylinder', 'stone', [1.6, 9, 1.6], [x, 1.5, -5.5]), part('cylinder', 'stone', [1.6, 9, 1.6], [x, 1.5, 5.5])]),
-    part('pyramid', 'stone', [25, 3.5, 15], [0, 10.5, 0])
-  ]),
-  builtin('standing-stone', 'Standing stone', false, ['monument'], [part('box', 'megalith', [1.5, 5, 0.8])]),
-  builtin('pyramid', 'Pyramid', false, ['monument', 'tomb'], [part('pyramid', 'megalith', [230, 140, 230])]),
-  builtin('lighthouse', 'Lighthouse', true, ['tower', 'coast'], [
-    part('cylinder', 'brick', [6, 26, 6], [0, 0, 0], '#e8e2d6'),
-    part('cylinder', 'glass', [4, 4, 4], [0, 26, 0]),
-    part('cone', 'iron', [5, 3, 5], [0, 30, 0])
-  ]),
-  builtin('bridge', 'Bridge', true, ['bridge'], [
-    part('box', 'stone', [60, 2, 6], [0, 8, 0]),
-    ...[-20, 0, 20].map((x) => part('box', 'stone', [4, 8, 6], [x, 0, 0]))
-  ])
-]

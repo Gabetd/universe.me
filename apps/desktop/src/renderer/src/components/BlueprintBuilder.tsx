@@ -10,7 +10,9 @@ import { BlueprintParts } from '../world/StructureMesh'
 /** A blueprint being edited: saved as a new one when it has no id. */
 export type BlueprintDraft = Pick<Blueprint, 'name' | 'parts' | 'model' | 'maintainedByDefault' | 'tags'> & { id?: string }
 
-const SHAPE_LABELS: Record<Shape, string> = { box: 'Box', cylinder: 'Cylinder', cone: 'Cone', pyramid: 'Pyramid', sphere: 'Sphere' }
+const SHAPE_LABELS: Record<Shape, string> = { box: 'Box', cylinder: 'Cylinder', cone: 'Cone', pyramid: 'Pyramid', sphere: 'Sphere', wedge: 'Gable roof' }
+
+const PART_LIST_LIMIT = 40
 
 const newPart = (): BlueprintPart => ({ shape: 'box', material: 'stone', color: MATERIAL_INFO.stone.color, size: [10, 10, 10], at: [0, 0, 0], rotation: 0 })
 
@@ -21,6 +23,8 @@ const newPart = (): BlueprintPart => ({ shape: 'box', material: 'stone', color: 
 export function BlueprintBuilder({ initial, onClose }: { initial: BlueprintDraft; onClose(): void }) {
   const [draft, setDraft] = useState(initial)
   const [preview, setPreview] = useState(100)
+  // Big blueprints (a city has thousands of parts) list only the first few until asked.
+  const [showAll, setShowAll] = useState(initial.parts.length <= PART_LIST_LIMIT)
   const rootId = useUi((s) => s.project?.rootId)
   const execute = useUi((s) => s.execute)
   const extent = blueprintExtent(draft as Blueprint)
@@ -105,7 +109,7 @@ export function BlueprintBuilder({ initial, onClose }: { initial: BlueprintDraft
             <div className="field">
               <span>Parts (metres; the base of each part sits at its position)</span>
               <div className="part-list">
-                {draft.parts.map((p, i) => (
+                {(showAll ? draft.parts : draft.parts.slice(0, PART_LIST_LIMIT)).map((p, i) => (
                   <div className="part-row" key={i} aria-label={`Part ${i + 1}`}>
                     <div className="field-row">
                       <select aria-label="Shape" value={p.shape} onChange={(e) => setPart(i, { shape: e.target.value as Shape })}>
@@ -140,6 +144,11 @@ export function BlueprintBuilder({ initial, onClose }: { initial: BlueprintDraft
                   </div>
                 ))}
               </div>
+              {!showAll && (
+                <button className="link" onClick={() => setShowAll(true)}>
+                  Show all {draft.parts.length} parts
+                </button>
+              )}
               <button onClick={() => setDraft({ ...draft, parts: [...draft.parts, newPart()] })}>+ Part</button>
             </div>
           )}
@@ -162,7 +171,7 @@ function FitCamera({ extent }: { extent: number }) {
   useEffect(() => {
     const { camera, controls } = get()
     const orbit = controls as unknown as { target: { set(x: number, y: number, z: number): void }; update(): void } | null
-    camera.position.set(extent * 1.5, extent * 1.1, extent * 1.9)
+    camera.position.set(extent * 0.95, extent * 0.75, extent * 1.2)
     camera.far = extent * 50
     camera.updateProjectionMatrix()
     orbit?.target.set(0, extent * 0.3, 0)

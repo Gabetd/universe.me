@@ -4,7 +4,8 @@ import type { Command } from './commands'
 import { RECORD_KINDS, type RecordKind, type RecordOf } from './records'
 import { Id } from './schema'
 import type { Store } from './store'
-import { findBlueprint, type Blueprint } from './structures'
+import { findBlueprint } from './builtin-blueprints'
+import type { Blueprint } from './structures'
 import { stripUndefined } from './util'
 
 /** Creating, updating and deleting records of any kind (records.ts), with each kind's checks. */
