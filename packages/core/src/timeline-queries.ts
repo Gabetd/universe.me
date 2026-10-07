@@ -1,6 +1,7 @@
 import type { SpatialNode } from './schema'
 import type { Time } from './time'
-import { ORDERED_LINKS, type EntityChange, type EventGroup, type EventLink, type TimelineData, type TimelineEvent } from './timeline'
+import type { TimelineData } from './records'
+import { ORDERED_LINKS, type EntityChange, type EventGroup, type EventLink, type TimelineEvent } from './timeline'
 import type { LatLon, Region } from './world'
 
 /**

@@ -1,7 +1,7 @@
 import type { Command } from './commands'
 import type { SpatialNode } from './schema'
 import type { Store } from './store'
-import type { RecordKind, RecordOf } from './timeline'
+import type { RecordKind, RecordOf } from './records'
 import { PALETTE, type Region } from './world'
 
 /** Shared plumbing for command handlers (commands.ts, timeline-commands.ts). */

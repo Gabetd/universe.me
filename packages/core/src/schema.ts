@@ -29,6 +29,15 @@ export const KIND_LABELS: Record<NodeKind, string> = {
 export const Id = z.string().min(1)
 export type Id = z.infer<typeof Id>
 
+/** Fields every record in the `records` table has. `ownerId` is the node it belongs to. */
+export const RecordMeta = {
+  id: Id,
+  ownerId: Id,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  deletedAt: z.string().nullable()
+}
+
 /** Seeds are unsigned 32-bit so they round-trip through SQLite and JS numbers exactly. */
 export const Seed = z.number().int().min(0).max(0xffffffff)
 

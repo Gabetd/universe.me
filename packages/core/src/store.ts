@@ -1,5 +1,5 @@
 import type { Id, SpatialNode } from './schema'
-import { RECORD_KINDS, type RecordKind, type RecordOf } from './timeline'
+import { RECORD_KINDS, type RecordKind, type RecordOf } from './records'
 import type { Region, TerrainLayerName, WorldSettings } from './world'
 
 /** Storage the domain layer needs. `packages/db` implements it on SQLite; tests use `MemoryStore`. */

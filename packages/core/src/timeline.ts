@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { Id } from './schema'
+import { Id, RecordMeta } from './schema'
 import { Precision, Time } from './time'
 import { HexColor, LatLon } from './world'
 
@@ -8,14 +8,6 @@ import { HexColor, LatLon } from './world'
  * point to it with `ownerId`. In the UI a world's timeline is the one shown
  * for the world and for the body it covers.
  */
-const RecordMeta = {
-  id: Id,
-  ownerId: Id,
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  deletedAt: z.string().nullable()
-}
-
 export const EventLocation = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('point'), ...LatLon.shape }),
   z.object({ kind: z.literal('region'), regionId: Id })
@@ -96,7 +88,8 @@ export type RegionChangePatch = z.infer<typeof RegionChangePatch>
 /**
  * A time-bound change to something on the world: a region appears (is
  * founded), vanishes, or is renamed/recolored at `at`. Optional `causeEventId`
- * answers "why does it look like this?". Structures join in M3.
+ * answers "why does it look like this?". Structures change through event
+ * effects and maintenance changes instead (structures.ts).
  */
 export const EntityChange = z.object({
   ...RecordMeta,
@@ -117,21 +110,3 @@ export const TimelineSettings = z.object({
   now: Time
 })
 export type TimelineSettings = z.infer<typeof TimelineSettings>
-
-export const RECORD_SCHEMAS = {
-  event: TimelineEvent,
-  link: EventLink,
-  group: EventGroup,
-  era: Era,
-  lane: Lane,
-  change: EntityChange,
-  timeline: TimelineSettings
-} as const
-export type RecordKind = keyof typeof RECORD_SCHEMAS
-export const RECORD_KINDS = Object.keys(RECORD_SCHEMAS) as RecordKind[]
-export type RecordOf<K extends RecordKind> = z.infer<(typeof RECORD_SCHEMAS)[K]>
-
-/** All of a project's live timeline records, as sent to the UI. */
-export type TimelineData = { [K in RecordKind as `${K}s`]: RecordOf<K>[] }
-
-export const EMPTY_TIMELINE: TimelineData = { events: [], links: [], groups: [], eras: [], lanes: [], changes: [], timelines: [] }
