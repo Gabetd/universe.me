@@ -18,7 +18,8 @@ API.
 4. **Scale navigation**: World → Star System → Galaxy → Galaxy Cluster → Universe, with the option to create new systems or worlds at any level.
 5. **Themes per world, per time span**: a world can have several themes across its timeline.
 6. **Visual editing**: sculpt and paint terrain, place structures, attach rich text to structures.
-7. **AI access**: a local REST API and an MCP server, so Claude Code (or any MCP client) can read and edit worlds.
+7. **Living structures**: events can build, damage, repair, or destroy structures. Each structure has a Maintained/Weathered toggle, and weathered structures erode over time until they're destroyed.
+8. **AI access**: a local REST API and an MCP server, so Claude Code (or any MCP client) can read and edit worlds.
 
 ### Non-goals (v1)
 - Multiplayer or real-time collaboration (keep the data model sync-ready, but don't build sync yet).
@@ -106,8 +107,9 @@ Universe
 | `Species` | name, kind (flora/fauna/fungi/other), habitat biomes, diet, notes |
 | `EcosystemLink` | predator → prey, pollinator, symbiosis, competition |
 | `Region` | polygon on sphere (nations, forests, seas), properties |
-| `Structure` | placement (lat/long/elevation/rotation/scale), blueprint, `existsFrom`/`existsTo` (timeline), notes |
-| `Blueprint` | reusable structure template built from parts/primitives or imported glTF |
+| `Structure` | placement (lat/long/elevation/rotation/scale), blueprint, `builtAt`, `destroyedAt?` (manual, or derived from decay; see §4.7), `maintenance` (time-aware toggle), `condition` (derived), notes |
+| `Blueprint` | reusable structure template built from parts/primitives or imported glTF; each part has a `material` |
+| `Material` | stone, brick, wood, iron, steel, concrete, glass, magic/custom, etc. Each has a base durability (half-life of condition under neutral climate) and climate sensitivities (moisture, freeze-thaw, heat, salt, vegetation) |
 | `Note` | rich text (TipTap JSON) attached to any entity via `ownerId` |
 
 ### 4.3 Time
@@ -125,7 +127,8 @@ Universe
 | `EventLink` | `fromEventId` → `toEventId`, type: `causes`, `enables`, `prevents`, `precedes`, `related`; optional note |
 | `EventGroup` | composite event ("The Great War") containing child events; collapses into one bar on the timeline, expands to show its children |
 | `Era` | named background span (e.g., "Age of Ice") shown behind the lanes |
-| `EntityChange` | time-bound change to any entity (structure built/destroyed, region border change, species extinction). This is what lets the map show the world "as of" a timestamp. |
+| `EventEffect` | what an event *does* to the world: target (one structure, every structure in an area, a region, a species), effect type, and parameters. See §4.7 for structure effects. |
+| `EntityChange` | time-bound change to any entity (structure built/destroyed, region border change, species extinction). This is what lets the map show the world "as of" a timestamp. Changes caused by an `EventEffect` point back to that effect, so the app can always answer "why does this look like this?" |
 
 "Combining" events means two things:
 1. **Causal chain**: events linked with `causes`/`enables`. The timeline draws arrows, and the app can highlight an event's whole upstream or downstream chain.
@@ -145,7 +148,81 @@ Validation warns (but doesn't block) when an effect starts before its cause.
 - When the timeline playhead moves, the renderer blends between themes (palettes and lighting are interpolated over the blend window).
 - Themes are also exposed to the AI, so generated text matches the tone of that era.
 
-### 4.6 Cross-cutting
+### 4.7 Structure condition: events, maintenance, and erosion
+
+Every structure has a **condition** from 100 (pristine) to 0 (gone). Condition
+is never stored as one number. It is **computed for any timestamp** from the
+build date, the maintenance toggle, the local climate, and the events that
+affected the structure. Scrubbing the timeline always shows a consistent
+result, and editing any input (moving an event, changing climate) updates
+everything after it.
+
+#### Maintained / weathered toggle
+- Each structure has a **Maintained** toggle, shown as a switch in the Inspector. Its default comes from the blueprint (a castle defaults to maintained, a standing stone to weathered).
+- The toggle is **time-aware**. Flipping it while the playhead is at time *t* records a `MaintenanceChange { structureId, at: t, maintained: bool, causeEventId? }`, so a structure can be maintained for 300 years, abandoned, then restored.
+- Rules:
+  - **Maintained**: condition holds steady and slowly recovers toward 100 (repairs). Events can still damage it, and repairs then raise it back over time.
+  - **Weathered** (not maintained): condition decays from erosion. Given enough time it reaches 0 and the structure is **destroyed by erosion**.
+- A **"Never decays"** override exists for monuments the author wants to keep regardless (or for magic/sci-fi materials).
+
+#### Erosion model (`packages/sim/decay.ts`)
+- Decay rate per structure = material durability × climate factors at its location, all taken from data the app already has (§7):
+  - moisture / precipitation
+  - freeze–thaw cycles (temperature swings around 0 °C)
+  - heat and UV
+  - salt (distance to coast)
+  - vegetation overgrowth (biome)
+  - elevation and exposure
+- Multi-material blueprints decay **per part**. Each part has its own rate, and the structure's condition is a weighted average. A stone keep with a wooden roof loses the roof first.
+- Within each interval between breakpoints (build, maintenance change, event effect, climate change), condition follows a closed-form curve (exponential decay toward 0, or recovery toward 100). Condition at any *t* is a quick lookup over cached breakpoints, not a simulation loop, so thousands of structures stay fast while scrubbing.
+- Climate is taken as of each interval, so a world getting wetter makes structures decay faster from that point on.
+- All constants (material half-lives, climate weights, a global **"erosion speed"** slider per world) are user-editable. The defaults aim to be plausible, not exact: a wood cabin fades over ~1–2 centuries, a stone castle over several millennia, a pyramid over tens of millennia.
+
+#### Condition stages
+Thresholds drive visuals, labels, and auto-generated timeline markers:
+
+| Condition | Stage | Visual |
+|---|---|---|
+| 90–100 | Pristine | clean materials |
+| 70–90 | Worn | dirt, faded paint |
+| 45–70 | Weathered | cracks, moss, missing small parts |
+| 20–45 | Damaged | roof/upper parts gone, overgrowth |
+| 5–20 | Ruin | walls only, heavy vegetation |
+| 0–5 | Remnant | foundations, mounds |
+| 0 | Destroyed | removed from view (optional "ghost" outline in edit mode) |
+
+- Visual weathering uses shader parameters (grime, moss, crack masks) + **part removal**: blueprint parts are dropped in order of fragility as condition falls. Blueprints can also supply hand-made "ruin" variants per stage.
+- When a structure crosses into **Ruin** or reaches **Destroyed by erosion**, the timeline shows **derived events** (dashed outline, auto-updated). The user can "promote" a derived event into a real, editable event to attach notes or causal links.
+
+#### Events that affect structures
+An `EventEffect` attaches to any event. Structure effect types:
+
+| Effect | Parameters | Result |
+|---|---|---|
+| `damage` | amount (0–100) or "to stage X" | instant drop in condition |
+| `destroy` | — | condition → 0 at event time |
+| `repair` / `restore` | amount or "to pristine" | instant raise in condition |
+| `build` | blueprint, placement | creates the structure at event time (sets `builtAt`) |
+| `set_maintenance` | maintained: bool | records a `MaintenanceChange` (e.g., "City abandoned" turns off maintenance for every building in the city) |
+| `modify` | property changes | e.g., renamed, change of owner, blueprint swap (keep expanded with a new wing) |
+| `accelerate_decay` | multiplier, duration | e.g., a century of acid rain or a flood season |
+
+- **Targets**: one structure, a list, everything in a region, or **everything within a radius** of the event's location, with optional falloff (an earthquake damages nearby buildings more than distant ones). Filters by tag/material ("all wooden buildings") let a fire burn the wooden quarter and leave stone walls standing.
+- Effects of a grouped event (`EventGroup`) apply in the order of its child events.
+- Causal links still work as before. An event that destroyed a structure can `cause` a later event ("Refugees found a new town").
+
+#### UX
+- **Inspector → Condition panel**: a condition-over-time sparkline from `builtAt` to the end of the timeline. Breakpoints are marked (events, maintenance flips) and clickable to jump the playhead there. A projection for the future shows when it will become a ruin or be destroyed if left weathered.
+- **Timeline**: selecting a structure shows a thin condition track under its lifespan bar. Event bars with structure effects show a small icon (hammer = build/repair, crack = damage, skull = destroy).
+- **Map filter "Condition"**: tints structures by stage, so you can see at a glance what's in ruins at any moment.
+- **Placing an event** with a radius effect shows a preview of which structures will be hit and how badly, before you confirm.
+
+#### Consistency checks (added to `check_consistency`)
+- An event located at a structure *after* the structure has been destroyed (by erosion or an event).
+- A `repair` on an already-destroyed structure (suggest `build` / rebuild instead).
+- A structure marked maintained during a span when its region has no population/faction (warning only).
+
+### 4.8 Cross-cutting
 
 - Every record has `id` (UUIDv7), `createdAt`, `updatedAt`, and `deletedAt` (soft delete), so a sync layer can be added later.
 - Every write goes through a **Command** (`{type, payload, inverse}`), which provides undo/redo, history, and API audit logs.
@@ -184,8 +261,9 @@ Validation warns (but doesn't block) when an effect starts before its cause.
   - Place from a blueprint library (castle, tower, city, bridge, road/wall as polylines).
   - **Blueprint builder**: combine primitives (box, cylinder, cone, arch, wall segment), set materials and colors, save as a reusable blueprint. glTF import for custom models.
   - Each structure has a **notes panel** (rich text, images, @-links to events, species, other structures) and a lifespan tied to timeline events (built in X, destroyed in Y).
+  - Each structure has a **Maintained / Weathered** toggle and a condition panel (§4.7). Unmaintained structures visibly age and eventually erode away.
   - Text labels/plaques can be shown in the viewport as callouts above structures.
-- **Time-aware view**: the viewport shows the world as of the playhead. Structures fade in and out, borders change, and the theme blends.
+- **Time-aware view**: the viewport shows the world as of the playhead. Structures appear, weather, crumble and disappear, borders change, and the theme blends.
 
 ### 5.4 Timeline UI
 - Horizontal, **left = past, right = future**, with a "Now" marker the user can set.
@@ -194,7 +272,8 @@ Validation warns (but doesn't block) when an effect starts before its cause.
 - Drag from one event's connector to another to create a **causal link**. Arrows are drawn between bars.
 - Multi-select → **Group** to create an `EventGroup` (collapsible).
 - Theme spans show as a colored band above the lanes. Eras show as background shading.
-- Clicking an event highlights its locations in the viewport. Clicking a structure or region filters the timeline to its events.
+- Clicking an event highlights its locations in the viewport, and the structures it affects. Clicking a structure or region filters the timeline to its events.
+- An event's **Effects** tab lists what it does to structures (damage, destroy, repair, build, abandon/maintain). Effects can be added there or by dragging the event onto a structure in the viewport.
 - Moon phases and eclipses can be shown as an optional track.
 
 ### 5.5 Ecosystem & star-system panels
@@ -214,7 +293,8 @@ Validation warns (but doesn't block) when an effect starts before its cause.
   - `GET/POST/PATCH/DELETE /worlds`, `/worlds/:id/structures`, `/regions`, `/species`, `/ecosystem-links`
   - `GET/POST/PATCH/DELETE /worlds/:id/events`, `POST /events/:id/links`, `POST /event-groups`
   - `GET /worlds/:id/themes`, `POST /theme-spans`
-  - `GET /worlds/:id/snapshot?at=<time>`: the full world state at a moment (structures present, active theme, moon phases)
+  - `POST /events/:id/effects`, `GET /structures/:id/condition?from=&to=` (condition curve + breakpoints), `POST /structures/:id/maintenance` (`{at, maintained}`)
+  - `GET /worlds/:id/snapshot?at=<time>`: the full world state at a moment (structures present with condition stage, active theme, moon phases)
   - `GET /search?q=`
   - `GET /worlds/:id/export?format=markdown|json`: a "world bible" document
   - `WS /v1/changes`: live change feed, so the UI updates when the AI makes an edit
@@ -230,9 +310,9 @@ claude mcp add universe -- universe-mcp --project ~/Worlds/Aerth.universe
 ```
 
 **Tools** (each one is a thin wrapper over a core command or query):
-- Read: `list_worlds`, `get_world`, `get_world_snapshot(at)`, `search`, `list_events(range, tags)`, `get_event_chain(eventId, direction)`, `get_theme_at(worldId, time, regionId?)`, `list_structures(regionId?)`, `get_ecosystem(biome?)`, `get_star_system`, `get_moon_phase(worldId, time)`
-- Write: `create_event`, `link_events`, `group_events`, `create_structure`, `update_note`, `create_species`, `create_theme`, `assign_theme_span`, `create_world`, `create_star_system`
-- Analysis: `check_consistency` (effects before causes, structures used before they're built, species outside their habitat)
+- Read: `list_worlds`, `get_world`, `get_world_snapshot(at)`, `search`, `list_events(range, tags)`, `get_event_chain(eventId, direction)`, `get_theme_at(worldId, time, regionId?)`, `list_structures(regionId?, at?, stage?)`, `get_structure_condition(structureId, at)` (condition, stage, and *why*: the events and decay behind it), `get_ecosystem(biome?)`, `get_star_system`, `get_moon_phase(worldId, time)`
+- Write: `create_event`, `add_event_effect`, `link_events`, `group_events`, `create_structure`, `set_maintenance(structureId, at, maintained)`, `update_note`, `create_species`, `create_theme`, `assign_theme_span`, `create_world`, `create_star_system`
+- Analysis: `check_consistency` (effects before causes, structures used before they're built or after they've eroded, species outside their habitat), `project_decay(structureId)` (when it will become a ruin or be destroyed if left weathered)
 
 **Resources**: `universe://world/{id}`, `universe://world/{id}/timeline`, `universe://world/{id}/bible.md`. These let the AI load context without many tool calls.
 
@@ -253,6 +333,7 @@ Keep it simple and deterministic:
 - **Moon phases**: from the Sun–planet–moon angle. **Eclipses**: line-of-sight + angular size check. **Tides**: relative magnitude only.
 - **Climate**: latitude bands + elevation lapse rate + simple ocean/continental moderation → temperature & precipitation → **Whittaker biome**.
 - **Ecosystem**: species valid per biome; simple trophic-level checks (prey needs to exist in the same biome). No population dynamics in v1.
+- **Structure decay**: closed-form condition curves per structure part from material × local climate × maintenance state, with event effects as step changes (§4.7).
 
 ---
 
@@ -289,10 +370,13 @@ Each milestone ends with something you can launch and demo.
 ### M3 — Structures (2 weeks)
 - Blueprint library + primitive-based blueprint builder; glTF import.
 - Place/move/rotate/scale structures; lifespans tied to events; notes and in-viewport labels.
+- **Event effects on structures**: build/damage/destroy/repair/modify/set_maintenance, with single, region, radius (with falloff) and tag filter targets; effect preview; timeline effect icons.
+- Maintained/Weathered toggle (time-aware `MaintenanceChange`) and condition stages, using a simple fixed decay rate per material until climate exists in M4.
 
-### M4 — Star systems & sim (2 weeks)
+### M4 — Star systems & sim (2–3 weeks)
 - Star system editor + orbit view; derived calendars; moon phases/eclipses track on the timeline.
 - Climate → biome suggestions; species library + food web graph.
+- **Climate-driven erosion**: replace the fixed decay rates with material × climate factors; per-part decay; derived "fell into ruin" / "destroyed by erosion" events; condition panel sparkline and future projection; weathering shaders and part removal.
 
 ### M5 — Scale navigation (2–3 weeks)
 - Galaxy (procedural spiral/elliptical), cluster, and universe levels with seeded generation.
@@ -314,12 +398,13 @@ Each milestone ends with something you can launch and demo.
 - Signed installers (Windows NSIS, macOS dmg + notarization, Linux AppImage/deb), auto-update.
 - E2E tests for the main flows.
 
-**Rough total: 18–23 weeks** for one full-time developer. M7 (API/MCP) can be pulled earlier, right after M2, if AI assistance is wanted sooner. The core layer makes it cheap to add.
+**Rough total: 19–25 weeks** for one full-time developer. M7 (API/MCP) can be pulled earlier, right after M2, if AI assistance is wanted sooner. The core layer makes it cheap to add.
 
 ---
 
 ## 10. Testing strategy
 - **Unit**: core commands (do/undo symmetry), sim math (known Earth/Moon values), time/calendar conversions, consistency checks.
+- **Decay**: condition is continuous across breakpoints; maintained structures never reach 0 without a destroying event; weathered ones always do eventually (unless "never decays"); moving or deleting an event updates every later condition; results are deterministic for the same inputs.
 - **Integration**: API and MCP tools against a temp SQLite project; schema round-trip (export → import → equal).
 - **E2E (Playwright + Electron)**: create world → paint → place structure → add linked events → assign theme → scrub playhead → verify view.
 - **Visual regression**: screenshot tests for the globe/timeline at fixed seeds.
@@ -333,6 +418,8 @@ Each milestone ends with something you can launch and demo.
 | Precision problems across km ↔ megaparsec scales | Separate scene per scale level, floating origin, logarithmic depth buffer, int64 time. |
 | Timeline performance with thousands of events | Canvas rendering, spatial index by time range, virtualized lanes, level-of-detail clustering when zoomed out. |
 | Terrain editing on a sphere is complex | Start with cube-sphere heightmap tiles + brush stamping. Defer erosion/rivers to post-v1. |
+| Decay recomputation when scrubbing or editing with many structures | Closed-form curves between cached breakpoints. An edit only invalidates structures it targets, and only after its timestamp. Condition for visible structures is computed in a Web Worker. |
+| Erosion results that feel wrong for the story | Per-world erosion speed slider, editable material half-lives, per-structure "never decays", and manual damage/repair events to correct any outcome. |
 | Scope creep (simulation depth) | Sim is "plausible, deterministic, overridable". Every derived value can be manually set. |
 | AI edits corrupting data | All writes validated by Zod + core invariants, tagged and undoable, optional review mode. |
 | Electron bundle size | Acceptable for v1. Tauri migration path is possible because the logic lives in framework-agnostic packages. |
