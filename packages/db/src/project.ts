@@ -1,16 +1,8 @@
 import { existsSync } from 'node:fs'
-import { DatabaseSync, type StatementSync } from 'node:sqlite'
-import {
-  CommandBus,
-  createRootUniverse,
-  findRoot,
-  type CommandBusOptions,
-  type HistoryLog,
-  type NodeRepository,
-  type SpatialNode,
-  type Store
-} from '@universe/core'
+import { DatabaseSync } from 'node:sqlite'
+import { CommandBus, createRootUniverse, findRoot, type CommandBusOptions, type Store } from '@universe/core'
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations'
+import { SqliteHistoryLog, SqliteStore } from './sqlite-store'
 
 const FORMAT = 'universe.me'
 
@@ -140,111 +132,5 @@ export function migrate(db: DatabaseSync): void {
       db.exec('ROLLBACK')
       throw err
     }
-  }
-}
-
-interface NodeRow {
-  id: string
-  parent_id: string | null
-  kind: string
-  name: string
-  seed: number
-  pos_x: number
-  pos_y: number
-  pos_z: number
-  notes: string
-  tags: string
-  created_at: string
-  updated_at: string
-  deleted_at: string | null
-}
-
-const toNode = (r: NodeRow): SpatialNode => ({
-  id: r.id,
-  parentId: r.parent_id,
-  kind: r.kind as SpatialNode['kind'],
-  name: r.name,
-  seed: r.seed,
-  position: { x: r.pos_x, y: r.pos_y, z: r.pos_z },
-  notes: r.notes,
-  tags: JSON.parse(r.tags) as string[],
-  createdAt: r.created_at,
-  updatedAt: r.updated_at,
-  deletedAt: r.deleted_at
-})
-
-const toParams = (n: SpatialNode) => ({
-  id: n.id,
-  parent_id: n.parentId,
-  kind: n.kind,
-  name: n.name,
-  seed: n.seed,
-  pos_x: n.position.x,
-  pos_y: n.position.y,
-  pos_z: n.position.z,
-  notes: n.notes,
-  tags: JSON.stringify(n.tags),
-  created_at: n.createdAt,
-  updated_at: n.updatedAt,
-  deleted_at: n.deletedAt
-})
-
-class SqliteStore implements Store {
-  readonly nodes: NodeRepository
-  private depth = 0
-
-  constructor(private readonly db: DatabaseSync) {
-    const q = {
-      get: db.prepare('SELECT * FROM nodes WHERE id = ?'),
-      children: db.prepare('SELECT * FROM nodes WHERE parent_id = ? AND deleted_at IS NULL ORDER BY created_at, id'),
-      all: db.prepare('SELECT * FROM nodes WHERE deleted_at IS NULL ORDER BY created_at, id'),
-      insert: db.prepare(`INSERT INTO nodes (id, parent_id, kind, name, seed, pos_x, pos_y, pos_z, notes, tags, created_at, updated_at, deleted_at)
-        VALUES (:id, :parent_id, :kind, :name, :seed, :pos_x, :pos_y, :pos_z, :notes, :tags, :created_at, :updated_at, :deleted_at)`),
-      update: db.prepare(`UPDATE nodes SET parent_id = :parent_id, kind = :kind, name = :name, seed = :seed,
-        pos_x = :pos_x, pos_y = :pos_y, pos_z = :pos_z, notes = :notes, tags = :tags,
-        created_at = :created_at, updated_at = :updated_at, deleted_at = :deleted_at WHERE id = :id`)
-    } satisfies Record<string, StatementSync>
-
-    this.nodes = {
-      get: (id) => {
-        const row = q.get.get(id) as NodeRow | undefined
-        return row && toNode(row)
-      },
-      children: (parentId) => (q.children.all(parentId) as unknown as NodeRow[]).map(toNode),
-      all: () => (q.all.all() as unknown as NodeRow[]).map(toNode),
-      insert: (node) => void q.insert.run(toParams(node)),
-      update: (node) => {
-        const { changes } = q.update.run(toParams(node))
-        if (changes === 0) throw new Error(`Node ${node.id} does not exist`)
-      }
-    }
-  }
-
-  transaction<T>(fn: () => T): T {
-    if (this.depth > 0) return fn()
-    this.depth++
-    this.db.exec('BEGIN IMMEDIATE')
-    try {
-      const result = fn()
-      this.db.exec('COMMIT')
-      return result
-    } catch (err) {
-      this.db.exec('ROLLBACK')
-      throw err
-    } finally {
-      this.depth--
-    }
-  }
-}
-
-class SqliteHistoryLog implements HistoryLog {
-  private readonly insert: StatementSync
-
-  constructor(db: DatabaseSync) {
-    this.insert = db.prepare('INSERT INTO command_log (at, action, source, type, command, inverse) VALUES (?, ?, ?, ?, ?, ?)')
-  }
-
-  append(r: Parameters<HistoryLog['append']>[0]): void {
-    this.insert.run(r.at, r.action, r.source, r.command.type, JSON.stringify(r.command), JSON.stringify(r.inverse))
   }
 }

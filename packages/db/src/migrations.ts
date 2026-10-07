@@ -35,6 +35,34 @@ export const MIGRATIONS: readonly string[] = [
     command TEXT NOT NULL,
     inverse TEXT NOT NULL
   );
+  `,
+  /* 2: world settings, terrain edit layers (zlib-compressed), and regions */ `
+  CREATE TABLE worlds (
+    id                TEXT PRIMARY KEY REFERENCES nodes(id),
+    settings          TEXT,
+    terrain_revision  INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE terrain_layers (
+    world_id  TEXT NOT NULL REFERENCES nodes(id),
+    layer     TEXT NOT NULL,
+    face      INTEGER NOT NULL,
+    data      BLOB NOT NULL,
+    PRIMARY KEY (world_id, layer, face)
+  );
+
+  CREATE TABLE regions (
+    id         TEXT PRIMARY KEY,
+    world_id   TEXT NOT NULL REFERENCES nodes(id),
+    name       TEXT NOT NULL,
+    color      TEXT NOT NULL,
+    points     TEXT NOT NULL,
+    notes      TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT
+  );
+  CREATE INDEX regions_world ON regions(world_id);
   `
 ]
 

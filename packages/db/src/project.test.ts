@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Project, ProjectError, SCHEMA_VERSION } from './index'
+import { MIGRATIONS, Project, ProjectError, SCHEMA_VERSION } from './index'
+import { TERRAIN_RES, asBytes, bytesToBase64 } from '@universe/core'
 
 let dir: string
 const open: Project[] = []
@@ -106,5 +107,43 @@ describe('Project', () => {
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION + 1}`)
     db.close()
     expect(() => Project.open(path)).toThrow(/newer version/)
+  })
+
+  it('persists world settings, compressed terrain layers and regions', () => {
+    const path = join(dir, 'w.universe')
+    const p = Project.create(path, 'W')
+    const exec = (type: string, payload: object) => p.bus.execute({ type, payload }).targetId!
+    let parent = p.info().rootId
+    for (const kind of ['galaxy_cluster', 'galaxy', 'star_system', 'body']) parent = exec('node.create', { parentId: parent, kind })
+    const worldId = exec('node.create', { parentId: parent, kind: 'world' })
+    exec('world.update', { id: worldId, patch: { seaLevel: 250 } })
+    exec('terrain.patch', {
+      worldId,
+      layer: 'height',
+      patches: [{ face: 2, x: 10, y: 20, w: 2, h: 1, data: bytesToBase64(asBytes(new Int16Array([-1200, 3400]))) }]
+    })
+    const regionId = exec('region.create', { worldId, name: 'Shire', points: [{ lat: 1, lon: 2 }, { lat: 3, lon: 4 }, { lat: 5, lon: 1 }] })
+    p.close()
+
+    const q = track(Project.open(path))
+    expect(q.store.worlds.getSettings(worldId)?.seaLevel).toBe(250)
+    expect(q.store.worlds.terrainRevision(worldId)).toBe(1)
+    const face = new Int16Array(q.store.worlds.getLayer(worldId, 'height', 2)!.buffer)
+    expect([face[20 * TERRAIN_RES + 10], face[20 * TERRAIN_RES + 11]]).toEqual([-1200, 3400])
+    expect(q.store.worlds.getLayer(worldId, 'height', 3)).toBeUndefined()
+    expect(q.store.regions.get(regionId)).toMatchObject({ name: 'Shire', points: [{ lat: 1, lon: 2 }, { lat: 3, lon: 4 }, { lat: 5, lon: 1 }] })
+  })
+
+  it('upgrades a project created by an older schema', () => {
+    const path = join(dir, 'old.universe')
+    const db = new DatabaseSync(path)
+    db.exec(MIGRATIONS[0]!)
+    db.exec('PRAGMA user_version = 1')
+    db.exec("INSERT INTO meta VALUES ('format', 'universe.me'), ('name', 'Old')")
+    db.exec(`INSERT INTO nodes (id, parent_id, kind, name, seed, created_at, updated_at) VALUES ('root', NULL, 'universe', 'Old', 1, 'x', 'x')`)
+    db.close()
+    const p = track(Project.open(path))
+    expect(p.info()).toMatchObject({ name: 'Old', schemaVersion: SCHEMA_VERSION })
+    expect(p.store.regions.all()).toEqual([])
   })
 })

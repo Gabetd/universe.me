@@ -1,5 +1,7 @@
 export * from './schema'
+export * from './world'
 export * from './store'
+export * from './encoding'
 export * from './commands'
 export * from './bus'
 export * from './queries'
