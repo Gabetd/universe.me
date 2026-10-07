@@ -195,6 +195,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.newProject, () => wrap(newProject))
   ipcMain.handle(IPC.openProject, (_e, path?: string) => wrap(() => openProject(path)))
   ipcMain.handle(IPC.saveCopy, () => wrap(saveCopy))
+  ipcMain.handle(IPC.terrain, (_e, worldId: string) => wrap(() => session.terrain(worldId)))
   ipcMain.handle(IPC.closeProject, () => {
     session.close()
     broadcast()

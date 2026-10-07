@@ -33,6 +33,7 @@
     "@types/three": "^0.186.0",
     "@universe/core": "workspace:*",
     "@universe/db": "workspace:*",
+    "@universe/procgen": "workspace:*",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "44.6.0",
     "electron-builder": "^26.15.3",

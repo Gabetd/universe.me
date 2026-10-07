@@ -1,7 +1,9 @@
 import type { NodePatch, SpatialNode } from '@universe/core'
-import { useState } from 'react'
 import { KIND_ICONS, addOptions, kindLabel } from '../kinds'
 import { selectNode, useUi } from '../store'
+import { NumberInput, TextField } from './fields'
+import { NotesEditor } from './NotesEditor'
+import { WorldPanel } from './WorldPanel'
 
 export function Inspector() {
   const node = useUi(selectNode)
@@ -10,82 +12,50 @@ export function Inspector() {
   return <NodeForm key={`${node.id}:${node.updatedAt}`} node={node} />
 }
 
+const parseTags = (text: string) =>
+  text
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean)
+
 function NodeForm({ node }: { node: SpatialNode }) {
   const nodes = useUi((s) => s.nodes)
   const execute = useUi((s) => s.execute)
-  const isRoot = node.parentId === null
-  const [name, setName] = useState(node.name)
-  const [tags, setTags] = useState(node.tags.join(', '))
-  const [seed, setSeed] = useState(String(node.seed))
-  const [notes, setNotes] = useState(node.notes)
-
   const update = (patch: NodePatch) => void execute({ type: 'node.update', payload: { id: node.id, patch } })
-
-  const commitName = () => {
-    const v = name.trim()
-    if (!v) setName(node.name)
-    else if (v !== node.name) update({ name: v })
-  }
-  const commitTags = () => {
-    const v = tags
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean)
-    if (v.join('\u0000') !== node.tags.join('\u0000')) update({ tags: v })
-  }
-  const commitSeed = () => {
-    const v = Number(seed)
-    if (Number.isInteger(v) && v >= 0 && v <= 0xffffffff && v !== node.seed) update({ seed: v })
-    else setSeed(String(node.seed))
-  }
-  const commitNotes = () => {
-    if (notes !== node.notes) update({ notes })
-  }
-  const onEnter = (commit: () => void) => (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      commit()
-      ;(e.target as HTMLElement).blur()
-    }
-  }
-
   const options = addOptions(node, nodes)
 
   return (
     <div className="inspector">
-      <div className="inspector-kind">
-        <span>{KIND_ICONS[node.kind]}</span> {kindLabel(node, nodes)}
-      </div>
+      {node.kind === 'world' && <WorldPanel world={node} />}
 
-      <label className="field">
-        <span>Name</span>
-        <input value={name} onChange={(e) => setName(e.target.value)} onBlur={commitName} onKeyDown={onEnter(commitName)} />
-      </label>
-
-      <label className="field">
-        <span>Tags</span>
-        <input
-          value={tags}
-          placeholder="comma, separated"
-          onChange={(e) => setTags(e.target.value)}
-          onBlur={commitTags}
-          onKeyDown={onEnter(commitTags)}
-        />
-      </label>
-
-      <label className="field">
-        <span>Seed</span>
-        <div className="field-row">
-          <input value={seed} inputMode="numeric" onChange={(e) => setSeed(e.target.value)} onBlur={commitSeed} onKeyDown={onEnter(commitSeed)} />
-          <button title="New random seed" onClick={() => update({ seed: Math.floor(Math.random() * 0x100000000) })}>
-            🎲
-          </button>
+      <section className="inspector-section">
+        <div className="inspector-kind">
+          <span>{KIND_ICONS[node.kind]}</span> {kindLabel(node, nodes)}
         </div>
-      </label>
-
-      <label className="field grow">
-        <span>Notes</span>
-        <textarea value={notes} placeholder="Lore, ideas, anything…" onChange={(e) => setNotes(e.target.value)} onBlur={commitNotes} />
-      </label>
+        <TextField label="Name" value={node.name} required onCommit={(name) => update({ name })} />
+        <TextField
+          label="Tags"
+          placeholder="comma, separated"
+          value={node.tags.join(', ')}
+          onCommit={(text) => {
+            const tags = parseTags(text)
+            if (tags.join('\u0000') !== node.tags.join('\u0000')) update({ tags })
+          }}
+        />
+        <label className="field">
+          <span>Seed</span>
+          <div className="field-row">
+            <NumberInput value={node.seed} min={0} max={0xffffffff} integer onCommit={(seed) => update({ seed })} />
+            <button title="New random seed" aria-label="New random seed" onClick={() => update({ seed: Math.floor(Math.random() * 0x100000000) })}>
+              🎲
+            </button>
+          </div>
+        </label>
+        <div className="field grow">
+          <span>Notes</span>
+          <NotesEditor label="Notes" value={node.notes} onCommit={(notes) => update({ notes })} />
+        </div>
+      </section>
 
       {options.length > 0 && (
         <div className="field">
@@ -100,7 +70,7 @@ function NodeForm({ node }: { node: SpatialNode }) {
         </div>
       )}
 
-      {!isRoot && (
+      {node.parentId !== null && (
         <button className="danger" onClick={() => void execute({ type: 'node.delete', payload: { id: node.id } })}>
           Delete {node.name}
         </button>

@@ -8,6 +8,7 @@ import { Inspector } from './Inspector'
 import { Outline } from './Outline'
 import { TimelineBar } from './TimelineBar'
 import { Viewport } from './Viewport'
+import { WorldEditor } from '../world/WorldEditor'
 
 export function Workspace() {
   const nodes = useUi((s) => s.nodes)
@@ -21,10 +22,12 @@ export function Workspace() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isEditingText()) return
-      const { selectedId, project: p, execute, nodes: all } = useUi.getState()
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId && selectedId !== p?.rootId) {
+      const { selectedId, selectedRegionId, project: p, execute, nodes: all } = useUi.getState()
+      if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedRegionId || (selectedId && selectedId !== p?.rootId))) {
         e.preventDefault()
-        void execute({ type: 'node.delete', payload: { id: selectedId } })
+        // A selected region is the more specific target than the world it's on.
+        if (selectedRegionId) void execute({ type: 'region.delete', payload: { id: selectedRegionId } })
+        else void execute({ type: 'node.delete', payload: { id: selectedId! } })
       }
       if (e.key === 'Escape' && selectedId) {
         // Escape zooms out one level, like the scroll wheel in the viewport.
@@ -65,7 +68,7 @@ export function Workspace() {
         <Outline />
       </aside>
       <main className="viewport-panel">
-        <Viewport />
+        {selected?.kind === 'world' ? <WorldEditor key={selected.id} world={selected} /> : <Viewport />}
       </main>
       <aside className="panel inspector-panel">
         <Inspector />

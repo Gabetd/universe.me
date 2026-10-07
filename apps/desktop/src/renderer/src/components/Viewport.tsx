@@ -1,5 +1,6 @@
 import type { NodeKind, SpatialNode } from '@universe/core'
 import { useEffect, useMemo, useRef } from 'react'
+import { hueOf, rng } from '@universe/procgen'
 import { kindLabel } from '../kinds'
 import { selectNode, useUi } from '../store'
 
@@ -115,20 +116,6 @@ interface Scene {
   children: SpatialNode[]
   world: SpatialNode | undefined
 }
-
-/** Small, fast seeded PRNG (mulberry32), so every node always looks the same. */
-function rng(seed: number): () => number {
-  let a = seed >>> 0
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0
-    let t = a
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-const hueOf = (seed: number) => Math.floor(rng(seed ^ 0x9e3779b9)() * 360)
 
 function drawScene(ctx: CanvasRenderingContext2D, w: number, h: number, scene: Scene, hoverId: string | null, t: number): Target[] {
   const { focus, children } = scene

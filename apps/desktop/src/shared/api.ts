@@ -1,4 +1,4 @@
-import type { SpatialNode } from '@universe/core'
+import type { Region, SpatialNode, WorldInfo } from '@universe/core'
 
 /** Shared between the main process, the preload bridge and the renderer. Types only. */
 
@@ -17,10 +17,21 @@ export interface ProjectSummary {
 export interface AppState {
   project: ProjectSummary | null
   nodes: SpatialNode[]
+  /** Every live world's settings and terrain revision. */
+  worlds: WorldInfo[]
+  /** Every live region on a live world. */
+  regions: Region[]
   canUndo: boolean
   canRedo: boolean
-  /** Node the last command created or touched, so the UI can select it. */
+  /** Node or region the last command created or touched, so the UI can select it. */
   focusId?: string
+}
+
+/** A world's terrain edit layers: raw bytes per cube face (height = Int16 LE, biome = Uint8). */
+export interface TerrainLayers {
+  revision: number
+  height: Uint8Array[]
+  biome: Uint8Array[]
 }
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
@@ -36,6 +47,7 @@ export interface UniverseApi {
   saveCopy(): Promise<Result<string | null>>
   closeProject(): Promise<AppState>
   execute(command: unknown): Promise<Result<AppState>>
+  getTerrain(worldId: string): Promise<Result<TerrainLayers>>
   undo(): Promise<Result<AppState>>
   redo(): Promise<Result<AppState>>
   onState(listener: (state: AppState) => void): () => void
@@ -50,6 +62,7 @@ export const IPC = {
   saveCopy: 'project:save-copy',
   closeProject: 'project:close',
   execute: 'cmd:execute',
+  terrain: 'world:terrain',
   undo: 'cmd:undo',
   redo: 'cmd:redo',
   stateChanged: 'state:changed',

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { focusedNotesEditor } from './components/NotesEditor'
 import { Welcome } from './components/Welcome'
 import { Workspace } from './components/Workspace'
 import { redo, undo, useUi } from './store'
@@ -18,6 +19,11 @@ export function App() {
     void window.universe.getState().then(apply)
     const offState = window.universe.onState(apply)
     const offMenu = window.universe.onMenu((action) => {
+      // Rich-text notes keep their own history; the menu shortcut would otherwise bypass it.
+      if (focusedNotesEditor) {
+        focusedNotesEditor.commands[action]()
+        return
+      }
       if (isEditingText()) {
         // Let the focused field undo its own typing.
         document.execCommand(action)

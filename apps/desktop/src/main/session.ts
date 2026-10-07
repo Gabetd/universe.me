@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
+import { CUBE_FACES, DEFAULT_WORLD_SETTINGS, LAYER_BYTES_PER_CELL, TERRAIN_RES, type TerrainLayerName } from '@universe/core'
 import { Project } from '@universe/db'
-import type { AppState } from '../shared/api'
+import type { AppState, TerrainLayers } from '../shared/api'
 
 const MAX_RECENT = 10
 
@@ -18,11 +19,19 @@ export class Session {
 
   state(): AppState {
     const p = this.project
-    if (!p) return { project: null, nodes: [], canUndo: false, canRedo: false }
+    if (!p) return { project: null, nodes: [], worlds: [], regions: [], canUndo: false, canRedo: false }
     const info = p.info()
+    const nodes = p.store.nodes.all()
+    const worldIds = new Set(nodes.filter((n) => n.kind === 'world').map((n) => n.id))
     return {
       project: { path: info.path, name: info.name, rootId: info.rootId },
-      nodes: p.store.nodes.all(),
+      nodes,
+      worlds: [...worldIds].map((id) => ({
+        id,
+        settings: p.store.worlds.getSettings(id) ?? DEFAULT_WORLD_SETTINGS,
+        terrainRevision: p.store.worlds.terrainRevision(id)
+      })),
+      regions: p.store.regions.all().filter((r) => worldIds.has(r.worldId)),
       canUndo: p.bus.canUndo,
       canRedo: p.bus.canRedo,
       focusId: this.focusId
@@ -54,6 +63,13 @@ export class Session {
   execute(command: unknown): AppState {
     this.focusId = this.require().bus.execute(command, 'user').targetId
     return this.state()
+  }
+
+  terrain(worldId: string): TerrainLayers {
+    const { worlds } = this.require().store
+    const layer = (name: TerrainLayerName) =>
+      Array.from({ length: CUBE_FACES }, (_, face) => worlds.getLayer(worldId, name, face) ?? new Uint8Array(TERRAIN_RES * TERRAIN_RES * LAYER_BYTES_PER_CELL[name]))
+    return { revision: worlds.terrainRevision(worldId), height: layer('height'), biome: layer('biome') }
   }
 
   undo(): AppState {

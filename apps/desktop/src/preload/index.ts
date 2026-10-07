@@ -15,6 +15,7 @@ const api: UniverseApi = {
   saveCopy: () => ipcRenderer.invoke(IPC.saveCopy),
   closeProject: () => ipcRenderer.invoke(IPC.closeProject),
   execute: (command) => ipcRenderer.invoke(IPC.execute, command),
+  getTerrain: (worldId) => ipcRenderer.invoke(IPC.terrain, worldId),
   undo: () => ipcRenderer.invoke(IPC.undo),
   redo: () => ipcRenderer.invoke(IPC.redo),
   onState: (listener) => subscribe<AppState>(IPC.stateChanged, listener),

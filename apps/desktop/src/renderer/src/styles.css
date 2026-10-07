@@ -482,3 +482,220 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Inspector sections */
+.inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.inspector-section h3 {
+  margin: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.inspector-kind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.inspector-kind .close {
+  margin-left: auto;
+  color: var(--muted);
+}
+.field-label-row {
+  display: flex;
+  justify-content: space-between;
+}
+input[type='range'] {
+  padding: 0;
+  accent-color: var(--accent);
+}
+input[type='color'] {
+  height: 32px;
+  padding: 2px;
+}
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex: none;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+.region-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.region-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 6px;
+  border-radius: 4px;
+  text-align: left;
+}
+.region-row:hover,
+.region-row.selected {
+  background: var(--panel-2);
+}
+.region-form {
+  background: #141b31;
+  margin: -14px -14px 0;
+  padding: 14px;
+}
+
+/* Rich-text notes */
+.notes {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.notes:focus-within {
+  border-color: var(--accent);
+}
+.notes-toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.notes-toolbar button {
+  padding: 2px 8px;
+  background: transparent;
+  border-color: transparent;
+}
+.notes-toolbar button[aria-pressed='true'] {
+  background: #22305a;
+}
+.notes-editor {
+  min-height: 120px;
+  padding: 8px 10px;
+  outline: none;
+  line-height: 1.5;
+}
+.notes-editor p {
+  margin: 0 0 6px;
+}
+.notes-editor h3 {
+  margin: 6px 0;
+  font-size: 15px;
+}
+.notes-editor ul,
+.notes-editor ol {
+  margin: 0 0 6px;
+  padding-left: 20px;
+}
+.notes-editor blockquote {
+  margin: 0 0 6px;
+  padding-left: 10px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+.notes-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* World editor */
+.world-editor {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+.world-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.segmented {
+  display: flex;
+}
+.segmented button {
+  border-radius: 0;
+  margin-left: -1px;
+  padding: 5px 10px;
+}
+.segmented button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.segmented button:last-child {
+  border-radius: 0 6px 6px 0;
+}
+.segmented button[aria-pressed='true'] {
+  background: #22305a;
+  border-color: var(--accent);
+  position: relative;
+}
+.toolbar-slider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.toolbar-slider input {
+  width: 110px;
+}
+.toolbar-value {
+  min-width: 56px;
+  color: var(--text);
+}
+.biome-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.biome-palette button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+.biome-palette button[aria-checked='true'] {
+  border-color: var(--accent);
+  background: #22305a;
+}
+.world-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.world-canvas > div,
+.world-canvas canvas {
+  position: absolute !important;
+  inset: 0;
+}
+.map-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+.world-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+.world-editor .viewport-overlay.bottom {
+  bottom: 10px;
+}

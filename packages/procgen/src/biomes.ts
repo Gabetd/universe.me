@@ -50,6 +50,8 @@ export function hexToRgb(hex: string): [number, number, number] {
 }
 
 /**
+ * Beaches are paint-only: at this grid size an automatic coastal band shows up as speckles.
+ *
  * Placeholder climate until M4: temperature from latitude and altitude,
  * moisture from noise plus wet/dry latitude bands (wet equator, dry 30°, wet 60°).
  */
@@ -59,7 +61,6 @@ export function autoBiome(latDeg: number, elevation: number, moisture: number): 
   if (elevation > 2800) return temperature < -4 ? BIOME.ice : BIOME.rock
   if (temperature < -8) return BIOME.ice
   if (temperature < -1) return BIOME.tundra
-  if (elevation < 18 && temperature > 4) return BIOME.beach
 
   const band = Math.cos((absLat * Math.PI) / 30)
   const wet = Math.max(0, Math.min(1, moisture * 0.85 + band * 0.22 + 0.05))
