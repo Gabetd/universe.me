@@ -43,6 +43,8 @@ function NodeForm({ node }: { node: SpatialNode }) {
         </div>
         <TextField label="Name" value={node.name} required onCommit={(name) => update({ name })} />
         <TagsField label="Tags" tags={node.tags} onCommit={(tags) => update({ tags })} />
+        {/* A world's seed lives with its generation options. */}
+        {node.kind !== 'world' && (
         <label className="field">
           <span>Seed</span>
           <div className="field-row">
@@ -52,6 +54,7 @@ function NodeForm({ node }: { node: SpatialNode }) {
             </button>
           </div>
         </label>
+        )}
         <div className="field grow">
           <span>Notes</span>
           <NotesEditor label="Notes" value={node.notes} onCommit={(notes) => update({ notes })} />

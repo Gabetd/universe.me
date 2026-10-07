@@ -1,5 +1,5 @@
 import { formatTime, parseTime, type Precision } from '@universe/core'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 /**
  * Inputs that save once when editing finishes (blur, Enter, slider release),
@@ -16,6 +16,28 @@ export function TextField(props: { label: string; value: string; placeholder?: s
     <label className="field">
       <span>{props.label}</span>
       <input value={text} placeholder={props.placeholder} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={blurOnEnter} />
+    </label>
+  )
+}
+
+/**
+ * A color picker that saves once, when the picker closes, rather than for
+ * every color passed over while dragging (each save is an undo step).
+ */
+export function ColorField(props: { label: string; value: string; onCommit(color: string): void }) {
+  const ref = useRef<HTMLInputElement>(null)
+  const { value, onCommit } = props
+  useEffect(() => {
+    const el = ref.current!
+    const onChange = () => el.value.toLowerCase() !== value.toLowerCase() && onCommit(el.value)
+    el.addEventListener('change', onChange)
+    return () => el.removeEventListener('change', onChange)
+  }, [value, onCommit])
+  return (
+    <label className="field">
+      <span>{props.label}</span>
+      {/* Uncontrolled, re-created when the stored color changes (e.g. undo). */}
+      <input key={value} ref={ref} type="color" aria-label={props.label} defaultValue={value} />
     </label>
   )
 }

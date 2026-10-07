@@ -364,6 +364,7 @@ Each milestone ends with something you can launch and demo.
 - [x] Inspector + rich text notes (TipTap, stored as HTML) on nodes and regions; world generation settings.
 - Storage: terrain is saved as *edits on top of the generated base* (Int16 height deltas + painted biome ids, zlib-compressed per face), so changing the seed or generation settings keeps the user's sculpting.
 - Deferred: dragging region vertices to reshape (redraw for now), seamless lighting across cube-face edges, quadtree LOD for close-up detail.
+- [x] *Added after M2:* world options and seeds. Options: land type (continents, supercontinent, archipelago), exact water coverage, continent size, islands, mountain amount and height, roughness, temperature, deserts, beaches, vegetation/sand/water colors, and size. A **seed** (any text) generates the whole world, options included, and locks them; "Customize" unlocks them. A **world code** (`W1-…`, with a check character) encodes a world's noise seed and every option exactly, so any world can be recreated anywhere. Presets for custom worlds (ocean, desert, ice, jungle, alien…).
 
 ### M2 — Timeline (2–3 weeks) — *done*
 - [x] Timeline component: zoom/pan from minutes to billions of years, lanes, eras, create/move/resize events, a "Now" marker and a playhead. Dates are typed freely ("1204", "15 Mar 1204", "c. 1200", "13th century", "4.5 billion years ago") with a precision.

@@ -137,7 +137,7 @@ function Planet({
       ))}
       <mesh scale={seaRadius} raycast={() => null}>
         <sphereGeometry args={[1, 96, 64]} />
-        <meshStandardMaterial color="#2b6aa8" transparent opacity={0.35} roughness={0.25} metalness={0.1} depthWrite={false} />
+        <meshStandardMaterial color={model.settings.terrain.waterColor} transparent opacity={0.35} roughness={0.25} metalness={0.1} depthWrite={false} />
       </mesh>
       <mesh scale={1.06} raycast={() => null}>
         <sphereGeometry args={[1, 64, 32]} />

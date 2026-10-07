@@ -1,7 +1,7 @@
 import { LINK_TYPES, PRECISIONS, type Command, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type TimelineEvent } from '@universe/core'
 import { useUi, type TimelineSelection } from '../store'
 import { useEditor } from '../world/editorStore'
-import { TagsField, TextField, TimeField } from './fields'
+import { ColorField, TagsField, TextField, TimeField } from './fields'
 import { NotesEditor } from './NotesEditor'
 
 const PRECISION_LABELS: Record<Precision, string> = { exact: 'Exact time', day: 'Day', year: 'Year', century: 'Century', approx: 'Approximate' }
@@ -98,10 +98,7 @@ function EventPanel({ event }: { event: TimelineEvent }) {
           </select>
         </label>
       </div>
-      <label className="field">
-        <span>Color</span>
-        <input type="color" value={event.color} onChange={(e) => update({ color: e.target.value })} />
-      </label>
+      <ColorField label="Event color" value={event.color} onCommit={(color) => update({ color })} />
 
       {onWorld && (
         <div className="field">
@@ -248,10 +245,7 @@ function EraPanel({ era }: { era: Era }) {
           <TimeField label="Era end" value={era.end} precision="year" onCommit={(v) => v && update({ end: Math.max(v.t, era.start) })} />
         </label>
       </div>
-      <label className="field">
-        <span>Color</span>
-        <input type="color" value={era.color} onChange={(e) => update({ color: e.target.value })} />
-      </label>
+      <ColorField label="Era color" value={era.color} onCommit={(color) => update({ color })} />
       <div className="field">
         <span>Era notes</span>
         <NotesEditor label="Era notes" value={era.notes} onCommit={(notes) => update({ notes })} />
@@ -272,10 +266,7 @@ function GroupPanel({ group }: { group: EventGroup }) {
     <section className="inspector-section" aria-label="Group">
       <PanelHeader icon="▤" label="Group" />
       <TextField label="Group title" value={group.title} required onCommit={(title) => update({ title })} />
-      <label className="field">
-        <span>Color</span>
-        <input type="color" value={group.color} onChange={(e) => update({ color: e.target.value })} />
-      </label>
+      <ColorField label="Group color" value={group.color} onCommit={(color) => update({ color })} />
       <label className="checkbox">
         <input type="checkbox" checked={group.collapsed} onChange={(e) => update({ collapsed: e.target.checked })} /> Collapsed into one bar
       </label>

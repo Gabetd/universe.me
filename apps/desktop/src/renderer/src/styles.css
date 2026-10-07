@@ -1101,3 +1101,42 @@ input[type='color'] {
 .region-row.absent {
   opacity: 0.5;
 }
+
+.gen-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+.gen-options:disabled {
+  opacity: 0.55;
+}
+.gen-options .segmented button {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.field-pair.three {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.seed-lock {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: #1a2140;
+  border: 1px solid #2c3870;
+  font-size: 12px;
+}
+.world-code {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  word-break: break-all;
+  user-select: all;
+}

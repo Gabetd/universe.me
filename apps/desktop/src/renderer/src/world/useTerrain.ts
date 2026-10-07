@@ -1,6 +1,6 @@
 import type { Command, Region, TerrainParams, WorldInfo } from '@universe/core'
 import type { EventPin } from './useWorldAtTime'
-import { TerrainModel, type BaseTerrain, type Vec3 } from '@universe/procgen'
+import { TerrainModel, shapeKey, type BaseTerrain, type Vec3 } from '@universe/procgen'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUi } from '../store'
 import type { GenerateRequest } from './terrain.worker'
@@ -35,11 +35,8 @@ const pending = new Map<number, (base: BaseTerrain) => void>()
 const baseCache = new Map<string, Promise<BaseTerrain>>()
 const CACHE_SIZE = 4
 
-/** Identifies the inputs of terrain generation; sea level and radius only recolor, so they're not part of it. */
-const terrainKey = (p: TerrainParams) => `${p.continentScale}:${p.roughness}:${p.mountainHeight}`
-
 function generateBase(seed: number, params: TerrainParams): Promise<BaseTerrain> {
-  const key = `${seed}:${terrainKey(params)}`
+  const key = shapeKey(seed, params)
   const cached = baseCache.get(key)
   if (cached) return cached
   if (!worker) {
@@ -82,7 +79,8 @@ export function useTerrain(worldId: string, seed: number, info: WorldInfo | unde
 
   const settings = info?.settings
   const params = settings?.terrain
-  const paramsKey = params && terrainKey(params)
+  // Only shape options regenerate; climate, colors, sea level and radius just recolor.
+  const paramsKey = params && shapeKey(seed, params)
 
   useEffect(() => {
     if (!params) return

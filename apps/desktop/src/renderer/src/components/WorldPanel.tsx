@@ -1,8 +1,9 @@
 import { regionAt, type Region, type RegionPatch, type SpatialNode, type WorldSettingsPatch } from '@universe/core'
 import { useUi, useWorld } from '../store'
-import { CommitSlider, NumberInput, TextField } from './fields'
+import { ColorField, CommitSlider, TextField } from './fields'
 import { NotesEditor } from './NotesEditor'
 import { RegionHistory } from './RegionHistory'
+import { WorldGenPanel } from './WorldGenPanel'
 import { usePlayhead } from '../timeline/timelineStore'
 
 /** Inspector section for a world: generation settings, terrain resets, and regions. */
@@ -21,29 +22,16 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
     <>
       {selectedRegion && <RegionForm key={`${selectedRegion.id}:${selectedRegion.updatedAt}`} region={selectedRegion} />}
 
-      <section className="inspector-section">
-        <h3>Surface</h3>
-        <CommitSlider label="Sea level" unit=" m" min={-4000} max={4000} step={50} value={settings.seaLevel} onCommit={(v) => update({ seaLevel: v })} />
-        <CommitSlider
-          label="Continent size"
-          min={0.4}
-          max={4}
-          step={0.1}
-          // Shown inverted: bigger number = bigger continents, which is how people think about it.
-          value={Number((4.4 - settings.terrain.continentScale).toFixed(1))}
-          onCommit={(v) => update({ terrain: { continentScale: Number((4.4 - v).toFixed(1)) } })}
-        />
-        <CommitSlider label="Roughness" unit="%" min={0} max={100} step={5} value={Math.round(settings.terrain.roughness * 100)} onCommit={(v) => update({ terrain: { roughness: v / 100 } })} />
-        <CommitSlider label="Mountain height" unit=" m" min={0} max={12000} step={250} value={settings.terrain.mountainHeight} onCommit={(v) => update({ terrain: { mountainHeight: v } })} />
-        <label className="field">
-          <span>Planet radius (km)</span>
-          <NumberInput value={settings.radiusKm} min={50} max={200000} onCommit={(v) => update({ radiusKm: v })} />
-        </label>
+      <WorldGenPanel world={world} settings={settings} />
+
+      <section className="inspector-section" aria-label="Edits">
+        <h3>Edits</h3>
+        <p className="muted small">Sculpting, painting and sea level changes sit on top of the generated world and are kept when its seed or options change.</p>
+        <CommitSlider label="Sea level change" unit=" m" min={-4000} max={4000} step={50} value={settings.seaLevel} onCommit={(v) => update({ seaLevel: v })} />
         <div className="add-buttons">
           <button onClick={() => void execute({ type: 'terrain.reset', payload: { worldId: world.id, layer: 'height' } })}>Reset sculpting</button>
           <button onClick={() => void execute({ type: 'terrain.reset', payload: { worldId: world.id, layer: 'biome' } })}>Reset painting</button>
         </div>
-        <p className="muted small">Change the seed above for a different planet. Sculpting and painting are kept on top of it.</p>
       </section>
 
       <section className="inspector-section">
@@ -85,10 +73,7 @@ function RegionForm({ region }: { region: Region }) {
         </button>
       </div>
       <TextField label="Region name" value={region.name} required onCommit={(name) => update({ name })} />
-      <label className="field">
-        <span>Color</span>
-        <input type="color" value={region.color} onChange={(e) => update({ color: e.target.value })} />
-      </label>
+      <ColorField label="Region color" value={region.color} onCommit={(color) => update({ color })} />
       <RegionHistory region={region} />
       <div className="field">
         <span>Region notes</span>

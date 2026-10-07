@@ -7,9 +7,12 @@ through an API. See [PLAN.md](PLAN.md) for the full design and roadmap.
 **Status:** M0 (Foundations), M1 (Worlds & globe) and M2 (Timeline) are
 done. You can create `.universe` project files and build the universe tree
 (cluster → galaxy → star system → planet → moon / world surface). Each world
-surface gets generated continents, oceans and mountains you can view as a 3D
-globe or a flat map. You can sculpt the terrain, paint biomes, set the sea
-level, draw named regions, and write rich-text notes.
+surface is generated from a seed: type any word and you get a whole planet
+(land type, water, islands, mountains, climate, colors), the same planet every
+time. Or customize every option yourself; either way a world code recreates
+that exact planet anywhere. View it as a 3D globe or a flat map, sculpt the
+terrain, paint biomes, change the sea level, draw named regions, and write
+rich-text notes.
 
 Every world (and every other node) has a timeline: past on the left, future
 on the right. Add events and eras, drag them around, link causes to effects,
