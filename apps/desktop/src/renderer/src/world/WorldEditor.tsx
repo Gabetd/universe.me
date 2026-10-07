@@ -122,11 +122,14 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
               <Slider label="Relief" value={exaggeration} min={1} max={80} step={1} unit="×" onChange={(v) => set({ exaggeration: v })} />
             )}
             {onSurface && tool === 'paint' && (
+            <span className="small muted">{BIOMES.find((b) => b.id === biome)?.name}</span>
+          )}
+          {onSurface && tool === 'paint' && (
               <div className="biome-palette" role="radiogroup" aria-label="Biome">
                 {BIOMES.slice(1).map((b) => (
-                  <button key={b.id} role="radio" aria-checked={biome === b.id} title={b.name} onClick={() => set({ biome: b.id })}>
+                  // Swatches only, named on hover, so the palette stays one slim row over the view.
+                  <button key={b.id} role="radio" aria-checked={biome === b.id} aria-label={b.name} title={b.name} onClick={() => set({ biome: b.id })}>
                     <span className="swatch" style={{ background: b.color }} />
-                    {b.name}
                   </button>
                 ))}
               </div>

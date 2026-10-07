@@ -10,7 +10,7 @@ test.afterEach(async () => {
   await h?.close()
 })
 
-// Renders every built-in blueprint in the builder's preview, pristine and as a ruin, into test-results/gallery.
+// Renders every built-in blueprint in the builder's preview, pristine and as a ruin, into apps/desktop/gallery (kept between runs; Playwright clears test-results).
 // Slow under software rendering, so it only runs when asked: UNIVERSE_GALLERY=1.
 test.skip(!process.env.UNIVERSE_GALLERY, 'Set UNIVERSE_GALLERY=1 to render the blueprint gallery')
 test('every built-in blueprint renders', async () => {
@@ -29,10 +29,10 @@ test('every built-in blueprint renders', async () => {
     await page.locator('.blueprint-row').filter({ hasText: new RegExp(`^.{0,3}${b.name.replace(/[()]/g, '\\$&')}`) }).getByRole('button', { name: 'Copy' }).click()
     await expect(builder).toBeVisible()
     await page.waitForTimeout(400)
-    await builder.getByTestId('blueprint-preview').screenshot({ path: `test-results/gallery/${String(i).padStart(2, '0')}-${b.id.slice(8)}.png` })
+    await builder.getByTestId('blueprint-preview').screenshot({ path: `gallery/${String(i).padStart(2, '0')}-${b.id.slice(8)}.png` })
     await builder.getByLabel('Preview condition').fill('12')
     await page.waitForTimeout(200)
-    await builder.getByTestId('blueprint-preview').screenshot({ path: `test-results/gallery/${String(i).padStart(2, '0')}-${b.id.slice(8)}-ruin.png` })
+    await builder.getByTestId('blueprint-preview').screenshot({ path: `gallery/${String(i).padStart(2, '0')}-${b.id.slice(8)}-ruin.png` })
     await builder.getByRole('button', { name: 'Cancel' }).click()
   }
   expect(errors).toEqual([])

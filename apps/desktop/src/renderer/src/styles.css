@@ -1049,10 +1049,11 @@ input[type='color'] {
 }
 .biome-palette button {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
-  font-size: 12px;
+  padding: 4px;
+}
+.biome-palette .swatch {
+  width: 16px;
+  height: 16px;
 }
 .biome-palette button[aria-checked='true'] {
   border-color: var(--accent);
@@ -1453,7 +1454,6 @@ input[type='color'] {
   border: 1px solid var(--border);
 }
 .tool-options .biome-palette {
-  flex-basis: 100%;
   padding: 0;
   border: none;
   background: none;

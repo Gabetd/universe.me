@@ -10,3 +10,4 @@ playwright-report/
 *.universe-shm
 *.tsbuildinfo
 .DS_Store
+apps/desktop/gallery/
