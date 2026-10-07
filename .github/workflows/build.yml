@@ -48,6 +48,11 @@ jobs:
         working-directory: apps/desktop
         shell: bash
         run: UNIVERSE_E2E_EXECUTABLE="$PWD/release/win-unpacked/Universe.exe" npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-results-${{ runner.os }}
+          path: apps/desktop/test-results
       - name: Keep the unpacked Windows app for the Windows 10 test
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4

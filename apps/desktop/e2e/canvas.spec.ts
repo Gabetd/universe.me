@@ -54,11 +54,13 @@ test('events become nodes on the world canvas: move, hide, link, recede with tim
   const before = (await node(page, 'Treaty').boundingBox())!
   await page.mouse.move(before.x + 40, before.y + 20)
   await page.mouse.down()
-  await page.mouse.move(before.x + 140, before.y + 220, { steps: 8 })
+  await page.mouse.move(before.x + 60, before.y + 120, { steps: 8 })
   await page.mouse.up()
   await expect.poll(async () => (await timeline(page)).events.find((e) => e.title === 'Treaty')?.canvas).toBeTruthy()
 
-  // Link two nodes by dragging from one's handle onto the other.
+  // Link two nodes by dragging from one's handle onto the other (after fitting them all in view, for small screens).
+  await page.getByRole('toolbar', { name: 'Canvas' }).getByRole('button', { name: 'Fit' }).click()
+  await page.waitForTimeout(400) // nodes glide into place
   const target = (await node(page, 'Treaty').boundingBox())!
   const handle = (await node(page, 'War of the Straits').getByTitle('Drag onto another node to link them').boundingBox())!
   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)

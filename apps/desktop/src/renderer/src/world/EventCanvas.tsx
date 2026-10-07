@@ -54,7 +54,8 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   const { execute, selectTimeline } = useUi.getState()
   const playhead = usePlayhead(worldId)
   const range = useTimelineView((s) => s.ranges[worldId])
-  const [view, setViewState] = useState<View>(() => views.get(worldId) ?? { x: 40, y: 40, zoom: 1 })
+  // Null until the board has a size: then it starts fitted to the nodes.
+  const [savedView, setViewState] = useState<View | null>(() => views.get(worldId) ?? null)
   const [drag, setDrag] = useState<Drag | null>(null)
   const [showHidden, setShowHidden] = useState(false)
   const boardRef = useRef<HTMLDivElement>(null)
@@ -76,23 +77,42 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   // The past falls away over about the timeline's visible span (or the whole history if it hasn't been shown yet).
   const horizon = range ? range.t1 - range.t0 : events.length ? events[events.length - 1]!.start - events[0]!.start : 1
 
-  const nodes = useMemo(() => {
-    const placed = new Map<string, PlacedNode>()
+  // Every shown node's resting place. Hidden nodes keep their slot, so showing one doesn't reshuffle the rest.
+  const homes = useMemo(() => {
     let slot = 0
-    for (const event of events) {
-      // Hidden nodes keep their slot, so showing one doesn't reshuffle the rest.
+    return events.flatMap((event) => {
       const home = homeOf(event, slot)
       if (!event.canvas) slot++
-      if (event.canvasHidden && !showHidden) continue
+      return event.canvasHidden && !showHidden ? [] : [{ event, home }]
+    })
+  }, [events, showHidden])
+
+  /** The pan and zoom that fit every node on the board (at most at 100%). */
+  const fitted = (): View => {
+    const xs = homes.map((h) => h.home.x)
+    const ys = homes.map((h) => h.home.y)
+    const [x0, y0] = homes.length ? [Math.min(...xs), Math.min(...ys)] : [0, 0]
+    const [x1, y1] = homes.length ? [Math.max(...xs) + NODE_W, Math.max(...ys) + NODE_H] : [NODE_W, NODE_H]
+    const zoom = Math.max(MIN_ZOOM, Math.min(1, (size.w - 2 * GAP) / (x1 - x0), (size.h - 2 * GAP) / (y1 - y0)))
+    return { zoom, x: (size.w - (x1 - x0) * zoom) / 2 - x0 * zoom, y: (size.h - (y1 - y0) * zoom) / 2 - y0 * zoom }
+  }
+  // Until it's panned or zoomed, the board shows every node.
+  const view = savedView ?? (size.w && size.h ? fitted() : null)
+
+  const nodes = useMemo(() => {
+    const placed = new Map<string, PlacedNode>()
+    if (!view) return placed
+    for (const { event, home } of homes) {
       const at = drag?.kind === 'node' && drag.id === event.id && drag.moved ? drag.at : home
       const depth = nodeDepth(event, playhead, horizon)
       const flat: [number, number] = [view.x + (at.x + NODE_W / 2) * view.zoom, view.y + (at.y + NODE_H / 2) * view.zoom]
       placed.set(event.id, { event, at, depth, k: view.zoom * depth.scale, center: project(...flat, size.w / 2, size.h / 2, depth.scale) })
     }
     return placed
-  }, [events, showHidden, drag, playhead, horizon, view, size])
+  }, [homes, drag, playhead, horizon, view, size])
 
   const onWheel = (e: React.WheelEvent) => {
+    if (!view) return
     const rect = boardRef.current!.getBoundingClientRect()
     const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, view.zoom * Math.exp(-e.deltaY * 0.001)))
     const px = e.clientX - rect.left
@@ -109,7 +129,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   const capture = (e: React.PointerEvent) => boardRef.current!.setPointerCapture(e.pointerId)
 
   const onBoardPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0 && e.button !== 1) return
+    if ((e.button !== 0 && e.button !== 1) || !view) return
     capture(e)
     setDrag({ kind: 'pan', start: { x: e.clientX, y: e.clientY }, from: view })
   }
@@ -169,6 +189,9 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
         >
           Arrange by time
         </button>
+        <button title="Fit every node on the board" onClick={() => size.w && setView(fitted())}>
+          Fit
+        </button>
         <button aria-pressed={showHidden} disabled={hiddenCount === 0 && !showHidden} onClick={() => setShowHidden(!showHidden)}>
           {showHidden ? 'Hide hidden nodes' : `Show hidden (${hiddenCount})`}
         </button>
@@ -177,7 +200,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
         ref={boardRef}
         className={`event-board${drag ? ' dragging' : ''}`}
         data-testid="event-canvas"
-        style={{ backgroundPosition: `${view.x}px ${view.y}px`, backgroundSize: `${32 * view.zoom}px ${32 * view.zoom}px` }}
+        style={view ? { backgroundPosition: `${view.x}px ${view.y}px`, backgroundSize: `${32 * view.zoom}px ${32 * view.zoom}px` } : undefined}
         onWheel={onWheel}
         onPointerDown={onBoardPointerDown}
         onPointerMove={onPointerMove}
