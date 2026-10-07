@@ -2,6 +2,7 @@ import type { SpatialNode } from '@universe/core'
 import { BIOMES } from '@universe/procgen'
 import { useUi, useWorld } from '../store'
 import { isBrushTool, useEditor, type EditorTool } from './editorStore'
+import { EventCanvas } from './EventCanvas'
 import { GlobeView } from './GlobeView'
 import { MapView } from './MapView'
 import { useSurfaceTools } from './useSurfaceTools'
@@ -31,12 +32,13 @@ const hasWebGL = (() => {
 
 export function WorldEditor({ world }: { world: SpatialNode }) {
   const { info, regions: allRegions } = useWorld(world.id)
-  const { regions, pins, highlightRegionIds } = useWorldAtTime(world.id, allRegions)
+  const { regions, pins, highlightRegionIds, focus } = useWorldAtTime(world.id, allRegions)
   const { view, tool, radiusKm, strength, biome, exaggeration, set } = useEditor()
   const { model, change, error, bump, commit } = useTerrain(world.id, world.seed, info)
   const { pointerDown, pointerMove, finishRegion } = useSurfaceTools(world.id, model, bump, commit)
-  const activeView = hasWebGL ? view : 'map'
-  const hint = TOOLS.find((t) => t.tool === tool)?.hint
+  const activeView = hasWebGL || view === 'canvas' ? view : 'map'
+  const onSurface = activeView !== 'canvas'
+  const hint = onSurface ? TOOLS.find((t) => t.tool === tool)?.hint : undefined
 
   const viewProps: SurfaceViewProps | undefined = model && {
     model,
@@ -44,6 +46,7 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
     regions,
     pins,
     highlightRegionIds,
+    focus,
     onPinClick: (eventId) => useUi.getState().selectTimeline({ kind: 'event', ids: [eventId] }),
     onPointerDown: pointerDown,
     onPointerMove: pointerMove,
@@ -54,21 +57,31 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
     <div className="world-editor">
       <div className="world-toolbar" role="toolbar" aria-label="World tools">
         <div className="segmented" role="group" aria-label="View">
-          <button aria-pressed={activeView === 'globe'} disabled={!hasWebGL} onClick={() => set({ view: 'globe' })} title={hasWebGL ? '' : 'WebGL is not available on this computer'}>
+          <button
+            aria-pressed={activeView === 'globe'}
+            disabled={!hasWebGL}
+            onClick={() => set({ view: 'globe', surfaceView: 'globe' })}
+            title={hasWebGL ? '' : 'WebGL is not available on this computer'}
+          >
             🌐 Globe
           </button>
-          <button aria-pressed={activeView === 'map'} onClick={() => set({ view: 'map' })}>
+          <button aria-pressed={activeView === 'map'} onClick={() => set({ view: 'map', surfaceView: 'map' })}>
             🗺 Map
           </button>
+          <button aria-pressed={activeView === 'canvas'} onClick={() => set({ view: 'canvas' })} title="This world's events as cards">
+            🗂 Canvas
+          </button>
         </div>
-        <div className="segmented" role="group" aria-label="Tool">
-          {TOOLS.filter((t) => t.tool !== 'locate').map((t) => (
-            <button key={t.tool} aria-pressed={tool === t.tool} title={t.label} aria-label={t.label} onClick={() => set({ tool: t.tool, draft: [] })}>
-              {t.icon}
-            </button>
-          ))}
-        </div>
-        {isBrushTool(tool) && (
+        {onSurface && (
+          <div className="segmented" role="group" aria-label="Tool">
+            {TOOLS.filter((t) => t.tool !== 'locate').map((t) => (
+              <button key={t.tool} aria-pressed={tool === t.tool} title={t.label} aria-label={t.label} onClick={() => set({ tool: t.tool, draft: [] })}>
+                {t.icon}
+              </button>
+            ))}
+          </div>
+        )}
+        {onSurface && isBrushTool(tool) && (
           <>
             <Slider label="Size" value={radiusKm} min={30} max={2500} step={10} unit="km" onChange={(v) => set({ radiusKm: v })} />
             {tool !== 'paint' && tool !== 'erase' && (
@@ -79,7 +92,7 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
         {activeView === 'globe' && <Slider label="Relief" value={exaggeration} min={1} max={80} step={1} unit="×" onChange={(v) => set({ exaggeration: v })} />}
       </div>
 
-      {tool === 'paint' && (
+      {onSurface && tool === 'paint' && (
         <div className="biome-palette" role="radiogroup" aria-label="Biome">
           {BIOMES.slice(1).map((b) => (
             <button key={b.id} role="radio" aria-checked={biome === b.id} title={b.name} onClick={() => set({ biome: b.id })}>
@@ -91,8 +104,16 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
       )}
 
       <div className="world-canvas">
-        {viewProps ? activeView === 'globe' ? <GlobeView {...viewProps} /> : <MapView {...viewProps} /> : null}
-        {!model && <div className="world-loading">{error ? `Couldn't load terrain: ${error}` : 'Generating terrain…'}</div>}
+        {activeView === 'canvas' ? (
+          <EventCanvas worldId={world.id} regions={allRegions} />
+        ) : viewProps ? (
+          activeView === 'globe' ? (
+            <GlobeView {...viewProps} />
+          ) : (
+            <MapView {...viewProps} />
+          )
+        ) : null}
+        {!model && onSurface && <div className="world-loading">{error ? `Couldn't load terrain: ${error}` : 'Generating terrain…'}</div>}
       </div>
       <div className="viewport-overlay bottom muted small">{hint}</div>
     </div>

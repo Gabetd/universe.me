@@ -374,6 +374,7 @@ Each milestone ends with something you can launch and demo.
 - [x] Playhead drives a time-aware viewport (`EntityChange`): regions are founded, renamed and dissolved over time, each change optionally caused by an event.
 - Storage: every timeline record kind lives in one `records` table as JSON. A `batch` command applies several commands as one undo step (used for grouping and cascading deletes).
 - Deferred: reshaping region borders over time (needs vertex editing), reordering lanes by drag, calendars from the star system (M4; an Earth-like default until then).
+- [x] *Added after M2:* a **canvas** per world. Every event on the world's timeline is a node there automatically (laid out in time order until moved); nodes can be dragged, hidden (and shown again), and linked by dragging from one onto another (the same causal links as the timeline). As the playhead moves on, finished events recede into the distance (smaller, dimmer, drawn toward the vanishing point) but stay clickable. Clicking a node goes to when and where it happened: playhead to its start, timeline scrolled to it, and the globe or map turned to its point or region.
 
 ### M3 — Structures (2 weeks)
 - Blueprint library + primitive-based blueprint builder; glTF import.

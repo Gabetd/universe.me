@@ -37,7 +37,7 @@ function insidePolygon(x: number, y: number, poly: [number, number][]): boolean 
   return inside
 }
 
-export function MapView({ model, change, regions, pins, highlightRegionIds, onPinClick, onPointerDown, onPointerMove, onDoubleClick }: SurfaceViewProps) {
+export function MapView({ model, change, regions, pins, highlightRegionIds, focus, onPinClick, onPointerDown, onPointerMove, onDoubleClick }: SurfaceViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const terrain = useRef<{ canvas: HTMLCanvasElement; image: ImageData } | null>(null)
   const view = useRef<View | null>(null)
@@ -66,16 +66,11 @@ export function MapView({ model, change, regions, pins, highlightRegionIds, onPi
     dirty.current = true
   }, [regions, selectedRegionId, draft, pins, highlightRegionIds])
 
-  // Bring the selected event's pin to the middle of the view.
-  const focus = pins.find((p) => p.selected)
-  const focusKey = focus && `${focus.eventId}:${focus.lat}:${focus.lon}`
+  // Bring the selected event's place to the middle of the view, on the next frame (the view may not be sized yet).
+  const pendingFocus = useRef<LatLon | null>(null)
+  const focusKey = focus?.key
   useEffect(() => {
-    const v = view.current
-    const canvas = canvasRef.current
-    if (!focus || !v || !canvas) return
-    const [x, y] = toMap(focus)
-    v.ox = canvas.clientWidth / 2 - x * v.scale
-    v.oy = canvas.clientHeight / 2 - y * v.scale
+    pendingFocus.current = focus ?? null
     dirty.current = true
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new focus point should move the view
   }, [focusKey])
@@ -96,6 +91,12 @@ export function MapView({ model, change, regions, pins, highlightRegionIds, onPi
       if (!view.current && cw > 0) {
         const scale = Math.min(cw / W, ch / H)
         view.current = { scale, ox: (cw - W * scale) / 2, oy: (ch - H * scale) / 2 }
+      }
+      if (pendingFocus.current && view.current) {
+        const [x, y] = toMap(pendingFocus.current)
+        view.current.ox = cw / 2 - x * view.current.scale
+        view.current.oy = ch / 2 - y * view.current.scale
+        pendingFocus.current = null
       }
       if (!dirty.current || !view.current || !terrain.current) return
       dirty.current = false

@@ -1169,3 +1169,114 @@ input[type='color'] {
   word-break: break-all;
   user-select: all;
 }
+
+/* Event canvas: a world's events as nodes, receding into the distance as time passes */
+.event-canvas {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+.event-canvas-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.event-canvas-bar > span {
+  flex: 1;
+}
+.event-board {
+  position: relative !important;
+  flex: 1;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  background-color: #090c15;
+  background-image: radial-gradient(circle, #222a44 1px, transparent 1.2px);
+}
+.event-board.dragging {
+  cursor: grabbing;
+}
+.event-links {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.canvas-link path {
+  stroke-width: 2;
+}
+.canvas-link.selected path:not(.canvas-link-hit) {
+  stroke-width: 3.5;
+}
+.canvas-link .canvas-link-hit {
+  stroke: transparent;
+  stroke-width: 12;
+  fill: none;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.event-node {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-top: 4px solid;
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px #0008;
+  cursor: pointer;
+  user-select: none;
+  /* Glides back as the playhead moves on; not while the board is being dragged. */
+  transition: transform 0.25s ease-out, opacity 0.25s, filter 0.25s;
+}
+.event-board.dragging .event-node {
+  transition: none;
+}
+.event-node.now {
+  box-shadow: 0 0 0 1px var(--accent), 0 6px 24px #7aa2ff55;
+}
+.event-node.future {
+  border-style: dashed;
+  border-top-style: solid;
+}
+.event-node.selected {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+}
+.event-node.dragging {
+  z-index: 10000;
+  box-shadow: 0 12px 32px #000a;
+}
+.event-node-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+.event-node-head b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.event-node-place {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.event-node-handle {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  color: var(--accent);
+  cursor: crosshair;
+  padding: 2px 4px;
+}

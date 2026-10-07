@@ -8,7 +8,6 @@ import {
   type EventGroup,
   type EventLink,
   type Lane,
-  type LinkType,
   type SpatialNode,
   type TimelineEvent
 } from '@universe/core'
@@ -17,6 +16,7 @@ import { TimeField } from '../components/fields'
 import { useTimelineOwner, useUi } from '../store'
 import { ROW_H, laneAt, layoutTimeline, type PlacedItem, type TimelineLayout } from './layout'
 import { TimeScale, fitRange, panRange, snap, zoomRange, type TimeRange } from './scale'
+import { ArrowMarkers, LINK_STYLE, WARN_COLOR } from './linkStyle'
 import { useNow, usePlayhead, useTimelineView } from './timelineStore'
 
 const LABELS_W = 132
@@ -27,14 +27,6 @@ type Drag =
   | { kind: 'resize'; id: string; edge: 'start' | 'end'; t: number }
   | { kind: 'link'; fromId: string; x: number; y: number }
   | { kind: 'playhead' }
-
-const LINK_STYLE: Record<LinkType, { color: string; dash?: string; arrow: boolean }> = {
-  causes: { color: '#7aa2ff', arrow: true },
-  enables: { color: '#8bc34a', arrow: true },
-  prevents: { color: '#ff7a8a', dash: '6 4', arrow: true },
-  precedes: { color: '#8891ad', arrow: true },
-  related: { color: '#8891ad', dash: '2 4', arrow: false }
-}
 
 /** The timeline panel for whatever is selected: a world's (or its planet's) history, or a node's own. */
 export function Timeline() {
@@ -517,17 +509,11 @@ function Arrows({ layout, links, emphasis, warned, selectedLinkId, width }: Arro
   const selectTimeline = useUi((s) => s.selectTimeline)
   return (
     <svg className="tl-arrows" width={width} height={layout.height}>
-      <defs>
-        {[...Object.entries(LINK_STYLE), ['warn', { color: '#ffd27a' }] as const].map(([type, s]) => (
-          <marker key={type} id={`arrow-${type}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 0 L 10 5 L 0 10 z" fill={s.color} />
-          </marker>
-        ))}
-      </defs>
+      <ArrowMarkers prefix="arrow" />
       {links.map((l) => {
         const ends = linkEnds(layout, l.fromId, l.toId)
         if (!ends) return null
-        const style = warned.has(l.id) ? { ...LINK_STYLE[l.type], color: '#ffd27a' } : LINK_STYLE[l.type]
+        const style = warned.has(l.id) ? { ...LINK_STYLE[l.type], color: WARN_COLOR } : LINK_STYLE[l.type]
         const d = curve(ends.x1, ends.y1, ends.x2, ends.y2)
         const strong = l.id === selectedLinkId || emphasis?.links.has(l.id)
         return (

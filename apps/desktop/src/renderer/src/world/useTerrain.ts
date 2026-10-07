@@ -1,4 +1,4 @@
-import type { Command, Region, TerrainParams, WorldInfo } from '@universe/core'
+import type { Command, LatLon, Region, TerrainParams, WorldInfo } from '@universe/core'
 import type { EventPin } from './useWorldAtTime'
 import { TerrainModel, shapeKey, type BaseTerrain, type Vec3 } from '@universe/procgen'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -22,6 +22,8 @@ export interface SurfaceViewProps {
   pins: EventPin[]
   /** Regions where the selected event happens. */
   highlightRegionIds: Set<string>
+  /** Where the selected event happened; the views turn to it whenever `key` changes. */
+  focus?: LatLon & { key: string }
   onPinClick(eventId: string): void
   onPointerDown(dir: Vec3): boolean
   onPointerMove(dir: Vec3): void

@@ -1,5 +1,6 @@
 import { LINK_TYPES, PRECISIONS, type Command, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type TimelineEvent } from '@universe/core'
 import { useUi, type TimelineSelection } from '../store'
+import { locationLabel } from '../timeline/labels'
 import { useEditor } from '../world/editorStore'
 import { ColorField, TagsField, TextField, TimeField } from './fields'
 import { NotesEditor } from './NotesEditor'
@@ -107,7 +108,7 @@ function EventPanel({ event }: { event: TimelineEvent }) {
           <ul className="chip-list">
             {event.locations.map((loc, i) => (
               <li key={i}>
-                {loc.kind === 'point' ? `📍 ${loc.lat.toFixed(1)}°, ${loc.lon.toFixed(1)}°` : `⬠ ${regions.find((r) => r.id === loc.regionId)?.name ?? 'Deleted region'}`}
+                {locationLabel(loc, regions)}
                 <button className="link" aria-label="Remove location" onClick={() => update({ locations: event.locations.filter((_, j) => j !== i) })}>
                   ✕
                 </button>

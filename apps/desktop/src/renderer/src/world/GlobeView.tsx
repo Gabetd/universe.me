@@ -32,7 +32,7 @@ export function GlobeView(props: SurfaceViewProps) {
         <directionalLight position={[4, 2, 3]} intensity={2.2} />
         <Stars radius={80} depth={40} count={4000} factor={3} fade speed={0} />
         <Planet {...props} labels={labels} />
-        <FocusOnSelectedPin pins={props.pins} />
+        <FocusOn focus={props.focus} />
         <OrbitControls
           makeDefault
           enablePan={false}
@@ -236,13 +236,12 @@ function PinLabelProjector({ pins, model, scale, labels }: { pins: EventPin[]; m
   return null
 }
 
-/** Turns the globe so the selected event's pin faces the camera. */
-function FocusOnSelectedPin({ pins }: { pins: EventPin[] }) {
+/** Turns the globe so the selected event's place faces the camera. */
+function FocusOn({ focus }: { focus: SurfaceViewProps['focus'] }) {
   const camera = useThree((s) => s.camera)
   const controls = useThree((s) => s.controls) as { update(): void } | null
   const target = useRef<THREE.Vector3 | null>(null)
-  const focus = pins.find((p) => p.selected)
-  const key = focus && `${focus.eventId}:${focus.lat}:${focus.lon}`
+  const key = focus?.key
   useEffect(() => {
     target.current = focus ? new THREE.Vector3(...latLonToDir(focus.lat, focus.lon)) : null
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new focus point should move the camera

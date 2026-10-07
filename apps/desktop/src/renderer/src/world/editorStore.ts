@@ -4,10 +4,16 @@ import { create } from 'zustand'
 
 /** `locate` picks a point for an event's location (`locateEventId`). */
 export type EditorTool = 'navigate' | BrushTool | 'region' | 'locate'
-type EditorView = 'globe' | 'map'
+export type SurfaceView = 'globe' | 'map'
+/** The canvas shows the world's events as cards rather than its surface. */
+type EditorView = SurfaceView | 'canvas'
 
 interface EditorState {
   view: EditorView
+  /** The surface view to return to from the canvas. */
+  surfaceView: SurfaceView
+  /** Bumped to fly the views to the selected event's place again, even if it was already selected. */
+  focusSeq: number
   tool: EditorTool
   radiusKm: number
   strength: number
@@ -23,6 +29,8 @@ interface EditorState {
 
 export const useEditor = create<EditorState>((set) => ({
   view: 'globe',
+  surfaceView: 'globe',
+  focusSeq: 0,
   tool: 'navigate',
   radiusKm: 350,
   strength: 0.5,
