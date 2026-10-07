@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { BrowserWindow, Menu, app, dialog, ipcMain, shell, type MenuItemConstructorOptions } from 'electron'
 import { IPC, type AppState, type BuildInfo, type MenuAction, type Result } from '../shared/api'
 import { Session } from './session'
+import { Updater } from './updater'
 
 declare const __BUILD_INFO__: BuildInfo
 
@@ -13,6 +14,7 @@ if (process.env.UNIVERSE_USER_DATA) app.setPath('userData', process.env.UNIVERSE
 
 let win: BrowserWindow | null = null
 let session: Session
+const updater = new Updater((status) => win?.webContents.send(IPC.updateChanged, status))
 /** A .universe file passed on the command line or via Finder before the window was ready. */
 let pendingOpen: string | undefined = process.argv.find((a) => a.endsWith('.universe'))
 
@@ -187,6 +189,13 @@ function buildMenu(): void {
               detail: `Build ${__BUILD_INFO__.commit} (${__BUILD_INFO__.builtAt})\nElectron ${process.versions.electron}`
             })
         },
+        {
+          label: 'Check for Updates…',
+          click: fromMenu(async () => {
+            const why = await updater.check(true)
+            if (why && win) await dialog.showMessageBox(win, { message: why })
+          })
+        },
         { label: 'Project on GitHub', click: () => void shell.openExternal('https://github.com/Gabetd/universe.me') }
       ]
     }
@@ -201,6 +210,9 @@ function registerIpc(): void {
   ipcMain.handle(IPC.openProject, (_e, path?: string) => wrap(() => openProject(path)))
   ipcMain.handle(IPC.saveCopy, () => wrap(saveCopy))
   ipcMain.handle(IPC.terrain, (_e, worldId: string) => wrap(() => session.terrain(worldId)))
+  ipcMain.handle(IPC.updateStatus, () => updater.current())
+  ipcMain.handle(IPC.installUpdate, () => updater.install())
+  ipcMain.handle(IPC.dismissUpdate, () => updater.dismiss())
   ipcMain.handle(IPC.closeProject, () => {
     session.close()
     broadcast()
@@ -234,6 +246,7 @@ app.whenReady().then(() => {
   registerIpc()
   buildMenu()
   createWindow()
+  updater.start()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

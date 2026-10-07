@@ -17,5 +17,5 @@ export const ROADMAP: Milestone[] = [
   { id: 'M5', title: 'Scale navigation', status: 'planned', summary: 'Galaxies, clusters, seamless zoom between levels' },
   { id: 'M6', title: 'Themes', status: 'planned', summary: 'Themes per world and time span, blending on the timeline' },
   { id: 'M7', title: 'API & MCP', status: 'planned', summary: 'Local REST API and MCP server for Claude Code' },
-  { id: 'M8', title: 'Polish & release', status: 'planned', summary: 'Onboarding, performance, signed installers, auto-update' }
+  { id: 'M8', title: 'Polish & release', status: 'planned', summary: 'Onboarding, performance, signed installers (self-update already ships)' }
 ]

@@ -21,6 +21,8 @@ jobs:
         os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     env:
+      # Every build gets a higher version, so installed copies can tell they're out of date.
+      VERSION: 0.1.${{ github.run_number }}
       # No code-signing certificates yet; don't let electron-builder search for them.
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
@@ -31,6 +33,9 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Stamp the build version
+        working-directory: apps/desktop
+        run: npm pkg set version=${{ env.VERSION }}
       - name: Build and package
         run: pnpm dist
       - name: Smoke-test the packaged Linux app
@@ -44,6 +49,7 @@ jobs:
           path: |
             apps/desktop/release/*.exe
             apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.deb
 
@@ -54,6 +60,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -64,6 +73,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           short=$(echo "$GITHUB_SHA" | cut -c1-7)
+          node scripts/update-manifest.mjs dist "0.1.${{ github.run_number }}" "$short" > update.json
           cat > notes.md <<NOTES
           Automatic build of \`${GITHUB_REF_NAME}\` at ${short}.
 
@@ -73,6 +83,9 @@ jobs:
           | macOS (Apple Silicon) | \`Universe-*-mac-arm64.dmg\` |
           | macOS (Intel) | \`Universe-*-mac-x64.dmg\` |
           | Linux | \`.AppImage\` (\`chmod +x\`, then run) or \`.deb\` |
+
+          Version 0.1.${{ github.run_number }}. Installed copies offer to upgrade themselves when a newer build is published
+          (the \`.zip\` files and \`update.json\` are for that).
 
           These builds are not code-signed yet. Windows SmartScreen: click **More info → Run anyway**.
           macOS: open the app once, then **System Settings → Privacy & Security → Open Anyway**.
@@ -90,3 +103,5 @@ jobs:
           else
             gh release create latest-build dist/* --prerelease --target "$GITHUB_SHA" --title "$title" --notes-file notes.md
           fi
+          # Last, so apps never see a manifest that points at files not uploaded yet.
+          gh release upload latest-build update.json --clobber

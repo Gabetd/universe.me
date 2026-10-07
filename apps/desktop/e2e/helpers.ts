@@ -10,8 +10,11 @@ export interface AppHandle {
   close(): Promise<void>
 }
 
-/** Launches the app with a throwaway profile. UNIVERSE_E2E_EXECUTABLE tests a packaged build instead of the dev build. */
-export async function launch(): Promise<AppHandle> {
+/**
+ * Launches the app with a throwaway profile and update checks off (unless `env` turns them on).
+ * UNIVERSE_E2E_EXECUTABLE tests a packaged build instead of the dev build.
+ */
+export async function launch(env: (dir: string) => Record<string, string> = () => ({})): Promise<AppHandle> {
   const dir = mkdtempSync(join(tmpdir(), 'universe-e2e-'))
   const executablePath = process.env.UNIVERSE_E2E_EXECUTABLE
   const app = await electron.launch({
@@ -22,7 +25,7 @@ export async function launch(): Promise<AppHandle> {
       // CI machines have no GPU; this allows WebGL on the software renderer.
       '--enable-unsafe-swiftshader'
     ],
-    env: { ...process.env, UNIVERSE_USER_DATA: join(dir, 'user-data') }
+    env: { ...process.env, UNIVERSE_USER_DATA: join(dir, 'user-data'), UNIVERSE_UPDATE_URL: 'off', ...env(dir) }
   })
   const page = await app.firstWindow()
   return {

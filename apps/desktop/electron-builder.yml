@@ -28,6 +28,9 @@ mac:
   target:
     - target: dmg
       arch: [arm64, x64]
+    # The self-updater installs from the zip.
+    - target: zip
+      arch: [arm64, x64]
   # No Apple Developer certificate yet, so builds are ad-hoc signed ("-").
   # Apple Silicon refuses to run unsigned apps; ad-hoc signing is enough to launch after approving in Settings.
   identity: '-'
@@ -38,7 +41,8 @@ linux:
     - target: deb
   maintainer: universe.me
   syncDesktopName: true
-# Release metadata for the future auto-updater (M8). CI passes --publish never and uploads artifacts itself.
+# CI passes --publish never and uploads artifacts itself, plus the update.json
+# manifest the in-app updater reads (scripts/update-manifest.mjs).
 publish:
   provider: github
   owner: Gabetd

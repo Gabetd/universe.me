@@ -357,6 +357,7 @@ Each milestone ends with something you can launch and demo.
 - [x] Create/open/save-a-copy `.universe` project, recent projects. Main layout (breadcrumb, outline, viewport, inspector, timeline placeholder).
 - [x] Universe tree editing (cluster → galaxy → system → planet → moon/world) with a seeded 2D placeholder viewport.
 - [ ] Code signing (Windows certificate, Apple Developer ID). Deferred to M8; builds are unsigned until then.
+- [x] *Added after M2:* self-update. Each CI build is versioned `0.1.<run>` and publishes an `update.json` manifest (file names, sizes, SHA-512) with the installers. The app checks it at launch and hourly (and from Help → Check for Updates); a dismissable banner offers the new version, and **Upgrade now** downloads, verifies and installs it, then restarts, with no further input: NSIS installer run silently, portable exe swapped, macOS `.app` replaced from the zip, AppImage replaced in place. A `.deb` install needs the system password (root).
 
 ### M1 — Worlds & globe (2–3 weeks) — *done*
 - [x] Create world on a body; procedural terrain from seed on a cube-sphere (6 × 256² cells, generated in a Web Worker); globe + 2D map views.
@@ -402,7 +403,7 @@ Each milestone ends with something you can launch and demo.
 
 ### M8 — Polish & release (2 weeks)
 - Onboarding sample universe, keyboard shortcuts, performance pass (LOD, instancing for structures).
-- Signed installers (Windows NSIS, macOS dmg + notarization, Linux AppImage/deb), auto-update.
+- Signed installers (Windows NSIS, macOS dmg + notarization, Linux AppImage/deb); auto-update already works unsigned (see M0) and should move to signature-checked updates once signed.
 - E2E tests for the main flows.
 
 **Rough total: 19–25 weeks** for one full-time developer. M7 (API/MCP) can be pulled earlier, right after M2, if AI assistance is wanted sooner. The core layer makes it cheap to add.

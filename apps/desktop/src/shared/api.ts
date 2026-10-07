@@ -1,3 +1,4 @@
+import type { UpdateStatus } from './update'
 import type { Region, SpatialNode, Target, TerrainLayers, TimelineData, WorldInfo } from '@universe/core'
 
 /** Shared between the main process, the preload bridge and the renderer. Types only. */
@@ -52,6 +53,11 @@ export interface UniverseApi {
   redo(): Promise<Result<AppState>>
   onState(listener: (state: AppState) => void): () => void
   onMenu(listener: (action: MenuAction) => void): () => void
+  updateStatus(): Promise<UpdateStatus>
+  /** Downloads and installs the offered update, then restarts the app into it. */
+  installUpdate(): Promise<void>
+  dismissUpdate(): Promise<void>
+  onUpdate(listener: (status: UpdateStatus) => void): () => void
 }
 
 export const IPC = {
@@ -66,5 +72,9 @@ export const IPC = {
   undo: 'cmd:undo',
   redo: 'cmd:redo',
   stateChanged: 'state:changed',
-  menu: 'menu:action'
+  menu: 'menu:action',
+  updateStatus: 'update:status',
+  updateChanged: 'update:changed',
+  installUpdate: 'update:install',
+  dismissUpdate: 'update:dismiss'
 } as const

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { UpdateBanner } from './components/UpdateBanner'
 import { Welcome } from './components/Welcome'
 import { Workspace } from './components/Workspace'
 import { routeHistory } from './input'
@@ -20,5 +21,10 @@ export function App() {
   }, [])
 
   if (!ready) return null
-  return hasProject ? <Workspace /> : <Welcome />
+  return (
+    <div className="app-shell">
+      <UpdateBanner />
+      <div className="app-main">{hasProject ? <Workspace /> : <Welcome />}</div>
+    </div>
+  )
 }

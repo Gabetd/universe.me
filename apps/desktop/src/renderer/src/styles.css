@@ -103,6 +103,35 @@ h2 {
   border-bottom: 1px solid #5a2433;
 }
 
+/* App shell: an optional update banner above the page */
+.app-shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.app-main {
+  flex: 1;
+  min-height: 0;
+}
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  background: #18214a;
+  border-bottom: 1px solid #2c3a78;
+}
+.update-banner > span:first-child {
+  flex: 1;
+}
+.update-banner button.primary {
+  padding: 4px 12px;
+}
+.update-banner progress {
+  width: 200px;
+  accent-color: var(--accent);
+}
+
 /* Welcome */
 .welcome {
   height: 100%;

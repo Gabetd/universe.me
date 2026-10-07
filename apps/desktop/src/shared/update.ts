@@ -1,0 +1,49 @@
+/**
+ * Self-update, shared by the main process and the renderer. CI publishes an
+ * `update.json` manifest next to the installers on the rolling latest-build
+ * release (scripts/update-manifest.mjs); the app compares versions and picks
+ * the installer that matches how it was installed.
+ */
+
+export const UPDATE_MANIFEST_URL = 'https://github.com/Gabetd/universe.me/releases/download/latest-build/update.json'
+
+/** How this copy of the app was installed, which decides how it replaces itself. */
+export type InstallKind = 'win-nsis' | 'win-portable' | 'mac-zip' | 'linux-appimage' | 'linux-deb'
+
+export interface UpdateFile {
+  name: string
+  /** Base64 SHA-512 of the file. */
+  sha512: string
+  size: number
+}
+
+export interface UpdateManifest {
+  version: string
+  commit: string
+  /** Keyed by `${InstallKind}-${arch}`, e.g. `mac-zip-arm64`. */
+  files: Record<string, UpdateFile>
+}
+
+export type UpdateStatus =
+  | { state: 'none' }
+  | { state: 'available'; version: string; needsPassword: boolean }
+  | { state: 'downloading'; version: string; progress: number }
+  | { state: 'installing'; version: string }
+  | { state: 'failed'; version: string; error: string }
+
+/** Compares dotted numeric versions ("0.1.42"): negative if a is older than b. */
+export function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map((n) => parseInt(n, 10) || 0)
+  const pb = b.split('.').map((n) => parseInt(n, 10) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0)
+    if (d) return d
+  }
+  return 0
+}
+
+/** The file this install should update from, if the manifest is newer and has one. */
+export function pickUpdate(manifest: UpdateManifest, current: string, kind: InstallKind, arch: string): UpdateFile | undefined {
+  if (compareVersions(manifest.version, current) <= 0) return undefined
+  return manifest.files[`${kind}-${arch}`]
+}
