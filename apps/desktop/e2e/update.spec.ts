@@ -6,40 +6,53 @@ import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { launch, menu } from './helpers'
 
-/** The "new version": an AppImage stand-in that leaves a marker when the updated app is started. */
-const NEW_APPIMAGE = '#!/bin/sh\necho started > "$UNIVERSE_E2E_MARKER"\n'
+/**
+ * How each platform's self-install is exercised: the "new version" served,
+ * the install kind, and the env that tells the app where its own file is.
+ * Linux swaps an AppImage and restarts it (the stand-in leaves a marker);
+ * Windows swaps the portable exe from a script once the app has quit.
+ */
+const PLATFORMS: Partial<Record<NodeJS.Platform, { kind: string; file: string; body: () => Buffer; env: string }>> = {
+  linux: { kind: 'linux-appimage', file: 'Universe.AppImage', body: () => Buffer.from('#!/bin/sh\necho started > "$UNIVERSE_E2E_MARKER"\n'), env: 'APPIMAGE' },
+  // Any small real program will do as the new exe; it's started after the swap.
+  win32: { kind: 'win-portable', file: 'Universe.exe', body: () => readFileSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'whoami.exe')), env: 'PORTABLE_EXECUTABLE_FILE' }
+}
+const platform = PLATFORMS[process.platform]
 
 let server: Server
 let manifestUrl: string
+let body: Buffer
+
+test.skip(!platform, 'Self-install is exercised on Linux and Windows')
 
 test.beforeAll(async () => {
-  const body = Buffer.from(NEW_APPIMAGE)
+  if (!platform) return
+  body = platform.body()
   const manifest = {
     version: '99.0.0',
     commit: 'e2e',
-    files: { [`linux-appimage-${process.arch}`]: { name: 'Universe-99.0.0.AppImage', sha512: createHash('sha512').update(body).digest('base64'), size: body.length } }
+    files: { [`${platform.kind}-${process.arch}`]: { name: 'Universe-99.0.0.bin', sha512: createHash('sha512').update(body).digest('base64'), size: body.length } }
   }
   server = createServer((req, res) => {
     if (req.url === '/update.json') res.end(JSON.stringify(manifest))
-    else if (req.url === '/Universe-99.0.0.AppImage') res.end(body)
+    else if (req.url === '/Universe-99.0.0.bin') res.end(body)
     else res.writeHead(404).end()
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   manifestUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/update.json`
 })
-test.afterAll(() => new Promise((resolve) => server.close(resolve)))
-
-test.skip(process.platform !== 'linux', 'Exercises the AppImage installer')
+test.afterAll(() => new Promise((resolve) => (server ? server.close(resolve) : resolve(undefined))))
 
 test('offers a newer build, can be dismissed, and upgrades itself with one click', async () => {
+  const { kind, file, env } = platform!
   const { app, page, dir } = await launch((dir) => ({
     UNIVERSE_UPDATE_URL: manifestUrl,
-    UNIVERSE_UPDATE_KIND: 'linux-appimage',
-    APPIMAGE: join(dir, 'Universe.AppImage'),
+    UNIVERSE_UPDATE_KIND: kind,
+    [env]: join(dir, file),
     UNIVERSE_E2E_MARKER: join(dir, 'started')
   }))
-  const appImage = join(dir, 'Universe.AppImage')
-  writeFileSync(appImage, 'the old version')
+  const installed = join(dir, file)
+  writeFileSync(installed, 'the old version')
 
   const banner = page.getByRole('status', { name: 'Update' })
   await expect(banner).toContainText('Universe 99.0.0 is available', { timeout: 15_000 })
@@ -51,12 +64,15 @@ test('offers a newer build, can be dismissed, and upgrades itself with one click
   await menu(app, 'Help', 'Check for Updates…')
   await expect(banner).toBeVisible()
 
-  // One click: download, verify, swap the AppImage, restart into it.
+  // One click: download, verify, swap in the new version, restart into it.
   const closed = app.waitForEvent('close')
   await banner.getByRole('button', { name: 'Upgrade now' }).click()
   await closed
-  await expect.poll(() => existsSync(join(dir, 'started')), { timeout: 15_000 }).toBe(true)
-  expect(readFileSync(appImage, 'utf8')).toBe(NEW_APPIMAGE)
-  expect(statSync(appImage).mode & 0o111).toBeTruthy()
-  rmSync(dir, { recursive: true, force: true })
+  await expect.poll(() => readFileSync(installed).equals(body), { timeout: 15_000 }).toBe(true)
+  if (process.platform === 'linux') {
+    await expect.poll(() => existsSync(join(dir, 'started')), { timeout: 15_000 }).toBe(true)
+    expect(statSync(installed).mode & 0o111).toBeTruthy()
+  }
+  // The restarted copy may still hold the file for a moment on Windows.
+  await expect.poll(() => (rmSync(dir, { recursive: true, force: true }), true), { timeout: 10_000 }).toBe(true)
 })
