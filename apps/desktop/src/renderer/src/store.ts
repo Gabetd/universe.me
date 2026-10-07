@@ -1,4 +1,4 @@
-import type { Command, SpatialNode } from '@universe/core'
+import { EMPTY_TIMELINE, timelineOwner, type Command, type SpatialNode } from '@universe/core'
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import type { AppState, Result } from '../../shared/api'
@@ -16,6 +16,14 @@ interface UiState extends AppState {
   execute(command: Command): Promise<AppState | undefined>
   selectedRegionId: string | null
   selectRegion(id: string | null): void
+  /** Selected timeline records: several events (for grouping), or one era, group, link… */
+  timelineSelection: TimelineSelection | null
+  selectTimeline(selection: TimelineSelection | null): void
+}
+
+export interface TimelineSelection {
+  kind: 'event' | 'era' | 'group' | 'link'
+  ids: string[]
 }
 
 export const useUi = create<UiState>((set, get) => ({
@@ -26,7 +34,9 @@ export const useUi = create<UiState>((set, get) => ({
   canRedo: false,
   worlds: [],
   regions: [],
+  timeline: EMPTY_TIMELINE,
   selectedId: null,
+  timelineSelection: null,
   selectedRegionId: null,
   error: null,
 
@@ -34,8 +44,10 @@ export const useUi = create<UiState>((set, get) => ({
     set({ ...state, ready: true, ...nextSelection(state, get()) })
   },
 
-  select: (id) => set({ selectedId: id, selectedRegionId: null }),
-  selectRegion: (id) => set({ selectedRegionId: id }),
+  select: (id) => set({ selectedId: id, selectedRegionId: null, timelineSelection: null }),
+  selectTimeline: (timelineSelection) => set(timelineSelection ? { timelineSelection, selectedRegionId: null } : { timelineSelection }),
+  // A region and timeline records are never selected together: whichever was picked last is what the inspector shows.
+  selectRegion: (id) => set(id ? { selectedRegionId: id, timelineSelection: null } : { selectedRegionId: null }),
   dismissError: () => set({ error: null }),
 
   async run(call) {
@@ -55,24 +67,56 @@ export const useUi = create<UiState>((set, get) => ({
   }
 }))
 
-type Selection = Pick<UiState, 'selectedId' | 'selectedRegionId'>
+type Selection = Pick<UiState, 'selectedId' | 'selectedRegionId' | 'timelineSelection'>
 
-/** Selects what the last command targeted (a region selects its world too); otherwise keeps the selection while it exists. */
+/**
+ * Selects what the last command targeted (a region selects its world too, a
+ * timeline record selects itself); otherwise keeps the selection while it exists.
+ */
 function nextSelection(state: AppState, current: Selection): Selection {
   const { focus } = state
+  const timelineSelection = keptTimelineSelection(state, current.timelineSelection)
   if (focus?.kind === 'region') {
     const region = state.regions.find((r) => r.id === focus.id)
-    if (region) return { selectedId: region.worldId, selectedRegionId: region.id }
+    if (region) return { selectedId: region.worldId, selectedRegionId: region.id, timelineSelection: null }
+  }
+  // Lanes and changes are edited in place, so only records with an inspector panel get selected.
+  if (focus && (focus.kind === 'event' || focus.kind === 'era' || focus.kind === 'group' || focus.kind === 'link')) {
+    const kind = focus.kind
+    if (state.timeline[`${kind}s`].some((r) => r.id === focus.id)) {
+      const ids = current.timelineSelection?.kind === kind && current.timelineSelection.ids.includes(focus.id) ? timelineSelection!.ids : [focus.id]
+      return { ...keptNodeSelection(state, current), selectedRegionId: null, timelineSelection: { kind, ids } }
+    }
   }
   const exists = (id: string | null | undefined): id is string => !!id && state.nodes.some((n) => n.id === id)
-  let selectedId = state.project?.rootId ?? null
-  if (focus?.kind === 'node' && exists(focus.id)) selectedId = focus.id
-  else if (exists(current.selectedId)) selectedId = current.selectedId
+  if (focus?.kind === 'node' && exists(focus.id) && focus.id !== current.selectedId) {
+    return { selectedId: focus.id, selectedRegionId: null, timelineSelection: null }
+  }
+  return { ...keptNodeSelection(state, current), timelineSelection }
+}
+
+function keptNodeSelection(state: AppState, current: Selection): Pick<Selection, 'selectedId' | 'selectedRegionId'> {
+  const selectedId = state.nodes.some((n) => n.id === current.selectedId) ? current.selectedId : (state.project?.rootId ?? null)
   const keepRegion = state.regions.some((r) => r.id === current.selectedRegionId && r.worldId === selectedId)
   return { selectedId, selectedRegionId: keepRegion ? current.selectedRegionId : null }
 }
 
+/** The timeline selection minus records that no longer exist. */
+function keptTimelineSelection(state: AppState, selection: TimelineSelection | null): TimelineSelection | null {
+  if (!selection) return null
+  const live = new Set(state.timeline[`${selection.kind}s`].map((r) => r.id))
+  const ids = selection.ids.filter((id) => live.has(id))
+  return ids.length ? { ...selection, ids } : null
+}
+
 export const selectNode = (s: UiState): SpatialNode | undefined => s.nodes.find((n) => n.id === s.selectedId)
+
+/** The node whose timeline the timeline panel shows for the current selection. */
+export const useTimelineOwner = () => {
+  const nodes = useUi((s) => s.nodes)
+  const selectedId = useUi((s) => s.selectedId)
+  return useMemo(() => timelineOwner(nodes, selectedId), [nodes, selectedId])
+}
 
 /** A world's settings and its regions. */
 export function useWorld(worldId: string) {

@@ -37,7 +37,7 @@ function insidePolygon(x: number, y: number, poly: [number, number][]): boolean 
   return inside
 }
 
-export function MapView({ model, change, regions, onPointerDown, onPointerMove, onDoubleClick }: SurfaceViewProps) {
+export function MapView({ model, change, regions, pins, highlightRegionIds, onPinClick, onPointerDown, onPointerMove, onDoubleClick }: SurfaceViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const terrain = useRef<{ canvas: HTMLCanvasElement; image: ImageData } | null>(null)
   const view = useRef<View | null>(null)
@@ -64,7 +64,21 @@ export function MapView({ model, change, regions, onPointerDown, onPointerMove, 
 
   useEffect(() => {
     dirty.current = true
-  }, [regions, selectedRegionId, draft])
+  }, [regions, selectedRegionId, draft, pins, highlightRegionIds])
+
+  // Bring the selected event's pin to the middle of the view.
+  const focus = pins.find((p) => p.selected)
+  const focusKey = focus && `${focus.eventId}:${focus.lat}:${focus.lon}`
+  useEffect(() => {
+    const v = view.current
+    const canvas = canvasRef.current
+    if (!focus || !v || !canvas) return
+    const [x, y] = toMap(focus)
+    v.ox = canvas.clientWidth / 2 - x * v.scale
+    v.oy = canvas.clientHeight / 2 - y * v.scale
+    dirty.current = true
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new focus point should move the view
+  }, [focusKey])
 
   useEffect(() => {
     const canvas = canvasRef.current!
@@ -104,12 +118,13 @@ export function MapView({ model, change, regions, onPointerDown, onPointerMove, 
       c.lineJoin = 'round'
       for (const region of regions) {
         const poly = polygon(region.points)
+        const lit = region.id === sel || highlightRegionIds.has(region.id)
         tracePath(c, poly, shift)
         c.closePath()
-        c.fillStyle = `${region.color}${region.id === sel ? '55' : '33'}`
+        c.fillStyle = `${region.color}${lit ? '55' : '33'}`
         c.fill()
-        c.strokeStyle = region.color
-        c.lineWidth = (region.id === sel ? 3 : 1.5) / scale
+        c.strokeStyle = highlightRegionIds.has(region.id) ? '#ffffff' : region.color
+        c.lineWidth = (lit ? 3 : 1.5) / scale
         c.stroke()
         const [cx, cy] = centroid(poly)
         c.font = `${600} ${12 / scale}px system-ui, sans-serif`
@@ -130,6 +145,25 @@ export function MapView({ model, change, regions, onPointerDown, onPointerMove, 
           c.fillRect(x + shift - 2.5 / scale, y - 2.5 / scale, 5 / scale, 5 / scale)
         }
       }
+      for (const pin of pins) {
+        const [x, y] = toMap(pin)
+        const r = (pin.selected ? 6 : pin.active ? 5 : 3.5) / scale
+        c.globalAlpha = pin.selected || pin.active ? 1 : 0.55
+        c.beginPath()
+        c.arc(x + shift, y, r, 0, Math.PI * 2)
+        c.fillStyle = pin.color
+        c.fill()
+        c.strokeStyle = pin.selected ? '#ffffff' : '#05070d'
+        c.lineWidth = 1.5 / scale
+        c.stroke()
+        c.globalAlpha = 1
+        if (pin.selected || pin.active) {
+          c.font = `${pin.selected ? 700 : 500} ${12 / scale}px system-ui, sans-serif`
+          c.textAlign = 'left'
+          c.fillStyle = '#ffffff'
+          c.fillText(pin.title, x + shift + r + 4 / scale, y + 4 / scale)
+        }
+      }
       const h = hover.current
       if (h && isBrushTool(tool)) {
         // The brush is a circle on the planet, so it stretches east-west toward the poles.
@@ -146,7 +180,7 @@ export function MapView({ model, change, regions, onPointerDown, onPointerMove, 
 
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [model, regions])
+  }, [model, regions, pins, highlightRegionIds])
 
   /** Pointer position in map pixels (x wrapped to [0, W)), or null outside the map vertically. */
   const mapPoint = (e: React.PointerEvent | React.MouseEvent): [number, number] | null => {
@@ -175,6 +209,13 @@ export function MapView({ model, change, regions, onPointerDown, onPointerMove, 
         const tool = useEditor.getState().tool
         if (e.button === 0 && p && onPointerDown(dirAt(p))) return
         if (e.button === 0 && p && tool === 'navigate') {
+          const v = view.current!
+          // Pins are small, so they win over the region they sit in; 8 screen pixels of slack.
+          const pin = pins.find((pn) => {
+            const [x, y] = toMap(pn)
+            return [-W, 0, W].some((s) => Math.hypot((x + s - p[0]) * v.scale, (y - p[1]) * v.scale) <= 8)
+          })
+          if (pin) return onPinClick(pin.eventId)
           const hit = regions.find((r) => [-W, 0, W].some((s) => insidePolygon(p[0] + s, p[1], polygon(r.points))))
           useUi.getState().selectRegion(hit?.id ?? null)
         }

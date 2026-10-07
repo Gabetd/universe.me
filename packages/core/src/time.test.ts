@@ -44,7 +44,11 @@ describe('parseTime', () => {
     ['13th century', { year: 1200 }, 'century'],
     ['1st century before 0', { year: -100 }, 'century'],
     ['4.5 billion years ago', { year: -4.5e9 }, 'approx'],
-    ['-2.5k', { year: -2500 }, 'year']
+    ['-2.5k', { year: -2500 }, 'year'],
+    ['15 Mar 1204', { year: 1204, month: 2, day: 15 }, 'day'],
+    ['15 Mar 1204, 09:05', { year: 1204, month: 2, day: 15, hour: 9, minute: 5 }, 'exact'],
+    ['march 1204', { year: 1204, month: 2 }, 'day'],
+    ['1 Jan −40', { year: -40 }, 'day']
   ])('reads %s', (input, parts, precision) => {
     expect(parseTime(input)).toEqual({ t: fromParts(parts), precision })
   })

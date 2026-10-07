@@ -16,7 +16,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && tsc -p tsconfig.e2e.json",
-    "test": "echo \"desktop: no unit tests yet (see test:e2e)\"",
+    "test": "vitest run",
     "test:e2e": "electron-vite build && playwright test",
     "dist": "electron-vite build && electron-builder --publish never"
   },

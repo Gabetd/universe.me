@@ -129,3 +129,5 @@ export type RecordOf<K extends RecordKind> = z.infer<(typeof RECORD_SCHEMAS)[K]>
 
 /** All of a project's live timeline records, as sent to the UI. */
 export type TimelineData = { [K in RecordKind as `${K}s`]: RecordOf<K>[] }
+
+export const EMPTY_TIMELINE: TimelineData = { events: [], links: [], groups: [], eras: [], lanes: [], changes: [], timelines: [] }

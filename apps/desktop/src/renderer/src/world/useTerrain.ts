@@ -1,4 +1,5 @@
 import type { Command, Region, TerrainParams, WorldInfo } from '@universe/core'
+import type { EventPin } from './useWorldAtTime'
 import { TerrainModel, type BaseTerrain, type Vec3 } from '@universe/procgen'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUi } from '../store'
@@ -16,7 +17,12 @@ export interface TerrainChange {
 export interface SurfaceViewProps {
   model: TerrainModel
   change: TerrainChange
+  /** Regions as of the playhead. */
   regions: Region[]
+  pins: EventPin[]
+  /** Regions where the selected event happens. */
+  highlightRegionIds: Set<string>
+  onPinClick(eventId: string): void
   onPointerDown(dir: Vec3): boolean
   onPointerMove(dir: Vec3): void
   onDoubleClick(): void

@@ -12,6 +12,7 @@ export type Time = number
 /** How precisely a date is known; controls how it's written ("1204", "c. 1200", "13th century"). */
 export const Precision = z.enum(['exact', 'day', 'year', 'century', 'approx'])
 export type Precision = z.infer<typeof Precision>
+export const PRECISIONS = Precision.options
 
 export interface Calendar {
   secondsPerDay: number
@@ -127,9 +128,10 @@ export function formatDuration(seconds: number, cal: Calendar = DEFAULT_CALENDAR
 const SCALE_WORDS: Record<string, number> = { k: 1e3, thousand: 1e3, m: 1e6, million: 1e6, b: 1e9, billion: 1e9 }
 
 /**
- * Reads a date the way people type one: "1204", "-3000", "1204-03-15",
- * "1204-03-15 14:30", "c. 1200" or "~1200" (approximate), "12th century",
- * "4.5 billion", "-2.5k". Returns undefined if it isn't a date.
+ * Reads a date the way people type one, including everything formatTime
+ * writes: "1204", "-3000", "1204-03-15", "1204-03-15 14:30", "15 Mar 1204",
+ * "15 Mar 1204, 14:30", "Mar 1204", "c. 1200" or "~1200" (approximate),
+ * "12th century", "4.5 billion", "-2.5k". Returns undefined if it isn't a date.
  */
 export function parseTime(input: string, cal: Calendar = DEFAULT_CALENDAR): { t: Time; precision: Precision } | undefined {
   let text = input.trim().toLowerCase().replace(/−/g, '-').replace(/,/g, '')
@@ -156,6 +158,17 @@ export function parseTime(input: string, cal: Calendar = DEFAULT_CALENDAR): { t:
     if (month < 0 || month >= cal.months.length || day < 1 || day > cal.months[month]!.days) return undefined
     const t = fromParts({ year: Number(y), month, day, hour: Number(h ?? 0), minute: Number(mi ?? 0), second: Number(s ?? 0) }, cal)
     return { t, precision: approx ? 'approx' : h ? 'exact' : 'day' }
+  }
+
+  const named = /^(?:(\d{1,2}) )?([a-z]+)\.? (-?\d+)(?: (\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(text)
+  if (named) {
+    const [, d, name, y, h, mi, s] = named
+    const month = cal.months.findIndex((m) => name!.startsWith(m.name.toLowerCase().slice(0, 3)))
+    const day = d ? Number(d) : 1
+    if (month !== -1 && day >= 1 && day <= cal.months[month]!.days) {
+      const t = fromParts({ year: Number(y), month, day, hour: Number(h ?? 0), minute: Number(mi ?? 0), second: Number(s ?? 0) }, cal)
+      return { t, precision: approx ? 'approx' : h ? 'exact' : 'day' }
+    }
   }
 
   const year = /^(-?\d+(?:\.\d+)?(?:e\d+)?)\s*(k|thousand|m|million|b|billion)?(?:\s*years?)?(\s+ago)?$/.exec(text)

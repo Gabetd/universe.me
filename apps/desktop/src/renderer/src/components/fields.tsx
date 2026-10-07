@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { formatTime, parseTime, type Precision } from '@universe/core'
+import { useRef, useState } from 'react'
 
 /**
  * Inputs that save once when editing finishes (blur, Enter, slider release),
@@ -65,4 +66,52 @@ export function NumberInput(props: { value: number; min: number; max: number; in
 
 function blurOnEnter(e: React.KeyboardEvent<HTMLInputElement>) {
   if (e.key === 'Enter') e.currentTarget.blur()
+}
+
+/**
+ * A date on the timeline, typed the way people write them ("1204",
+ * "15 Mar 1204", "c. 1200", "4.5 billion years ago"). Saves on blur or Enter;
+ * text that isn't a date is flagged and put back. With `allowEmpty`, clearing it saves null.
+ */
+export function TimeField(props: {
+  label: string
+  value: number | null
+  precision: Precision
+  allowEmpty?: boolean
+  placeholder?: string
+  onCommit(value: { t: number; precision: Precision } | null): void
+}) {
+  const shown = props.value === null ? '' : formatTime(props.value, props.precision)
+  const [draft, setDraft] = useState<string | null>(null)
+  const [invalid, setInvalid] = useState(false)
+  const cancelled = useRef(false)
+  const commit = () => {
+    const text = cancelled.current ? null : draft
+    cancelled.current = false
+    setDraft(null)
+    if (text === null || text.trim() === shown) return
+    if (!text.trim() && props.allowEmpty) return props.onCommit(null)
+    const parsed = parseTime(text)
+    setInvalid(!parsed)
+    if (parsed) props.onCommit(parsed)
+  }
+  return (
+    <input
+      aria-label={props.label}
+      aria-invalid={invalid}
+      className={invalid ? 'invalid' : undefined}
+      value={draft ?? shown}
+      placeholder={props.placeholder}
+      title={invalid ? 'Not a date. Try 1204, 15 Mar 1204, c. 1200 or 4.5 billion years ago' : undefined}
+      onChange={(e) => (setDraft(e.target.value), setInvalid(false))}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+        if (e.key === 'Escape') {
+          cancelled.current = true
+          e.currentTarget.blur()
+        }
+      }}
+    />
+  )
 }

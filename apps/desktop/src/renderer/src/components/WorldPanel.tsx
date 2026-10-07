@@ -1,7 +1,9 @@
-import type { Region, RegionPatch, SpatialNode, WorldSettingsPatch } from '@universe/core'
+import { regionAt, type Region, type RegionPatch, type SpatialNode, type WorldSettingsPatch } from '@universe/core'
 import { useUi, useWorld } from '../store'
 import { CommitSlider, NumberInput, TextField } from './fields'
 import { NotesEditor } from './NotesEditor'
+import { RegionHistory } from './RegionHistory'
+import { usePlayhead } from '../timeline/timelineStore'
 
 /** Inspector section for a world: generation settings, terrain resets, and regions. */
 export function WorldPanel({ world }: { world: SpatialNode }) {
@@ -9,6 +11,8 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
   const selectedRegion = useUi((s) => s.regions.find((r) => r.id === s.selectedRegionId))
   const selectRegion = useUi((s) => s.selectRegion)
   const execute = useUi((s) => s.execute)
+  const changes = useUi((s) => s.timeline.changes)
+  const playhead = usePlayhead(world.id)
   if (!info) return null
   const { settings } = info
   const update = (patch: WorldSettingsPatch) => void execute({ type: 'world.update', payload: { id: world.id, patch } })
@@ -50,7 +54,11 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
           <ul className="region-list">
             {regions.map((r) => (
               <li key={r.id}>
-                <button className={`link region-row${r.id === selectedRegion?.id ? ' selected' : ''}`} onClick={() => selectRegion(r.id)}>
+                <button
+                  className={`link region-row${r.id === selectedRegion?.id ? ' selected' : ''}${regionAt(r, changes, playhead) ? '' : ' absent'}`}
+                  title={regionAt(r, changes, playhead) ? undefined : 'Doesn’t exist at the playhead'}
+                  onClick={() => selectRegion(r.id)}
+                >
                   <span className="swatch" style={{ background: r.color }} />
                   {r.name}
                 </button>
@@ -81,6 +89,7 @@ function RegionForm({ region }: { region: Region }) {
         <span>Color</span>
         <input type="color" value={region.color} onChange={(e) => update({ color: e.target.value })} />
       </label>
+      <RegionHistory region={region} />
       <div className="field">
         <span>Region notes</span>
         <NotesEditor label="Region notes" value={region.notes} onCommit={(notes) => update({ notes })} />

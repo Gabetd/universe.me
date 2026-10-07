@@ -2,7 +2,8 @@ import type { LatLon } from '@universe/core'
 import { BIOME, type BrushTool } from '@universe/procgen'
 import { create } from 'zustand'
 
-export type EditorTool = 'navigate' | BrushTool | 'region'
+/** `locate` picks a point for an event's location (`locateEventId`). */
+export type EditorTool = 'navigate' | BrushTool | 'region' | 'locate'
 type EditorView = 'globe' | 'map'
 
 interface EditorState {
@@ -15,6 +16,8 @@ interface EditorState {
   exaggeration: number
   /** Points of the region being drawn, before it is saved. */
   draft: LatLon[]
+  /** The event the `locate` tool adds a location to. */
+  locateEventId: string | null
   set(patch: Partial<Omit<EditorState, 'set'>>): void
 }
 
@@ -26,7 +29,8 @@ export const useEditor = create<EditorState>((set) => ({
   biome: BIOME.temperateForest,
   exaggeration: 25,
   draft: [],
+  locateEventId: null,
   set: (patch) => set(patch)
 }))
 
-export const isBrushTool = (tool: EditorTool): tool is BrushTool => tool !== 'navigate' && tool !== 'region'
+export const isBrushTool = (tool: EditorTool): tool is BrushTool => tool !== 'navigate' && tool !== 'region' && tool !== 'locate'

@@ -1,15 +1,30 @@
 import type { NodePatch, SpatialNode } from '@universe/core'
+import { useEffect, useRef } from 'react'
 import { KIND_ICONS, addOptions, kindLabel } from '../kinds'
 import { selectNode, useUi } from '../store'
 import { NumberInput, TextField } from './fields'
 import { NotesEditor } from './NotesEditor'
+import { TimelineInspector } from './TimelinePanels'
 import { WorldPanel } from './WorldPanel'
 
 export function Inspector() {
   const node = useUi(selectNode)
+  const timelineSelection = useUi((s) => s.timelineSelection)
+  const regionId = useUi((s) => s.selectedRegionId)
+  const top = useRef<HTMLDivElement>(null)
+  // Something new was picked: show its panel from the top.
+  const picked = `${timelineSelection?.kind}:${timelineSelection?.ids.join()}:${regionId}`
+  useEffect(() => {
+    top.current?.closest('.inspector-panel')?.scrollTo({ top: 0 })
+  }, [picked])
   if (!node) return <p className="muted pad">Select something in the universe tree.</p>
   // Re-mount the form when the node changes (including via undo) so fields show stored values.
-  return <NodeForm key={`${node.id}:${node.updatedAt}`} node={node} />
+  return (
+    <div className="inspector" ref={top}>
+      {timelineSelection && <TimelineInspector selection={timelineSelection} />}
+      <NodeForm key={`${node.id}:${node.updatedAt}`} node={node} />
+    </div>
+  )
 }
 
 const parseTags = (text: string) =>
@@ -25,7 +40,7 @@ function NodeForm({ node }: { node: SpatialNode }) {
   const options = addOptions(node, nodes)
 
   return (
-    <div className="inspector">
+    <>
       {node.kind === 'world' && <WorldPanel world={node} />}
 
       <section className="inspector-section">
@@ -75,6 +90,6 @@ function NodeForm({ node }: { node: SpatialNode }) {
           Delete {node.name}
         </button>
       )}
-    </div>
+    </>
   )
 }

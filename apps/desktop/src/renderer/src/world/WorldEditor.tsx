@@ -1,11 +1,12 @@
 import type { SpatialNode } from '@universe/core'
 import { BIOMES } from '@universe/procgen'
-import { useWorld } from '../store'
+import { useUi, useWorld } from '../store'
 import { isBrushTool, useEditor, type EditorTool } from './editorStore'
 import { GlobeView } from './GlobeView'
 import { MapView } from './MapView'
 import { useSurfaceTools } from './useSurfaceTools'
 import { useTerrain, type SurfaceViewProps } from './useTerrain'
+import { useWorldAtTime } from './useWorldAtTime'
 
 const TOOLS: { tool: EditorTool; label: string; icon: string; hint: string }[] = [
   { tool: 'navigate', label: 'Navigate', icon: '✋', hint: 'Drag to rotate or pan, scroll to zoom. Click a region to select it.' },
@@ -15,7 +16,8 @@ const TOOLS: { tool: EditorTool; label: string; icon: string; hint: string }[] =
   { tool: 'flatten', label: 'Flatten', icon: '▭', hint: 'Drag to level terrain to the height where the stroke started.' },
   { tool: 'paint', label: 'Paint biome', icon: '🖌', hint: 'Drag to paint the selected biome.' },
   { tool: 'erase', label: 'Erase biome', icon: '⌫', hint: 'Drag to return painted cells to the automatic biome.' },
-  { tool: 'region', label: 'Draw region', icon: '⬠', hint: 'Click to add points. Enter or double-click saves, Backspace removes a point, Esc cancels.' }
+  { tool: 'region', label: 'Draw region', icon: '⬠', hint: 'Click to add points. Enter or double-click saves, Backspace removes a point, Esc cancels.' },
+  { tool: 'locate', label: 'Place event', icon: '📍', hint: 'Click where the selected event happens. Esc cancels.' }
 ]
 
 /** WebGL can be missing (old GPUs, remote desktops); the map still works without it. */
@@ -28,7 +30,8 @@ const hasWebGL = (() => {
 })()
 
 export function WorldEditor({ world }: { world: SpatialNode }) {
-  const { info, regions } = useWorld(world.id)
+  const { info, regions: allRegions } = useWorld(world.id)
+  const { regions, pins, highlightRegionIds } = useWorldAtTime(world.id, allRegions)
   const { view, tool, radiusKm, strength, biome, exaggeration, set } = useEditor()
   const { model, change, error, bump, commit } = useTerrain(world.id, world.seed, info)
   const { pointerDown, pointerMove, finishRegion } = useSurfaceTools(world.id, model, bump, commit)
@@ -39,6 +42,9 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
     model,
     change,
     regions,
+    pins,
+    highlightRegionIds,
+    onPinClick: (eventId) => useUi.getState().selectTimeline({ kind: 'event', ids: [eventId] }),
     onPointerDown: pointerDown,
     onPointerMove: pointerMove,
     onDoubleClick: () => void finishRegion()
@@ -56,7 +62,7 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
           </button>
         </div>
         <div className="segmented" role="group" aria-label="Tool">
-          {TOOLS.map((t) => (
+          {TOOLS.filter((t) => t.tool !== 'locate').map((t) => (
             <button key={t.tool} aria-pressed={tool === t.tool} title={t.label} aria-label={t.label} onClick={() => set({ tool: t.tool, draft: [] })}>
               {t.icon}
             </button>

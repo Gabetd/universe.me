@@ -1,4 +1,4 @@
-import type { Region, SpatialNode, Target, TerrainLayers, WorldInfo } from '@universe/core'
+import type { Region, SpatialNode, Target, TerrainLayers, TimelineData, WorldInfo } from '@universe/core'
 
 /** Shared between the main process, the preload bridge and the renderer. Types only. */
 
@@ -21,6 +21,8 @@ export interface AppState {
   worlds: WorldInfo[]
   /** Every live region on a live world. */
   regions: Region[]
+  /** Every live timeline record whose owner is live. */
+  timeline: TimelineData
   canUndo: boolean
   canRedo: boolean
   /** Node or region the last command created or touched, so the UI can select it. */

@@ -39,9 +39,18 @@ export function useSurfaceTools(worldId: string, model: TerrainModel | undefined
   /** Returns true if the press was used by a tool (so the view shouldn't rotate or pan). */
   const pointerDown = useCallback(
     (dir: Vec3): boolean => {
-      const { tool, radiusKm, strength, biome, draft, set } = useEditor.getState()
+      const { tool, radiusKm, strength, biome, draft, locateEventId, set } = useEditor.getState()
       if (tool === 'region') {
         set({ draft: [...draft, roundLatLon(dir)] })
+        return true
+      }
+      if (tool === 'locate') {
+        set({ tool: 'navigate', locateEventId: null })
+        const event = useUi.getState().timeline.events.find((e) => e.id === locateEventId)
+        if (event) {
+          const point = { kind: 'point' as const, ...roundLatLon(dir) }
+          void useUi.getState().execute({ type: 'event.update', payload: { id: event.id, patch: { locations: [...event.locations, point] } } })
+        }
         return true
       }
       if (!model || !isBrushTool(tool)) return false
@@ -74,6 +83,11 @@ export function useSurfaceTools(worldId: string, model: TerrainModel | undefined
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const { tool, draft, set } = useEditor.getState()
+      if (tool === 'locate' && e.key === 'Escape') {
+        set({ tool: 'navigate', locateEventId: null })
+        e.preventDefault()
+        return
+      }
       if (tool !== 'region' || isEditingText() || draft.length === 0) return
       if (e.key === 'Enter') void finishRegion()
       else if (e.key === 'Backspace') set({ draft: draft.slice(0, -1) })
