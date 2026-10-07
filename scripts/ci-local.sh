@@ -43,6 +43,12 @@ step "Clean checkout of $(git -C "$ROOT" rev-parse --short HEAD)"
 git -C "$ROOT" worktree add --detach "$WORK/repo" HEAD >/dev/null
 cd "$WORK/repo"
 export CI=true
+# GitHub's Ubuntu runners have a desktop browser behind xdg-open; one that a
+# test starts by accident keeps Electron from quitting. Behave the same here.
+mkdir -p "$WORK/bin"
+printf '#!/bin/sh\nexec sleep 600\n' > "$WORK/bin/xdg-open"
+chmod +x "$WORK/bin/xdg-open"
+export PATH="$WORK/bin:$PATH"
 
 step "ci.yml: install (frozen lockfile)"
 pnpm install --frozen-lockfile --prefer-offline >/dev/null || fail "pnpm install --frozen-lockfile failed (lockfile out of date?)"
@@ -75,4 +81,6 @@ if [[ $QUICK == 0 ]]; then
   ' "$WORK/update.json" || fail "update manifest"
 fi
 
+# Remembered so the pre-push hook doesn't run a full pass again for this commit.
+[[ $QUICK == 0 ]] && touch "$CACHE/passed-$(git -C "$ROOT" rev-parse HEAD)"
 printf '\n\033[1;32m✔ Local pipeline passed in %ss\033[0m\n' $((SECONDS - START))

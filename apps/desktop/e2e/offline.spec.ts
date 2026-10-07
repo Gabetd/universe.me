@@ -31,8 +31,13 @@ test('everything stays on this computer: projects are local files and no request
   )
   expect(fromMain).toBe('blocked')
 
-  // A link can't turn the window into a web page.
-  // (Asked from the main process: Playwright would wait on the cancelled navigation.)
+  // A link can't turn the window into a web page; it goes to the browser instead
+  // (stubbed: a real browser starting would keep the app from closing).
+  await app.evaluate(({ shell }) => {
+    const opened: string[] = []
+    ;(globalThis as { opened?: string[] }).opened = opened
+    shell.openExternal = async (url: string) => void opened.push(url)
+  })
   await page.evaluate(() => void (window.location.href = 'https://example.com/'))
   await new Promise((resolve) => setTimeout(resolve, 1000))
   const shown = await app.evaluate(async ({ BrowserWindow }) => {
@@ -40,5 +45,6 @@ test('everything stays on this computer: projects are local files and no request
     return { url: contents.getURL(), text: (await contents.executeJavaScript('document.body.innerText')) as string }
   })
   expect(shown.url).toMatch(/^file:/)
+  expect(await app.evaluate(() => (globalThis as { opened?: string[] }).opened)).toEqual(['https://example.com/'])
   expect(shown.text).toContain('Private')
 })

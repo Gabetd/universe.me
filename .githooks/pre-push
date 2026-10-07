@@ -2,4 +2,9 @@
 # Runs the local copy of the CI pipelines before every push (scripts/ci-local.sh).
 # Enable once per clone: git config core.hooksPath .githooks
 # Skip in an emergency: git push --no-verify
+# A commit that already passed a full local run (pnpm ci:local) isn't run again.
+if [[ -e "${XDG_CACHE_HOME:-$HOME/.cache}/universe-ci/passed-$(git rev-parse HEAD)" ]]; then
+  echo "Local pipeline already passed for $(git rev-parse --short HEAD)."
+  exit 0
+fi
 exec bash "$(git rev-parse --show-toplevel)/scripts/ci-local.sh"
