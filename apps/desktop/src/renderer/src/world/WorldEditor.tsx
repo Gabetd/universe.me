@@ -9,7 +9,7 @@ import { useSurfaceTools } from './useSurfaceTools'
 import { useTerrain, type SurfaceViewProps } from './useTerrain'
 import { useStructuresAt } from './useStructures'
 import { useWorldAtTime } from './useWorldAtTime'
-import { BUILTIN_BLUEPRINTS } from '@universe/core'
+import { BlueprintOptions } from '../components/BlueprintOptions'
 
 const TOOLS: { tool: EditorTool; label: string; icon: string; hint: string }[] = [
   { tool: 'navigate', label: 'Navigate', icon: '✋', hint: 'Drag to rotate or pan, scroll to zoom. Click a region to select it.' },
@@ -42,7 +42,6 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
   const { regions, pins, highlightRegionIds, focus } = useWorldAtTime(world.id, allRegions)
   const { view, tool, radiusKm, strength, biome, exaggeration, placeBlueprintId, set } = useEditor()
   const structures = useStructuresAt(world.id)
-  const library = useUi((s) => s.timeline.blueprints)
   const { model, change, error, bump, commit } = useTerrain(world.id, world.seed, info)
   const { pointerDown, pointerMove, finishRegion } = useSurfaceTools(world.id, model, bump, commit)
   const activeView = hasWebGL || view === 'canvas' ? view : 'map'
@@ -94,11 +93,7 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
         )}
         {onSurface && tool === 'place' && (
           <select aria-label="Blueprint to place" value={placeBlueprintId} onChange={(e) => set({ placeBlueprintId: e.target.value })}>
-            {[...BUILTIN_BLUEPRINTS, ...library].map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
+            <BlueprintOptions />
           </select>
         )}
         {onSurface && isBrushTool(tool) && (

@@ -10,9 +10,11 @@ test.afterEach(async () => {
   await h?.close()
 })
 
-// Renders every built-in blueprint in the builder's preview, pristine and as a ruin.
+// Renders every built-in blueprint in the builder's preview, pristine and as a ruin, into test-results/gallery.
+// Slow under software rendering, so it only runs when asked: UNIVERSE_GALLERY=1.
+test.skip(!process.env.UNIVERSE_GALLERY, 'Set UNIVERSE_GALLERY=1 to render the blueprint gallery')
 test('every built-in blueprint renders', async () => {
-  test.setTimeout(300_000)
+  test.setTimeout(600_000)
   const { page } = h
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))

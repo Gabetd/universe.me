@@ -171,7 +171,9 @@ function FitCamera({ extent }: { extent: number }) {
   useEffect(() => {
     const { camera, controls } = get()
     const orbit = controls as unknown as { target: { set(x: number, y: number, z: number): void }; update(): void } | null
-    camera.position.set(extent * 0.95, extent * 0.75, extent * 1.2)
+    // Small things get a little more room around them.
+    const d = extent * (1 + 6 / (extent + 6))
+    camera.position.set(d * 0.95, d * 0.75, d * 1.2)
     camera.far = extent * 50
     camera.updateProjectionMatrix()
     orbit?.target.set(0, extent * 0.3, 0)

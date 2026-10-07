@@ -547,9 +547,13 @@ function ziggurat(): Blueprint {
     y += h
   }
   k.add('box', 'brick', [16, 8, 16], [0, y, 0], 0, '#3d5a8a')
+  // Three stairways climbing to the top tier: steps from the ground at 62 m out to the shrine.
+  const steps = 14
   for (const side of [0, 90, 180]) {
-    const [x, z] = turn(0, 50, side)
-    k.add('wedge', 'mud', [10, 44, 40], [x * 0.75, 0, z * 0.75], side + 90, '#a07a4c')
+    for (let j = 0; j < steps; j++) {
+      const [x, z] = turn(0, 62 - j * (47 / steps), side)
+      k.add('box', 'mud', [10, ((j + 1) * 44) / steps, 47 / steps], [x, 0, z], side, '#a07a4c')
+    }
   }
   return k.build('ziggurat', 'Ziggurat', false, ['temple', 'monument', 'ancient'])
 }

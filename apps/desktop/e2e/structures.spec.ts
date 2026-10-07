@@ -39,12 +39,12 @@ test('place structures, weather them, and let events damage and destroy them', a
   // Place a castle and a house in the year 1000.
   await setPlayhead(page, '1000')
   await page.getByRole('button', { name: 'Place structure' }).click()
-  await page.getByLabel('Blueprint to place').selectOption({ label: 'Castle' })
+  await page.getByLabel('Blueprint to place').selectOption({ label: 'Stone castle' })
   await at(0.5, 0.45)
   await page.getByLabel('Blueprint to place').selectOption({ label: 'House' })
   await at(0.505, 0.46)
   await page.keyboard.press('Escape')
-  await expect.poll(async () => (await records(page)).structures.map((s) => s.name)).toEqual(['Castle', 'House'])
+  await expect.poll(async () => (await records(page)).structures.map((s) => s.name)).toEqual(['Stone castle', 'House'])
   await expect(inspector(page).getByTestId('condition')).toHaveText('100 · Pristine')
 
   // The house is abandoned in 1100; by 1180 it has weathered, and a wood-and-thatch house is gone by 1300.
@@ -69,7 +69,7 @@ test('place structures, weather them, and let events damage and destroy them', a
   await expect(inspector(page).getByText(/Reaches 2 structures/)).toBeVisible()
   await page.screenshot({ path: 'test-results/40-effect-preview.png' })
 
-  await page.locator('.region-row', { hasText: 'Castle' }).click()
+  await page.locator('.region-row', { hasText: 'Stone castle' }).click()
   await expect(inspector(page).getByTestId('condition')).toHaveText(/^60 · Weathered/)
   await expect(inspector(page).getByText('The Siege')).toBeVisible()
 
@@ -79,8 +79,8 @@ test('place structures, weather them, and let events damage and destroy them', a
   await fill(page, 'Event title', 'The Fall')
   await inspector(page).getByRole('button', { name: '+ Effect' }).click()
   await inspector(page).getByLabel('Effect', { exact: true }).selectOption('destroy')
-  await inspector(page).getByLabel('Structures').getByLabel('Castle').check()
-  await page.locator('.region-row', { hasText: 'Castle' }).click()
+  await inspector(page).getByLabel('Structures').getByLabel('Stone castle').check()
+  await page.locator('.region-row', { hasText: 'Stone castle' }).click()
   await expect(inspector(page).getByTestId('condition')).toHaveText('Gone')
   await page.getByRole('button', { name: '🌐 Globe' }).click()
   await setPlayhead(page, '1260')

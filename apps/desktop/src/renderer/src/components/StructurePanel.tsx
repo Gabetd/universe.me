@@ -1,4 +1,4 @@
-import { BUILTIN_BLUEPRINTS, erodesAt, formatTime, stateAt, STAGES, type Step, type Structure, type StructurePatch } from '@universe/core'
+import { erodesAt, formatTime, stateAt, STAGES, type Step, type Structure, type StructurePatch } from '@universe/core'
 import { usePlayhead } from '../timeline/timelineStore'
 import { useUi } from '../store'
 import { STAGE_COLORS } from '../world/structureLook'
@@ -6,6 +6,7 @@ import { useConditionCurves } from '../world/useStructures'
 import { useEditor } from '../world/editorStore'
 import { goToEvent } from '../world/goToEvent'
 import { CommitSlider, TagsField, TextField, TimeField } from './fields'
+import { BlueprintOptions } from './BlueprintOptions'
 import { NotesEditor } from './NotesEditor'
 
 const STEP_LABELS: Record<Step['kind'], string> = {
@@ -20,7 +21,6 @@ const STEP_LABELS: Record<Step['kind'], string> = {
 /** Inspector for a structure: what it is, where, and its condition at the playhead and why. */
 export function StructurePanel({ structure }: { structure: Structure }) {
   const { execute, selectStructure } = useUi.getState()
-  const library = useUi((s) => s.timeline.blueprints)
   const events = useUi((s) => s.timeline.events)
   const maintenances = useUi((s) => s.timeline.maintenances)
   const { curves } = useConditionCurves(structure.ownerId)
@@ -45,11 +45,7 @@ export function StructurePanel({ structure }: { structure: Structure }) {
       <label className="field">
         <span>Blueprint</span>
         <select value={structure.blueprintId} onChange={(e) => update({ blueprintId: e.target.value })}>
-          {[...BUILTIN_BLUEPRINTS, ...library].map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
+          <BlueprintOptions />
         </select>
       </label>
       <label className="field">

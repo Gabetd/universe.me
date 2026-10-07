@@ -1,5 +1,4 @@
 import {
-  BUILTIN_BLUEPRINTS,
   EFFECT_TYPES,
   MATERIALS,
   MATERIAL_INFO,
@@ -14,6 +13,7 @@ import {
 import { useMemo } from 'react'
 import { useUi } from '../store'
 import { useStructureWorld } from '../world/useStructures'
+import { BlueprintOptions } from './BlueprintOptions'
 import { CommitSlider, NumberInput, TagsField, TextField } from './fields'
 
 export const EFFECT_LABELS: Record<EffectType, { label: string; icon: string }> = {
@@ -58,7 +58,6 @@ export function EventEffects({ event }: { event: TimelineEvent }) {
 function EffectEditor({ effect, event }: { effect: EventEffect; event: TimelineEvent }) {
   const { execute } = useUi.getState()
   const world = useStructureWorld(effect.ownerId)
-  const library = useUi((s) => s.timeline.blueprints)
   const regions = world.regions
   const structures = world.data.structures
   const update = (patch: EffectPatch) => void execute({ type: 'effect.update', payload: { id: effect.id, patch } })
@@ -106,11 +105,7 @@ function EffectEditor({ effect, event }: { effect: EventEffect; event: TimelineE
           <TextField label="New name" value={effect.rename ?? ''} placeholder="(keep the name)" onCommit={(v) => update({ rename: v || null })} />
           <select aria-label="New blueprint" value={effect.blueprintId ?? ''} onChange={(e) => update({ blueprintId: e.target.value || null })}>
             <option value="">Keep the blueprint</option>
-            {[...BUILTIN_BLUEPRINTS, ...library].map((b) => (
-              <option key={b.id} value={b.id}>
-                Becomes: {b.name}
-              </option>
-            ))}
+            <BlueprintOptions prefix="Becomes: " />
           </select>
         </>
       )}
