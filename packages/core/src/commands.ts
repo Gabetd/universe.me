@@ -19,6 +19,7 @@ import {
   WorldSettings,
   WorldSettingsPatch,
   mergeWorldSettings,
+  quantizeSettings,
   readRect,
   writeRect
 } from './world'
@@ -143,7 +144,7 @@ export const handlers: Handlers = {
   'world.update'(store, { id, patch }) {
     liveWorld(store, id)
     const previous = store.worlds.getSettings(id) ?? DEFAULT_WORLD_SETTINGS
-    const next = WorldSettings.safeParse(mergeWorldSettings(previous, patch))
+    const next = WorldSettings.safeParse(quantizeSettings(mergeWorldSettings(previous, patch)))
     if (!next.success) throw new CommandError(`Invalid world settings: ${next.error.issues[0]?.message}`)
     store.worlds.putSettings(id, next.data)
     return { inverse: { type: 'world.update', payload: { id, patch: previous } }, target: { kind: 'node', id }, owner: id }

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { MIGRATIONS, Project, ProjectError, SCHEMA_VERSION } from './index'
-import { TERRAIN_RES, asBytes, bytesToBase64 } from '@universe/core'
+import { DEFAULT_WORLD_SETTINGS, TERRAIN_RES, asBytes, bytesToBase64 } from '@universe/core'
 
 let dir: string
 const open: Project[] = []
@@ -167,5 +167,24 @@ describe('Project', () => {
     expect(p.info()).toMatchObject({ name: 'Old', schemaVersion: SCHEMA_VERSION })
     expect(p.store.regions.all()).toEqual([])
     expect(p.store.records('event').all()).toEqual([])
+  })
+
+  it('fills in world options that settings saved by older versions lack', () => {
+    const path = join(dir, 'old-world.universe')
+    const p = Project.create(path, 'Old')
+    let parent = p.info().rootId
+    for (const kind of ['galaxy_cluster', 'galaxy', 'star_system', 'body', 'world']) parent = p.bus.execute({ type: 'node.create', payload: { parentId: parent, kind } }).targetId!
+    p.close()
+    // Written the way M1 saved it: three terrain options, no seed.
+    const raw = new DatabaseSync(path)
+    raw.prepare('INSERT INTO worlds (id, settings) VALUES (?, ?)').run(parent, JSON.stringify({ radiusKm: 5000, seaLevel: 10, terrain: { continentScale: 2, roughness: 0.4, mountainHeight: 3000 } }))
+    raw.close()
+    const q = track(Project.open(path))
+    expect(q.store.worlds.getSettings(parent)).toEqual({
+      ...DEFAULT_WORLD_SETTINGS,
+      radiusKm: 5000,
+      seaLevel: 10,
+      terrain: { ...DEFAULT_WORLD_SETTINGS.terrain, continentScale: 2, roughness: 0.4, mountainHeight: 3000 }
+    })
   })
 })

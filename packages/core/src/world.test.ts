@@ -58,6 +58,20 @@ describe('world.update', () => {
     expect(store.worlds.getSettings(worldId)).toEqual(DEFAULT_WORLD_SETTINGS)
   })
 
+  it('rounds options to their steps, so world codes can express them exactly', () => {
+    bus.execute({ type: 'world.update', payload: { id: worldId, patch: { terrain: { water: 0.6234, temperature: 4.4, vegetationColor: '#AABBCC' } } } })
+    expect(store.worlds.getSettings(worldId)!.terrain).toMatchObject({ water: 0.62, temperature: 4, vegetationColor: '#aabbcc' })
+  })
+
+  it('locks a world to a seed and unlocks it again, undoably', () => {
+    bus.execute({ type: 'world.update', payload: { id: worldId, patch: { seedText: 'Avalon', terrain: { landform: 'archipelago' } } } })
+    expect(store.worlds.getSettings(worldId)).toMatchObject({ seedText: 'Avalon', terrain: { landform: 'archipelago' } })
+    bus.execute({ type: 'world.update', payload: { id: worldId, patch: { seedText: null } } })
+    expect(store.worlds.getSettings(worldId)!.seedText).toBeNull()
+    bus.undo()
+    expect(store.worlds.getSettings(worldId)!.seedText).toBe('Avalon')
+  })
+
   it('only applies to worlds', () => {
     expect(() => bus.execute({ type: 'world.update', payload: { id: planetId, patch: { seaLevel: 1 } } })).toThrow(/not a world/)
   })

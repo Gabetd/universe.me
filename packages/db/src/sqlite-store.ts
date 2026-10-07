@@ -1,5 +1,6 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite'
 import { deflateSync, inflateSync } from 'node:zlib'
+import { DEFAULT_WORLD_SETTINGS, mergeWorldSettings } from '@universe/core'
 import type {
   HistoryLog,
   HistoryRecord,
@@ -12,7 +13,7 @@ import type {
   SpatialNode,
   Store,
   WorldRepository,
-  WorldSettings
+  WorldSettingsPatch
 } from '@universe/core'
 
 interface NodeRow {
@@ -149,7 +150,8 @@ export class SqliteStore implements Store {
     this.worlds = {
       getSettings: (id) => {
         const row = w.getSettings.get(id) as { settings: string | null } | undefined
-        return row?.settings ? (JSON.parse(row.settings) as WorldSettings) : undefined
+        // Older projects saved fewer options; the rest get their defaults.
+        return row?.settings ? mergeWorldSettings(DEFAULT_WORLD_SETTINGS, JSON.parse(row.settings) as WorldSettingsPatch) : undefined
       },
       putSettings: (id, settings) => void w.putSettings.run(id, JSON.stringify(settings)),
       // Edit layers are mostly zeros, so they compress to a few KB per face.

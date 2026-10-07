@@ -10,7 +10,7 @@ import {
   type TerrainPatch,
   type WorldSettings
 } from '@universe/core'
-import { BIOME_RGB, autoBiome } from './biomes'
+import { autoBiome, worldPalette, type Palette } from './biomes'
 import { angleBetween, cellDirections, dirToFace, dirToLatLon, faceToDir, toGrid, type Vec3 } from './cubesphere'
 import { clamp } from './math'
 import type { BaseTerrain } from './generate'
@@ -53,9 +53,6 @@ const FACE_CENTERS = Array.from({ length: CUBE_FACES }, (_, f) => faceToDir(f, 0
 /** Angle from a face's center to its corners: no cell on the face is farther. */
 const FACE_REACH = Math.acos(1 / Math.sqrt(3))
 
-const SHALLOW: Vec3 = [74, 150, 198]
-const DEEP: Vec3 = [12, 38, 80]
-
 /**
  * A world's terrain in memory: generated base + user edits, with brush
  * strokes that produce `terrain.patch` command payloads.
@@ -64,6 +61,7 @@ export class TerrainModel {
   heightEdits: Int16Array[]
   biomeEdits: Uint8Array[]
   private stroke: { brush: Brush; target: number; dirty: Map<number, DirtyRect> } | undefined
+  private palette: { for: WorldSettings; colors: Palette } | undefined
 
   constructor(
     public settings: WorldSettings,
@@ -102,7 +100,7 @@ export class TerrainModel {
   biome(face: number, cell: number): number {
     const painted = this.biomeEdits[face]![cell]!
     if (painted) return painted
-    return autoBiome(cellLatitudes()[face]![cell]!, this.height(face, cell) - this.settings.seaLevel, this.base.moisture[face]![cell]!)
+    return autoBiome(cellLatitudes()[face]![cell]!, this.height(face, cell) - this.settings.seaLevel, this.base.moisture[face]![cell]!, this.settings.terrain)
   }
 
   /** Nearest cell to a direction. */
@@ -130,14 +128,17 @@ export class TerrainModel {
 
   /** Writes the cell's display color (no lighting) into `out` at `offset`. */
   color(face: number, cell: number, out: Uint8Array | Uint8ClampedArray, offset: number): void {
+    // Rebuilt only when the settings object changes (a new one comes with every edit).
+    if (this.palette?.for !== this.settings) this.palette = { for: this.settings, colors: worldPalette(this.settings.terrain) }
+    const { shallow, deep, biomes } = this.palette.colors
     const elevation = this.height(face, cell) - this.settings.seaLevel
     if (elevation < 0) {
       const t = Math.sqrt(Math.min(1, -elevation / 4500))
-      out[offset] = SHALLOW[0] + (DEEP[0] - SHALLOW[0]) * t
-      out[offset + 1] = SHALLOW[1] + (DEEP[1] - SHALLOW[1]) * t
-      out[offset + 2] = SHALLOW[2] + (DEEP[2] - SHALLOW[2]) * t
+      out[offset] = shallow[0] + (deep[0] - shallow[0]) * t
+      out[offset + 1] = shallow[1] + (deep[1] - shallow[1]) * t
+      out[offset + 2] = shallow[2] + (deep[2] - shallow[2]) * t
     } else {
-      const rgb = BIOME_RGB[this.biome(face, cell)]!
+      const rgb = biomes[this.biome(face, cell)]!
       const lift = 0.94 + 0.12 * Math.min(1, elevation / 5000)
       out[offset] = Math.min(255, rgb[0] * lift)
       out[offset + 1] = Math.min(255, rgb[1] * lift)
