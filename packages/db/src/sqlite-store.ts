@@ -4,6 +4,9 @@ import type {
   HistoryLog,
   HistoryRecord,
   NodeRepository,
+  RecordKind,
+  RecordOf,
+  RecordRepository,
   Region,
   RegionRepository,
   SpatialNode,
@@ -104,6 +107,8 @@ export class SqliteStore implements Store {
   readonly worlds: WorldRepository
   readonly regions: RegionRepository
   private depth = 0
+  private readonly recordRepos = new Map<RecordKind, RecordRepository<unknown>>()
+  private readonly recordStmts: Record<'get' | 'all' | 'insert' | 'update', StatementSync>
 
   constructor(private readonly db: DatabaseSync) {
     const n = {
@@ -174,6 +179,32 @@ export class SqliteStore implements Store {
       insert: (region) => void r.insert.run(regionParams(region)),
       update: (region) => updateExisting(r.update, regionParams(region), 'Region')
     }
+
+    // Timeline records are stored whole as JSON, one table for every kind.
+    this.recordStmts = {
+      get: db.prepare('SELECT data FROM records WHERE kind = ? AND id = ?'),
+      all: db.prepare('SELECT data FROM records WHERE kind = ? AND deleted_at IS NULL ORDER BY rowid'),
+      insert: db.prepare('INSERT INTO records (kind, id, owner_id, data, deleted_at) VALUES (:kind, :id, :owner_id, :data, :deleted_at)'),
+      update: db.prepare('UPDATE records SET owner_id = :owner_id, data = :data, deleted_at = :deleted_at WHERE kind = :kind AND id = :id')
+    }
+  }
+
+  records<K extends RecordKind>(kind: K): RecordRepository<RecordOf<K>> {
+    let repo = this.recordRepos.get(kind)
+    if (!repo) {
+      const s = this.recordStmts
+      const params = (r: RecordOf<K>) => ({ kind, id: r.id, owner_id: r.ownerId, data: JSON.stringify(r), deleted_at: r.deletedAt })
+      const parse = (row: { data: string } | undefined) => row && (JSON.parse(row.data) as RecordOf<K>)
+      const typed: RecordRepository<RecordOf<K>> = {
+        get: (id) => parse(s.get.get(kind, id) as { data: string } | undefined),
+        all: () => (s.all.all(kind) as unknown as { data: string }[]).map((row) => parse(row)!),
+        insert: (record) => void s.insert.run(params(record)),
+        update: (record) => updateExisting(s.update, params(record), kind)
+      }
+      repo = typed as RecordRepository<unknown>
+      this.recordRepos.set(kind, repo)
+    }
+    return repo as RecordRepository<RecordOf<K>>
   }
 
   transaction<T>(fn: () => T): T {

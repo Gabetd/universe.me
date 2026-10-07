@@ -2,6 +2,8 @@ import { z } from 'zod'
 import { ALLOWED_CHILDREN, Id, KIND_LABELS, NodeKind, NodePatch, Seed, Vec3, type SpatialNode } from './schema'
 import { base64ToBytes, bytesToBase64 } from './encoding'
 import type { Store } from './store'
+import { CommandError, batchOf, liveNode, liveRegion, liveWorld, pickColor, previousValues, type CommandContext, type HandlerResult, type Run } from './command-kit'
+import { TIMELINE_COMMANDS, timelineHandlers } from './timeline-commands'
 import { stripUndefined } from './util'
 import {
   CUBE_FACES,
@@ -61,41 +63,36 @@ export const Command = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('region.update'), payload: z.object({ id: Id, patch: RegionPatch }) }),
   z.object({ type: z.literal('region.delete'), payload: z.object({ id: Id }) }),
-  z.object({ type: z.literal('region.restore'), payload: z.object({ id: Id }) })
+  z.object({ type: z.literal('region.restore'), payload: z.object({ id: Id }) }),
+  ...TIMELINE_COMMANDS,
+  /** Several commands applied together; each is validated when it runs. */
+  z.object({ type: z.literal('batch'), payload: z.object({ commands: z.array(z.unknown()).min(1) }) })
 ])
 export type Command = z.infer<typeof Command>
 export type CommandType = Command['type']
 
-export interface CommandContext {
-  now(): string
-  newId(): string
-  /** Returns an unsigned 32-bit integer. */
-  randomSeed(): number
-}
+export type Handler<P> = (store: Store, payload: P, ctx: CommandContext, run: Run) => HandlerResult
+/** A handler for each command type in a union of commands. */
+export type HandlerMap<C extends { type: string; payload: unknown }> = { [T in C['type']]: Handler<Extract<C, { type: T }>['payload']> }
 
-/** The entity a command created or touched, so the UI can select it. */
-export interface Target {
-  kind: 'node' | 'region'
-  id: string
-}
-
-export interface HandlerResult {
-  /** The command that exactly reverses this one. */
-  inverse: Command
-  target?: Target
-  /** Node that owns what changed (a world for its settings, terrain and regions); the bus bumps its `updatedAt`. */
-  owner?: string
-}
-
-export class CommandError extends Error {
-  override name = 'CommandError'
-}
-
-type Handlers = {
-  [T in CommandType]: (store: Store, payload: Extract<Command, { type: T }>['payload'], ctx: CommandContext) => HandlerResult
-}
+type Handlers = HandlerMap<Command>
 
 export const handlers: Handlers = {
+  ...timelineHandlers,
+
+  batch(store, { commands }, ctx) {
+    const results = commands.map((input) => {
+      const parsed = Command.safeParse(input)
+      if (!parsed.success) throw new CommandError(`Invalid command in batch: ${parsed.error.issues[0]?.message}`)
+      return applyCommand(store, parsed.data, ctx)
+    })
+    return {
+      inverse: batchOf(results.map((r) => r.inverse).reverse()),
+      target: results.findLast((r) => r.target)?.target,
+      owner: results.find((r) => r.owner)?.owner
+    }
+  },
+
   'node.create'(store, p, ctx) {
     const parent = liveNode(store, p.parentId)
     if (!ALLOWED_CHILDREN[parent.kind].includes(p.kind)) {
@@ -199,7 +196,7 @@ export const handlers: Handlers = {
       id,
       worldId: p.worldId,
       name: p.name ?? 'New Region',
-      color: p.color ?? REGION_COLORS[ctx.randomSeed() % REGION_COLORS.length]!,
+      color: p.color ?? pickColor(ctx),
       points: p.points,
       notes: p.notes ?? '',
       createdAt: now,
@@ -241,38 +238,21 @@ export const handlers: Handlers = {
   }
 }
 
-function liveNode(store: Store, id: string): SpatialNode {
-  const node = store.nodes.get(id)
-  if (!node || node.deletedAt) throw new CommandError(`Node ${id} does not exist`)
-  return node
-}
 
-/** The record's current values for every key the patch sets: the patch that undoes it. */
-function previousValues<R extends object, P extends Partial<R>>(record: R, patch: P): P {
-  const previous: Partial<R> = {}
-  for (const key of Object.keys(patch) as (keyof P & keyof R)[]) {
-    if (patch[key] !== undefined) previous[key] = record[key]
-  }
-  return previous as P
-}
 
-function liveWorld(store: Store, id: string): SpatialNode {
-  const node = liveNode(store, id)
-  if (node.kind !== 'world') throw new CommandError(`${node.name} is not a world`)
-  return node
-}
 
-function liveRegion(store: Store, id: string) {
-  const region = store.regions.get(id)
-  if (!region || region.deletedAt) throw new CommandError(`Region ${id} does not exist`)
-  return region
-}
 
-/** Distinct, readable-on-dark colors for new regions. */
-const REGION_COLORS = ['#e8a33d', '#5fb3d9', '#d9605f', '#8bc34a', '#b37fe0', '#4fc3a1', '#f06292', '#c0ca33']
+
+/** Applies an already-validated command inside the current transaction. */
+export function applyCommand(store: Store, command: Command, ctx: CommandContext): HandlerResult {
+  const handler = handlers[command.type] as Handler<unknown>
+  return handler(store, command.payload as never, ctx, (c) => applyCommand(store, c, ctx))
+}
 
 function liveDescendants(store: Store, id: string): SpatialNode[] {
   const out: SpatialNode[] = []
   for (const child of store.nodes.children(id)) out.push(child, ...liveDescendants(store, child.id))
   return out
 }
+
+export { CommandError, type CommandContext, type HandlerResult, type Target } from './command-kit'

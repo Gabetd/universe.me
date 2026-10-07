@@ -1,5 +1,5 @@
 import { v7 as uuidv7 } from 'uuid'
-import { Command, CommandError, handlers, type CommandContext, type HandlerResult, type Target } from './commands'
+import { Command, CommandError, applyCommand, type CommandContext, type HandlerResult, type Target } from './commands'
 import type { CommandSource } from './schema'
 import type { Store } from './store'
 
@@ -99,8 +99,7 @@ export class CommandBus {
 
   private apply(action: HistoryAction, command: Command, source: CommandSource): HandlerResult {
     return this.store.transaction(() => {
-      const handler = handlers[command.type] as (s: Store, p: unknown, c: CommandContext) => HandlerResult
-      const result = handler(this.store, command.payload, this.ctx)
+      const result = applyCommand(this.store, command, this.ctx)
       if (result.owner) {
         const owner = this.store.nodes.get(result.owner)
         if (owner) this.store.nodes.update({ ...owner, updatedAt: this.ctx.now() })

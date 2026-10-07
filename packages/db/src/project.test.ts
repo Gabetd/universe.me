@@ -134,6 +134,27 @@ describe('Project', () => {
     expect(q.store.regions.get(regionId)).toMatchObject({ name: 'Shire', points: [{ lat: 1, lon: 2 }, { lat: 3, lon: 4 }, { lat: 5, lon: 1 }] })
   })
 
+  it('persists timeline records and rolls them back with a failed command', () => {
+    const path = join(dir, 't.universe')
+    const p = Project.create(path, 'T')
+    const root = p.info().rootId
+    const exec = (type: string, payload: object) => p.bus.execute({ type, payload }).targetId!
+    const a = exec('event.create', { ownerId: root, title: 'Big Bang', start: -4.35e17, end: null })
+    const b = exec('event.create', { ownerId: root, title: 'First stars', start: -4.3e17 })
+    exec('link.create', { fromId: a, toId: b })
+    exec('era.create', { ownerId: root, name: 'Dark Ages', start: -4.35e17, end: -4.3e17 })
+    expect(() => p.bus.execute({ type: 'batch', payload: { commands: [{ type: 'event.delete', payload: { id: b } }, { type: 'event.delete', payload: { id: 'nope' } }] } })).toThrow()
+    p.close()
+
+    const q = track(Project.open(path))
+    expect(q.store.records('event').all().map((e) => e.title)).toEqual(['Big Bang', 'First stars'])
+    expect(q.store.records('link').all()).toEqual([expect.objectContaining({ fromId: a, toId: b, type: 'causes' })])
+    expect(q.store.records('era').all()[0]).toMatchObject({ name: 'Dark Ages' })
+    q.bus.execute({ type: 'event.delete', payload: { id: a } })
+    expect(q.store.records('link').all()).toEqual([])
+    expect(q.store.records('event').get(a)?.deletedAt).not.toBeNull()
+  })
+
   it('upgrades a project created by an older schema', () => {
     const path = join(dir, 'old.universe')
     const db = new DatabaseSync(path)
@@ -145,5 +166,6 @@ describe('Project', () => {
     const p = track(Project.open(path))
     expect(p.info()).toMatchObject({ name: 'Old', schemaVersion: SCHEMA_VERSION })
     expect(p.store.regions.all()).toEqual([])
+    expect(p.store.records('event').all()).toEqual([])
   })
 })

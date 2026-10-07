@@ -72,6 +72,9 @@ export type LatLon = z.infer<typeof LatLon>
 
 export const HexColor = z.string().regex(/^#[0-9a-f]{6}$/i)
 
+/** Distinct, readable-on-dark colors handed out to new regions, events, eras and groups. */
+export const PALETTE = ['#e8a33d', '#5fb3d9', '#d9605f', '#8bc34a', '#b37fe0', '#4fc3a1', '#f06292', '#c0ca33']
+
 export const Region = z.object({
   id: Id,
   worldId: Id,

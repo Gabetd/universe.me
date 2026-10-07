@@ -63,6 +63,17 @@ export const MIGRATIONS: readonly string[] = [
     deleted_at TEXT
   );
   CREATE INDEX regions_world ON regions(world_id);
+  `,
+  /* 3: timeline records (events, links, groups, eras, lanes, entity changes, settings) as JSON documents */ `
+  CREATE TABLE records (
+    kind       TEXT NOT NULL,
+    id         TEXT NOT NULL,
+    owner_id   TEXT NOT NULL REFERENCES nodes(id),
+    data       TEXT NOT NULL,
+    deleted_at TEXT,
+    PRIMARY KEY (kind, id)
+  );
+  CREATE INDEX records_owner ON records(kind, owner_id);
   `
 ]
 

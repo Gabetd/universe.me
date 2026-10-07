@@ -1,4 +1,5 @@
 import type { Id, SpatialNode } from './schema'
+import { RECORD_KINDS, type RecordKind, type RecordOf } from './timeline'
 import type { Region, TerrainLayerName, WorldSettings } from './world'
 
 /** Storage the domain layer needs. `packages/db` implements it on SQLite; tests use `MemoryStore`. */
@@ -33,10 +34,21 @@ export interface RegionRepository {
   update(region: Region): void
 }
 
+/** Timeline records of one kind (events, links, eras…), across all owners. */
+export interface RecordRepository<T> {
+  /** Returns the record even if soft-deleted. */
+  get(id: Id): T | undefined
+  /** Every live record. */
+  all(): T[]
+  insert(record: T): void
+  update(record: T): void
+}
+
 export interface Store {
   nodes: NodeRepository
   worlds: WorldRepository
   regions: RegionRepository
+  records<K extends RecordKind>(kind: K): RecordRepository<RecordOf<K>>
   /** Runs `fn` atomically: all of its writes land, or none do. */
   transaction<T>(fn: () => T): T
 }
@@ -60,6 +72,7 @@ class MemoryTable<T extends { id: Id; deletedAt: string | null }> {
 export class MemoryStore implements Store {
   private readonly nodeTable = new MemoryTable<SpatialNode>()
   private readonly regionTable = new MemoryTable<Region>()
+  private readonly recordTables = new Map(RECORD_KINDS.map((k) => [k, new MemoryTable<RecordOf<RecordKind>>()]))
   private settings = new Map<Id, WorldSettings>()
   private layers = new Map<string, Uint8Array>()
   private revisions = new Map<Id, number>()
@@ -79,6 +92,11 @@ export class MemoryStore implements Store {
     update: this.regionTable.update
   }
 
+  records<K extends RecordKind>(kind: K): RecordRepository<RecordOf<K>> {
+    const t = this.recordTables.get(kind)! as unknown as MemoryTable<RecordOf<K>>
+    return { get: t.get, all: t.live, insert: t.insert, update: t.update }
+  }
+
   worlds: WorldRepository = {
     getSettings: (id) => clone(this.settings.get(id)),
     putSettings: (id, s) => void this.settings.set(id, clone(s)),
@@ -92,6 +110,7 @@ export class MemoryStore implements Store {
     const snapshot = {
       nodes: new Map(this.nodeTable.rows),
       regions: new Map(this.regionTable.rows),
+      records: [...this.recordTables.values()].map((t) => new Map(t.rows)),
       settings: new Map(this.settings),
       layers: new Map(this.layers),
       revisions: new Map(this.revisions)
@@ -101,6 +120,7 @@ export class MemoryStore implements Store {
     } catch (err) {
       this.nodeTable.rows = snapshot.nodes
       this.regionTable.rows = snapshot.regions
+      ;[...this.recordTables.values()].forEach((t, i) => (t.rows = snapshot.records[i]!))
       this.settings = snapshot.settings
       this.layers = snapshot.layers
       this.revisions = snapshot.revisions
