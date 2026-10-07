@@ -1,4 +1,5 @@
 import { DEFAULT_TERRAIN, LANDFORMS, WORLD_RANGES, quantizeSettings, type Landform, type TerrainParams, type WorldRange } from '@universe/core'
+import { hslToHex as hsl } from './biomes'
 import { rng, subSeed } from './random'
 
 /**
@@ -22,15 +23,6 @@ export function seedNumber(text: string): number {
   let h = 0x811c9dc5
   for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 0x01000193)
   return h >>> 0
-}
-
-const hsl = (h: number, s: number, l: number) => {
-  const a = s * Math.min(l, 1 - l)
-  const f = (n: number) => {
-    const k = (n + h / 30) % 12
-    return Math.round((l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))) * 255)
-  }
-  return `#${[f(0), f(8), f(4)].map((v) => v.toString(16).padStart(2, '0')).join('')}`
 }
 
 /**

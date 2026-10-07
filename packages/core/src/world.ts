@@ -131,26 +131,10 @@ export function quantizeSettings(s: WorldSettings): WorldSettings {
     const { min, max, step } = WORLD_RANGES[key]
     return Number(Math.min(max, Math.max(min, Math.round((v - min) / step) * step + min)).toFixed(4))
   }
-  const t = s.terrain
-  return {
-    ...s,
-    radiusKm: q('radiusKm', s.radiusKm),
-    terrain: {
-      ...t,
-      water: q('water', t.water),
-      continentScale: q('continentScale', t.continentScale),
-      islands: q('islands', t.islands),
-      roughness: q('roughness', t.roughness),
-      mountains: q('mountains', t.mountains),
-      mountainHeight: q('mountainHeight', t.mountainHeight),
-      temperature: q('temperature', t.temperature),
-      aridity: q('aridity', t.aridity),
-      beaches: q('beaches', t.beaches),
-      vegetationColor: t.vegetationColor.toLowerCase(),
-      sandColor: t.sandColor.toLowerCase(),
-      waterColor: t.waterColor.toLowerCase()
-    }
-  }
+  const terrain: Record<string, unknown> = { ...s.terrain }
+  for (const key of Object.keys(WORLD_RANGES) as WorldRange[]) if (key !== 'radiusKm') terrain[key] = q(key, s.terrain[key])
+  for (const key of ['vegetationColor', 'sandColor', 'waterColor'] as const) terrain[key] = s.terrain[key].toLowerCase()
+  return { ...s, radiusKm: q('radiusKm', s.radiusKm), terrain: terrain as TerrainParams }
 }
 
 /** A rectangle of new cell values for one cube face, as base64 of the layer's bytes (row-major). */

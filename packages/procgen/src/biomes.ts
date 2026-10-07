@@ -97,6 +97,9 @@ function rgbToHsl([r, g, b]: readonly number[]): Rgb {
   return [h * 60, s, l]
 }
 
+/** "#rrggbb" for a hue (degrees), saturation and lightness (0–1). */
+export const hslToHex = (h: number, s: number, l: number) => `#${hslToRgb([h, s, l]).map((v) => v.toString(16).padStart(2, '0')).join('')}`
+
 function hslToRgb([h, s, l]: Rgb): Rgb {
   const k = (n: number) => (n + h / 30) % 12
   const a = s * Math.min(l, 1 - l)
