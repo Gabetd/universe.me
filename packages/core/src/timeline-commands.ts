@@ -79,9 +79,16 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
       canvasHidden: p.canvasHidden ?? false
     }),
   'event.update': (store, { id, patch }, ctx) => update(store, 'event', ctx, id, patch),
-  // Links can't outlive their events, so they go (and come back) with them.
+  // Its links and structure effects can't outlive it, so they go (and come back) with it; maintenance changes it caused stay, uncaused.
   'event.delete': (store, { id }, ctx, run) =>
-    deleteWith(store, ctx, run, { kind: 'event', id }, [], live(store, 'link').filter((l) => l.fromId === id || l.toId === id).map((l) => ({ kind: 'link', id: l.id }))),
+    deleteWith(
+      store, ctx, run, { kind: 'event', id },
+      live(store, 'maintenance').filter((m) => m.causeEventId === id).map((m) => ({ type: 'maintenance.update', payload: { id: m.id, patch: { causeEventId: null } } })),
+      [
+        ...live(store, 'link').filter((l) => l.fromId === id || l.toId === id).map((l) => ({ kind: 'link' as const, id: l.id })),
+        ...live(store, 'effect').filter((e) => e.eventId === id).map((e) => ({ kind: 'effect' as const, id: e.id }))
+      ]
+    ),
 
   'link.create': (store, { id, fromId, ...p }, ctx) =>
     create(store, 'link', ctx, liveRecord(store, 'event', fromId).ownerId, id, { fromId, toId: p.toId, type: p.type ?? 'causes', note: p.note ?? '' }),

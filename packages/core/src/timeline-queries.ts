@@ -82,7 +82,7 @@ export function causalChain(links: EventLink[], eventId: string, direction: 'up'
 export interface Warning {
   message: string
   /** Records the warning is about, so the UI can select them. */
-  refs: { kind: 'event' | 'link' | 'change' | 'region'; id: string }[]
+  refs: { kind: 'event' | 'link' | 'change' | 'region' | 'structure' | 'effect'; id: string }[]
 }
 
 /**

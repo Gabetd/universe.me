@@ -46,6 +46,7 @@ export function deriveWorld(seed: number): SeededWorld {
     radiusKm: Math.round(between(2500, 11000)),
     seaLevel: 0,
     seedText: null,
+    erosionSpeed: 1,
     terrain: {
       landform,
       water: climate === 'wet' ? between(0.8, 0.93) : climate === 'dry' ? between(0.15, 0.4) : between(0.45, 0.78),

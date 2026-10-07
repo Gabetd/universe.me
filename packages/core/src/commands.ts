@@ -3,6 +3,7 @@ import { ALLOWED_CHILDREN, Id, KIND_LABELS, NodeKind, NodePatch, Seed, Vec3, typ
 import { base64ToBytes, bytesToBase64 } from './encoding'
 import type { Store } from './store'
 import { CommandError, batchOf, liveNode, liveRegion, liveWorld, pickColor, previousValues, type CommandContext, type HandlerResult, type Run } from './command-kit'
+import { STRUCTURE_COMMANDS, structureHandlers } from './structure-commands'
 import { TIMELINE_COMMANDS, timelineHandlers } from './timeline-commands'
 import { stripUndefined } from './util'
 import {
@@ -66,6 +67,7 @@ export const Command = z.discriminatedUnion('type', [
   z.object({ type: z.literal('region.delete'), payload: z.object({ id: Id }) }),
   z.object({ type: z.literal('region.restore'), payload: z.object({ id: Id }) }),
   ...TIMELINE_COMMANDS,
+  ...STRUCTURE_COMMANDS,
   /** Several commands applied together; each is validated when it runs. */
   z.object({ type: z.literal('batch'), payload: z.object({ commands: z.array(z.unknown()).min(1) }) })
 ])
@@ -80,6 +82,7 @@ type Handlers = HandlerMap<Command>
 
 export const handlers: Handlers = {
   ...timelineHandlers,
+  ...structureHandlers,
 
   batch(store, { commands }, ctx) {
     const results = commands.map((input) => {

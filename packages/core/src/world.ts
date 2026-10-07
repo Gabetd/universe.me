@@ -44,6 +44,9 @@ export const WORLD_RANGES = {
 } as const
 export type WorldRange = keyof typeof WORLD_RANGES
 
+/** How fast structures weather on a world, as a multiple of the material defaults. Not part of generation. */
+export const EROSION_SPEED = { min: 0, max: 10, step: 0.1 } as const
+
 const ranged = (key: WorldRange) => z.number().min(WORLD_RANGES[key].min).max(WORLD_RANGES[key].max)
 
 /** Overall shape of the land: Earth-like continents, one supercontinent, or scattered islands. */
@@ -80,7 +83,8 @@ export const WorldSettings = z.object({
    * The seed the world was generated from (any text, or a world code). While
    * set, the world's options come from it and are locked; null = custom.
    */
-  seedText: z.string().max(200).nullable()
+  seedText: z.string().max(200).nullable(),
+  erosionSpeed: z.number().min(EROSION_SPEED.min).max(EROSION_SPEED.max)
 })
 export type WorldSettings = z.infer<typeof WorldSettings>
 
@@ -104,14 +108,16 @@ export const DEFAULT_WORLD_SETTINGS: WorldSettings = {
   radiusKm: 6371,
   seaLevel: 0,
   terrain: DEFAULT_TERRAIN,
-  seedText: null
+  seedText: null,
+  erosionSpeed: 1
 }
 
 export const WorldSettingsPatch = z.object({
   radiusKm: WorldSettings.shape.radiusKm.optional(),
   seaLevel: WorldSettings.shape.seaLevel.optional(),
   terrain: TerrainParams.partial().optional(),
-  seedText: WorldSettings.shape.seedText.optional()
+  seedText: WorldSettings.shape.seedText.optional(),
+  erosionSpeed: WorldSettings.shape.erosionSpeed.optional()
 })
 export type WorldSettingsPatch = z.infer<typeof WorldSettingsPatch>
 
@@ -121,7 +127,8 @@ export function mergeWorldSettings(base: WorldSettings, patch: WorldSettingsPatc
     radiusKm: patch.radiusKm ?? base.radiusKm,
     seaLevel: patch.seaLevel ?? base.seaLevel,
     terrain: { ...DEFAULT_TERRAIN, ...base.terrain, ...stripUndefined(patch.terrain ?? {}) },
-    seedText: patch.seedText === undefined ? (base.seedText ?? null) : patch.seedText
+    seedText: patch.seedText === undefined ? (base.seedText ?? null) : patch.seedText,
+    erosionSpeed: patch.erosionSpeed ?? base.erosionSpeed ?? 1
   }
 }
 
@@ -134,7 +141,8 @@ export function quantizeSettings(s: WorldSettings): WorldSettings {
   const terrain: Record<string, unknown> = { ...s.terrain }
   for (const key of Object.keys(WORLD_RANGES) as WorldRange[]) if (key !== 'radiusKm') terrain[key] = q(key, s.terrain[key])
   for (const key of ['vegetationColor', 'sandColor', 'waterColor'] as const) terrain[key] = s.terrain[key].toLowerCase()
-  return { ...s, radiusKm: q('radiusKm', s.radiusKm), terrain: terrain as TerrainParams }
+  const erosionSpeed = Number((Math.round(s.erosionSpeed / EROSION_SPEED.step) * EROSION_SPEED.step).toFixed(1))
+  return { ...s, radiusKm: q('radiusKm', s.radiusKm), erosionSpeed, terrain: terrain as TerrainParams }
 }
 
 /** A rectangle of new cell values for one cube face, as base64 of the layer's bytes (row-major). */
