@@ -91,34 +91,48 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
             ))}
           </div>
         )}
-        {onSurface && tool === 'place' && (
-          <select aria-label="Blueprint to place" value={placeBlueprintId} onChange={(e) => set({ placeBlueprintId: e.target.value })}>
-            <BlueprintOptions />
-          </select>
-        )}
-        {onSurface && isBrushTool(tool) && (
-          <>
-            <Slider label="Size" value={radiusKm} min={30} max={2500} step={10} unit="km" onChange={(v) => set({ radiusKm: v })} />
-            {tool !== 'paint' && tool !== 'erase' && (
-              <Slider label="Strength" value={Math.round(strength * 100)} min={5} max={100} step={5} unit="%" onChange={(v) => set({ strength: v / 100 })} />
-            )}
-          </>
-        )}
-        {activeView === 'globe' && <Slider label="Relief" value={exaggeration} min={1} max={80} step={1} unit="×" onChange={(v) => set({ exaggeration: v })} />}
       </div>
 
-      {onSurface && tool === 'paint' && (
-        <div className="biome-palette" role="radiogroup" aria-label="Biome">
-          {BIOMES.slice(1).map((b) => (
-            <button key={b.id} role="radio" aria-checked={biome === b.id} title={b.name} onClick={() => set({ biome: b.id })}>
-              <span className="swatch" style={{ background: b.color }} />
-              {b.name}
-            </button>
-          ))}
-        </div>
-      )}
-
       <div className="world-canvas">
+        {(onSurface && (tool === 'place' || isBrushTool(tool))) || activeView === 'globe' ? (
+          // Over the view rather than in the toolbar, so picking a tool never moves the map.
+          <aside className="tool-options" aria-label="Tool options">
+            {onSurface && tool === 'place' && (
+              <select aria-label="Blueprint to place" value={placeBlueprintId} onChange={(e) => set({ placeBlueprintId: e.target.value })}>
+                <BlueprintOptions />
+              </select>
+            )}
+            {onSurface && isBrushTool(tool) && (
+              <>
+                <Slider label="Size" value={radiusKm} min={30} max={2500} step={10} unit="km" onChange={(v) => set({ radiusKm: v })} />
+                {tool !== 'paint' && tool !== 'erase' && (
+                  <Slider
+                    label="Strength"
+                    value={Math.round(strength * 100)}
+                    min={5}
+                    max={100}
+                    step={5}
+                    unit="%"
+                    onChange={(v) => set({ strength: v / 100 })}
+                  />
+                )}
+              </>
+            )}
+            {activeView === 'globe' && (
+              <Slider label="Relief" value={exaggeration} min={1} max={80} step={1} unit="×" onChange={(v) => set({ exaggeration: v })} />
+            )}
+            {onSurface && tool === 'paint' && (
+              <div className="biome-palette" role="radiogroup" aria-label="Biome">
+                {BIOMES.slice(1).map((b) => (
+                  <button key={b.id} role="radio" aria-checked={biome === b.id} title={b.name} onClick={() => set({ biome: b.id })}>
+                    <span className="swatch" style={{ background: b.color }} />
+                    {b.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </aside>
+        ) : null}
         {activeView === 'canvas' ? (
           <EventCanvas worldId={world.id} regions={allRegions} />
         ) : viewProps ? (

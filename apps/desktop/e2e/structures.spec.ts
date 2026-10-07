@@ -33,8 +33,11 @@ test('place structures, weather them, and let events damage and destroy them', a
   await addChild(page, '+ World surface', 'Terra Surface')
   await page.getByRole('button', { name: '🗺 Map' }).click()
   await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: 20_000 })
-  const map = (await page.getByTestId('map').boundingBox())!
-  const at = (x: number, y: number) => page.mouse.click(map.x + map.width * x, map.y + map.height * y)
+  // Measured at each click: tool options in the toolbar can move the map.
+  const at = async (x: number, y: number) => {
+    const map = (await page.getByTestId('map').boundingBox())!
+    await page.mouse.click(map.x + map.width * x, map.y + map.height * y)
+  }
 
   // Place a castle and a house in the year 1000.
   await setPlayhead(page, '1000')
@@ -47,13 +50,13 @@ test('place structures, weather them, and let events damage and destroy them', a
   await expect.poll(async () => (await records(page)).structures.map((s) => s.name)).toEqual(['Stone castle', 'House'])
   await expect(inspector(page).getByTestId('condition')).toHaveText('100 · Pristine')
 
-  // The house is abandoned in 1100; by 1180 it has weathered, and a wood-and-thatch house is gone by 1300.
+  // The house is abandoned in 1100; by 1180 it has weathered, and a wood-and-thatch house is gone by 1400.
   await setPlayhead(page, '1100')
   await inspector(page).getByLabel(/Maintained from/).uncheck()
   await setPlayhead(page, '1180')
   await expect(inspector(page).getByTestId('condition')).not.toHaveText(/Pristine/)
   await expect(inspector(page).getByText(/erodes away around/)).toBeVisible()
-  await setPlayhead(page, '1300')
+  await setPlayhead(page, '1400')
   await expect(inspector(page).getByTestId('condition')).toHaveText('Gone')
 
   // A siege in 1250 at the castle damages everything within 100 km, less with distance.

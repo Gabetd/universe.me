@@ -90,8 +90,11 @@ test('build a blueprint from parts, import a glTF model, and place both', async 
 
   // Clicking it in the library starts placing it.
   await page.locator('.blueprint-row', { hasText: 'Keep' }).getByTitle('Place it').click()
-  const map = (await page.getByTestId('map').boundingBox())!
-  await page.mouse.click(map.x + map.width * 0.5, map.y + map.height * 0.45)
+  const click = async (x: number, y: number) => {
+    const map = (await page.getByTestId('map').boundingBox())!
+    await page.mouse.click(map.x + map.width * x, map.y + map.height * y)
+  }
+  await click(0.5, 0.45)
   await page.keyboard.press('Escape')
   await expect.poll(async () => (await records(page)).structures.map((s) => s.name)).toEqual(['Keep'])
 
@@ -113,7 +116,7 @@ test('build a blueprint from parts, import a glTF model, and place both', async 
   void obelisk
 
   await page.locator('.blueprint-row', { hasText: 'Obelisk' }).getByTitle('Place it').click()
-  await page.mouse.click(map.x + map.width * 0.53, map.y + map.height * 0.45)
+  await click(0.53, 0.45)
   await page.keyboard.press('Escape')
   await expect.poll(async () => (await records(page)).structures.map((s) => s.name)).toEqual(['Keep', 'Obelisk'])
   await page.getByRole('button', { name: '🌐 Globe' }).click()
