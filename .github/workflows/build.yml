@@ -1,0 +1,85 @@
+name: Build executables
+
+# Builds installable apps for Windows, macOS and Linux on every push to main or
+# the development branch, then publishes them as the rolling "latest-build"
+# pre-release so the newest build is always one download away.
+on:
+  push:
+    branches: [main, 'claude/**']
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Package (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # No code-signing certificates yet; don't let electron-builder search for them.
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build and package
+        run: pnpm dist
+      - name: Smoke-test the packaged Linux app
+        if: runner.os == 'Linux'
+        working-directory: apps/desktop
+        run: UNIVERSE_E2E_EXECUTABLE=$PWD/release/linux-unpacked/universe-desktop xvfb-run -a npx playwright test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: universe-${{ runner.os }}
+          if-no-files-found: error
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+
+  publish:
+    name: Publish latest build
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Replace the latest-build pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          short=$(echo "$GITHUB_SHA" | cut -c1-7)
+          cat > notes.md <<NOTES
+          Automatic build of \`${GITHUB_REF_NAME}\` at ${short}.
+
+          | Platform | Download |
+          |---|---|
+          | Windows | \`Universe-*-windows-portable.exe\` runs without installing. \`Universe-*-win-x64.exe\` is the installer. |
+          | macOS (Apple Silicon) | \`Universe-*-mac-arm64.dmg\` |
+          | macOS (Intel) | \`Universe-*-mac-x64.dmg\` |
+          | Linux | \`.AppImage\` (\`chmod +x\`, then run) or \`.deb\` |
+
+          These builds are not code-signed yet. Windows SmartScreen: click **More info → Run anyway**.
+          macOS: open the app once, then **System Settings → Privacy & Security → Open Anyway**.
+          NOTES
+          gh release delete latest-build --cleanup-tag --yes || true
+          gh release create latest-build dist/* \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Latest build (${GITHUB_REF_NAME} @ ${short})" \
+            --notes-file notes.md

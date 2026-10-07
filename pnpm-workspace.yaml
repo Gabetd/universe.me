@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - packages/*
+
+# pnpm 10 skips dependency install scripts unless they are listed here.
+# Electron's script downloads the Electron binary; esbuild's fetches its native binary.
+onlyBuiltDependencies:
+  - electron
+  - esbuild
+# Squirrel.Windows installer helper pulled in by electron-builder; not used (we build NSIS + portable).
+ignoredBuiltDependencies:
+  - electron-winstaller

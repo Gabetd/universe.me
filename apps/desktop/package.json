@@ -1,0 +1,38 @@
+{
+  "name": "universe-desktop",
+  "productName": "Universe",
+  "version": "0.1.0",
+  "private": true,
+  "description": "universe.me desktop worldbuilding app",
+  "author": "universe.me",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Gabetd/universe.me.git"
+  },
+  "desktopName": "universe.desktop",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",
+    "test": "echo \"desktop: no unit tests yet (see test:e2e)\"",
+    "test:e2e": "electron-vite build && playwright test",
+    "dist": "electron-vite build && electron-builder --publish never"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@universe/core": "workspace:*",
+    "@universe/db": "workspace:*",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "44.6.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "vite": "^7.3.7",
+    "zustand": "^5.0.15"
+  }
+}

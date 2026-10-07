@@ -1,0 +1,18 @@
+{
+  "name": "@universe/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Domain model, schemas, commands and queries. No UI, no storage.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "uuid": "^14.0.2",
+    "zod": "^4.6.5"
+  }
+}

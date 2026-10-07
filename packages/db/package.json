@@ -1,0 +1,17 @@
+{
+  "name": "@universe/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SQLite storage for .universe project files (node:sqlite, no native modules).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@universe/core": "workspace:*"
+  }
+}

@@ -40,13 +40,13 @@ API.
 | 2D map | **Canvas/WebGL layer** (PixiJS) over equirectangular projection | Fast painting and placement on a flat map view. |
 | Timeline | Custom **Canvas/SVG** component (d3-scale, d3-zoom) | Needs custom zoom over very large time ranges, lanes, and link drawing. |
 | Rich text | **TipTap** (ProseMirror) | Notes on structures, events, and entities, with @-mentions linking to other entities. |
-| Storage | **SQLite** (better-sqlite3) + asset folder | One `.universe` project file. Transactional, queryable, and simple to back up. |
+| Storage | **SQLite** via Node's built-in `node:sqlite` + asset folder | One `.universe` project file. Transactional, queryable, and simple to back up. Built into Electron and Node, so there's no native module to rebuild per OS. FTS5 is included. |
 | Validation / schema | **Zod** | One schema shared by the UI, REST API, and MCP tool definitions. |
 | Local API | **Fastify** inside the Electron main process | REST + WebSocket change feed, bound to 127.0.0.1. |
 | AI integration | **MCP server** (`@modelcontextprotocol/sdk`), stdio + HTTP | Plugs straight into Claude Code (`claude mcp add`). |
 | Procedural gen | simplex-noise, seeded PRNG | Terrain, galaxies, and starfields that regenerate the same way from a seed. |
 | Testing | Vitest (unit), Playwright (Electron E2E) | |
-| Monorepo | pnpm workspaces + Turborepo | |
+| Monorepo | pnpm workspaces | Add Turborepo once build times call for caching. |
 
 ---
 
@@ -351,10 +351,12 @@ Keep it simple and deterministic:
 
 Each milestone ends with something you can launch and demo.
 
-### M0 — Foundations (1–2 weeks)
-- Monorepo, Electron + Vite + React skeleton, CI (lint, typecheck, test, build installers).
-- `core` command bus with undo/redo, Zod schemas, SQLite + migrations.
-- Create/open/save `.universe` project. Empty main layout.
+### M0 — Foundations (1–2 weeks) — *in progress*
+- [x] Monorepo, Electron + Vite + React skeleton, CI (lint, typecheck, test, e2e, build installers for Windows/macOS/Linux).
+- [x] `core` command bus with undo/redo, Zod schemas, SQLite + migrations, command history log.
+- [x] Create/open/save-a-copy `.universe` project, recent projects. Main layout (breadcrumb, outline, viewport, inspector, timeline placeholder).
+- [x] Universe tree editing (cluster → galaxy → system → planet → moon/world) with a seeded 2D placeholder viewport.
+- [ ] Code signing (Windows certificate, Apple Developer ID). Deferred to M8; builds are unsigned until then.
 
 ### M1 — Worlds & globe (2–3 weeks)
 - Create world on a body; procedural terrain from seed on a cube-sphere; globe + 2D map views.
