@@ -48,17 +48,26 @@ const pointable = (page: Page) =>
     return null
   })
 
-/** Clicks the generated thing nearest the middle of the view, once hovering it shows its card. */
+/**
+ * Clicks the generated thing nearest the middle of the view, once hovering it shows its card.
+ * Found, hovered and checked together, and again if need be: a galaxy's stars come from a worker
+ * after the view first draws, so what was under a spot can move before the mouse gets there (and a
+ * mouse that doesn't move again isn't asked again).
+ */
 async function clickNearestGenerated(page: Page) {
   const box = await viewportBox(page)
-  const found: { spot?: Point | null } = {}
-  await expect.poll(async () => (found.spot = await pointable(page)), { message: 'something generated near the middle of the view' }).not.toBeNull()
-  const [x, y] = [box.x + found.spot!.x, box.y + found.spot!.y]
-  // From somewhere else: if the mouse is already there (the middle, after scrolling), moving to it sends no pointer event, and nothing is hovered.
-  await page.mouse.move(box.x + 2, box.y + 2)
-  await page.mouse.move(x, y)
-  await expect(page.locator('.cosmos-card', { hasText: 'not claimed yet' })).toBeVisible()
-  await page.mouse.click(x, y)
+  const card = page.locator('.cosmos-card', { hasText: 'not claimed yet' })
+  let at: Point | undefined
+  await expect(async () => {
+    const spot = await pointable(page)
+    expect(spot, 'something generated near the middle of the view').not.toBeNull()
+    at = { x: box.x + spot!.x, y: box.y + spot!.y }
+    // From somewhere else: if the mouse is already there (the middle, after scrolling), moving to it sends no pointer event, and nothing is hovered.
+    await page.mouse.move(box.x + 2, box.y + 2)
+    await page.mouse.move(at.x, at.y)
+    await expect(card).toBeVisible({ timeout: 2000 })
+  }).toPass({ timeout: SLOW })
+  await page.mouse.click(at!.x, at!.y)
 }
 
 test('scale navigation: claim a cluster, a galaxy and a star from what the seeds generate, zoom in and out between levels', async ({ h }) => {
