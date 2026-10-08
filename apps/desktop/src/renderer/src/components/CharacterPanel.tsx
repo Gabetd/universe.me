@@ -1,18 +1,17 @@
 import { ageAt, characterAt, eventPlace, formatDuration, formatTime, isAlive, type Character } from '@universe/core'
 import { useMemo } from 'react'
-import { updater, useUi } from '../store'
+import { updater, useEventsById, useUi } from '../store'
 import { usePlayhead, useTimelineView } from '../timeline/timelineStore'
 import { useEditor } from '../world/editorStore'
 import { useCalendar } from '../world/useSky'
 import { sendCharacter } from '../world/sendCharacter'
-import { ColorField, TagsField, TextField, TimeField } from './fields'
-import { NotesEditor } from './NotesEditor'
+import { ColorField, DeleteButton, NotesField, PanelHeader, Swatch, TagsField, TextField, TimeField } from './fields'
 
 const latLon = (p: { lat: number; lon: number }) => `${Math.abs(p.lat).toFixed(3)}°${p.lat >= 0 ? 'N' : 'S'} ${Math.abs(p.lon).toFixed(3)}°${p.lon >= 0 ? 'E' : 'W'}`
 
 /** Inspector for a character: their lifespan, where they are at the playhead, and their journey. */
 export function CharacterPanel({ character }: { character: Character }) {
-  const { execute, selectCharacter } = useUi.getState()
+  const { selectCharacter } = useUi.getState()
   const allEvents = useUi((s) => s.timeline.events)
   const regions = useUi((s) => s.regions)
   const playhead = usePlayhead(character.ownerId)
@@ -25,16 +24,12 @@ export function CharacterPanel({ character }: { character: Character }) {
     () => allEvents.flatMap((e) => (e.ownerId === character.ownerId ? [{ event: e, place: eventPlace(e, regions) }] : [])).filter((x) => x.place),
     [allEvents, regions, character.ownerId]
   )
-  const eventTitle = (id: string | null) => allEvents.find((e) => e.id === id)?.title
+  const eventsById = useEventsById()
+  const eventTitle = (id: string) => eventsById.get(id)?.title
 
   return (
     <section className="inspector-section region-form" aria-label="Character">
-      <div className="inspector-kind">
-        <span className="swatch" style={{ background: character.color }} /> Character
-        <button className="link close" aria-label="Close character" onClick={() => selectCharacter(null)}>
-          ✕
-        </button>
-      </div>
+      <PanelHeader icon={<Swatch color={character.color} />} label="Character" onClose={() => selectCharacter(null)} />
       <TextField label="Character name" value={character.name} required onCommit={(name) => update({ name })} />
       <div className="field-pair">
         <label className="field">
@@ -112,13 +107,10 @@ export function CharacterPanel({ character }: { character: Character }) {
 
       <ColorField label="Character color" value={character.color} onCommit={(color) => update({ color })} />
       <TagsField label="Character tags" tags={character.tags} onCommit={(tags) => update({ tags })} />
-      <div className="field">
-        <span>Character notes</span>
-        <NotesEditor label="Character notes" value={character.notes} onCommit={(notes) => update({ notes })} />
-      </div>
-      <button className="danger" onClick={() => void execute({ type: 'character.delete', payload: { id: character.id } })}>
+      <NotesField label="Character notes" value={character.notes} onCommit={(notes) => update({ notes })} />
+      <DeleteButton kind="character" ids={[character.id]}>
         Delete character
-      </button>
+      </DeleteButton>
     </section>
   )
 }

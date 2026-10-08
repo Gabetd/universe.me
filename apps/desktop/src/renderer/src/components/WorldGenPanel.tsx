@@ -2,7 +2,7 @@ import { LANDFORMS, WORLD_RANGES, type Landform, type SpatialNode, type TerrainP
 import { WORLD_PRESETS, encodeWorldCode, randomSeedName, readSeed } from '@universe/procgen'
 import { useState } from 'react'
 import { updater, useUi } from '../store'
-import { ColorField, CommitSlider, NumberInput, TextField } from './fields'
+import { ColorField, CommitSlider, NumberInput, TextField, randomSeed } from './fields'
 
 const LANDFORM_LABELS: Record<Landform, string> = { continents: 'Continents', supercontinent: 'Supercontinent', archipelago: 'Archipelago' }
 
@@ -134,7 +134,7 @@ export function WorldGenPanel({ world, settings }: { world: SpatialNode; setting
           <span>Planet radius (km)</span>
           <NumberInput value={settings.radiusKm} min={WORLD_RANGES.radiusKm.min} max={WORLD_RANGES.radiusKm.max} integer onCommit={(v) => update({ radiusKm: v })} />
         </label>
-        <button title="Same options, different continents" onClick={() => void execute({ type: 'node.update', payload: { id: world.id, patch: { seed: Math.floor(Math.random() * 0x100000000) } } })}>
+        <button title="Same options, different continents" onClick={() => updater('node', world.id)({ seed: randomSeed() })}>
           🎲 New shape
         </button>
       </fieldset>

@@ -6,6 +6,7 @@ import { SPACE_BG } from '../theme'
 import { useUi } from '../store'
 import { blueprintExtent } from '../world/structureLook'
 import { BlueprintParts } from '../world/StructureMesh'
+import { parseTags } from './fields'
 
 /** A blueprint being edited: saved as a new one when it has no id. */
 export type BlueprintDraft = Pick<Blueprint, 'name' | 'parts' | 'model' | 'maintainedByDefault' | 'tags'> & { id?: string }
@@ -14,7 +15,8 @@ const SHAPE_LABELS: Record<Shape, string> = { box: 'Box', cylinder: 'Cylinder', 
 
 const PART_LIST_LIMIT = 40
 
-const newPart = (): BlueprintPart => ({ shape: 'box', material: 'stone', color: MATERIAL_INFO.stone.color, size: [10, 10, 10], at: [0, 0, 0], rotation: 0 })
+/** A 10 m stone cube, the part a new blueprint starts with. */
+export const newPart = (): BlueprintPart => ({ shape: 'box', material: 'stone', color: MATERIAL_INFO.stone.color, size: [10, 10, 10], at: [0, 0, 0], rotation: 0 })
 
 /**
  * Builds a blueprint from primitives (or sets up an imported model), with a
@@ -90,7 +92,7 @@ export function BlueprintBuilder({ initial, onClose }: { initial: BlueprintDraft
               aria-label="Blueprint tags"
               placeholder="comma, separated"
               value={draft.tags.join(', ')}
-              onChange={(e) => setDraft({ ...draft, tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })}
+              onChange={(e) => setDraft({ ...draft, tags: parseTags(e.target.value) })}
             />
           </label>
 

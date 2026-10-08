@@ -2,7 +2,7 @@ import { BUILTIN_BLUEPRINTS, type Blueprint } from '@universe/core'
 import { useState } from 'react'
 import { useUi } from '../store'
 import { useEditor } from '../world/editorStore'
-import { BlueprintBuilder, type BlueprintDraft } from './BlueprintBuilder'
+import { BlueprintBuilder, newPart, type BlueprintDraft } from './BlueprintBuilder'
 
 const draftOf = ({ name, parts, model, maintainedByDefault, tags }: Blueprint): BlueprintDraft => ({ name, parts, model, maintainedByDefault, tags })
 
@@ -54,7 +54,7 @@ export function BlueprintLibrary() {
         {BUILTIN_BLUEPRINTS.map((b) => row(b, false))}
       </ul>
       <div className="add-buttons">
-        <button onClick={() => setEditing({ name: 'New blueprint', parts: [{ shape: 'box', material: 'stone', color: '#a39e93', size: [10, 10, 10], at: [0, 0, 0], rotation: 0 }], model: null, maintainedByDefault: true, tags: [] })}>
+        <button onClick={() => setEditing({ name: 'New blueprint', parts: [newPart()], model: null, maintainedByDefault: true, tags: [] })}>
           + New blueprint
         </button>
         <button onClick={() => void importModel()}>Import 3D model…</button>
