@@ -22,6 +22,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import * as THREE from 'three'
 import { EdgePush } from '../components/zoom'
 import { useUi } from '../store'
+import { useByValue } from '../useByValue'
 import { useEditor } from './editorStore'
 import { noRaycast, toolPress, usePick } from './pick'
 import { viewLabels, type ViewLabel } from './labels'
@@ -30,7 +31,7 @@ import { blueprintExtent } from './structureLook'
 import { BlueprintParts } from './StructureMesh'
 import { SelectionRing } from './SelectionRing'
 import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
-import { LandTint, useThemeName } from './ThemeTint'
+import { useLandTint, useThemeName } from './ThemeTint'
 import { useViewTheme } from './useThemeLook'
 import { multiply } from './viewTheme'
 import { useGroundChunks } from './useGroundChunks'
@@ -57,13 +58,6 @@ const latLonOf = (p: LatLon): [number, number] => [p.lat, p.lon]
 
 const CAMERA = { position: [0, 400, 600] as [number, number, number], fov: 55, near: 0.5, far: 9000 }
 const CONTROLS = { screenSpacePanning: false, minDistance: 3, maxDistance: MAX_DISTANCE, maxPolarAngle: Math.PI * 0.47, zoomSpeed: 0.9 }
-
-/** `value`, or the one before while it's equal by value (as JSON): for lists rebuilt with the same contents. */
-function useByValue<T>(value: T): T {
-  const key = JSON.stringify(value)
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` stands for `value`
-  return useMemo(() => value, [key])
-}
 
 /** Heights of the ground anywhere: the globe's terrain plus the seeded detail the chunks have. */
 interface Ground {
@@ -147,7 +141,10 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
   const { structures, characters, pins, regions, worldId } = props
   const items = useMemo(() => groundLabels(structures, characters, pins, ground), [structures, characters, pins, ground])
   // The regions the middle of the view lies in: their own themes show here.
-  const here = useMemo(() => regions.flatMap((r) => (insidePolygon(center, r.points) ? [r.id] : [])), [regions, center])
+  const here = useByValue(useMemo(() => regions.flatMap((r) => (insidePolygon(center, r.points) ? [r.id] : [])), [regions, center]))
+  // One material for every chunk's ground (its colours are the chunk's), tinted by the theme in force.
+  const land = useMemo(() => [new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 })], [])
+  useEffect(() => () => land[0]!.dispose(), [land])
 
   return (
     <SurfaceCanvas
@@ -161,10 +158,9 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
       wrap={{ 'data-chunks': loaded }}
       overlay={<GroundReadout ground={ground} error={failed} />}
     >
-      <GroundLight worldId={worldId} regionIds={here} />
+      <GroundLook worldId={worldId} regionIds={here} water={model.settings.terrain.waterColor} land={land} />
       <Rig ground={ground} onRebase={setOrigin} onCenter={setCenter} />
-      <Chunks {...props} ground={ground} center={center} regionIds={here} onLoaded={setLoaded} onFailed={setFailed} />
-      <Water worldId={worldId} regionIds={here} color={model.settings.terrain.waterColor} />
+      <Chunks {...props} ground={ground} center={center} land={land[0]!} onLoaded={setLoaded} onFailed={setFailed} />
       {props.structures.map((p) => (
         <GroundStructure key={p.structure.id} placed={p} ground={ground} onClick={props.onStructureClick} />
       ))}
@@ -263,26 +259,35 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
 }
 
 /**
- * The sky, its haze and the light over the ground, as the theme in force at
- * the playhead has them where the view is (a region's own themes in it).
+ * The sky, its haze, the light, the sea and the land, as the theme in force
+ * at the playhead has them where the view is (a region's own themes in it).
+ * On its own, so only it re-renders as themes blend; the sky, fog and lights
+ * change in place (a new fog would recompile every material).
  */
-function GroundLight({ worldId, regionIds }: { worldId: string; regionIds: readonly string[] }) {
+function GroundLook({ worldId, regionIds, water, land }: { worldId: string; regionIds: readonly string[]; water: string; land: readonly THREE.MeshStandardMaterial[] }) {
   const theme = useViewTheme(worldId, regionIds)
   useThemeName(theme.name)
+  useLandTint(land, theme.land)
   const sky = theme.sky(SKY)
+  const background = useMemo(() => new THREE.Color(), [])
+  const invalidate = useThree((s) => s.invalidate)
+  useLayoutEffect(() => {
+    background.set(sky)
+    invalidate()
+  }, [background, sky, invalidate])
   return (
     <>
-      <color attach="background" args={[sky]} />
-      <fog attach="fog" args={[sky, FOG[0] / theme.haze, FOG[1] / theme.haze]} />
-      <hemisphereLight args={[multiply(HEMISPHERE[0], theme.ambient), HEMISPHERE[1], 0.75 * theme.ambientScale]} />
+      <primitive object={background} attach="background" />
+      <fog attach="fog" args={[SKY, ...FOG]} color={sky} near={FOG[0] / theme.haze} far={FOG[1] / theme.haze} />
+      <hemisphereLight color={multiply(HEMISPHERE[0], theme.ambient)} groundColor={HEMISPHERE[1]} intensity={0.75 * theme.ambientScale} />
       <directionalLight position={[700, 650, 250]} color={theme.sun} intensity={1.6 * theme.sunScale} />
+      <Water color={theme.water(water)} />
     </>
   )
 }
 
-/** The sea: a sheet at sea level that follows the view, in the world's colour as the theme in force has it. */
-function Water({ worldId, regionIds, color }: { worldId: string; regionIds: readonly string[]; color: string }) {
-  const { water } = useViewTheme(worldId, regionIds)
+/** The sea: a sheet at sea level that follows the view. */
+function Water({ color }: { color: string }) {
   const mesh = useRef<THREE.Mesh>(null)
   const controls = useThree((s) => s.controls) as unknown as { target: THREE.Vector3 } | null
   useFrame(() => {
@@ -291,7 +296,7 @@ function Water({ worldId, regionIds, color }: { worldId: string; regionIds: read
   return (
     <mesh ref={mesh} rotation={[-Math.PI / 2, 0, 0]} raycast={noRaycast}>
       <planeGeometry args={[DRAW_M * 3, DRAW_M * 3]} />
-      <meshStandardMaterial color={water(color)} transparent opacity={0.82} roughness={0.15} metalness={0.1} depthWrite={false} />
+      <meshStandardMaterial color={color} transparent opacity={0.82} roughness={0.15} metalness={0.1} depthWrite={false} />
     </mesh>
   )
 }
@@ -304,9 +309,9 @@ interface Footprint {
 }
 
 function Chunks(
-  props: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; regionIds: readonly string[]; onLoaded(count: number): void; onFailed(error: string | undefined): void }
+  props: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; land: THREE.Material; onLoaded(count: number): void; onFailed(error: string | undefined): void }
 ) {
-  const { model, change, seed, ground, center, structures, onLoaded, onFailed } = props
+  const { model, change, seed, ground, center, structures, land, onLoaded, onFailed } = props
   const radiusKm = model.settings.radiusKm
   const wanted = useMemo(() => chunksAround(center, radiusKm, RING), [center, radiusKm])
   const { chunks, error } = useGroundChunks(model, change, seed, wanted)
@@ -317,9 +322,6 @@ function Chunks(
   const vegetationColor = model.settings.terrain.vegetationColor
   const plants = useMemo(() => new PlantGeometries(new THREE.Color(vegetationColor)), [vegetationColor])
   useEffect(() => () => plants.dispose(), [plants])
-  // One material for every chunk's ground (its colours are the chunk's), tinted by the theme in force.
-  const land = useMemo(() => [new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 })], [])
-  useEffect(() => () => land[0]!.dispose(), [land])
   // By value, so plants are laid out again only when a footprint changes, not whenever the structures do (renamed, or the playhead moved).
   const footprints = useByValue(
     useMemo<Footprint[]>(
@@ -345,7 +347,7 @@ function Chunks(
             chunk={chunk}
             ring={ring}
             ground={ground}
-            material={land[0]!}
+            material={land}
             plants={plants}
             footprints={footprints}
             onPointerDown={props.onPointerDown}
@@ -353,7 +355,6 @@ function Chunks(
           />
         )
       })}
-      <LandTint worldId={props.worldId} regionIds={props.regionIds} materials={land} />
     </>
   )
 }

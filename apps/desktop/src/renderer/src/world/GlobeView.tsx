@@ -14,7 +14,7 @@ import { EdgePush, zoomOut } from '../components/zoom'
 import { viewLabels, type ViewLabel } from './labels'
 import { SelectionRing } from './SelectionRing'
 import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
-import { LandTint, useThemeName } from './ThemeTint'
+import { useLandTint, useThemeName } from './ThemeTint'
 import { useViewTheme } from './useThemeLook'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
@@ -59,7 +59,6 @@ export const GlobeView = memo(function GlobeView(props: SurfaceViewProps) {
   return (
     <SurfaceCanvas testId="globe" camera={CAMERA} navigate={THREE.MOUSE.ROTATE} controls={CONTROLS} labels={items}>
       <color attach="background" args={[SPACE_BG]} />
-      <GlobeLight worldId={props.worldId} />
       <Stars radius={80} depth={40} count={4000} factor={3} fade speed={0} />
       <Planet {...props} />
       <FocusOn focus={props.focus} />
@@ -72,10 +71,15 @@ export const GlobeView = memo(function GlobeView(props: SurfaceViewProps) {
 /** The colour of the planet's air, seen around its edge, before any theme. */
 const HALO = '#4f8cff'
 
-/** The sunlight on the globe and the glow of its air, as the theme in force at the playhead has them. */
-function GlobeLight({ worldId }: { worldId: string }) {
+/**
+ * The sunlight on the globe, the glow of its air, its sea and its land, as
+ * the theme in force at the playhead has them. On its own, so only it
+ * re-renders as themes blend.
+ */
+function PlanetLook({ worldId, seaRadius, water, land }: { worldId: string; seaRadius: number; water: string; land: readonly THREE.MeshStandardMaterial[] }) {
   const theme = useViewTheme(worldId)
   useThemeName(theme.name)
+  useLandTint(land, theme.land)
   return (
     <>
       <ambientLight color={theme.ambient} intensity={0.45 * theme.ambientScale} />
@@ -91,18 +95,11 @@ function GlobeLight({ worldId }: { worldId: string }) {
           depthWrite={false}
         />
       </mesh>
+      <mesh scale={seaRadius} raycast={noRaycast}>
+        <sphereGeometry args={[1, 96, 64]} />
+        <meshStandardMaterial color={theme.water(water)} transparent opacity={0.35} roughness={0.25} metalness={0.1} depthWrite={false} />
+      </mesh>
     </>
-  )
-}
-
-/** The sea, in the world's colour as the theme in force has it. */
-function Sea({ worldId, radius, color }: { worldId: string; radius: number; color: string }) {
-  const { water } = useViewTheme(worldId)
-  return (
-    <mesh scale={radius} raycast={noRaycast}>
-      <sphereGeometry args={[1, 96, 64]} />
-      <meshStandardMaterial color={water(color)} transparent opacity={0.35} roughness={0.25} metalness={0.1} depthWrite={false} />
-    </mesh>
   )
 }
 
@@ -202,8 +199,7 @@ function Planet({
           onDoubleClick={onDoubleClick}
         />
       ))}
-      <LandTint worldId={worldId} materials={land} />
-      <Sea worldId={worldId} radius={seaRadius} color={model.settings.terrain.waterColor} />
+      <PlanetLook worldId={worldId} seaRadius={seaRadius} water={model.settings.terrain.waterColor} land={land} />
       <mesh ref={cursor} visible={false} raycast={noRaycast}>
         <ringGeometry args={[0.92, 1, 48]} />
         <meshBasicMaterial color="#ffffff" transparent opacity={0.85} depthTest={false} />

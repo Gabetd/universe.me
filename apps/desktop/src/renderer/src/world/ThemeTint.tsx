@@ -1,21 +1,14 @@
 import { useThree } from '@react-three/fiber'
 import { useEffect, useLayoutEffect } from 'react'
 import type * as THREE from 'three'
-import { useViewTheme } from './useThemeLook'
 
-/**
- * Tints terrain materials by the theme in force at the playhead (their
- * colours are multiplied by it), drawing a frame when it changes. On its own,
- * so the view around it doesn't re-render as the playhead moves.
- */
-export function LandTint({ worldId, regionIds, materials }: { worldId: string; regionIds?: readonly string[]; materials: readonly THREE.MeshStandardMaterial[] }) {
-  const { land } = useViewTheme(worldId, regionIds)
+/** Tints terrain materials (their colours are multiplied by `color`), drawing a frame when it changes. */
+export function useLandTint(materials: readonly THREE.MeshStandardMaterial[], color: string) {
   const invalidate = useThree((s) => s.invalidate)
   useLayoutEffect(() => {
-    for (const m of materials) m.color.set(land)
+    for (const m of materials) m.color.set(color)
     invalidate()
-  }, [materials, land, invalidate])
-  return null
+  }, [materials, color, invalidate])
 }
 
 /** Names the theme a 3D view shows on its canvas (`data-theme`), for tests. */
