@@ -72,8 +72,8 @@ export const Command = z.discriminatedUnion('type', [
   ...STRUCTURE_COMMANDS,
   ...CHARACTER_COMMANDS,
   ...WORLD_SIM_COMMANDS,
-  /** Several commands applied together; each is validated when it runs. */
-  z.object({ type: z.literal('batch'), payload: z.object({ commands: z.array(z.unknown()).min(1) }) })
+  /** Several commands applied together; each is validated when it runs. The batch focuses `focusId`, or what its last command did. */
+  z.object({ type: z.literal('batch'), payload: z.object({ commands: z.array(z.unknown()).min(1), focusId: Id.optional() }) })
 ])
 export type Command = z.infer<typeof Command>
 export type CommandType = Command['type']
@@ -90,7 +90,7 @@ export const handlers: Handlers = {
   ...characterHandlers,
   ...worldSimHandlers,
 
-  batch(store, { commands }, ctx) {
+  batch(store, { commands, focusId }, ctx) {
     const results = commands.map((input) => {
       const parsed = Command.safeParse(input)
       if (!parsed.success) throw new CommandError(`Invalid command in batch: ${parsed.error.issues[0]?.message}`)
@@ -98,7 +98,7 @@ export const handlers: Handlers = {
     })
     return {
       inverse: batchOf(results.map((r) => r.inverse).reverse()),
-      target: results.findLast((r) => r.target)?.target,
+      target: focusId ? { kind: 'node', id: focusId } : results.findLast((r) => r.target)?.target,
       owner: results.find((r) => r.owner)?.owner
     }
   },

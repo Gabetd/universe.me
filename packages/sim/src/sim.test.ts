@@ -1,6 +1,6 @@
 import { AU_KM, DEFAULT_CALENDAR, orbitId, type Orbit, type SpatialNode } from '@universe/core'
 import { describe, expect, it } from 'vitest'
-import { DAY_S, EARTH_ORBIT, MOON_ORBIT, deriveCalendar, generatedPlanets, luminosityOf, moonPhase, orbitPosition, skyEvents, starInfo, systemModel, unclaimedPlanets, worldCalendar, worldClimate } from './index'
+import { DAY_S, EARTH_ORBIT, MOON_ORBIT, claimGenerated, claimPlanet, deriveCalendar, generatedPlanets, luminosityOf, moonPhase, orbitPosition, skyEvents, starInfo, systemModel, unclaimedPlanets, worldCalendar, worldClimate } from './index'
 
 const node = (id: string, parentId: string | null, kind: SpatialNode['kind']): SpatialNode => ({
   id, parentId, kind, name: id, seed: 7, position: { x: 0, y: 0, z: 0 }, notes: '', tags: [], createdAt: '', updatedAt: '', deletedAt: null
@@ -49,7 +49,8 @@ describe('orbits', () => {
     const axes = planets.map((p) => p.orbit.semiMajorAxisKm)
     axes.slice(1).forEach((a, i) => expect(a / axes[i]!).toBeGreaterThan(1.4))
     // Giants only beyond the frost line.
-    for (const p of planets) if (p.orbit.massEarth > 10) expect(p.orbit.semiMajorAxisKm / AU_KM).toBeGreaterThan(2.5)
+    for (const p of planets) if (p.giant) expect(p.orbit.semiMajorAxisKm / AU_KM).toBeGreaterThan(2.5)
+    for (const p of planets) expect(p.giant).toBe(p.orbit.massEarth > 10)
     const dim = generatedPlanets(sys, starInfo({ massSun: 0.4, luminositySun: null }))
     expect(dim[0]!.orbit.semiMajorAxisKm).toBeLessThan(axes[0]!)
     // A year goes with the distance (Kepler's third law): 1 AU round the Sun is about 365 days.
@@ -66,6 +67,40 @@ describe('orbits', () => {
     const claim = { ...node('claimed', 'sys', 'body'), seed: left[0]!.seed }
     expect(unclaimedPlanets(systemModel([...nodes, claim], { stars: [], orbits: [earthOrbit] }, 'sys'), sys, [...nodes, claim]).map((g) => g.seed)).not.toContain(left[0]!.seed)
     expect(all.length).toBeGreaterThanOrEqual(left.length)
+  })
+
+  it('claiming a planet, a star or a galaxy stores what was generated, and lands on it', async () => {
+    const { CommandBus, MemoryStore, createRootUniverse } = await import('@universe/core')
+    const { cellStars, clusterGalaxies, galaxyShape } = await import('@universe/procgen')
+    const store = new MemoryStore()
+    let n = 0
+    const newId = () => `id-${++n}`
+    const bus = new CommandBus(store, { log: { append: () => {} }, context: { newId, randomSeed: () => 5, now: () => '2026-01-01T00:00:00Z' } })
+    const root = createRootUniverse(store, 'U')
+    const cluster = bus.execute({ type: 'node.create', payload: { parentId: root.id, kind: 'galaxy_cluster' } }).targetId!
+    const generatedGalaxy = clusterGalaxies(store.nodes.get(cluster)!.seed)[0]!
+    const galaxyClaim = claimGenerated({ id: cluster, kind: 'galaxy_cluster' }, generatedGalaxy, newId)
+    expect(bus.execute(galaxyClaim.command).targetId).toBe(galaxyClaim.id)
+    const galaxy = store.nodes.get(galaxyClaim.id)!
+    expect(galaxy).toMatchObject({ kind: 'galaxy', seed: generatedGalaxy.seed, name: generatedGalaxy.name, position: { x: generatedGalaxy.x, y: generatedGalaxy.y, z: 0 } })
+    const star = cellStars(galaxyShape(galaxy.seed), galaxy.seed, 0, 0)[0]!
+    const starClaim = claimGenerated({ id: galaxy.id, kind: 'galaxy' }, star, newId)
+    bus.execute(starClaim.command)
+    const system = store.nodes.get(starClaim.id)!
+    const records = () => ({ stars: store.records('star').all(), orbits: store.records('orbit').all() })
+    const model = systemModel(store.nodes.all(), records(), system.id)
+    expect(model.star.massSun).toBeCloseTo(star.massSun, 2)
+
+    // A rocky planet with its world: the orbit it had while generated, and its seed's surface.
+    const rocky = generatedPlanets(system, model.star).find((p) => !p.giant) ?? generatedPlanets(system, model.star)[0]!
+    const planetClaim = claimPlanet(system.id, rocky, true, newId)
+    expect(bus.execute(planetClaim.command).targetId).toBe(planetClaim.id)
+    const nodesNow = store.nodes.all()
+    const claimed = systemModel(nodesNow, records(), system.id).bodies.get(planetClaim.id)!
+    expect(claimed.semiMajorAxisKm).toBeCloseTo(rocky.orbit.semiMajorAxisKm, 0)
+    expect(claimed.periodS).toBeCloseTo(rocky.orbit.periodS, 0)
+    expect(nodesNow.find((x) => x.parentId === planetClaim.id)?.kind).toBe('world')
+    expect(unclaimedPlanets(systemModel(nodesNow, records(), system.id), system, nodesNow).map((g) => g.seed)).not.toContain(rocky.seed)
   })
 })
 

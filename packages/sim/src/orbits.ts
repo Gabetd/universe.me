@@ -158,6 +158,8 @@ export interface GeneratedPlanet {
   /** "Nyxtes b", "Nyxtes c"…, the way planets of other stars are named. */
   name: string
   orbit: BodyOrbit
+  /** Formed beyond the frost line: a gas or ice giant, with no ground to stand on. */
+  giant: boolean
 }
 
 /**
@@ -174,9 +176,10 @@ export function generatedPlanets(system: SpatialNode, star: StarInfo): Generated
   return Array.from({ length: count }, (_, i) => {
     const seed = subSeed(system.seed, 0x700 + i)
     const p = rng(subSeed(seed, 0x0b17))
-    const fields = planetAt(p, au, au > frostAu(star), p() * 360)
+    const giant = au > frostAu(star)
+    const fields = planetAt(p, au, giant, p() * 360)
     au *= 1.45 + r() * 0.5
-    return { seed, name: `${system.name} ${'bcdefghi'[i]}`, orbit: bodyOrbit(fields, `proc:${seed}`, null, star, true) }
+    return { seed, name: `${system.name} ${'bcdefghi'[i]}`, orbit: bodyOrbit(fields, `proc:${seed}`, null, star, true), giant }
   })
 }
 

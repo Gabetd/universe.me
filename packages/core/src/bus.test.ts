@@ -30,6 +30,16 @@ describe('node.create', () => {
     expect(() => create(rootId, 'star_system')).toThrow(/cannot be placed inside a Universe/)
   })
 
+  it('lands a batch on its focus, or else on what its last command made', () => {
+    const cluster = create(rootId, 'galaxy_cluster')
+    const galaxies = (a: string, b: string, focusId?: string) => ({
+      type: 'batch' as const,
+      payload: { commands: [a, b].map((id) => ({ type: 'node.create', payload: { id, parentId: cluster, kind: 'galaxy' } })), focusId }
+    })
+    expect(bus.execute(galaxies('g1', 'g2')).targetId).toBe('g2')
+    expect(bus.execute(galaxies('g3', 'g4', 'g3')).targetId).toBe('g3')
+  })
+
   it('allows one world per body', () => {
     const cluster = create(rootId, 'galaxy_cluster')
     const galaxy = create(cluster, 'galaxy')
