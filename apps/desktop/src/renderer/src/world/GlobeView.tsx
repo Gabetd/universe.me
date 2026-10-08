@@ -10,6 +10,7 @@ import { isBrushTool, useEditor } from './editorStore'
 import { pickWith } from './pick'
 import type { SurfaceViewProps } from './useTerrain'
 import { STAGE_COLORS } from './structureLook'
+import { zoomOut } from '../components/zoom'
 import { LabelLayer, LabelProjector, type ViewLabel } from './labels'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
@@ -68,7 +69,7 @@ export function GlobeView(props: SurfaceViewProps) {
           makeDefault
           enablePan={false}
           minDistance={MIN_DISTANCE}
-          maxDistance={8}
+          maxDistance={MAX_DISTANCE}
           rotateSpeed={0.5}
           zoomSpeed={0.8}
           // With a tool selected, left-drag edits and right-drag rotates.
@@ -320,6 +321,7 @@ function SurfacePin({
 
 /** As close as the globe camera gets (in planet radii from the centre); scrolling in further goes down to the ground. */
 const MIN_DISTANCE = 1.07
+const MAX_DISTANCE = 8
 
 /** Opens facing where the view last looked (e.g. coming back up from the ground), and keeps note of it. */
 function StartOver() {
@@ -343,16 +345,23 @@ function StartOver() {
   return null
 }
 
-/** Scrolling in past the closest globe view goes down to the ground at the middle of the view. */
+/**
+ * Scrolling in past the closest globe view goes down to the ground at the
+ * middle of the view; scrolling out past the farthest goes up to the planet
+ * in its orbit.
+ */
 function ZoomToGround() {
   const camera = useThree((s) => s.camera)
   const gl = useThree((s) => s.gl)
   useEffect(() => {
-    let pushes = 0
+    let pushesIn = 0
+    let pushesOut = 0
     const onWheel = (e: WheelEvent) => {
-      const atClosest = camera.position.length() <= MIN_DISTANCE + 0.003
-      pushes = e.deltaY < 0 && atClosest ? pushes + 1 : 0
-      if (pushes < 3) return
+      const distance = camera.position.length()
+      pushesIn = e.deltaY < 0 && distance <= MIN_DISTANCE + 0.003 ? pushesIn + 1 : 0
+      pushesOut = e.deltaY > 0 && distance >= MAX_DISTANCE - 0.01 ? pushesOut + 1 : 0
+      if (pushesOut >= 3) return zoomOut(gl.domElement)
+      if (pushesIn < 3) return
       const ground = dirToLatLon(...(camera.position.clone().normalize().toArray() as Vec3))
       useEditor.getState().enterGround(ground)
     }

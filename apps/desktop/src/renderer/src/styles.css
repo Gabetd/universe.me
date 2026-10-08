@@ -1739,3 +1739,113 @@ input[type='color'] {
 .tl-derived:focus-visible {
   outline: 2px solid var(--accent);
 }
+
+.zoom-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.zoom-view {
+  position: absolute;
+  inset: 0;
+}
+.zoom-still {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .zoom-still.in {
+    animation: zoom-past 0.48s ease-in forwards;
+  }
+  .zoom-still.out {
+    animation: zoom-away 0.48s ease-out forwards;
+  }
+  .zoom-arrive.in {
+    animation: arrive-from-far 0.48s ease-out;
+  }
+  .zoom-arrive.out {
+    animation: arrive-from-near 0.48s ease-out;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zoom-still {
+    display: none;
+  }
+}
+@keyframes zoom-past {
+  to {
+    transform: scale(5);
+    opacity: 0;
+  }
+}
+@keyframes zoom-away {
+  to {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+}
+@keyframes arrive-from-far {
+  from {
+    transform: scale(0.35);
+    opacity: 0;
+  }
+}
+@keyframes arrive-from-near {
+  from {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+.cosmos-card {
+  position: absolute;
+  display: grid;
+  gap: 4px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(14, 18, 32, 0.92);
+  color: var(--text);
+  pointer-events: auto;
+  z-index: 3;
+}
+.context-menu {
+  position: absolute;
+  display: grid;
+  min-width: 190px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  z-index: 4;
+}
+.context-menu button {
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 6px 10px;
+}
+.context-menu button:hover,
+.context-menu button:focus-visible {
+  background: var(--panel);
+}
+.scale-bar {
+  position: absolute;
+  right: 16px;
+  bottom: 10px;
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.scale-bar span {
+  display: block;
+  height: 6px;
+  border: 1px solid var(--muted);
+  border-top: 0;
+}

@@ -7,6 +7,8 @@ import { ErrorBanner } from './ErrorBanner'
 import { Inspector } from './Inspector'
 import { Outline } from './Outline'
 import { Viewport } from './Viewport'
+import { ZoomStage } from './ZoomOverlay'
+import { zoomOut } from './zoom'
 import { Timeline } from '../timeline/Timeline'
 import { useTimelineView } from '../timeline/timelineStore'
 import { WorldEditor } from '../world/WorldEditor'
@@ -25,7 +27,7 @@ export function Workspace() {
     // Tools with their own keys (region drawing) handle them in the capture phase and preventDefault.
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || isEditingText()) return
-      const { selectedId, selectedRegionId, selectedStructureId, selectedCharacterId, timelineSelection: tl, project: p, execute, nodes: all } = useUi.getState()
+      const { selectedId, selectedRegionId, selectedStructureId, selectedCharacterId, timelineSelection: tl, project: p, execute } = useUi.getState()
       if (e.key === 'Delete' || e.key === 'Backspace') {
         // Most specific first: timeline records, then a region, structure or character, then the node it's all on.
         const deletes: Command[] = tl ? tl.ids.map((id) => ({ type: `${tl.kind}.delete`, payload: { id } }) as Command) : []
@@ -50,9 +52,8 @@ export function Workspace() {
       if (e.key === 'Escape' && (tl || selectedRegionId)) {
         useUi.setState({ timelineSelection: null, selectedRegionId: null })
       } else if (e.key === 'Escape' && selectedId) {
-        // Escape zooms out one level, like the scroll wheel in the viewport.
-        const parent = all.find((n) => n.id === selectedId)?.parentId
-        if (parent) useUi.getState().select(parent)
+        // Escape zooms out one level, like scrolling out in the viewport.
+        zoomOut(document.querySelector<HTMLCanvasElement>('[data-testid="viewport"]'))
       }
     }
     window.addEventListener('keydown', onKey)
@@ -88,7 +89,7 @@ export function Workspace() {
         <Outline />
       </aside>
       <main className="viewport-panel">
-        {selected?.kind === 'world' ? <WorldEditor key={selected.id} world={selected} /> : <Viewport />}
+        <ZoomStage>{selected?.kind === 'world' ? <WorldEditor key={selected.id} world={selected} /> : <Viewport />}</ZoomStage>
       </main>
       <aside className="panel inspector-panel">
         <Inspector />
