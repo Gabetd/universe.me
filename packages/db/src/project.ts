@@ -23,7 +23,7 @@ export interface ProjectInfo {
 
 /**
  * An open `.universe` file. Every command is written through immediately
- * (WAL mode), so there is no separate "save" step; `saveAs` copies the file.
+ * (WAL mode), so there is no separate "save" step; `saveCopy` copies the file.
  */
 export class Project {
   readonly store: Store

@@ -122,18 +122,17 @@ async function openProject(path?: string): Promise<AppState | null> {
   return switchedTo(session.open(path))
 }
 
-async function saveCopy(): Promise<string | null> {
+async function saveCopy(): Promise<void> {
   const { canceled, filePath } = await dialog.showSaveDialog(win!, {
     title: 'Save a copy',
     buttonLabel: 'Save Copy',
     defaultPath: session.path?.replace(/\.universe$/, ' copy.universe'),
     filters: FILE_FILTERS
   })
-  if (canceled || !filePath) return null
+  if (canceled || !filePath) return
   await session.saveCopy(filePath)
   // The copy is now a recent file.
   buildMenu()
-  return filePath
 }
 
 const MAX_MODEL_BYTES = 64 * 1024 * 1024
