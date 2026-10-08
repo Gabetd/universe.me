@@ -25,8 +25,14 @@ cathedrals, palaces and more), build your own from simple shapes, or import
 glTF models. Each structure is maintained or left to weather from any moment
 on; weathered ones crumble at the pace of their materials until they erode
 away, and events can build, damage, repair, rename or destroy everything in
-a radius, a region, or a list. Everything can be undone, and everything stays
-on your computer.
+a radius, a region, or a list.
+
+Zoom all the way in and you're on the ground: hills, woods, meadows and rocks
+of the local biome in 1 km chunks, buildings at their real size, and your
+characters life-size. Characters have a lifespan and a journey; send them
+from place to place, or to an event, and they walk there over time. From
+orbit, each planet and moon shows its real surface. Everything can be undone,
+and everything stays on your computer.
 
 ## Download and run
 

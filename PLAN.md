@@ -384,6 +384,9 @@ Each milestone ends with something you can launch and demo.
 - [x] **Event effects on structures**: build/damage/destroy/repair/modify/set_maintenance, reaching chosen structures, a region, or a radius around the event with optional falloff, filtered by tag or material; live preview of what each effect reaches (and by how much) in the inspector and as rings in the viewport; timeline effect icons.
 - [x] Maintained/Weathered toggle (time-aware `MaintenanceChange`) and condition stages, with a fixed decay rate per material (half-lives from thatch at 25 years to megaliths at 10,000) and a per-world erosion speed, until climate exists in M4. Condition is closed-form between breakpoints; weathered structures erode away in finite time, maintained ones recover. Parts fall away in order of fragility as condition drops; colours weather; ruins slump.
 - [x] Consistency warnings: effects that reach nothing, repairs of structures already gone, maintenance changes before a structure is built.
+- [x] *Added after M3:* **ground view** (the Surface level of §5.2, ahead of M5). Scrolling all the way in on the globe or map (or the 🔍 Ground button, or "View up close" on a structure or character) goes down to the ground: terrain in 1 km × 1 km chunks on a global grid, each with metre-scale hills on top of the globe's terrain and the plants of its biome (broadleaf and conifer woods, palms, acacias, bushes, grass, flowers, cacti, reeds, rocks, dead trees), gathered into woods and clearings, all from the world's seed so a spot always looks the same. Chunks are built in a Web Worker, 5 × 5 around the view, thinner farther out; structures stand at their real size (plants keep clear of standing ones, ruins are overgrown), and the view re-centres as you travel. Scrolling all the way out returns to the globe. From afar, structures are pins coloured by condition, not models.
+- [x] *Added after M3:* **planets from orbit** show their world's real surface (rendered from its terrain, turning slowly) in the planet/moon and star-system views.
+- [x] *Added after M3:* **characters** on a world: born and died dates (age at the playhead), and a journey of stops. Send one somewhere with 🧭 (they arrive at the playhead, setting out on foot early enough at 30 km a day) or to an event (a stop at its start and place); in between they walk the great circle. Shown at the playhead as figures on the globe and map and life-size on the ground. Deleting an event unlinks the stops that went to it. (Per-character timelines and relationships stay post-v1, §12.)
 
 ### M4 — Star systems & sim (2–3 weeks)
 - Star system editor + orbit view; derived calendars; moon phases/eclipses track on the timeline.
@@ -439,7 +442,7 @@ Each milestone ends with something you can launch and demo.
 ---
 
 ## 12. Post-v1 ideas
-- Characters & factions with relationship graphs and per-character timelines.
+- Factions, relationship graphs between characters, and per-character timeline lanes (characters with lifespans and journeys exist since M3).
 - Rivers/erosion simulation, plate tectonics over time.
 - Cloud sync and collaboration (CRDT over the command log).
 - Image generation for structures/themes via AI; ambient soundscapes per theme.
