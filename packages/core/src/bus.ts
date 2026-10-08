@@ -1,4 +1,4 @@
-import { v7 as uuidv7 } from 'uuid'
+import { DEFAULT_CONTEXT } from './command-kit'
 import { Command, CommandError, applyCommand, type CommandContext, type HandlerResult, type Target } from './commands'
 import type { CommandSource } from './schema'
 import type { Store } from './store'
@@ -49,12 +49,7 @@ export class CommandBus {
     private readonly store: Store,
     private readonly options: CommandBusOptions = {}
   ) {
-    this.ctx = {
-      now: () => new Date().toISOString(),
-      newId: () => uuidv7(),
-      randomSeed: () => Math.floor(Math.random() * 0x100000000),
-      ...options.context
-    }
+    this.ctx = { ...DEFAULT_CONTEXT, ...options.context }
   }
 
   get canUndo(): boolean {

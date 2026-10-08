@@ -1,3 +1,4 @@
+import { v7 as uuidv7 } from 'uuid'
 import type { Command } from './commands'
 import type { SpatialNode } from './schema'
 import type { Store } from './store'
@@ -11,6 +12,30 @@ export interface CommandContext {
   newId(): string
   /** Returns an unsigned 32-bit integer. */
   randomSeed(): number
+}
+
+/** The clock, ids and seeds commands use unless a test gives its own. */
+export const DEFAULT_CONTEXT: CommandContext = {
+  now: () => new Date().toISOString(),
+  newId: () => uuidv7(),
+  randomSeed: () => Math.floor(Math.random() * 0x100000000)
+}
+
+/** A new node, with an empty place, notes and tags unless given. */
+export function newNode(node: Pick<SpatialNode, 'id' | 'parentId' | 'kind' | 'name' | 'seed'> & Partial<Pick<SpatialNode, 'position' | 'notes' | 'tags'>>, now: string): SpatialNode {
+  return {
+    id: node.id,
+    parentId: node.parentId,
+    kind: node.kind,
+    name: node.name,
+    seed: node.seed,
+    position: node.position ?? { x: 0, y: 0, z: 0 },
+    notes: node.notes ?? '',
+    tags: node.tags ?? [],
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null
+  }
 }
 
 /** The entity a command created or touched, so the UI can select it. */

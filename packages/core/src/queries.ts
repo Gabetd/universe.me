@@ -1,4 +1,4 @@
-import { v7 as uuidv7 } from 'uuid'
+import { DEFAULT_CONTEXT, newNode } from './command-kit'
 import type { Id, SpatialNode } from './schema'
 import type { Store } from './store'
 
@@ -31,20 +31,8 @@ export function findRoot(store: Store): SpatialNode | undefined {
 }
 
 /** Seeds a new project with its root Universe node. Not undoable: a project always has a root. */
-export function createRootUniverse(store: Store, name: string, now = new Date().toISOString()): SpatialNode {
-  const root: SpatialNode = {
-    id: uuidv7(),
-    parentId: null,
-    kind: 'universe',
-    name,
-    seed: Math.floor(Math.random() * 0x100000000),
-    position: { x: 0, y: 0, z: 0 },
-    notes: '',
-    tags: [],
-    createdAt: now,
-    updatedAt: now,
-    deletedAt: null
-  }
+export function createRootUniverse(store: Store, name: string, now = DEFAULT_CONTEXT.now()): SpatialNode {
+  const root = newNode({ id: DEFAULT_CONTEXT.newId(), parentId: null, kind: 'universe', name, seed: DEFAULT_CONTEXT.randomSeed() }, now)
   store.transaction(() => store.nodes.insert(root))
   return root
 }

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { ALLOWED_CHILDREN, Id, KIND_LABELS, NodeKind, NodePatch, Seed, Vec3, type SpatialNode } from './schema'
 import { base64ToBytes, bytesToBase64 } from './encoding'
 import type { Store } from './store'
-import { CommandError, batchOf, liveNode, liveRegion, liveWorld, patchRow, pickColor, requireRow, softDelete, type CommandContext, type HandlerResult, type Run } from './command-kit'
+import { CommandError, batchOf, liveNode, liveRegion, liveWorld, newNode, patchRow, pickColor, requireRow, softDelete, type CommandContext, type HandlerResult, type Run } from './command-kit'
 import { CHARACTER_COMMANDS, characterHandlers } from './character-commands'
 import { WORLD_SIM_COMMANDS, worldSimHandlers } from './world-sim-commands'
 import { STRUCTURE_COMMANDS, structureHandlers } from './structure-commands'
@@ -113,19 +113,7 @@ export const handlers: Handlers = {
     const id = p.id ?? ctx.newId()
     if (store.nodes.get(id)) throw new CommandError(`Node ${id} already exists`)
     const now = ctx.now()
-    store.nodes.insert({
-      id,
-      parentId: parent.id,
-      kind: p.kind,
-      name: p.name ?? `New ${KIND_LABELS[p.kind]}`,
-      seed: p.seed ?? ctx.randomSeed(),
-      position: p.position ?? { x: 0, y: 0, z: 0 },
-      notes: p.notes ?? '',
-      tags: p.tags ?? [],
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null
-    })
+    store.nodes.insert(newNode({ ...p, id, parentId: parent.id, name: p.name ?? `New ${KIND_LABELS[p.kind]}`, seed: p.seed ?? ctx.randomSeed() }, now))
     return { inverse: { type: 'node.delete', payload: { id } }, target: { kind: 'node', id } }
   },
 
