@@ -27,7 +27,7 @@ function landNear(page: Page): Promise<[number, number]> {
 
 test('planets show their surface, structures are pins from afar, and the ground up close', async ({ h }) => {
   // Thousands of trees and a whole city, drawn in software on CI machines: slow, but it's the point.
-  test.setTimeout(240_000)
+  test.slow()
   const { page } = h
   await newWorld(h, 'Close', { surface: false })
   await addChild(page, '+ Moon', 'Luna')

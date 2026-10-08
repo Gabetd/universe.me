@@ -9,6 +9,7 @@ const worldState = (page: Page) =>
   })
 
 test('edit a world: sculpt, paint, undo, draw a region, and keep it after reopening', async ({ h }) => {
+  test.slow()
   const { app, page } = h
   await newWorld(h, 'Terra', { cluster: 'Local Group' })
 

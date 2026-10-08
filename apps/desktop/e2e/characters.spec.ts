@@ -4,6 +4,7 @@ import { clickAt, expect, fill, inspector, newWorld, openMap, setPlayhead, shot,
 const characters = async (page: Page) => (await state(page, 'timeline')).characters
 
 test('characters live, travel from place to place, and go to events', async ({ h }) => {
+  test.slow()
   const { page } = h
   await newWorld(h, 'Sagas')
   await openMap(page)

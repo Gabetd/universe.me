@@ -11,6 +11,7 @@ const world = (page: Page, name: string) =>
   }, name)
 
 test('a seed decides the whole world and locks its options; a world code recreates it exactly', async ({ h }) => {
+  test.slow()
   const { page } = h
   await newWorld(h, 'Seeds', { planet: 'First' })
   await expect(page.getByTestId('globe')).toBeVisible({ timeout: SLOW })

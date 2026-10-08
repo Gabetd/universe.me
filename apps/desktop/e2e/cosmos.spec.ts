@@ -34,7 +34,8 @@ async function clickNearestGenerated(page: Page) {
 }
 
 test('scale navigation: claim a cluster, a galaxy and a star from what the seeds generate, zoom in and out between levels', async ({ h }) => {
-  test.setTimeout(180_000)
+  // Four levels, each drawn in software on CI machines.
+  test.slow()
   const { page } = h
   await newProject(h, 'Cosmos')
 

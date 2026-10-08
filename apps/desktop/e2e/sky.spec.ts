@@ -1,6 +1,7 @@
 import { addChild, expect, fill, inspector, newWorld, playhead, row, setPlayhead, shot, test, wheel } from './helpers'
 
 test('star systems: real orbits at the playhead, an editable star and orbits, derived calendars', async ({ h }) => {
+  test.slow()
   const { page } = h
   await newWorld(h, 'Skies', { planet: 'Mercury', surface: false })
   await row(page, 'Sol').click()

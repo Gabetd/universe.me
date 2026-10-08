@@ -1,6 +1,7 @@
 import { clickAt, expect, fill, inspector, newWorld, openGlobe, openMap, setPlayhead, shot, state, test, wheel } from './helpers'
 
 test('place structures, weather them, and let events damage and destroy them', async ({ h }) => {
+  test.slow()
   const { page } = h
   await newWorld(h, 'Kingdoms')
   await openMap(page)
