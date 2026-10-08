@@ -42,19 +42,27 @@ export interface SkyEvent {
   extent?: 'total' | 'annular' | 'partial'
 }
 
+/** Phases a moon's elongation might fall short of its average count by, as eccentric orbits speed up and slow down. */
+const PHASE_SLACK = 8
+
 /**
  * New and full moons of every moon of a planet between t0 and t1, and the
- * eclipses among them. Stops after `limit` events (zoomed far out there
- * would be millions).
+ * eclipses among them. If there would be `limit` or more, returns none
+ * (zoomed far out there would be millions); a moon with more than `limit`
+ * months in the span is left out.
  */
 export function skyEvents(system: SystemModel, planetId: string, t0: number, t1: number, limit = 4000): SkyEvent[] {
   const planet = system.bodies.get(planetId)
   const sunPlanet = planetOf(system, planetId)
   if (!planet || !sunPlanet) return []
+  const moons = moonsOf(system, planetId)
+    .map((moon) => ({ moon, synodic: synodicS(moon, sunPlanet.periodS) }))
+    .filter(({ synodic }) => Number.isFinite(synodic) && (t1 - t0) / synodic <= limit)
+  // A moon is new and full about twice a synodic month: when even the fewest phases there could be reach the limit, don't work them out.
+  const fewest = moons.reduce((n, { synodic }) => n + Math.max(0, Math.floor((2 * (t1 - t0)) / synodic) - PHASE_SLACK), 0)
+  if (fewest >= limit) return []
   const out: SkyEvent[] = []
-  for (const moon of moonsOf(system, planetId)) {
-    const synodic = synodicS(moon, sunPlanet.periodS)
-    if (!Number.isFinite(synodic) || (t1 - t0) / synodic > limit) continue
+  for (const { moon, synodic } of moons) {
     const step = synodic / 16
     // The unwrapped elongation keeps growing; each multiple of π is a new or full moon.
     const unwrap = (t: number, prev: number) => {
@@ -65,34 +73,45 @@ export function skyEvents(system: SystemModel, planetId: string, t0: number, t1:
     }
     let t = t0
     let e = elongationAt(system, moon, t)
-    while (t < t1 && out.length < limit) {
+    while (t < t1) {
       const tn = Math.min(t1, t + step)
       const en = unwrap(tn, e)
       const k = Math.floor(e / Math.PI)
       const kn = Math.floor(en / Math.PI)
       if (kn !== k) {
         const target = Math.max(k, kn) * Math.PI
-        // Bisect for the moment the elongation reaches the target.
-        let lo = t
-        let hi = tn
-        let elo = e
-        for (let i = 0; i < 40 && hi - lo > 30; i++) {
-          const mid = (lo + hi) / 2
-          const em = unwrap(mid, elo)
-          if (em < target === elo < target) [lo, elo] = [mid, em]
-          else hi = mid
-        }
-        const at = (lo + hi) / 2
+        const at = crossing((x) => unwrap(x, e) - target, t, e - target, tn, en - target)
         const full = Math.round(target / Math.PI) % 2 !== 0
         out.push({ at, kind: full ? 'full-moon' : 'new-moon', moonId: moon.bodyId })
         const eclipse = eclipseAt(system, planet, moon, at, full)
         if (eclipse) out.push({ at, kind: full ? 'lunar-eclipse' : 'solar-eclipse', moonId: moon.bodyId, extent: eclipse })
+        if (out.length >= limit) return []
       }
       t = tn
       e = en
     }
   }
   return out.sort((a, b) => a.at - b.at)
+}
+
+/**
+ * When `f` crosses zero between `lo` and `hi`, where it has the values `flo`
+ * and `fhi` of opposite signs, to within a second: secant steps, which get
+ * there in a few tries on a smooth curve, falling back to halving the
+ * interval when a step would leave it.
+ */
+function crossing(f: (t: number) => number, lo: number, flo: number, hi: number, fhi: number): number {
+  let [a, fa, b, fb] = [lo, flo, hi, fhi]
+  for (let i = 0; i < 40; i++) {
+    let x = b - (fb * (b - a)) / (fb - fa)
+    if (!(x > lo && x < hi)) x = (lo + hi) / 2
+    const fx = f(x)
+    if (fx < 0 === flo < 0) [lo, flo] = [x, fx]
+    else hi = x
+    if (Math.abs(x - b) < 1 || hi - lo < 1) return x
+    ;[a, fa, b, fb] = [b, fb, x, fx]
+  }
+  return (lo + hi) / 2
 }
 
 /** Whether the new (or full) moon at `t` eclipses the star (or is eclipsed), and how much. */

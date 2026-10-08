@@ -150,6 +150,13 @@ describe('moons', () => {
     const every = skyEvents(flat, 'earth', 0, 365.25 * DAY_S)
     expect(every.filter((e) => e.kind === 'solar-eclipse').length).toBe(every.filter((e) => e.kind === 'new-moon').length)
   })
+
+  it('give none when there would be too many', () => {
+    const year = 365.25 * DAY_S
+    expect(skyEvents(system(), 'earth', 0, 10 * year, 100)).toEqual([])
+    expect(skyEvents(system(), 'earth', 0, 200 * year, 2400)).toEqual([])
+    expect(skyEvents(system(), 'earth', 0, 10 * year, 400).length).toBeGreaterThan(240)
+  })
 })
 
 describe('climate', () => {
