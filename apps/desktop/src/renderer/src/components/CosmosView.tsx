@@ -345,15 +345,19 @@ function galaxyGlow(shape: GalaxyShape, seed: number, size: number, count: numbe
   ctx.beginPath()
   ctx.arc(half, half, half, 0, Math.PI * 2)
   ctx.fill()
-  void makeGlow({ shape, seed, size, count }).then((pixels) => {
-    const layer = document.createElement('canvas')
-    layer.width = layer.height = size
-    layer.getContext('2d')!.putImageData(new ImageData(pixels, size), 0, 0)
-    ctx.globalCompositeOperation = 'lighter'
-    ctx.drawImage(layer, 0, 0)
-    finished.add(canvas)
-    glowsArrived++
-  })
+  makeGlow({ shape, seed, size, count }).then(
+    (pixels) => {
+      const layer = document.createElement('canvas')
+      layer.width = layer.height = size
+      layer.getContext('2d')!.putImageData(new ImageData(pixels, size), 0, 0)
+      ctx.globalCompositeOperation = 'lighter'
+      ctx.drawImage(layer, 0, 0)
+      finished.add(canvas)
+      glowsArrived++
+    },
+    // Without its stars the glow is just the bulge; asking again next time it's drawn.
+    () => glows.delete(key)
+  )
   glows.set(key, canvas)
   glowBytes += size * size * 4
   for (const [k, old] of glows) {

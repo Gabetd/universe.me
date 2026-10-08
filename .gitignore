@@ -12,3 +12,4 @@ playwright-report/
 .DS_Store
 apps/desktop/gallery/
 docs/build-log/img/
+.claude/worktrees/
