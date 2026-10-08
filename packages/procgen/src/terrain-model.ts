@@ -121,6 +121,7 @@ const FACE_REACH = Math.acos(1 / Math.sqrt(3))
  * strokes that produce `terrain.patch` command payloads.
  */
 export class TerrainModel {
+  /** The edit layers, per face. Brush strokes and setLayers change them; anything else that writes into them makes the colours out of date. */
   heightEdits: Int16Array[]
   biomeEdits: Uint8Array[]
   private stroke: { brush: Brush; target: number; dirty: Map<number, CellRect> } | undefined
@@ -128,9 +129,9 @@ export class TerrainModel {
   /** The climate from the world's star and orbit, added to its own settings; undefined keeps it Earth-like. */
   private sky: SkyClimate | undefined
   private climateFor: { settings: WorldSettings; sky: SkyClimate | undefined; climate: Climate; terms: ClimateTerms } | undefined
-  /** Each face's colours once asked for, and the settings and base they were made from. */
+  /** Each face's colours once asked for, and what they were made from. */
   private faceColorCache: (FaceColors | undefined)[] = []
-  private colorsFor: { settings: WorldSettings; base: BaseTerrain } | undefined
+  private colorsFor: { settings: WorldSettings; base: BaseTerrain; sky: SkyClimate | undefined; heights: Int16Array[]; biomes: Uint8Array[] } | undefined
   /** What `locate` fills in. */
   private located: FacePoint = { face: 0, s: 0, t: 0 }
 
@@ -152,7 +153,6 @@ export class TerrainModel {
       return bytes ? new Int16Array(bytes.slice().buffer) : new Int16Array(CELLS)
     })
     this.biomeEdits = Array.from({ length: CUBE_FACES }, (_, f) => layers.biome?.[f]?.slice() ?? new Uint8Array(CELLS))
-    this.staleColors()
   }
 
   /** A distance on the surface in km, as an angle in radians. */
@@ -180,7 +180,6 @@ export class TerrainModel {
   setSky(sky: SkyClimate | undefined): boolean {
     if (skyKey(sky) === skyKey(this.sky)) return false
     this.sky = sky
-    this.staleColors()
     return true
   }
 
@@ -286,14 +285,11 @@ export class TerrainModel {
     return (this.faceColorCache[face] ??= { truncated: new Uint8Array(CELLS * 4), rounded: new Uint8ClampedArray(CELLS * 4), colored: new Uint8Array(CELLS), whole: false })
   }
 
-  /** Marks every face's colours stale if the settings or the base they were made from have been replaced. */
+  /** Marks every face's colours out of date if the settings, base, sky or edit layers they were made from have been replaced. */
   private checkColors(): void {
-    if (this.colorsFor?.settings === this.settings && this.colorsFor.base === this.base) return
-    this.colorsFor = { settings: this.settings, base: this.base }
-    this.staleColors()
-  }
-
-  private staleColors(): void {
+    const made = this.colorsFor
+    if (made?.settings === this.settings && made.base === this.base && made.sky === this.sky && made.heights === this.heightEdits && made.biomes === this.biomeEdits) return
+    this.colorsFor = { settings: this.settings, base: this.base, sky: this.sky, heights: this.heightEdits, biomes: this.biomeEdits }
     for (const colors of this.faceColorCache) {
       if (!colors) continue
       colors.colored.fill(0)

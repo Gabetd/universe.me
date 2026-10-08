@@ -101,15 +101,24 @@ export function skyEvents(system: SystemModel, planetId: string, t0: number, t1:
  * interval when a step would leave it.
  */
 function crossing(f: (t: number) => number, lo: number, flo: number, hi: number, fhi: number): number {
-  let [a, fa, b, fb] = [lo, flo, hi, fhi]
+  // The last two tries, for the secant through them.
+  let a = lo
+  let fa = flo
+  let b = hi
+  let fb = fhi
   for (let i = 0; i < 40; i++) {
     let x = b - (fb * (b - a)) / (fb - fa)
     if (!(x > lo && x < hi)) x = (lo + hi) / 2
     const fx = f(x)
-    if (fx < 0 === flo < 0) [lo, flo] = [x, fx]
-    else hi = x
+    if (fx < 0 === flo < 0) {
+      lo = x
+      flo = fx
+    } else hi = x
     if (Math.abs(x - b) < 1 || hi - lo < 1) return x
-    ;[a, fa, b, fb] = [b, fb, x, fx]
+    a = b
+    fa = fb
+    b = x
+    fb = fx
   }
   return (lo + hi) / 2
 }

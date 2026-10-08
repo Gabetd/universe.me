@@ -214,11 +214,19 @@ describe('TerrainModel brushes', () => {
     const fresh = new TerrainModel(DEFAULT_WORLD_SETTINGS, base)
     fresh.heightEdits = model.heightEdits.map((h) => h.slice())
     fresh.biomeEdits = model.biomeEdits.map((b) => b.slice())
-    const differing = Array.from({ length: CUBE_FACES }, (_, f) => {
-      const expected = fresh.faceColors(f)
-      return model.faceColors(f).filter((v, k) => v !== expected[k]).length
-    })
-    expect(differing).toEqual([0, 0, 0, 0, 0, 0])
+    const differing = (a: TerrainModel, b: TerrainModel) =>
+      Array.from({ length: CUBE_FACES }, (_, f) => {
+        const expected = b.faceColors(f)
+        return a.faceColors(f).filter((v, k) => v !== expected[k]).length
+      })
+    expect(differing(model, fresh)).toEqual([0, 0, 0, 0, 0, 0])
+    // And after the layers, the sky and the settings change.
+    model.setLayers({})
+    model.setSky({ offsetC: 6, gradient: 0.8 })
+    model.settings = { ...DEFAULT_WORLD_SETTINGS, seaLevel: 200 }
+    const other = new TerrainModel(model.settings, base)
+    other.setSky({ offsetC: 6, gradient: 0.8 })
+    expect(differing(model, other)).toEqual([0, 0, 0, 0, 0, 0])
   })
 
   it('renders an equirectangular map', () => {
