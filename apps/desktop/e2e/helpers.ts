@@ -295,9 +295,9 @@ const within = (box: Box, [fx, fy]: Fraction): Point => ({ x: box.x + box.width 
 export const center = (box: Box): Point => within(box, [0.5, 0.5])
 
 /** Clicks at a fraction of the element with this test id, measured at the click (tool options can move it). */
-export async function clickAt(page: Page, testId: string, at: Fraction, options?: { button?: 'left' | 'right' }): Promise<void> {
+export async function clickAt(page: Page, testId: string, at: Fraction): Promise<void> {
   const { x, y } = within((await page.getByTestId(testId).boundingBox())!, at)
-  await page.mouse.click(x, y, options)
+  await page.mouse.click(x, y)
 }
 
 /** Drags with the mouse from one point to another, through `steps` moves. */

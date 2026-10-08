@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { expect, inspector, newProject, row, shot, SLOW, state, test, wheel } from './helpers'
+import { expect, inspector, newProject, row, shot, SLOW, state, test, wheel, type Point } from './helpers'
 
 const nodes = (page: Page) => state(page, 'nodes')
 
@@ -51,7 +51,7 @@ const pointable = (page: Page) =>
 /** Clicks the generated thing nearest the middle of the view, once hovering it shows its card. */
 async function clickNearestGenerated(page: Page) {
   const box = await viewportBox(page)
-  const found: { spot?: { x: number; y: number } | null } = {}
+  const found: { spot?: Point | null } = {}
   await expect.poll(async () => (found.spot = await pointable(page)), { message: 'something generated near the middle of the view' }).not.toBeNull()
   const [x, y] = [box.x + found.spot!.x, box.y + found.spot!.y]
   await page.mouse.move(x, y)
