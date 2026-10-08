@@ -26,11 +26,29 @@ export const EFFECT_LABELS: Record<EffectType, { label: string; icon: string }> 
 
 const TARGET_LABELS: Record<EffectTarget['kind'], string> = { structures: 'Chosen structures', region: 'Everything in a region', radius: 'Everything nearby' }
 
+const NO_EFFECTS: EventEffect[] = []
+
+/** Effects by the id of their event, in their order. */
+export function effectsByEvent(effects: EventEffect[]): Map<string, EventEffect[]> {
+  const out = new Map<string, EventEffect[]>()
+  for (const e of effects) {
+    const list = out.get(e.eventId)
+    if (list) list.push(e)
+    else out.set(e.eventId, [e])
+  }
+  return out
+}
+
+/** What each event does to structures, one icon per kind of effect, by event id. */
+export function effectIcons(effects: EventEffect[]): Map<string, string> {
+  return new Map([...effectsByEvent(effects)].map(([id, list]) => [id, [...new Set(list.map((e) => EFFECT_LABELS[e.type].icon))].join('')]))
+}
+
 /** What an event does to structures (PLAN.md §4.7), with a preview of what each effect reaches. */
 export function EventEffects({ event }: { event: TimelineEvent }) {
   const { execute } = useUi.getState()
   const all = useUi((s) => s.timeline.effects)
-  const effects = useMemo(() => all.filter((e) => e.eventId === event.id), [all, event.id])
+  const effects = useMemo(() => effectsByEvent(all).get(event.id) ?? NO_EFFECTS, [all, event.id])
   const hasPlace = !!eventPlace(event, useUi.getState().regions)
   return (
     <div className="field" aria-label="Effects on structures">

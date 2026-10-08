@@ -1,4 +1,4 @@
-import { EMPTY_TIMELINE, timelineOwner, type Command, type SpatialNode, type TimelineEvent } from '@universe/core'
+import { EMPTY_TIMELINE, timelineOwner, type Command, type SpatialNode, type TimelineData, type TimelineEvent } from '@universe/core'
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import type { AppState, Result } from '../../shared/api'
@@ -190,6 +190,11 @@ export const deleteCommand = (kind: DeleteKind, ids: string[]): Command | undefi
 /** The records of one owner (a world, a node), filtered again only when the list changes. */
 export function useOwned<T extends { ownerId: string }>(list: T[], ownerId: string): T[] {
   return useMemo(() => list.filter((r) => r.ownerId === ownerId), [list, ownerId])
+}
+
+/** One owner's timeline records of a kind (`'events'`, `'lanes'`…): re-rendered and filtered again only when that kind changes. */
+export function useOwnRecords<K extends keyof TimelineData>(key: K, ownerId: string): TimelineData[K] {
+  return useOwned(useUi((s) => s.timeline[key]) as { ownerId: string }[], ownerId) as TimelineData[K]
 }
 
 const indexes = new WeakMap<object, Map<string, unknown>>()

@@ -1,5 +1,5 @@
 import { eventSpan, groupSpan, type EventGroup, type Lane, type TimelineEvent } from '@universe/core'
-import type { TimeScale } from './scale'
+import { TimeScale, type TimeRange } from './scale'
 
 export const ROW_H = 26
 /** Rough width of a title in the timeline's 12px font, for packing labels without overlap. */
@@ -117,9 +117,9 @@ export function packTimeline(events: TimelineEvent[], groups: EventGroup[], lane
   return { groups: placedGroups, groupsHeight, lanes: laneLayouts, height: y, anchors, origin, secondsPerPx }
 }
 
-/** A packed layout moved to a view at its zoom level: only x changes. */
-export function placeTimeline(packed: PackedTimeline, scale: TimeScale): TimelineLayout {
-  const dx = (packed.origin - scale.range.t0) / packed.secondsPerPx
+/** A packed layout moved to a view at its zoom level that starts at time `t0`: only x changes. */
+export function placeTimeline(packed: PackedTimeline, t0: number): TimelineLayout {
+  const dx = (packed.origin - t0) / packed.secondsPerPx
   if (dx === 0) return packed
   const moved = new Map<PlacedItem<unknown>, PlacedItem<unknown>>()
   const move = <T>(p: PlacedItem<T>): PlacedItem<T> => {
@@ -134,19 +134,19 @@ export function placeTimeline(packed: PackedTimeline, scale: TimeScale): Timelin
 }
 
 /**
- * What to pack a view at: its zoom level (rounded, so panning keeps it) and
- * an origin that stays put until the view has been panned a long way, so x
- * keeps its precision near what's shown.
+ * What to pack a view `width` px wide at: its zoom level (rounded, so
+ * panning keeps it) and an origin that stays put until the view has been
+ * panned a long way, so x keeps its precision near what's shown.
  */
-export function packingFor(scale: TimeScale): { secondsPerPx: number; origin: number } {
-  const secondsPerPx = Number(scale.secondsPerPx.toPrecision(12))
+export function packingFor(range: TimeRange, width: number): { secondsPerPx: number; origin: number } {
+  const secondsPerPx = Number(new TimeScale(range, width).secondsPerPx.toPrecision(12))
   const step = secondsPerPx * 2 ** 20
-  return { secondsPerPx, origin: Math.floor(scale.range.t0 / step) * step }
+  return { secondsPerPx, origin: Math.floor(range.t0 / step) * step }
 }
 
 /** Lays the timeline out for a view (see {@link packTimeline}). */
 export function layoutTimeline(events: TimelineEvent[], groups: EventGroup[], lanes: Lane[], scale: TimeScale): TimelineLayout {
-  return placeTimeline(packTimeline(events, groups, lanes, scale.secondsPerPx, scale.range.t0), scale)
+  return packTimeline(events, groups, lanes, scale.secondsPerPx, scale.range.t0)
 }
 
 /**

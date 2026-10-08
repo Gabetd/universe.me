@@ -63,9 +63,9 @@ describe('layoutTimeline', () => {
     const group: EventGroup = { ...meta, id: 'g', title: 'War', color: '#ffffff', notes: '', collapsed: true }
     const grouped = [...events, ev('d', 80, 90, { groupId: 'g' })]
     const panned = new TimeScale(panRange(scale.range, 7.3 * YEAR), 1000)
-    expect(packingFor(panned)).toEqual(packingFor(scale))
-    const { secondsPerPx, origin } = packingFor(scale)
-    const reused = placeTimeline(packTimeline(grouped, [group], [], secondsPerPx, origin), panned)
+    expect(packingFor(panned.range, 1000)).toEqual(packingFor(scale.range, 1000))
+    const { secondsPerPx, origin } = packingFor(scale.range, 1000)
+    const reused = placeTimeline(packTimeline(grouped, [group], [], secondsPerPx, origin), panned.range.t0)
     const fresh = layoutTimeline(grouped, [group], [], panned)
     const xs = (l: TimelineLayout) => [...l.groups, ...l.lanes.flatMap((lane) => lane.events)].map((p) => [p.y, Math.round(p.x0 * 1e6) / 1e6, Math.round(p.x1 * 1e6) / 1e6])
     expect(xs(reused)).toEqual(xs(fresh))
@@ -73,7 +73,7 @@ describe('layoutTimeline', () => {
     expect(reused.anchors.get('d')).toBe(reused.groups[0])
     expect(reused.anchors.get('a')).toBe(reused.lanes[0]!.events.find((p) => p.item.id === 'a'))
     // Zooming packs again.
-    expect(packingFor(new TimeScale(zoomRange(scale.range, 0, 0.5), 1000)).secondsPerPx).not.toBe(secondsPerPx)
+    expect(packingFor(zoomRange(scale.range, 0, 0.5), 1000).secondsPerPx).not.toBe(secondsPerPx)
   })
 
   it('tells which bars show in the track, labels included', () => {
