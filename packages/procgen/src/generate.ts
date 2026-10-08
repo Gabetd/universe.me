@@ -2,7 +2,7 @@ import { CUBE_FACES, TERRAIN_RES, type TerrainParams } from '@universe/core'
 import { createNoise3D, type NoiseFunction3D } from 'simplex-noise'
 import { cellDirections, latLonToDir } from './cubesphere'
 import { rng, subSeed } from './random'
-import { smoothstep } from './math'
+import { DEG, smoothstep } from './math'
 
 /** The generated (unedited) terrain for a world: meters of height and 0–1 moisture per cell. */
 export interface BaseTerrain {
@@ -47,7 +47,7 @@ export function generateBase(seed: number, params: TerrainParams): BaseTerrain {
   const archipelago = params.landform === 'archipelago'
   const f = params.continentScale * (archipelago ? 2.2 : params.landform === 'supercontinent' ? 0.75 : 1)
   // A supercontinent gathers the land around one point of the globe.
-  const center = latLonToDir(Math.asin(centerRng() * 1.6 - 0.8) * (180 / Math.PI), centerRng() * 360 - 180)
+  const center = latLonToDir(Math.asin(centerRng() * 1.6 - 0.8) * DEG, centerRng() * 360 - 180)
   const islandAmount = params.islands * (archipelago ? 1.4 : 1)
   // Islands are a few hundred km across whatever the land type, so they read as islands rather than speckle.
   const fi = params.continentScale * 3.2

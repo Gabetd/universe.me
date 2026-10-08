@@ -1,3 +1,4 @@
+import { TAU, wrapTau } from '@universe/procgen'
 import { SUN_RADIUS_KM } from './star'
 import { moonsOf, orbitPosition, planetOf, positionFromStar, synodicS, type BodyOrbit, type SystemModel } from './orbits'
 
@@ -19,14 +20,11 @@ export interface MoonPhase {
   name: PhaseName
 }
 
-const TAU = Math.PI * 2
-
 function elongationAt(system: SystemModel, moon: BodyOrbit, t: number): number {
   const planet = positionFromStar(system, moon.parentBodyId!, t)
   const m = orbitPosition(moon, t)
   const sun = Math.atan2(-planet[1], -planet[0])
-  const e = Math.atan2(m[1], m[0]) - sun
-  return ((e % TAU) + TAU) % TAU
+  return wrapTau(Math.atan2(m[1], m[0]) - sun)
 }
 
 export function moonPhase(system: SystemModel, moon: BodyOrbit, t: number): MoonPhase {

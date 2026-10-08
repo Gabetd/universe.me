@@ -2,7 +2,7 @@ import type { LatLon } from '@universe/core'
 import { createNoise3D, type NoiseFunction3D } from 'simplex-noise'
 import { BIOME } from './biomes'
 import { latLonToDir } from './cubesphere'
-import { clamp } from './math'
+import { RAD, TAU, clamp, clamp01, wrapLon } from './math'
 import { cellSeed, rng, subSeed } from './random'
 import type { TerrainModel } from './terrain-model'
 
@@ -19,7 +19,6 @@ import type { TerrainModel } from './terrain-model'
  */
 
 export const CHUNK_M = 1000
-const RAD = Math.PI / 180
 
 export interface ChunkId {
   row: number
@@ -60,7 +59,7 @@ export interface LocalFrame {
 /** A point's place in the frame: [east, south]. Longitude is taken the short way round. */
 export function toLocal(f: LocalFrame, p: LatLon): [number, number] {
   const m = metresPerDegLat(f.radiusKm)
-  const dLon = ((((p.lon - f.origin.lon + 180) % 360) + 360) % 360) - 180
+  const dLon = wrapLon(p.lon - f.origin.lon)
   return [dLon * m * Math.cos(f.origin.lat * RAD), -(p.lat - f.origin.lat) * m]
 }
 
@@ -68,7 +67,7 @@ export function fromLocal(f: LocalFrame, x: number, z: number): LatLon {
   const m = metresPerDegLat(f.radiusKm)
   const lat = clamp(f.origin.lat - z / m, -90, 90)
   const lon = f.origin.lon + x / (m * Math.max(0.02, Math.cos(f.origin.lat * RAD)))
-  return { lat, lon: ((((lon + 180) % 360) + 360) % 360) - 180 }
+  return { lat, lon: wrapLon(lon) }
 }
 
 /** Chunks within `ring` chunks of the one containing `p` (a (2·ring+1)² block, nearest first). */
@@ -335,11 +334,11 @@ function scatterPlants(input: GroundChunkInput, detail: GroundDetail, base: Base
       const lon = b.lon0 + random() * (b.lon1 - b.lon0)
       const keep = random()
       const size = random()
-      const turn = random() * Math.PI * 2
+      const turn = random() * TAU
       const tint = random()
       const [count, clump] = FLORA[detail.biome(base, lat, lon)]?.[plant] ?? [0, 0]
       // Thinned to this spot's biome, and gathered into woods and meadows with clearings between.
-      const patchiness = 1 - clump + clump * clamp(0.5 + detail.patch(lat, lon, PLANTS.indexOf(plant) + 4) * 1.4, 0, 1)
+      const patchiness = 1 - clump + clump * clamp01(0.5 + detail.patch(lat, lon, PLANTS.indexOf(plant) + 4) * 1.4)
       if (keep * most >= count * patchiness) continue
       const y = detail.elevation(base, lat, lon)
       if (WET.includes(plant) ? y < -0.6 || y > 2.5 : y < 0.4) continue

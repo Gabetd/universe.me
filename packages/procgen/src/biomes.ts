@@ -1,4 +1,4 @@
-import { clamp } from './math'
+import { clamp01 } from './math'
 /**
  * Biomes a cell can have. Id 0 ("auto") means "derive from climate"; painted
  * cells store any other id. M4 replaces `autoBiome`'s rough climate with the
@@ -50,6 +50,9 @@ export function hexToRgb(hex: string): [number, number, number] {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
 }
 
+/** "#rrggbb" for whole 0–255 channel values. */
+export const rgbToHex = (rgb: readonly number[]) => `#${rgb.map((v) => v.toString(16).padStart(2, '0')).join('')}`
+
 /** The climate options that shape automatic biomes (see TerrainParams). */
 export interface Climate {
   /** °C added everywhere. */
@@ -84,7 +87,7 @@ export function autoBiome(latDeg: number, elevation: number, moisture: number, c
   if (elevation < climate.beaches * 40) return BIOME.beach
 
   const band = Math.cos((absLat * Math.PI) / 30)
-  const wet = clamp(moisture * 0.85 + band * 0.22 + 0.05 - (climate.aridity - 0.5) * 0.8, 0, 1)
+  const wet = clamp01(moisture * 0.85 + band * 0.22 + 0.05 - (climate.aridity - 0.5) * 0.8)
   if (wet > 0.86 && elevation < 160 && temperature > 6) return BIOME.swamp
   if (temperature < 5) return wet > 0.3 ? BIOME.taiga : BIOME.tundra
   if (temperature < 18) return wet < 0.3 ? BIOME.shrubland : wet < 0.48 ? BIOME.grassland : BIOME.temperateForest
@@ -106,7 +109,7 @@ function rgbToHsl([r, g, b]: readonly number[]): Rgb {
 }
 
 /** "#rrggbb" for a hue (degrees), saturation and lightness (0–1). */
-export const hslToHex = (h: number, s: number, l: number) => `#${hslToRgb([h, s, l]).map((v) => v.toString(16).padStart(2, '0')).join('')}`
+export const hslToHex = (h: number, s: number, l: number) => rgbToHex(hslToRgb([h, s, l]))
 
 function hslToRgb([h, s, l]: Rgb): Rgb {
   const k = (n: number) => (n + h / 30) % 12
@@ -120,7 +123,7 @@ function retint(color: readonly number[], reference: string, target: string): Rg
   const [h, s, l] = rgbToHsl(color)
   const [rh, rs, rl] = rgbToHsl(hexToRgb(reference))
   const [th, ts, tl] = rgbToHsl(hexToRgb(target))
-  return hslToRgb([(h + th - rh + 360) % 360, clamp(rs > 0 ? s * (ts / rs) : ts, 0, 1), clamp(l + tl - rl, 0, 1)])
+  return hslToRgb([(h + th - rh + 360) % 360, clamp01(rs > 0 ? s * (ts / rs) : ts), clamp01(l + tl - rl)])
 }
 
 const VEGETATION = [BIOME.tundra, BIOME.taiga, BIOME.temperateForest, BIOME.grassland, BIOME.shrubland, BIOME.savanna, BIOME.rainforest, BIOME.swamp]

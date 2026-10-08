@@ -1,5 +1,5 @@
 import { CUBE_FACES, TERRAIN_RES, type LatLon } from '@universe/core'
-import { clamp } from './math'
+import { DEG, clamp } from './math'
 
 /**
  * Cube-sphere grid math. Each face has TERRAIN_RES² cells; cell (i, j) is at
@@ -81,8 +81,6 @@ export function cellDirections(): Float32Array[] {
   })
   return dirCache
 }
-
-const DEG = 180 / Math.PI
 
 /** +Y is north; longitude 0 faces +Z and 90°E faces +X. */
 export function dirToLatLon(x: number, y: number, z: number): LatLon {

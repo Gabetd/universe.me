@@ -1,6 +1,6 @@
 import { TERRAIN_RES } from '@universe/core'
 import { dirToLatLon, latLonToDir, type Vec3 } from './cubesphere'
-import { clamp } from './math'
+import { DEG, RAD, clamp } from './math'
 import type { TerrainModel } from './terrain-model'
 
 /** Fills an RGBA TERRAIN_RES² texture for one cube face (unlit; the 3D view lights it). */
@@ -63,7 +63,7 @@ export function renderEquirect(model: TerrainModel, out: Uint8ClampedArray, widt
   const h = (x: number, y: number) => heights[(clamp(y, top, bottom - 1) - top) * width + ((x + width) % width)]!
   for (let y = y0; y < y1; y++) {
     const lat = pixelToLatLon(0, y, width, height).lat
-    const metersPerCol = Math.max(1, metersPerRow * 2 * Math.cos((lat * Math.PI) / 180))
+    const metersPerCol = Math.max(1, metersPerRow * 2 * Math.cos(lat * RAD))
     for (let x = 0; x < width; x++) {
       const k = (y - top) * width + x
       const o = (y * width + x) * 4
@@ -84,7 +84,7 @@ export function renderEquirect(model: TerrainModel, out: Uint8ClampedArray, widt
 /** Map rows a brush at `dir` with angular radius `radius` (radians) can touch. */
 export function brushRows(dir: Vec3, radius: number, height: number): [number, number] {
   const { lat } = dirToLatLon(...dir)
-  const r = (radius * 180) / Math.PI
+  const r = radius * DEG
   const toRow = (l: number) => Math.round(latLonToPixel(l, 0, 1, height)[1])
   return [toRow(Math.min(90, lat + r)) - 2, toRow(Math.max(-90, lat - r)) + 2]
 }
