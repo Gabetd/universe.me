@@ -1,4 +1,4 @@
-import { CommandError, liveNode, liveRecord, liveRegion, liveWorld } from './command-kit'
+import { CommandError, liveNode, liveRecord, liveWorld } from './command-kit'
 import type { Store } from './store'
 import type { Theme, ThemeSpan } from './themes'
 
@@ -9,6 +9,10 @@ export const themeValidators = {
     liveWorld(store, s.ownerId)
     liveRecord(store, 'theme', s.themeId)
     if (s.end < s.start) throw new CommandError('A theme span cannot end before it starts')
-    if (s.regionId && liveRegion(store, s.regionId).worldId !== s.ownerId) throw new CommandError('That region is on another world')
+    // Its region needn't be live, like an effect's targets: a span whose region was deleted reaches nothing, and can still be edited or brought back.
+    if (s.regionId === null) return
+    const region = store.regions.get(s.regionId)
+    if (!region) throw new CommandError(`Region ${s.regionId} does not exist`)
+    if (region.worldId !== s.ownerId) throw new CommandError('That region is on another world')
   }
 }

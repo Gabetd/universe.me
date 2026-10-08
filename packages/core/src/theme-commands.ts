@@ -5,6 +5,7 @@ import { NewId, create, deleteWith, live, recordCrud } from './record-kit'
 import { Id } from './schema'
 import { THEME_PRESETS, Theme, ThemeSpan } from './themes'
 import { Time } from './time'
+import { stripUndefined } from './util'
 
 const ThemeFields = Theme.pick({ name: true, palette: true, lighting: true, atmosphere: true, typography: true, mood: true, style: true, ambience: true, notes: true })
 const SpanFields = ThemeSpan.pick({ themeId: true, start: true, end: true, regionId: true, priority: true, blendIn: true, blendOut: true })
@@ -29,23 +30,16 @@ export const themeHandlers: HandlerMap<ThemeCommand> = {
   'theme.create': (store, { id, ownerId, preset, ...p }, ctx) => {
     const base = preset ? THEME_PRESETS[preset] : undefined
     if (preset && !base) throw new CommandError(`There is no ${preset} theme to start from`)
-    const from = base ?? THEME_PRESETS.Verdant!
-    return create(store, 'theme', ctx, ownerId, id, {
-      name: p.name ?? (base ? base.name : 'New theme'),
-      palette: p.palette ?? from.palette,
-      lighting: p.lighting ?? from.lighting,
-      atmosphere: p.atmosphere ?? from.atmosphere,
-      typography: p.typography ?? from.typography,
-      mood: p.mood ?? (base ? base.mood : []),
-      style: p.style ?? (base ? base.style : ''),
-      ambience: p.ambience ?? (base ? base.ambience : []),
-      notes: p.notes ?? ''
-    })
+    // From scratch: Verdant's look, with no name, mood or style of its own.
+    const from = base ?? { ...THEME_PRESETS.Verdant!, name: 'New theme', mood: [], style: '', ambience: [], notes: '' }
+    return create(store, 'theme', ctx, ownerId, id, { ...from, ...stripUndefined(p) })
   },
   'theme.update': theme.update,
-  // Spans of it on any world go with it.
+  // Its spans on every world there is go with it (a deleted world's stay with the world, so either can be brought back).
   'theme.delete': (store, { id }, ctx, run) =>
-    deleteWith(store, ctx, run, { kind: 'theme', id }, () => ({ remove: live(store, 'themeSpan').flatMap((s) => (s.themeId === id ? [{ kind: 'themeSpan' as const, id: s.id }] : [])) })),
+    deleteWith(store, ctx, run, { kind: 'theme', id }, () => ({
+      remove: live(store, 'themeSpan').flatMap((s) => (s.themeId === id && !store.nodes.get(s.ownerId)?.deletedAt ? [{ kind: 'themeSpan' as const, id: s.id }] : []))
+    })),
   'themeSpan.create': (store, { id, ownerId, ...p }, ctx) =>
     create(store, 'themeSpan', ctx, ownerId, id, {
       themeId: p.themeId,

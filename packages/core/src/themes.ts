@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { Id, RecordMeta } from './schema'
 import { Time } from './time'
+import { byId } from './util'
 import { HexColor } from './world'
 
 /**
@@ -146,7 +147,11 @@ export function spanWeight(span: Pick<ThemeSpan, 'start' | 'end' | 'blendIn' | '
   return w * w * (3 - 2 * w)
 }
 
-type Rgb = [number, number, number]
+/** A colour as red, green and blue, 0–1 each. */
+export type Rgb = [number, number, number]
+
+/** `a` mixed toward `b` by `k` (0–1). */
+export const mixRgb = (a: Readonly<Rgb>, b: Readonly<Rgb>, k: number): Rgb => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]
 
 /** The look and tone in force at a time and place: what the renderer and writers use. */
 export interface ThemeLook {
@@ -172,57 +177,63 @@ export const hexToRgb01 = (hex: string): Rgb => [parseInt(hex.slice(1, 3), 16) /
 export const rgb01ToHex = (c: Readonly<Rgb>): string => `#${c.map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('')}`
 
 /**
- * The themes in force on a world at `t` (its spans, the theme library), in
+ * The themes in force on a world at `t` (its live spans, the live theme library), in
  * a place lying in `regionIds` (spans for other regions don't apply; spans
  * for no region apply everywhere), composited like layers of paint: each span
  * covers what's under it by its weight, lowest priority first. Undefined when
  * no theme shows.
  */
 export function themeAt(spans: readonly ThemeSpan[], themes: readonly Theme[], t: number, regionIds: readonly string[] = []): ThemeLook | undefined {
-  const byId = new Map(themes.map((th) => [th.id, th]))
+  const themeOf = byId(themes)
   const active = spans
-    .filter((s) => !s.deletedAt && (s.regionId === null || regionIds.includes(s.regionId)))
-    .map((span) => ({ span, theme: byId.get(span.themeId), weight: spanWeight(span, t) }))
-    .filter((l): l is { span: ThemeSpan; theme: Theme; weight: number } => !!l.theme && !l.theme.deletedAt && l.weight > 0)
+    .filter((s) => s.regionId === null || regionIds.includes(s.regionId))
+    .map((span) => ({ span, theme: themeOf.get(span.themeId), weight: spanWeight(span, t) }))
+    .filter((l): l is { span: ThemeSpan; theme: Theme; weight: number } => !!l.theme && l.weight > 0)
     .sort((a, b) => a.span.priority - b.span.priority || a.span.start - b.span.start)
   if (!active.length) return undefined
   // Premultiplied: each value is the sum of what shows of it; dividing by the total coverage gives the blend.
-  const fields = ['sky', 'water', 'land', 'accent', 'sun', 'ambient'] as const
-  const colours = Object.fromEntries(fields.map((f) => [f, [0, 0, 0] as Rgb])) as Record<(typeof fields)[number], Rgb>
-  let sunIntensity = 0
-  let ambientIntensity = 0
-  let atmosphere = 0
+  const sum: Record<(typeof COLOURS)[number], Rgb> & Record<(typeof AMOUNTS)[number], number> = {
+    sky: [0, 0, 0],
+    water: [0, 0, 0],
+    land: [0, 0, 0],
+    accent: [0, 0, 0],
+    sun: [0, 0, 0],
+    ambient: [0, 0, 0],
+    sunIntensity: 0,
+    ambientIntensity: 0,
+    atmosphere: 0
+  }
   let coverage = 0
   const shown: number[] = []
   for (const { theme, weight } of active) {
     const light = LIGHTING[theme.lighting]
-    const values: Record<(typeof fields)[number], Rgb> = {
-      ...(Object.fromEntries((['sky', 'water', 'land', 'accent'] as const).map((f) => [f, hexToRgb01(theme.palette[f])])) as Record<'sky' | 'water' | 'land' | 'accent', Rgb>),
-      sun: hexToRgb01(light.sun),
-      ambient: hexToRgb01(light.ambient)
-    }
-    for (const f of fields) for (let i = 0; i < 3; i++) colours[f][i] = colours[f][i]! * (1 - weight) + values[f][i]! * weight
-    sunIntensity = sunIntensity * (1 - weight) + light.sunIntensity * weight
-    ambientIntensity = ambientIntensity * (1 - weight) + light.ambientIntensity * weight
-    atmosphere = atmosphere * (1 - weight) + theme.atmosphere * weight
+    const colours = { ...theme.palette, sun: light.sun, ambient: light.ambient }
+    const amounts = { sunIntensity: light.sunIntensity, ambientIntensity: light.ambientIntensity, atmosphere: theme.atmosphere }
+    // This layer covers what's under it by its weight.
+    for (const f of COLOURS) sum[f] = mixRgb(sum[f], hexToRgb01(colours[f]), weight)
+    for (const f of AMOUNTS) sum[f] += (amounts[f] - sum[f]) * weight
     for (let i = 0; i < shown.length; i++) shown[i] = shown[i]! * (1 - weight)
     shown.push(weight)
-    coverage = coverage * (1 - weight) + weight
+    coverage += (1 - coverage) * weight
   }
   const unmix = (c: Rgb): Rgb => [c[0] / coverage, c[1] / coverage, c[2] / coverage]
   const layers = active.map((l, i) => ({ ...l, weight: shown[i]! })).sort((a, b) => b.weight - a.weight)
   return {
     strength: coverage,
-    sky: unmix(colours.sky),
-    water: unmix(colours.water),
-    land: unmix(colours.land),
-    accent: unmix(colours.accent),
-    sun: unmix(colours.sun),
-    sunIntensity: sunIntensity / coverage,
-    ambient: unmix(colours.ambient),
-    ambientIntensity: ambientIntensity / coverage,
-    atmosphere: atmosphere / coverage,
+    sky: unmix(sum.sky),
+    water: unmix(sum.water),
+    land: unmix(sum.land),
+    accent: unmix(sum.accent),
+    sun: unmix(sum.sun),
+    ambient: unmix(sum.ambient),
+    sunIntensity: sum.sunIntensity / coverage,
+    ambientIntensity: sum.ambientIntensity / coverage,
+    atmosphere: sum.atmosphere / coverage,
     dominant: layers[0]!.theme,
     layers
   }
 }
+
+/** What a look blends: colours, and amounts. */
+const COLOURS = ['sky', 'water', 'land', 'accent', 'sun', 'ambient'] as const
+const AMOUNTS = ['sunIntensity', 'ambientIntensity', 'atmosphere'] as const

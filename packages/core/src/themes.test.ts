@@ -52,6 +52,27 @@ describe('themes', () => {
     expect(store.records('themeSpan').all()).toHaveLength(2)
     expect(store.records('theme').all()).toHaveLength(1)
   })
+
+  it("can be brought back after a span's region or world was deleted", () => {
+    const t = theme('Plague Years')
+    const regionId = run('region.create', { worldId, name: 'Marsh', points: [{ lat: 0, lon: 0 }, { lat: 0, lon: 10 }, { lat: 10, lon: 5 }] }).targetId!
+    const inRegion = span(t, year(1), year(2), { regionId })
+    run('region.delete', { id: regionId })
+    // A span whose region is gone still edits, and reaches nothing.
+    run('themeSpan.update', { id: inRegion, patch: { end: year(3) } })
+    run('theme.delete', { id: t })
+    bus.undo()
+    expect(store.records('theme').get(t)!.deletedAt).toBeNull()
+    expect(store.records('themeSpan').get(inRegion)!.deletedAt).toBeNull()
+
+    // A deleted world keeps its spans: deleting the theme then leaves them, and undo has nothing to put back there.
+    const onWorld = span(t, year(5), year(6))
+    run('node.delete', { id: worldId })
+    run('theme.delete', { id: t })
+    expect(store.records('themeSpan').get(onWorld)!.deletedAt).toBeNull()
+    bus.undo()
+    expect(store.records('theme').get(t)!.deletedAt).toBeNull()
+  })
 })
 
 describe('blending at the playhead', () => {
