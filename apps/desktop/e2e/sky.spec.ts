@@ -44,6 +44,20 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await expect(page.getByTestId('sky-readout')).toContainText('Luna:')
   await page.screenshot({ path: 'test-results/81-planet-moons.png' })
 
+  // The timeline has a track of the moon's phases and the eclipses; an eclipse becomes an event with a click.
+  await row(page, 'Terra Surface').click()
+  await expect(page.getByLabel('Moons and eclipses')).toContainText('Zoom in')
+  const ruler = (await page.locator('.tl-ruler').boundingBox())!
+  await page.mouse.move(ruler.x + ruler.width / 2, ruler.y + ruler.height / 2)
+  for (let i = 0; i < 8; i++) await page.mouse.wheel(0, -500)
+  await expect(page.locator('.tl-moon.full-moon').first()).toBeAttached()
+  await expect(page.locator('.tl-eclipse').first()).toBeAttached()
+  await page.screenshot({ path: 'test-results/82-moon-track.png' })
+  const eclipse = page.locator('.tl-eclipse').first()
+  const name = (await eclipse.getAttribute('aria-label'))!.split(',')[0]!
+  await eclipse.click()
+  await expect(inspector(page).getByLabel('Event title')).toHaveValue(new RegExp(name.split(' ').slice(0, 2).join(' ')))
+
   // The world's calendar follows: its months can be renamed, and dates are written with them.
   await row(page, 'Terra Surface').click()
   const calendar = inspector(page).getByLabel('Calendar', { exact: true })
@@ -54,12 +68,10 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   const playhead = page.getByRole('toolbar', { name: 'Timeline' }).getByLabel('Playhead')
   await playhead.fill('3 Frostmoon 120')
   await playhead.press('Enter')
-  // Shown at the timeline's zoom (years); typed with the new month name, it was understood.
-  await expect(playhead).toHaveValue('120')
-  await expect(playhead).toHaveAttribute('aria-invalid', 'false')
+  // Zoomed in to days, it's written back with the new month name.
+  await expect(playhead).toHaveValue('3 Frostmoon 120')
 
-  // Undo goes back to the Earth calendar.
-  await page.getByRole('button', { name: /Undo/ }).click()
-  await page.getByRole('button', { name: /Undo/ }).click()
+  // Undoing the rename, the eclipse event and the orbit goes back to the Earth calendar.
+  for (let i = 0; i < 3; i++) await page.getByRole('button', { name: /Undo/ }).click()
   await expect(calendar).toContainText('The Earth calendar')
 })
