@@ -3,7 +3,7 @@ import { basename, join } from 'node:path'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session as electronSession, shell, type MenuItemConstructorOptions } from 'electron'
 import { isAllowedRequest } from '../shared/offline'
 import { EVENTS, INVOKE, type AppState, type BuildInfo, type ImportedModel, type InvokeMethod, type MenuAction, type Result, type UniverseApi } from '../shared/api'
-import { Session } from './session'
+import type { Session } from './session'
 import { Updater } from './updater'
 
 declare const __BUILD_INFO__: BuildInfo
@@ -15,7 +15,10 @@ const FILE_FILTERS = [{ name: 'Universe Project', extensions: ['universe'] }]
 if (process.env.UNIVERSE_USER_DATA) app.setPath('userData', process.env.UNIVERSE_USER_DATA)
 
 let win: BrowserWindow | null = null
+/** Set once the project code has loaded, just after the first window is created. API calls wait for `loaded`. */
 let session: Session
+let markLoaded!: () => void
+const loaded = new Promise<void>((resolve) => (markLoaded = resolve))
 const updater = new Updater((status) => win?.webContents.send(EVENTS.update, status))
 /** A .universe file passed on the command line or via Finder before the window was ready. */
 let pendingOpen: string | undefined = process.argv.find((a) => a.endsWith('.universe'))
@@ -28,7 +31,8 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     backgroundColor: '#0b0e17',
-    title: windowTitle(session.state()),
+    // Only a window made again (macOS) has a project to name.
+    title: session ? windowTitle(session.state()) : 'Universe',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -57,8 +61,15 @@ function createWindow(): void {
   if (pendingOpen) {
     const path = pendingOpen
     pendingOpen = undefined
-    win.webContents.once('did-finish-load', () => void wrap(() => openProject(path)).then((r) => r.ok && push(r.value)))
+    win.webContents.once('did-finish-load', () => void opened(path))
   }
+}
+
+/** Opens a file the system handed over, once the project code has loaded. */
+async function opened(path: string): Promise<void> {
+  await loaded
+  const result = await wrap(() => openProject(path))
+  if (result.ok) push(result.value)
 }
 
 /** Sends state the renderer didn't ask for: after a menu item, or a file opened from the system. */
@@ -239,7 +250,10 @@ type Answer<M extends InvokeMethod> = (...args: Parameters<UniverseApi[M]>) => R
 
 /** Answers one API method; its arguments and reply are checked against `UniverseApi`. */
 function handle<M extends InvokeMethod>(method: M, answer: Answer<M>): void {
-  ipcMain.handle(INVOKE[method], (_e, ...args) => answer(...(args as Parameters<UniverseApi[M]>)))
+  ipcMain.handle(INVOKE[method], async (_e, ...args) => {
+    await loaded
+    return answer(...(args as Parameters<UniverseApi[M]>))
+  })
 }
 
 function registerIpc(): void {
@@ -262,7 +276,7 @@ function registerIpc(): void {
 // macOS delivers double-clicked files through this event, possibly before `ready`.
 app.on('open-file', (event, path) => {
   event.preventDefault()
-  if (win && session) void wrap(() => openProject(path)).then((r) => r.ok && push(r.value))
+  if (win) void opened(path)
   else pendingOpen = path
 })
 
@@ -280,12 +294,15 @@ function keepOffline(): void {
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   keepOffline()
-  session = new Session(app.getPath('userData'))
   registerIpc()
-  buildMenu()
   createWindow()
+  // Evaluating core, db and zod takes a while, so it happens while the window loads rather than before.
+  const { Session } = await import('./session')
+  session = new Session(app.getPath('userData'))
+  markLoaded()
+  buildMenu()
   updater.start()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
