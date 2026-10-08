@@ -249,6 +249,9 @@ export interface GroundChunk {
 /** Bare ground showing through. */
 const EARTH = [122, 102, 74]
 
+/** How far chunk skirts hang below their edges. */
+export const SKIRT_M = 6
+
 /** Vertices along a chunk edge. */
 export const CHUNK_SEGMENTS = 48
 
@@ -300,8 +303,8 @@ export function buildGroundChunk(input: GroundChunkInput): GroundChunk {
       const top1 = j1 * n + i1
       const lat = (j: number) => b.lat0 + ((b.lat1 - b.lat0) * j) / CHUNK_SEGMENTS
       const lon = (i: number) => b.lon0 + ((b.lon1 - b.lon0) * i) / CHUNK_SEGMENTS
-      const low0 = vertex(lat(j0), lon(i0), 6)
-      const low1 = vertex(lat(j1), lon(i1), 6)
+      const low0 = vertex(lat(j0), lon(i0), SKIRT_M)
+      const low1 = vertex(lat(j1), lon(i1), SKIRT_M)
       indices.push(top0, low0, low1, top0, low1, top1, top0, low1, low0, top0, top1, low1)
     }
   }

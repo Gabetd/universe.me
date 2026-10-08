@@ -1,7 +1,9 @@
-import type { LatLon } from '@universe/core'
+import { findBlueprint, type LatLon } from '@universe/core'
 import {
   CHUNK_M,
+  CHUNK_SEGMENTS,
   GroundDetail,
+  SKIRT_M,
   INSTANCE_STRIDE,
   chunkBounds,
   chunkKey,
@@ -17,8 +19,9 @@ import {
 } from '@universe/procgen'
 import { OrbitControls } from '@react-three/drei'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
+import { useUi } from '../store'
 import { useEditor } from './editorStore'
 import { pickWith } from './pick'
 import { LabelLayer, LabelProjector, type ViewLabel } from './labels'
@@ -40,6 +43,8 @@ const MAX_DISTANCE = 2600
 const DRAW_M = 3800
 const RAD = Math.PI / 180
 const inView = (x: number, z: number) => Math.hypot(x, z) <= DRAW_M
+const smooth = (t: number) => t * t * (3 - 2 * t)
+const latLonOf = (p: LatLon): [number, number] => [p.lat, p.lon]
 
 /** Heights of the ground anywhere: the globe's terrain plus the seeded detail the chunks have. */
 interface Ground {
@@ -48,7 +53,17 @@ interface Ground {
   heightAt(x: number, z: number): number
   /** Where something stands there: on the ground, or on the water over it. */
   standAt(x: number, z: number): number
+  /** A height of the bare terrain at a point, levelled where a structure stands. */
+  level(x: number, z: number, y: number): number
   heightAtLatLon(p: LatLon): number
+}
+
+/** Level ground under a structure, blending back into the hills around it. */
+interface Pad {
+  x: number
+  z: number
+  r: number
+  y: number
 }
 
 /**
@@ -57,7 +72,7 @@ interface Ground {
  * by scrolling all the way in on the globe (or the Ground button); scrolling
  * all the way out goes back up.
  */
-export function GroundView(props: SurfaceViewProps & { seed: number }) {
+export function GroundView(props: SurfaceViewProps & { seed: number; worldId: string }) {
   const start = useEditor((s) => s.ground) ?? { lat: 0, lon: 0 }
   const tool = useEditor((s) => s.tool)
   const [origin, setOrigin] = useState<LatLon>(start)
@@ -65,15 +80,47 @@ export function GroundView(props: SurfaceViewProps & { seed: number }) {
   const [loaded, setLoaded] = useState(0)
   const { model, change, seed } = props
   const radiusKm = model.settings.radiusKm
+  // Every structure the world ever has gets level ground, so the ground doesn't change as they come and go.
+  const allStructures = useUi((s) => s.timeline.structures)
+  const blueprints = useUi((s) => s.timeline.blueprints)
+  const sites = useMemo(
+    () =>
+      allStructures.flatMap((st) => {
+        const blueprint = st.ownerId === props.worldId ? findBlueprint(blueprints, st.blueprintId) : undefined
+        return blueprint ? [{ at: st as LatLon, r: blueprintExtent(blueprint) * st.scale * 0.55 }] : []
+      }),
+    [allStructures, blueprints, props.worldId]
+  )
   const ground = useMemo<Ground>(() => {
     const frame = { origin, radiusKm }
     const detail = new GroundDetail(seed, radiusKm)
     const base = modelSampler(model)
-    const heightAtLatLon = (p: LatLon) => detail.elevation(base, p.lat, p.lon)
-    const heightAt = (x: number, z: number) => heightAtLatLon(fromLocal(frame, x, z))
-    return { frame, heightAtLatLon, heightAt, standAt: (x, z) => Math.max(0, heightAt(x, z)) }
+    const raw = (x: number, z: number) => detail.elevation(base, ...latLonOf(fromLocal(frame, x, z)))
+    const pads: Pad[] = sites.flatMap(({ at, r }) => {
+      const [x, z] = toLocal(frame, at)
+      if (!inView(x, z)) return []
+      // The average height over its footprint: some ground is cut away, some built up.
+      const samples = [raw(x, z), ...Array.from({ length: 8 }, (_, k) => raw(x + Math.cos((k * Math.PI) / 4) * r * 0.7, z + Math.sin((k * Math.PI) / 4) * r * 0.7))]
+      const y = samples.reduce((a, b) => a + b, 0) / samples.length
+      return y > 0.5 ? [{ x, z, r, y }] : []
+    })
+    const level = (x: number, z: number, y: number) => {
+      for (const p of pads) {
+        const d = Math.hypot(x - p.x, z - p.z)
+        if (d >= p.r * 1.6) continue
+        const t = d <= p.r ? 1 : 1 - smooth((d - p.r) / (p.r * 0.6))
+        y += (p.y - y) * t
+      }
+      return y
+    }
+    const heightAt = (x: number, z: number) => level(x, z, raw(x, z))
+    const heightAtLatLon = (p: LatLon) => {
+      const [x, z] = toLocal(frame, p)
+      return heightAt(x, z)
+    }
+    return { frame, heightAtLatLon, heightAt, standAt: (x, z) => Math.max(0, heightAt(x, z)), level }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` stands for the terrain heights
-  }, [origin, radiusKm, seed, model, change])
+  }, [origin, radiusKm, seed, model, change, sites])
 
   const labels = useMemo(() => new Map<string, HTMLDivElement>(), [])
   const { structures, characters, pins } = props
@@ -286,9 +333,22 @@ function ChunkView({
   onPointerDown: SurfaceViewProps['onPointerDown']
   onPointerMove: SurfaceViewProps['onPointerMove']
 }) {
+  const bounds = chunkBounds(chunk.id, ground.frame.radiusKm)
+  const [x, z] = toLocal(ground.frame, { lat: bounds.lat0, lon: bounds.lon0 })
+  // East-west, the view's frame and the chunk's own differ by the ratio of their latitudes' cosines.
+  const stretch = Math.cos(ground.frame.origin.lat * RAD) / Math.cos(bounds.lat0 * RAD)
+  /** Levels a height of the chunk (at chunk coordinates) where structures stand. */
+  const level = useCallback((lx: number, lz: number, y: number) => ground.level(x + lx * stretch, z + lz, y), [ground, x, z, stretch])
   const geometry = useMemo(() => {
     const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.BufferAttribute(chunk.positions, 3))
+    const positions = chunk.positions.slice()
+    const grid = (CHUNK_SEGMENTS + 1) ** 2
+    for (let i = 0; i < positions.length; i += 3) {
+      // Skirt vertices hang a few metres under the edge; they move with it.
+      const drop = i / 3 >= grid ? SKIRT_M : 0
+      positions[i + 1] = level(positions[i]!, positions[i + 2]!, positions[i + 1]! + drop) - drop
+    }
+    g.setAttribute('position', new THREE.BufferAttribute(positions, 3))
     // The chunk's colours are sRGB, like the map's; the renderer works in linear light.
     const color = new THREE.Color()
     const colors = new Float32Array(chunk.colors.length)
@@ -298,12 +358,8 @@ function ChunkView({
     g.computeVertexNormals()
     g.computeBoundingSphere()
     return g
-  }, [chunk])
+  }, [chunk, level])
   useEffect(() => () => geometry.dispose(), [geometry])
-  const bounds = chunkBounds(chunk.id, ground.frame.radiusKm)
-  const [x, z] = toLocal(ground.frame, { lat: bounds.lat0, lon: bounds.lon0 })
-  // East-west, the view's frame and the chunk's own differ by the ratio of their latitudes' cosines.
-  const stretch = Math.cos(ground.frame.origin.lat * RAD) / Math.cos(bounds.lat0 * RAD)
   const local = useMemo(() => footprints.map((f) => ({ x: (f.x - x) / stretch, z: f.z - z, r: f.r })).filter((f) => f.x > -f.r && f.x < CHUNK_M * 1.5 + f.r && f.z < f.r && f.z > -CHUNK_M * 1.5 - f.r), [footprints, x, z, stretch])
   const dir = (e: ThreeEvent<PointerEvent | MouseEvent>) => {
     const p = fromLocal(ground.frame, e.point.x, e.point.z)
@@ -322,7 +378,7 @@ function ChunkView({
       </mesh>
       {Object.entries(chunk.plants).map(([plant, list]) =>
         ring > 0 && NEAR_ONLY.includes(plant as Plant) ? null : (
-          <PlantInstances key={plant} plant={plant as Plant} list={list} share={RING_SHARE[ring] ?? 0} foliage={foliage} footprints={local} />
+          <PlantInstances key={plant} plant={plant as Plant} list={list} share={RING_SHARE[ring] ?? 0} foliage={foliage} footprints={local} level={level} />
         )
       )}
     </group>
@@ -341,7 +397,21 @@ function sharedPlantGeometry(plant: Plant, foliage: THREE.Color): THREE.BufferGe
 }
 
 /** All of one kind of plant on a chunk, as one instanced mesh; `share` draws only that fraction of them (farther chunks). */
-function PlantInstances({ plant, list, share, foliage, footprints }: { plant: Plant; list: Float32Array; share: number; foliage: THREE.Color; footprints: Footprint[] }) {
+function PlantInstances({
+  plant,
+  list,
+  share,
+  foliage,
+  footprints,
+  level
+}: {
+  plant: Plant
+  list: Float32Array
+  share: number
+  foliage: THREE.Color
+  footprints: Footprint[]
+  level(x: number, z: number, y: number): number
+}) {
   const mesh = useRef<THREE.InstancedMesh>(null)
   const kept = useMemo(() => {
     const out: number[] = []
@@ -365,13 +435,14 @@ function PlantInstances({ plant, list, share, foliage, footprints }: { plant: Pl
       const s = list[o + 3]!
       q.setFromAxisAngle(up, list[o + 4]!)
       // Rocks sink into the ground a little.
-      m.setMatrixAt(i, matrix.compose(new THREE.Vector3(list[o]!, list[o + 1]! - (plant === 'rock' ? s * 0.1 : 0.05), list[o + 2]!), q, new THREE.Vector3(s, s, s)))
+      const y = level(list[o]!, list[o + 2]!, list[o + 1]!)
+      m.setMatrixAt(i, matrix.compose(new THREE.Vector3(list[o]!, y - (plant === 'rock' ? s * 0.1 : 0.05), list[o + 2]!), q, new THREE.Vector3(s, s, s)))
       m.setColorAt(i, instanceTint(plant, list[o + 5]!, color))
     })
     m.instanceMatrix.needsUpdate = true
     if (m.instanceColor) m.instanceColor.needsUpdate = true
     m.computeBoundingSphere()
-  }, [kept, list, plant])
+  }, [kept, list, plant, level])
   if (!kept.length) return null
   return (
     <instancedMesh key={kept.length} ref={mesh} args={[sharedPlantGeometry(plant, foliage), undefined, kept.length]} raycast={() => null}>
@@ -380,16 +451,13 @@ function PlantInstances({ plant, list, share, foliage, footprints }: { plant: Pl
   )
 }
 
-/** A structure at its real size, sitting on the lowest ground under it so no corner floats. */
+/** A structure at its real size, on the level ground made for it. */
 function GroundStructure({ placed, ground, onClick }: { placed: PlacedStructure; ground: Ground; onClick(id: string): void }) {
   const { structure, state, blueprint, selected, hit } = placed
   const extent = blueprintExtent(blueprint) * structure.scale
   const [x, z] = toLocal(ground.frame, structure)
-  const y = useMemo(() => {
-    const r = extent * 0.35
-    const around = Array.from({ length: 8 }, (_, k) => ground.heightAt(x + Math.cos((k * Math.PI) / 4) * r, z + Math.sin((k * Math.PI) / 4) * r))
-    return Math.max(0, Math.min(ground.heightAt(x, z), ...around))
-  }, [ground, x, z, extent])
+  // On its levelled pad.
+  const y = useMemo(() => ground.standAt(x, z), [ground, x, z])
   if (!inView(x, z)) return null
   return (
     <group
@@ -401,7 +469,7 @@ function GroundStructure({ placed, ground, onClick }: { placed: PlacedStructure;
       <BlueprintParts blueprint={blueprint} condition={state.condition} ghost={!state.exists} />
       {(selected || hit !== undefined) && (
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.3, 0]} raycast={() => null}>
-          <ringGeometry args={[(extent / structure.scale) * 0.6, (extent / structure.scale) * 0.66, 48]} />
+          <ringGeometry args={[(extent / structure.scale) * 0.6, (extent / structure.scale) * 0.6 + Math.max(1, extent * 0.01), 64]} />
           <meshBasicMaterial color={selected ? '#ffffff' : '#ff5a5a'} transparent opacity={selected ? 0.9 : 0.35 + 0.6 * (hit ?? 0)} depthTest={false} />
         </mesh>
       )}

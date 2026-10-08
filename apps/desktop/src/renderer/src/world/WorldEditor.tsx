@@ -161,7 +161,7 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
             <GlobeView {...viewProps} />
           ) : activeView === 'ground' ? (
             // A new spot to go down to opens a fresh view there.
-            <GroundView key={ground ? `${ground.lat},${ground.lon}` : ''} {...viewProps} seed={world.seed} />
+            <GroundView key={ground ? `${ground.lat},${ground.lon}` : ''} {...viewProps} seed={world.seed} worldId={world.id} />
           ) : (
             <MapView {...viewProps} />
           )
