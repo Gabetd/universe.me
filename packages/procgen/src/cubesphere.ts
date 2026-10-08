@@ -45,8 +45,8 @@ export interface FacePoint {
   t: number
 }
 
-/** Inverse of faceToDir. `dir` need not be normalized. */
-export function dirToFace(x: number, y: number, z: number): FacePoint {
+/** Inverse of faceToDir. `dir` need not be normalized. Pass `out` to fill it instead of a new object. */
+export function dirToFace(x: number, y: number, z: number, out: FacePoint = { face: 0, s: 0, t: 0 }): FacePoint {
   const ax = Math.abs(x)
   const ay = Math.abs(y)
   const az = Math.abs(z)
@@ -64,7 +64,10 @@ export function dirToFace(x: number, y: number, z: number): FacePoint {
     u = z > 0 ? x / az : -x / az
     v = y / az
   }
-  return { face, s: Math.atan(u) / WARP, t: Math.atan(v) / WARP }
+  out.face = face
+  out.s = Math.atan(u) / WARP
+  out.t = Math.atan(v) / WARP
+  return out
 }
 
 /** Grid coordinate (cell units, may be fractional) for a face coordinate. */

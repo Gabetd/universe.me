@@ -11,8 +11,8 @@ import {
   type WorldSettings
 } from '@universe/core'
 import { autoBiome, worldPalette, type Climate, type Palette } from './biomes'
-import { angleBetween, cellDirections, dirToFace, faceToDir, toGrid, type Vec3 } from './cubesphere'
-import { DEG, clamp } from './math'
+import { angleBetween, cellDirections, dirToFace, faceToDir, toGrid, type FacePoint, type Vec3 } from './cubesphere'
+import { DEG, bilerp, clamp } from './math'
 import type { BaseTerrain } from './generate'
 
 /** What a star and orbit do to a world's climate: degrees warmer than Earth, and how strongly it cools toward the poles. */
@@ -80,6 +80,8 @@ export class TerrainModel {
   /** The climate from the world's star and orbit, added to its own settings; undefined keeps it Earth-like. */
   private sky: SkyClimate | undefined
   private climateFor: { settings: WorldSettings; sky: SkyClimate | undefined; climate: Climate } | undefined
+  /** What `locate` fills in. */
+  private located: FacePoint = { face: 0, s: 0, t: 0 }
 
   constructor(
     public settings: WorldSettings,
@@ -137,27 +139,43 @@ export class TerrainModel {
     return this.climateFor.climate
   }
 
-  /** Nearest cell to a direction. */
-  cellAt(x: number, y: number, z: number): { face: number; cell: number } {
-    const { face, s, t } = dirToFace(x, y, z)
-    const i = clampCell(Math.round(toGrid(s)))
-    const j = clampCell(Math.round(toGrid(t)))
-    return { face, cell: j * TERRAIN_RES + i }
+  /**
+   * Where a direction falls on the cube, for `cellOf` and `heightOf` when
+   * both are wanted. The same object is filled on every call, so read it
+   * before the next.
+   */
+  locate(x: number, y: number, z: number): FacePoint {
+    return dirToFace(x, y, z, this.located)
   }
 
-  /** Bilinearly interpolated height in meters for any direction. */
-  sampleHeight(x: number, y: number, z: number): number {
-    const { face, s, t } = dirToFace(x, y, z)
+  /** Nearest cell to a located point, on its face. */
+  cellOf({ s, t }: FacePoint): number {
+    return clampCell(Math.round(toGrid(t))) * TERRAIN_RES + clampCell(Math.round(toGrid(s)))
+  }
+
+  /** Bilinearly interpolated height in meters at a located point. */
+  heightOf({ face, s, t }: FacePoint): number {
     const gx = clamp(toGrid(s), 0, TERRAIN_RES - 1)
     const gy = clamp(toGrid(t), 0, TERRAIN_RES - 1)
     const i0 = Math.floor(gx)
     const j0 = Math.floor(gy)
     const i1 = Math.min(i0 + 1, TERRAIN_RES - 1)
-    const j1 = Math.min(j0 + 1, TERRAIN_RES - 1)
-    const fx = gx - i0
-    const fy = gy - j0
-    const h = (i: number, j: number) => this.height(face, j * TERRAIN_RES + i)
-    return (h(i0, j0) * (1 - fx) + h(i1, j0) * fx) * (1 - fy) + (h(i0, j1) * (1 - fx) + h(i1, j1) * fx) * fy
+    const r0 = j0 * TERRAIN_RES
+    const r1 = Math.min(j0 + 1, TERRAIN_RES - 1) * TERRAIN_RES
+    const base = this.base.height[face]!
+    const edits = this.heightEdits[face]!
+    return bilerp(base[r0 + i0]! + edits[r0 + i0]!, base[r0 + i1]! + edits[r0 + i1]!, base[r1 + i0]! + edits[r1 + i0]!, base[r1 + i1]! + edits[r1 + i1]!, gx - i0, gy - j0)
+  }
+
+  /** Nearest cell to a direction. */
+  cellAt(x: number, y: number, z: number): { face: number; cell: number } {
+    const p = this.locate(x, y, z)
+    return { face: p.face, cell: this.cellOf(p) }
+  }
+
+  /** Bilinearly interpolated height in meters for any direction. */
+  sampleHeight(x: number, y: number, z: number): number {
+    return this.heightOf(this.locate(x, y, z))
   }
 
   /** Writes the cell's display color (no lighting) into `out` at `offset`. */

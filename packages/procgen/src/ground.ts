@@ -2,7 +2,7 @@ import type { LatLon } from '@universe/core'
 import type { NoiseFunction3D } from 'simplex-noise'
 import { BIOME } from './biomes'
 import { latLonToDir, type Vec3 } from './cubesphere'
-import { RAD, TAU, clamp, clamp01, wrapLon } from './math'
+import { RAD, TAU, bilerp, clamp, clamp01, wrapLon } from './math'
 import { octaves, seededNoise } from './noise'
 import { cellSeed, rng, subSeed } from './random'
 import type { TerrainModel } from './terrain-model'
@@ -89,11 +89,11 @@ export type BaseSampler = (lat: number, lon: number) => { elevation: number; bio
 
 /** The base terrain from a live model (in the UI thread). */
 export function modelSampler(model: TerrainModel): BaseSampler {
-  const dir: [number, number, number] = [0, 0, 0]
+  const dir: Vec3 = [0, 0, 0]
   return (lat, lon) => {
     latLonToDir(lat, lon, dir)
-    const { face, cell } = model.cellAt(...dir)
-    return { elevation: model.sampleHeight(...dir) - model.settings.seaLevel, biome: model.biome(face, cell) }
+    const p = model.locate(dir[0], dir[1], dir[2])
+    return { elevation: model.heightOf(p) - model.settings.seaLevel, biome: model.biome(p.face, model.cellOf(p)) }
   }
 }
 
@@ -128,10 +128,9 @@ export function gridSampler(grid: BaseGrid): BaseSampler {
     const gy = clamp(((lat - b.lat0) / (b.lat1 - b.lat0)) * (GRID - 1), 0, GRID - 1)
     const i0 = Math.min(GRID - 2, Math.floor(gx))
     const j0 = Math.min(GRID - 2, Math.floor(gy))
-    const fx = gx - i0
-    const fy = gy - j0
-    const e = (i: number, j: number) => grid.elevation[j * GRID + i]!
-    const elevation = (e(i0, j0) * (1 - fx) + e(i0 + 1, j0) * fx) * (1 - fy) + (e(i0, j0 + 1) * (1 - fx) + e(i0 + 1, j0 + 1) * fx) * fy
+    const e = grid.elevation
+    const k = j0 * GRID + i0
+    const elevation = bilerp(e[k]!, e[k + 1]!, e[k + GRID]!, e[k + GRID + 1]!, gx - i0, gy - j0)
     return { elevation, biome: grid.biome[Math.round(gy) * GRID + Math.round(gx)]! }
   }
 }

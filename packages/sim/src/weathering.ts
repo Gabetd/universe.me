@@ -29,9 +29,11 @@ const SALT_KM = 25
 
 export function exposureAt(model: TerrainModel, climate: WorldClimate | undefined, lat: number, lon: number): Exposure {
   const dir = latLonToDir(lat, lon)
-  const { face, cell } = model.cellAt(...dir)
+  const at = model.locate(...dir)
+  const { face } = at
+  const cell = model.cellOf(at)
   const sea = model.settings.seaLevel
-  const elevation = model.sampleHeight(...dir) - sea
+  const elevation = model.heightOf(at) - sea
   const c = model.climate
   const temperature = surfaceTemperature(lat, elevation, c)
   const swing = (climate?.seasonalSwingC ?? 12) * (0.4 + 0.6 * Math.sin(Math.abs(lat) * RAD))
