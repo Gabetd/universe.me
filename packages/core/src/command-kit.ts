@@ -159,9 +159,9 @@ export function edgeTable(store: Store): Edges {
 
 /**
  * Checks an edge: both ends are live records of its owner, and no other live
- * edge has its key. An update that keeps the ends can't make a duplicate, so
- * it isn't looked for (links share an owner with their ends, so only that
- * owner's edges are).
+ * edge has its key. Edges share their ends' owner, so only that owner's edges
+ * are looked at, and an update that keeps the ends can't make a duplicate, so
+ * then none are.
  */
 export function checkEdge<K extends EdgeKind>(store: Store, kind: K, ends: RecordKind, edge: RecordOf<K>, check: Check<K>, elsewhere: string, duplicate: string): void {
   for (const id of [edge.fromId, edge.toId]) {

@@ -52,10 +52,9 @@ export function recordCrud<K extends RecordKind, F extends z.ZodRawShape, const 
 }
 
 /** The plain handler of a delete: the record goes on its own. */
-export const deletes =
-  <K extends RecordKind>(kind: K): Handler<z.infer<typeof ById>> =>
-  (store, { id }, ctx, run) =>
-    deleteWith(store, ctx, run, { kind, id })
+export function deletes<K extends RecordKind>(kind: K): Handler<z.infer<typeof ById>> {
+  return (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind, id })
+}
 
 /** Checks a record against the rest of the project. */
 export const validate = <K extends RecordKind>(store: Store, kind: K, record: RecordOf<K>, check: Partial<Check<K>> = {}) =>
