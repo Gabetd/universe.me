@@ -1,4 +1,4 @@
-import { addChild, expect, fill, inspector, newWorld, playhead, row, setPlayhead, test, wheel } from './helpers'
+import { addChild, expect, fill, inspector, newWorld, playhead, row, setPlayhead, shot, test, wheel } from './helpers'
 
 test('star systems: real orbits at the playhead, an editable star and orbits, derived calendars', async ({ h }) => {
   const { page } = h
@@ -15,9 +15,8 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await row(page, 'Sol').click()
   await expect(inspector(page).getByLabel('Star')).toContainText('5,772 K')
   await page.getByRole('button', { name: '▶ 1 month/s' }).click()
-  await page.waitForTimeout(1500)
+  await shot(page, '80-star-system', { wait: 1500 })
   await page.getByRole('button', { name: 'Pause' }).click()
-  await page.screenshot({ path: 'test-results/80-star-system.png' })
 
   // Terra's orbit: made up until changed; a 30-hour day changes its calendar.
   await row(page, 'Terra').click()
@@ -27,7 +26,7 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await expect(inspector(page).getByLabel('Orbit', { exact: true })).not.toContainText('Made up from the seed')
   await expect(inspector(page).getByLabel('Worked out from the orbit')).toContainText('days in')
   await expect(page.getByTestId('sky-readout')).toContainText('Luna:')
-  await page.screenshot({ path: 'test-results/81-planet-moons.png' })
+  await shot(page, '81-planet-moons')
 
   // The timeline has a track of the moon's phases and the eclipses; an eclipse becomes an event with a click.
   await row(page, 'Terra Surface').click()
@@ -36,7 +35,7 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await wheel(page, page.locator('.tl-ruler'), -500, 5)
   await expect(page.locator('.tl-moon.full-moon').first()).toBeAttached()
   await expect(page.locator('.tl-eclipse').first()).toBeAttached()
-  await page.screenshot({ path: 'test-results/82-moon-track.png' })
+  await shot(page, '82-moon-track')
   const eclipse = page.locator('.tl-eclipse').first()
   const name = (await eclipse.getAttribute('aria-label'))!.split(',')[0]!
   await eclipse.click()
@@ -57,8 +56,7 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await fill(page, 'Distance (AU)', '1.25')
   await row(page, 'Terra Surface').click()
   await expect(inspector(page).getByLabel('Climate', { exact: true })).toContainText('−')
-  await page.waitForTimeout(1500)
-  await page.screenshot({ path: 'test-results/83-colder-world.png' })
+  await shot(page, '83-colder-world', { wait: 1500 })
   await page.getByRole('button', { name: /Undo/ }).click()
 
   // Undoing the rename, the eclipse event and the orbit goes back to the Earth calendar.

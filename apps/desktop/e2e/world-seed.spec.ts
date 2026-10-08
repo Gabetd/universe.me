@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { addChild, expect, fill, inspector, newWorld, row, SLOW, test } from './helpers'
+import { addChild, expect, fill, inspector, newWorld, row, shot, SLOW, test } from './helpers'
 
 /** A world's node seed and generation settings, by world name. */
 const world = (page: Page, name: string) =>
@@ -28,8 +28,7 @@ test('a seed decides the whole world and locks its options; a world code recreat
   const code = (await page.getByTestId('world-code').textContent())!
   expect(code).toMatch(/^W1-/)
   await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: SLOW })
-  await page.waitForTimeout(800)
-  await page.screenshot({ path: 'test-results/30-seeded-world.png' })
+  await shot(page, '30-seeded-world', { wait: 800 })
 
   // The same seed on another planet grows the same world.
   await row(page, 'Sol').click()
@@ -54,6 +53,5 @@ test('a seed decides the whole world and locks its options; a world code recreat
   await expect.poll(async () => (await world(page, 'Second Surface')).settings.terrain.temperature).toBe(-26)
   await inspector(page).getByLabel('Vegetation').fill('#7a3fa0')
   await expect.poll(async () => (await world(page, 'Second Surface')).settings.terrain.vegetationColor).toBe('#7a3fa0')
-  await page.waitForTimeout(800)
-  await page.screenshot({ path: 'test-results/31-custom-world.png' })
+  await shot(page, '31-custom-world', { wait: 800 })
 })

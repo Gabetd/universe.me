@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { clickAt, expect, newWorld, openMap, state, test } from './helpers'
+import { clickAt, expect, newWorld, openGlobe, openMap, shot, state, test } from './helpers'
 
 /** A tiny binary glTF: a square pyramid, 2 units tall. */
 function pyramidGlb(): Buffer {
@@ -61,12 +61,10 @@ test('build a blueprint from parts, import a glTF model, and place both', async 
   await roof.getByLabel('H size').fill('6')
   await roof.getByLabel('D size').fill('12')
   await roof.getByLabel('Y position').fill('18')
-  await page.waitForTimeout(500)
-  await page.screenshot({ path: 'test-results/50-blueprint-builder.png' })
+  await shot(page, '50-blueprint-builder', { wait: 500 })
   // Aged to a ruin, the wooden roof is gone.
   await builder.getByLabel('Preview condition').fill('15')
-  await page.waitForTimeout(300)
-  await page.screenshot({ path: 'test-results/51-blueprint-ruin.png' })
+  await shot(page, '51-blueprint-ruin', { wait: 300 })
   await builder.getByRole('button', { name: 'Add to library' }).click()
   await expect(builder).toBeHidden()
   await expect.poll(async () => (await state(page, 'timeline')).blueprints.map((b) => [b.name, b.parts.length])).toEqual([['Keep', 2]])
@@ -88,8 +86,7 @@ test('build a blueprint from parts, import a glTF model, and place both', async 
   await expect(builder.getByLabel('Blueprint name')).toHaveValue('Obelisk')
   await builder.getByLabel('Real height (m)').fill('40')
   await builder.getByLabel('Material').selectOption('megalith')
-  await page.waitForTimeout(800)
-  await page.screenshot({ path: 'test-results/52-model-import.png' })
+  await shot(page, '52-model-import', { wait: 800 })
   await builder.getByRole('button', { name: 'Add to library' }).click()
   await expect.poll(async () => (await state(page, 'timeline')).blueprints.find((b) => b.name === 'Obelisk')?.model).toMatchObject({ material: 'megalith', heightM: 40 })
 
@@ -97,8 +94,7 @@ test('build a blueprint from parts, import a glTF model, and place both', async 
   await clickAt(page, 'map', [0.53, 0.45])
   await page.keyboard.press('Escape')
   await expect.poll(async () => (await state(page, 'timeline')).structures.map((s) => s.name)).toEqual(['Keep', 'Obelisk'])
-  await page.getByRole('button', { name: '🌐 Globe' }).click()
-  await page.waitForTimeout(1500)
-  await page.screenshot({ path: 'test-results/53-blueprints-globe.png' })
+  await openGlobe(page)
+  await shot(page, '53-blueprints-globe')
   expect(errors).toEqual([])
 })

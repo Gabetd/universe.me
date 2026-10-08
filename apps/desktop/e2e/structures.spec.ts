@@ -1,4 +1,4 @@
-import { clickAt, expect, fill, inspector, newWorld, openMap, setPlayhead, state, test, wheel } from './helpers'
+import { clickAt, expect, fill, inspector, newWorld, openGlobe, openMap, setPlayhead, shot, state, test, wheel } from './helpers'
 
 test('place structures, weather them, and let events damage and destroy them', async ({ h }) => {
   const { page } = h
@@ -37,7 +37,7 @@ test('place structures, weather them, and let events damage and destroy them', a
   await inspector(page).getByLabel('Reaches', { exact: true }).selectOption('radius')
   await fill(page, 'Radius (km)', '400')
   await expect(inspector(page).getByText(/Reaches 2 structures/)).toBeVisible()
-  await page.screenshot({ path: 'test-results/40-effect-preview.png' })
+  await shot(page, '40-effect-preview')
 
   await page.locator('.region-row', { hasText: 'Stone castle' }).click()
   await expect(inspector(page).getByTestId('condition')).toHaveText(/^60 · Weathered/)
@@ -52,20 +52,18 @@ test('place structures, weather them, and let events damage and destroy them', a
   await inspector(page).getByLabel('Structures').getByLabel('Stone castle').check()
   await page.locator('.region-row', { hasText: 'Stone castle' }).click()
   await expect(inspector(page).getByTestId('condition')).toHaveText('Gone')
-  await page.getByRole('button', { name: '🌐 Globe' }).click()
+  await openGlobe(page)
   await setPlayhead(page, '1260')
-  await page.waitForTimeout(1500)
-  await page.screenshot({ path: 'test-results/41-structures-globe.png' })
+  await shot(page, '41-structures-globe')
   // Up close.
   await wheel(page, page.getByTestId('globe'), -400, 12)
-  await page.waitForTimeout(800)
-  await page.screenshot({ path: 'test-results/42-structures-close.png' })
+  await shot(page, '42-structures-close', { wait: 800 })
 
   // Weathering's own milestones are on the timeline; one click makes the ruin a real event, placed at the house.
   await wheel(page, page.locator('.tl-ruler'), 500, 3)
   const ruin = page.getByLabel('Weathering').getByRole('button', { name: /House falls into ruin/ })
   await expect(ruin).toBeAttached()
-  await page.screenshot({ path: 'test-results/43-weathering.png' })
+  await shot(page, '43-weathering')
   await ruin.click()
   await expect(inspector(page).getByLabel('Event title')).toHaveValue('House falls into ruin')
 })

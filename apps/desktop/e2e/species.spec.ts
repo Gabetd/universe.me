@@ -1,4 +1,4 @@
-import { expect, newWorld, SLOW, state, test } from './helpers'
+import { expect, newWorld, shot, SLOW, state, test } from './helpers'
 
 test('species: suggested from the world’s biomes, a food web, links and warnings', async ({ h }) => {
   const { page } = h
@@ -12,7 +12,7 @@ test('species: suggested from the world’s biomes, a food web, links and warnin
   const { lifeforms, ecolinks } = await state(page, 'timeline')
   expect(ecolinks.length).toBeGreaterThan(3)
   expect(lifeforms.some((s) => s.diet === 'producer')).toBe(true)
-  await page.screenshot({ path: 'test-results/90-food-web.png' })
+  await shot(page, '90-food-web')
 
   // A new predator with nothing to eat gets a warning, until it eats something.
   await page.getByRole('button', { name: '+ Species' }).click()
@@ -25,7 +25,7 @@ test('species: suggested from the world’s biomes, a food web, links and warnin
   await page.getByLabel('Link to').selectOption({ label: prey.name })
   await expect(page.getByText('Dragon eats nothing')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Dragon' })).toBeVisible()
-  await page.screenshot({ path: 'test-results/91-species-editor.png' })
+  await shot(page, '91-species-editor')
 
   // Deleting it takes its links; undo brings both back.
   await page.getByRole('button', { name: 'Delete species' }).click()

@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { center, clickAt, dragPoints, expect, fill, inspector, newWorld, openMap, playhead, setPlayhead, state, test } from './helpers'
+import { center, clickAt, dragPoints, expect, fill, inspector, newWorld, openMap, playhead, setPlayhead, shot, state, test } from './helpers'
 
 const node = (page: Page, title: string) => page.locator('.event-node', { hasText: title })
 
@@ -53,17 +53,16 @@ test('events become nodes on the world canvas: move, hide, link, recede with tim
   await setPlayhead(page, '1255')
   await page.waitForTimeout(400)
   const during = await width(page, 'War of the Straits')
-  await page.screenshot({ path: 'test-results/30-canvas-1255.png' })
+  await shot(page, '30-canvas-1255')
   await setPlayhead(page, '1340')
   await page.waitForTimeout(400)
   expect(await width(page, 'War of the Straits')).toBeLessThan(during * 0.8)
-  await page.screenshot({ path: 'test-results/31-canvas-1340.png' })
+  await shot(page, '31-canvas-1340')
 
   // Clicking a node goes to when and where it happened.
   await node(page, 'War of the Straits').click()
   await expect(page.getByTestId('map')).toBeVisible()
   await expect(playhead(page)).toHaveValue('1250')
   await expect(inspector(page).getByLabel('Event title', { exact: true })).toHaveValue('War of the Straits')
-  await page.waitForTimeout(300)
-  await page.screenshot({ path: 'test-results/32-canvas-jump.png' })
+  await shot(page, '32-canvas-jump', { wait: 300 })
 })

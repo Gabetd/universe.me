@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { clickAt, expect, fill, inspector, newWorld, openMap, setPlayhead, SLOW, state, test } from './helpers'
+import { clickAt, expect, fill, inspector, newWorld, openMap, setPlayhead, shot, SLOW, state, test } from './helpers'
 
 const characters = async (page: Page) => (await state(page, 'timeline')).characters
 
@@ -37,7 +37,7 @@ test('characters live, travel from place to place, and go to events', async ({ h
   await inspector(page).getByLabel('Go to an event').selectOption({ label: '1040 · The Council' })
   await expect.poll(async () => (await characters(page))[0]?.stops.length).toBe(3)
   await expect(inspector(page).getByLabel('Journey')).toContainText('for The Council')
-  await page.screenshot({ path: 'test-results/70-character-map.png' })
+  await shot(page, '70-character-map')
 
   // Before she's born, and after she dies, she's nowhere.
   await setPlayhead(page, '990')
@@ -50,8 +50,7 @@ test('characters live, travel from place to place, and go to events', async ({ h
   await setPlayhead(page, '1050')
   await inspector(page).getByRole('button', { name: '🔍 View up close' }).click()
   await expect(page.locator('[data-chunks="25"]')).toBeVisible({ timeout: SLOW })
-  await page.waitForTimeout(500)
-  await page.screenshot({ path: 'test-results/71-character-ground.png' })
+  await shot(page, '71-character-ground', { wait: 500 })
 
   // Delete removes her; undo brings her back.
   await page.locator('.region-row', { hasText: 'Aria' }).click()

@@ -9,12 +9,12 @@
   3. bad code to refactor: unclear names, long functions, dead code.
   Fix what's found, then run `pnpm ci:local` (the GitHub pipelines replayed locally on a clean checkout of HEAD) and push only when it passes. The pre-push hook runs it too (`git config core.hooksPath .githooks` once per clone).
 - Keep PLAN.md's milestone checklist and the in-app roadmap (`apps/desktop/src/renderer/src/roadmap.ts`) in sync.
-- After each push that adds features, refresh the **build log** artifact (https://claude.ai/artifact/M6aq3G6qUdXsqonJebk5qk, source `docs/build-log/index.html`): run the e2e suite, `python3 scripts/build-log-images.py`, add a `LOG` entry (and any new `SHOTS`/`AREAS`) for the new build, then republish it to that URL with the `img/*.webp` files.
+- After each push that adds features, refresh the **build log** artifact (https://claude.ai/artifact/M6aq3G6qUdXsqonJebk5qk, source `docs/build-log/index.html`): run the e2e suite with pictures (`UNIVERSE_SHOTS=1 xvfb-run -a pnpm test:e2e`), `python3 scripts/build-log-images.py`, add a `LOG` entry (and any new `SHOTS`/`AREAS`) for the new build, then republish it to that URL with the `img/*.webp` files.
 
 ## Commands
 - `pnpm ci:local`: everything CI runs on Linux (actionlint, frozen install, lint, typecheck, unit, e2e, small-screen e2e, packaging, packaged-app e2e, update manifest) against committed code. `--quick` skips packaging.
 - `pnpm check`: lint + typecheck + unit tests
-- `xvfb-run -a pnpm test:e2e`: build, then drive the real Electron app (screenshots land in `apps/desktop/test-results/`)
+- `xvfb-run -a pnpm test:e2e`: build, then drive the real Electron app (with `UNIVERSE_SHOTS=1` it also takes the build log's screenshots, into `apps/desktop/test-results/`)
 - `pnpm dev`: run the app with hot reload
 
 ## Architecture

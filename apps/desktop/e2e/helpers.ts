@@ -228,10 +228,59 @@ export async function menu(app: ElectronApplication, top: string, item: string):
 
 export const closeProject = (app: ElectronApplication) => menu(app, 'File', 'Close Project')
 
-/** Switches the world to its flat map, once its terrain is ready. */
+/** Waits for `count` frames of the page. */
+export const frames = (page: Page, count = 2) =>
+  page.evaluate(async (n) => {
+    for (let i = 0; i < n; i++) await new Promise((next) => requestAnimationFrame(next))
+  }, count)
+
+/**
+ * Waits for the views to be drawn: nothing is generating terrain, no view says it isn't ready yet
+ * (the globe, map and ground views mark themselves data-ready="false" until their first frame with
+ * terrain), and two frames have passed.
+ */
+export async function viewReady(page: Page): Promise<void> {
+  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: SLOW })
+  await expect(page.locator('[data-ready="false"]')).toHaveCount(0, { timeout: SLOW })
+  await frames(page)
+}
+
+/** Switches the world to its flat map, once it's drawn. */
 export async function openMap(page: Page): Promise<void> {
   await page.getByRole('button', { name: '🗺 Map' }).click()
-  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: SLOW })
+  await expect(page.getByTestId('map')).toBeVisible()
+  await viewReady(page)
+}
+
+/** Switches the world to its globe, once it's drawn. */
+export async function openGlobe(page: Page): Promise<void> {
+  await page.getByRole('button', { name: '🌐 Globe' }).click()
+  await expect(page.getByTestId('globe')).toBeVisible()
+  await viewReady(page)
+}
+
+const SHOTS = process.env.UNIVERSE_SHOTS === '1'
+
+/**
+ * A picture of the window for the build log (test-results/<name>.png), taken only when
+ * UNIVERSE_SHOTS=1. It waits for the views to be drawn and for animations to finish, plus `wait` ms
+ * for what nothing signals (a texture made in a worker, the camera easing to a stop). A picture
+ * that can't be taken only warns: it isn't what the test checks.
+ */
+export async function shot(page: Page, name: string, { wait = 0 }: { wait?: number } = {}): Promise<void> {
+  if (!SHOTS) return
+  try {
+    await viewReady(page)
+    await page.evaluate(async () => {
+      const finite = document.getAnimations().filter((a) => a.effect?.getComputedTiming().endTime !== Infinity)
+      const ended = Promise.all(finite.map((a) => a.finished.catch(() => undefined)))
+      await Promise.race([ended, new Promise((give) => setTimeout(give, 5000))])
+    })
+    if (wait) await page.waitForTimeout(wait)
+    await page.screenshot({ path: `test-results/${name}.png`, timeout: SLOW })
+  } catch (error) {
+    console.warn(`No picture ${name}: ${(error as Error).message}`)
+  }
 }
 
 export interface Point {

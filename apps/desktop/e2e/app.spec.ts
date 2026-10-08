@@ -1,9 +1,9 @@
-import { addChild, closeProject, expect, inspector, menu, newProject, row, state, test, writeNotes } from './helpers'
+import { addChild, closeProject, expect, inspector, menu, newProject, row, shot, state, test, writeNotes } from './helpers'
 
 test('create a universe, build a hierarchy, undo/redo, and reopen it', async ({ h }) => {
   const { app, page } = h
   await expect(page.getByRole('heading', { name: 'Universe' })).toBeVisible()
-  await page.screenshot({ path: 'test-results/01-welcome.png' })
+  await shot(page, '01-welcome')
   await newProject(h, 'Aerth Saga')
 
   await addChild(page, '+ Galaxy Cluster', 'Virgo Cluster')
@@ -22,8 +22,7 @@ test('create a universe, build a hierarchy, undo/redo, and reopen it', async ({ 
   await expect(inspector(page).getByRole('button', { name: '+ World surface' })).toHaveCount(0)
 
   await row(page, 'Sol').click()
-  await page.waitForTimeout(300)
-  await page.screenshot({ path: 'test-results/02-star-system.png' })
+  await shot(page, '02-star-system', { wait: 300 })
 
   // Delete Marrs, undo brings it back with its notes, redo removes it again.
   await row(page, 'Marrs').click()
@@ -37,8 +36,7 @@ test('create a universe, build a hierarchy, undo/redo, and reopen it', async ({ 
 
   await page.locator('.crumb button', { hasText: 'Sol' }).click()
   await row(page, 'Aerth').click()
-  await page.waitForTimeout(300)
-  await page.screenshot({ path: 'test-results/03-planet.png' })
+  await shot(page, '03-planet', { wait: 300 })
 
   // Everything was written to disk: close and reopen from the recent list.
   await closeProject(app)

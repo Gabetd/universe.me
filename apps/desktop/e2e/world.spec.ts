@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { closeProject, drag, drawRegion, expect, fill, inspector, newWorld, row, SLOW, test, writeNotes } from './helpers'
+import { closeProject, drag, drawRegion, expect, fill, inspector, newWorld, openGlobe, row, shot, SLOW, test, viewReady, writeNotes } from './helpers'
 
 const worldState = (page: Page) =>
   page.evaluate(async () => {
@@ -14,11 +14,10 @@ test('edit a world: sculpt, paint, undo, draw a region, and keep it after reopen
 
   // The globe renders once terrain generation finishes in the worker.
   await expect(page.getByTestId('globe')).toBeVisible({ timeout: SLOW })
-  await expect(page.getByText('Generating terrain…')).toHaveCount(0)
-  await page.waitForTimeout(800)
-  await page.screenshot({ path: 'test-results/10-globe.png' })
+  await viewReady(page)
+  await shot(page, '10-globe', { wait: 800 })
 
-  // Sculpt on the globe.
+  // Sculpt on the globe (drawn, so the drag lands on it).
   await page.getByRole('button', { name: 'Raise' }).click()
   await drag(page, 'globe', [0.45, 0.45], [0.55, 0.5])
   await expect.poll(async () => (await worldState(page)).revision).toBe(1)
@@ -52,12 +51,10 @@ test('edit a world: sculpt, paint, undo, draw a region, and keep it after reopen
   await page.locator('.panel-title').click()
   await expect.poll(async () => (await worldState(page)).seaLevel).toBe(300)
   await page.getByRole('button', { name: 'Navigate' }).click()
-  await page.waitForTimeout(500)
-  await page.screenshot({ path: 'test-results/11-map.png' })
+  await shot(page, '11-map', { wait: 500 })
 
-  await page.getByRole('button', { name: '🌐 Globe' }).click()
-  await page.waitForTimeout(800)
-  await page.screenshot({ path: 'test-results/12-globe-edited.png' })
+  await openGlobe(page)
+  await shot(page, '12-globe-edited')
 
   // Reopen: region, notes and terrain edits are all in the file.
   await closeProject(app)

@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { center, clickAt, closeProject, dragPoints, drawRegion, expect, fill, inspector, newWorld, openMap, row, setPlayhead, state, test } from './helpers'
+import { center, clickAt, closeProject, dragPoints, drawRegion, expect, fill, inspector, newWorld, openGlobe, openMap, row, setPlayhead, shot, state, test } from './helpers'
 
 const timeline = (page: Page) => state(page, 'timeline')
 const eventBar = (page: Page, title: string) => page.locator('.tl-event', { hasText: title })
@@ -85,7 +85,7 @@ test('build a history: events, dates, links, groups, eras and warnings', async (
   await inspector(page).getByLabel('Lane').selectOption({ label: 'New lane' })
   await expect.poll(async () => (await timeline(page)).events.find((e) => e.title === 'Refugees arrive')?.laneId).not.toBeNull()
 
-  await page.screenshot({ path: 'test-results/20-timeline.png' })
+  await shot(page, '20-timeline')
 
   // Delete an event with the keyboard; its link goes too, and both come back with undo.
   await eventBar(page, 'Refugees arrive').click()
@@ -140,11 +140,9 @@ test('place events on the world and watch regions come and go with the playhead'
   // Selecting the event highlights where it happened, and its pin, on the map.
   await page.getByRole('button', { name: 'Fit' }).click()
   await eventBar(page, 'Founding of Aster').click()
-  await page.waitForTimeout(400)
-  await page.screenshot({ path: 'test-results/21-world-at-time.png' })
-  await page.getByRole('button', { name: '🌐 Globe' }).click()
-  await page.waitForTimeout(1500)
-  await page.screenshot({ path: 'test-results/22-globe-at-time.png' })
+  await shot(page, '21-world-at-time', { wait: 400 })
+  await openGlobe(page)
+  await shot(page, '22-globe-at-time')
 
   // The history survives a reopen.
   await closeProject(app)

@@ -4,7 +4,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { launch, menu, SLOW } from './helpers'
+import { launch, menu, shot, SLOW } from './helpers'
 
 /**
  * How each platform's self-install is exercised: the "new version" served,
@@ -56,7 +56,7 @@ test('offers a newer build, can be dismissed, and upgrades itself with one click
 
   const banner = page.getByRole('status', { name: 'Update' })
   await expect(banner).toContainText('Universe 99.0.0 is available', { timeout: SLOW })
-  await page.screenshot({ path: 'test-results/update-banner.png' })
+  await shot(page, 'update-banner')
 
   // Dismissed, it stays away until asked for again.
   await banner.getByRole('button', { name: 'Dismiss update' }).click()

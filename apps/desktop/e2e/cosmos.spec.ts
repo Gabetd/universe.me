@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { expect, inspector, newProject, row, state, test, wheel } from './helpers'
+import { expect, inspector, newProject, row, shot, state, test, wheel } from './helpers'
 
 const nodes = (page: Page) => state(page, 'nodes')
 
@@ -40,28 +40,24 @@ test('scale navigation: claim a cluster, a galaxy and a star from what the seeds
 
   // The universe: clusters strung along the cosmic web, all generated.
   await expect(page.getByTestId('viewport')).toBeVisible()
-  await page.waitForTimeout(500)
-  await page.screenshot({ path: 'test-results/100-universe.png' })
+  await shot(page, '100-universe', { wait: 500 })
 
   // Claim a cluster and go there.
   await clickNearestGenerated(page)
   await page.getByRole('button', { name: 'Claim and go there' }).click()
   await expect.poll(async () => (await nodes(page)).filter((n) => n.kind === 'galaxy_cluster').length).toBe(1)
   await expect(page.locator('.viewport-overlay.top')).toContainText('Galaxy Cluster view')
-  await page.waitForTimeout(600)
-  await page.screenshot({ path: 'test-results/101-cluster.png' })
+  await shot(page, '101-cluster', { wait: 600 })
 
   // A galaxy in it.
   await clickNearestGenerated(page)
   await page.getByRole('button', { name: 'Claim and go there' }).click()
   await expect(page.locator('.viewport-overlay.top')).toContainText('Galaxy view')
-  await page.waitForTimeout(600)
-  await page.screenshot({ path: 'test-results/102-galaxy.png' })
+  await shot(page, '102-galaxy', { wait: 600 })
 
   // Zoomed in, single stars appear; claiming one makes a star system with that star's mass.
   await scroll(page, -400, 7)
-  await page.waitForTimeout(300)
-  await page.screenshot({ path: 'test-results/103-galaxy-stars.png' })
+  await shot(page, '103-galaxy-stars', { wait: 300 })
   await clickNearestGenerated(page)
   const name = (await page.locator('.cosmos-card b').textContent())!
   await page.getByRole('button', { name: 'Claim and go there' }).click()
@@ -73,8 +69,7 @@ test('scale navigation: claim a cluster, a galaxy and a star from what the seeds
   expect((await state(page, 'timeline')).stars[0]?.ownerId).toBe(system.id)
 
   // The star comes with the planets its seed makes, drawn faintly until claimed: claim one, as a world.
-  await page.waitForTimeout(600)
-  await page.screenshot({ path: 'test-results/104-system-planets.png' })
+  await shot(page, '104-system-planets', { wait: 600 })
   const claimPlanet = inspector(page).getByRole('button', { name: /^Claim / }).first()
   const planetName = (await claimPlanet.textContent())!.replace(/^Claim /, '')
   expect(planetName).toBe(`${name} b`)
@@ -85,8 +80,7 @@ test('scale navigation: claim a cluster, a galaxy and a star from what the seeds
   expect(planet.parentId).toBe(system.id)
   expect(all.find((n) => n.parentId === planet.id)?.kind).toBe('world')
   expect((await state(page, 'timeline')).orbits.some((o) => o.ownerId === planet.id)).toBe(true)
-  await page.waitForTimeout(600)
-  await page.screenshot({ path: 'test-results/105-claimed-planet.png' })
+  await shot(page, '105-claimed-planet', { wait: 600 })
 
   // Scrolling out goes back up to the system; the breadcrumb straight to the galaxy, centred on the star.
   await scroll(page, 400, 3)
