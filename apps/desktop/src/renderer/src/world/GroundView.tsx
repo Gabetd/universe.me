@@ -20,12 +20,15 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useEditor } from './editorStore'
+import { pickWith } from './pick'
 import { LabelLayer, LabelProjector, type ViewLabel } from './labels'
 import { NEAR_ONLY, instanceTint, plantGeometry } from './plants'
 import { blueprintExtent } from './structureLook'
 import { BlueprintParts } from './StructureMesh'
 import { useGroundChunks } from './useGroundChunks'
+import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
+import type { EventPin } from './useWorldAtTime'
 import type { SurfaceViewProps } from './useTerrain'
 
 const SKY = '#a9cdea'
@@ -36,12 +39,15 @@ const MAX_DISTANCE = 2600
 /** Things farther than this from the middle of the view aren't drawn (the fog has them). */
 const DRAW_M = 3800
 const RAD = Math.PI / 180
+const inView = (x: number, z: number) => Math.hypot(x, z) <= DRAW_M
 
 /** Heights of the ground anywhere: the globe's terrain plus the seeded detail the chunks have. */
 interface Ground {
   frame: LocalFrame
   /** Metres above sea level at a point of the frame. */
   heightAt(x: number, z: number): number
+  /** Where something stands there: on the ground, or on the water over it. */
+  standAt(x: number, z: number): number
   heightAtLatLon(p: LatLon): number
 }
 
@@ -56,6 +62,7 @@ export function GroundView(props: SurfaceViewProps & { seed: number }) {
   const tool = useEditor((s) => s.tool)
   const [origin, setOrigin] = useState<LatLon>(start)
   const [center, setCenter] = useState<LatLon>(start)
+  const [loaded, setLoaded] = useState(0)
   const { model, change, seed } = props
   const radiusKm = model.settings.radiusKm
   const ground = useMemo<Ground>(() => {
@@ -63,22 +70,25 @@ export function GroundView(props: SurfaceViewProps & { seed: number }) {
     const detail = new GroundDetail(seed, radiusKm)
     const base = modelSampler(model)
     const heightAtLatLon = (p: LatLon) => detail.elevation(base, p.lat, p.lon)
-    return { frame, heightAtLatLon, heightAt: (x, z) => heightAtLatLon(fromLocal(frame, x, z)) }
+    const heightAt = (x: number, z: number) => heightAtLatLon(fromLocal(frame, x, z))
+    return { frame, heightAtLatLon, heightAt, standAt: (x, z) => Math.max(0, heightAt(x, z)) }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` stands for the terrain heights
   }, [origin, radiusKm, seed, model, change])
 
   const labels = useMemo(() => new Map<string, HTMLDivElement>(), [])
-  const items = useMemo(() => groundLabels(props, ground), [props, ground])
+  const { structures, characters, pins } = props
+  const items = useMemo(() => groundLabels(structures, characters, pins, ground), [structures, characters, pins, ground])
 
   return (
-    <div className="globe-wrap">
+    // How many chunks are in, for tests to wait on.
+    <div className="globe-wrap" data-chunks={loaded}>
       <Canvas camera={{ position: [0, 400, 600], fov: 55, near: 0.5, far: 9000 }} data-testid="ground" gl={{ preserveDrawingBuffer: true }}>
         <color attach="background" args={[SKY]} />
         <fog attach="fog" args={[SKY, 1400, 3400]} />
         <hemisphereLight args={['#dce9f7', '#4a4536', 0.75]} />
         <directionalLight position={[700, 650, 250]} intensity={1.6} />
         <Rig ground={ground} onRebase={setOrigin} onCenter={setCenter} />
-        <Chunks {...props} ground={ground} center={center} />
+        <Chunks {...props} ground={ground} center={center} onLoaded={setLoaded} />
         <Water color={model.settings.terrain.waterColor} />
         {props.structures.map((p) => (
           <GroundStructure key={p.structure.id} placed={p} ground={ground} onClick={props.onStructureClick} />
@@ -112,10 +122,10 @@ export function GroundView(props: SurfaceViewProps & { seed: number }) {
 }
 
 /** Labels for structures that show their name (or are selected), characters, and active or selected events. */
-function groundLabels({ structures, characters, pins }: SurfaceViewProps, ground: Ground): ViewLabel[] {
+function groundLabels(structures: PlacedStructure[], characters: PlacedCharacter[], pins: EventPin[], ground: Ground): ViewLabel[] {
   const at = (p: LatLon, lift: number) => {
     const [x, z] = toLocal(ground.frame, p)
-    const point: [number, number, number] = [x, Math.max(0, ground.heightAt(x, z)) + lift, z]
+    const point: [number, number, number] = [x, ground.standAt(x, z) + lift, z]
     return (camera: THREE.Camera) => (camera.position.distanceTo(new THREE.Vector3(...point)) < DRAW_M ? point : null)
   }
   return [
@@ -148,7 +158,7 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
   useEffect(() => {
     const { camera, controls } = rig()
     if (!controls) return
-    const y = Math.max(0, ground.heightAt(0, 0))
+    const y = ground.standAt(0, 0)
     const d = useEditor.getState().groundDistance
     controls.target.set(0, y, 0)
     camera.position.set(0, y + d * 0.6, d * 0.8)
@@ -160,8 +170,8 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
     const { camera, controls } = rig()
     if (!controls) return
     const t = controls.target
-    t.y = Math.max(0, ground.heightAt(t.x, t.z))
-    const floor = Math.max(0, ground.heightAt(camera.position.x, camera.position.z)) + 1.7
+    t.y = ground.standAt(t.x, t.z)
+    const floor = ground.standAt(camera.position.x, camera.position.z) + 1.7
     if (camera.position.y < floor) camera.position.y = floor
     const here = fromLocal(ground.frame, t.x, t.z)
     const key = chunkKey(chunkOf(here, ground.frame.radiusKm))
@@ -217,11 +227,12 @@ interface Footprint {
   r: number
 }
 
-function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon }) {
-  const { model, change, seed, ground, center, structures } = props
+function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; onLoaded(count: number): void }) {
+  const { model, change, seed, ground, center, structures, onLoaded } = props
   const radiusKm = model.settings.radiusKm
   const wanted = useMemo(() => chunksAround(center, radiusKm, RING), [center, radiusKm])
   const chunks = useGroundChunks(model, change, seed, wanted)
+  useEffect(() => onLoaded(chunks.size), [chunks.size, onLoaded])
   const middle = chunkOf(center, radiusKm)
   const foliage = useMemo(() => new THREE.Color(model.settings.terrain.vegetationColor), [model.settings.terrain.vegetationColor])
   const footprints = useMemo<Footprint[]>(
@@ -379,17 +390,13 @@ function GroundStructure({ placed, ground, onClick }: { placed: PlacedStructure;
     const around = Array.from({ length: 8 }, (_, k) => ground.heightAt(x + Math.cos((k * Math.PI) / 4) * r, z + Math.sin((k * Math.PI) / 4) * r))
     return Math.max(0, Math.min(ground.heightAt(x, z), ...around))
   }, [ground, x, z, extent])
-  if (Math.hypot(x, z) > DRAW_M) return null
+  if (!inView(x, z)) return null
   return (
     <group
       position={[x, y, z]}
       rotation={[0, (-structure.rotation * Math.PI) / 180, 0]}
       scale={structure.scale}
-      onPointerDown={(e) => {
-        if (e.button !== 0 || useEditor.getState().tool !== 'navigate') return
-        e.stopPropagation()
-        onClick(structure.id)
-      }}
+      onPointerDown={pickWith(() => onClick(structure.id))}
     >
       <BlueprintParts blueprint={blueprint} condition={state.condition} ghost={!state.exists} />
       {(selected || hit !== undefined) && (
@@ -408,15 +415,11 @@ const HEAD = new THREE.SphereGeometry(0.17, 12, 10).translate(0, 1.6, 0)
 /** A character, life-size: a little over 1.7 m tall. */
 function Figure({ at, color, selected, ground, onClick }: { at: LatLon; color: string; selected: boolean; ground: Ground; onClick(): void }) {
   const [x, z] = toLocal(ground.frame, at)
-  if (Math.hypot(x, z) > DRAW_M) return null
+  if (!inView(x, z)) return null
   return (
     <group
-      position={[x, Math.max(0, ground.heightAt(x, z)), z]}
-      onPointerDown={(e) => {
-        if (e.button !== 0 || useEditor.getState().tool !== 'navigate') return
-        e.stopPropagation()
-        onClick()
-      }}
+      position={[x, ground.standAt(x, z), z]}
+      onPointerDown={pickWith(onClick)}
     >
       <mesh geometry={BODY}>
         <meshStandardMaterial color={color} roughness={0.7} />
@@ -437,15 +440,11 @@ function Figure({ at, color, selected, ground, onClick }: { at: LatLon; color: s
 /** Where an event happened: a tall coloured post, seen from afar. */
 function Beacon({ at, color, lit, ground, onClick }: { at: LatLon; color: string; lit: boolean; ground: Ground; onClick(): void }) {
   const [x, z] = toLocal(ground.frame, at)
-  if (Math.hypot(x, z) > DRAW_M) return null
+  if (!inView(x, z)) return null
   return (
     <mesh
-      position={[x, Math.max(0, ground.heightAt(x, z)) + 20, z]}
-      onPointerDown={(e) => {
-        if (e.button !== 0 || useEditor.getState().tool !== 'navigate') return
-        e.stopPropagation()
-        onClick()
-      }}
+      position={[x, ground.standAt(x, z) + 20, z]}
+      onPointerDown={pickWith(onClick)}
     >
       <cylinderGeometry args={[0.8, 0.8, 40, 8]} />
       <meshBasicMaterial color={color} transparent opacity={lit ? 0.95 : 0.5} />

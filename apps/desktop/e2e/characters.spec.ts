@@ -79,8 +79,8 @@ test('characters live, travel from place to place, and go to events', async () =
   // Up close she's life-size, on the ground.
   await setPlayhead(page, '1050')
   await inspector(page).getByRole('button', { name: '🔍 View up close' }).click()
-  await expect(page.getByTestId('ground')).toBeVisible()
-  await page.waitForTimeout(4000)
+  await expect(page.locator('[data-chunks="25"]')).toBeVisible({ timeout: 30_000 })
+  await page.waitForTimeout(500)
   await page.screenshot({ path: 'test-results/71-character-ground.png' })
 
   // Delete removes her; undo brings her back.

@@ -40,6 +40,8 @@ function landNear(page: Page): Promise<[number, number]> {
 }
 
 test('planets show their surface, structures are pins from afar, and the ground up close', async () => {
+  // Thousands of trees and a whole city, drawn in software on CI machines: slow, but it's the point.
+  test.setTimeout(240_000)
   const { page } = h
   await newProject(h, 'Close')
   await addChild(page, '+ Galaxy Cluster', 'Virgo')
@@ -53,7 +55,7 @@ test('planets show their surface, structures are pins from afar, and the ground 
 
   // From orbit, Terra and its moon show their real surfaces.
   await row(page, 'Terra').click()
-  await page.waitForTimeout(4000)
+  await page.waitForTimeout(2500)
   await page.screenshot({ path: 'test-results/60-orbit-surfaces.png' })
 
   await row(page, 'Terra Surface').click()
@@ -75,13 +77,13 @@ test('planets show their surface, structures are pins from afar, and the ground 
 
   // Down to the ground at the city.
   await page.getByRole('button', { name: '🔍 Ground' }).click()
-  await expect(page.getByTestId('ground')).toBeVisible()
-  await page.waitForTimeout(6000)
+  await expect(page.locator('[data-chunks="25"]')).toBeVisible({ timeout: 30_000 })
+  await page.waitForTimeout(1000)
   await page.screenshot({ path: 'test-results/62-ground.png' })
   const ground = (await page.getByTestId('ground').boundingBox())!
   await page.mouse.move(ground.x + ground.width / 2, ground.y + ground.height / 2)
-  for (let i = 0; i < 6; i++) await page.mouse.wheel(0, -300)
-  await page.waitForTimeout(1500)
+  for (let i = 0; i < 4; i++) await page.mouse.wheel(0, -300)
+  await page.waitForTimeout(1000)
   await page.screenshot({ path: 'test-results/63-ground-close.png' })
 
   // How fast it draws, for the record.
@@ -90,7 +92,7 @@ test('planets show their surface, structures are pins from afar, and the ground 
       new Promise<number>((resolve) => {
         let frames = 0
         const t0 = performance.now()
-        const tick = () => (++frames < 20 ? requestAnimationFrame(tick) : resolve((frames * 1000) / (performance.now() - t0)))
+        const tick = () => (++frames < 5 ? requestAnimationFrame(tick) : resolve((frames * 1000) / (performance.now() - t0)))
         requestAnimationFrame(tick)
       })
   )

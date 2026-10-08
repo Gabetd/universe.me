@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor } from './editorStore'
+import { pickWith } from './pick'
 import type { SurfaceViewProps } from './useTerrain'
 import { STAGE_COLORS } from './structureLook'
 import { LabelLayer, LabelProjector, type ViewLabel } from './labels'
@@ -245,11 +246,7 @@ function Pin({ pin, position, onClick }: { pin: EventPin; position: [number, num
   return (
     <mesh
       position={position}
-      onPointerDown={(e) => {
-        if (useEditor.getState().tool !== 'navigate') return
-        e.stopPropagation()
-        onClick(pin.eventId)
-      }}
+      onPointerDown={pickWith(() => onClick(pin.eventId))}
     >
       <sphereGeometry args={[size, 16, 12]} />
       <meshBasicMaterial color={pin.color} transparent opacity={pin.active || pin.selected ? 1 : 0.5} />
@@ -295,11 +292,7 @@ function SurfacePin({
       ref={group}
       position={at}
       quaternion={quaternion}
-      onPointerDown={(e) => {
-        if (e.button !== 0 || useEditor.getState().tool !== 'navigate') return
-        e.stopPropagation()
-        onClick()
-      }}
+      onPointerDown={pickWith(onClick)}
     >
       {figure ? (
         <mesh geometry={FIGURE}>
