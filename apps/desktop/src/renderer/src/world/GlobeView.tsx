@@ -7,7 +7,7 @@ import * as THREE from 'three'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor, type EditorTool } from './editorStore'
-import { pickWith } from './pick'
+import { pickWith, toolPress } from './pick'
 import type { SurfaceViewProps, TerrainChange } from './useTerrain'
 import { STAGE_COLORS } from './structureLook'
 import { EdgePush, zoomOut } from '../components/zoom'
@@ -145,9 +145,7 @@ function Planet({
         <mesh
           key={f.index}
           geometry={f.geometry}
-          onPointerDown={(e) => {
-            if (e.button === 0 && onPointerDown(toDir(e))) e.stopPropagation()
-          }}
+          onPointerDown={toolPress(toDir, onPointerDown)}
           onPointerMove={(e) => {
             const dir = toDir(e)
             moveCursor(dir)

@@ -20,9 +20,10 @@ import {
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
+import { EdgePush } from '../components/zoom'
 import { useUi } from '../store'
 import { useEditor } from './editorStore'
-import { pickWith } from './pick'
+import { pickWith, toolPress } from './pick'
 import { viewLabels, type ViewLabel } from './labels'
 import { NEAR_ONLY, instanceTint, plantGeometry } from './plants'
 import { blueprintExtent } from './structureLook'
@@ -228,12 +229,13 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
 
   useEffect(() => {
     const { gl } = rig()
-    let pushes = 0
+    const edge = new EdgePush()
     const onWheel = (e: WheelEvent) => {
       const { camera, controls } = rig()
       if (!controls) return
-      pushes = e.deltaY > 0 && camera.position.distanceTo(controls.target) >= MAX_DISTANCE - 1 ? pushes + 1 : 0
-      if (pushes >= 3) useEditor.getState().leaveGround(fromLocal(ground.frame, controls.target.x, controls.target.z))
+      if (edge.push(e.deltaY > 0 && camera.position.distanceTo(controls.target) >= MAX_DISTANCE - 1 ? 1 : 0)) {
+        useEditor.getState().leaveGround(fromLocal(ground.frame, controls.target.x, controls.target.z))
+      }
     }
     gl.domElement.addEventListener('wheel', onWheel, { passive: true })
     return () => gl.domElement.removeEventListener('wheel', onWheel)
@@ -360,9 +362,7 @@ function ChunkView({
     <group position={[x, 0, z]} scale={[stretch, 1, 1]}>
       <mesh
         geometry={geometry}
-        onPointerDown={(e) => {
-          if (e.button === 0 && onPointerDown(dir(e))) e.stopPropagation()
-        }}
+        onPointerDown={toolPress(dir, onPointerDown)}
         onPointerMove={(e) => onPointerMove(dir(e))}
       >
         <meshStandardMaterial vertexColors roughness={1} metalness={0} />
