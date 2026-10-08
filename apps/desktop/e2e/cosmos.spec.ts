@@ -54,6 +54,8 @@ async function clickNearestGenerated(page: Page) {
   const found: { spot?: Point | null } = {}
   await expect.poll(async () => (found.spot = await pointable(page)), { message: 'something generated near the middle of the view' }).not.toBeNull()
   const [x, y] = [box.x + found.spot!.x, box.y + found.spot!.y]
+  // From somewhere else: if the mouse is already there (the middle, after scrolling), moving to it sends no pointer event, and nothing is hovered.
+  await page.mouse.move(box.x + 2, box.y + 2)
   await page.mouse.move(x, y)
   await expect(page.locator('.cosmos-card', { hasText: 'not claimed yet' })).toBeVisible()
   await page.mouse.click(x, y)

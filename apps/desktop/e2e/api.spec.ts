@@ -111,6 +111,8 @@ function stdioMcp(h: AppHandle, project: string) {
   const child = spawn(packaged ?? (electronPath as unknown as string), args, { env: { ...process.env, UNIVERSE_API_DISCOVERY: join(h.dir, 'api.json') }, stdio: ['pipe', 'pipe', 'ignore'] })
   const waiting = new Map<number, (reply: Awaited<ReturnType<Rpc>>) => void>()
   createInterface({ input: child.stdout! }).on('line', (line) => {
+    // Electron may write a blank line of its own on Windows; MCP clients skip those too.
+    if (!line.trim()) return
     const reply = JSON.parse(line)
     waiting.get(reply.id)?.(reply)
   })

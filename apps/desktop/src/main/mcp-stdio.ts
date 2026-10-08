@@ -5,6 +5,8 @@ declare const __BUILD_INFO__: BuildInfo
 
 /** The MCP server over stdio, run by an AI client: no window, no dock icon; it ends when the client closes its input. */
 async function main(): Promise<void> {
+  // Stdout carries the protocol and nothing else: anything logged goes to stderr.
+  for (const level of ['log', 'info', 'debug'] as const) console[level] = (...args: unknown[]) => console.error(...args)
   app.dock?.hide()
   const at = process.argv.indexOf('--project')
   const project = at >= 0 ? process.argv[at + 1] : undefined
