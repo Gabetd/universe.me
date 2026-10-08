@@ -74,6 +74,9 @@ importers:
       '@universe/procgen':
         specifier: workspace:*
         version: link:../../packages/procgen
+      '@universe/sim':
+        specifier: workspace:*
+        version: link:../../packages/sim
       '@vitejs/plugin-react':
         specifier: ^5.2.0
         version: 5.2.0(vite@7.3.7(@types/node@24.19.1)(jiti@2.7.0))
@@ -125,6 +128,15 @@ importers:
       simplex-noise:
         specifier: ^4.0.3
         version: 4.0.3
+
+  packages/sim:
+    dependencies:
+      '@universe/core':
+        specifier: workspace:*
+        version: link:../core
+      '@universe/procgen':
+        specifier: workspace:*
+        version: link:../procgen
 
 packages:
 
