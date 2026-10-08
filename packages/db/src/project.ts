@@ -29,6 +29,8 @@ export class Project {
   readonly store: Store
   readonly bus: CommandBus
   private closed = false
+  /** Copies being written from this file right now. */
+  private saving = 0
   private readonly meta: { get: StatementSync; set: StatementSync }
   private readonly snapshots: SnapshotCache
   /** Read once: the name only changes through `setMeta` and the root is never deleted. */
@@ -119,13 +121,19 @@ export class Project {
   /** Writes a compacted copy to `path`, off the main thread. The current project stays open at its old path. */
   async saveCopy(path: string): Promise<void> {
     if (existsSync(path)) throw new ProjectError(`A file already exists at ${path}`)
-    await vacuumInto(this.path, path)
+    this.saving++
+    try {
+      await vacuumInto(this.path, path)
+    } finally {
+      this.saving--
+    }
   }
 
   close(): void {
     if (this.closed) return
     this.closed = true
-    this.db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+    // Emptying the WAL waits for every reader, so while a copy is being saved it's left for the next open.
+    this.db.exec(`PRAGMA wal_checkpoint(${this.saving ? 'PASSIVE' : 'TRUNCATE'})`)
     this.db.close()
   }
 }

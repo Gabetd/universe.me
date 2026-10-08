@@ -124,6 +124,18 @@ describe('Project', () => {
     await expect(p.saveCopy(copyPath)).rejects.toThrow(ProjectError)
   })
 
+  it('closes while a copy is still being saved', async () => {
+    const path = join(dir, 'busy.universe')
+    const p = Project.create(path, 'Busy')
+    p.bus.execute({ type: 'node.create', payload: { parentId: p.info().rootId, kind: 'galaxy_cluster', name: 'Kept' } })
+    const saving = p.saveCopy(join(dir, 'busy-copy.universe'))
+    p.close()
+    await saving
+    for (const file of [path, join(dir, 'busy-copy.universe')]) {
+      expect(track(Project.open(file)).store.nodes.all().map((n) => n.name)).toContain('Kept')
+    }
+  })
+
   it('refuses to overwrite and rejects non-projects', () => {
     const path = join(dir, 'g.universe')
     track(Project.create(path, 'G'))
