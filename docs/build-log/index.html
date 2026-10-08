@@ -181,11 +181,23 @@
     aiChange: ['121-ai-change', 'Events an AI client added, each with a note, and Undo AI'],
     aiSuggestions: ['122-ai-suggestions', 'Review mode: AI changes wait to be accepted or rejected'],
     phoneSignIn: ['130-phone-sign-in', 'Claude on a phone signing in: the code to type, shown on the computer'],
-    phoneConnected: ['131-phone-connected', 'From your phone: Tailscale Funnel on, and the connected client to remove']
+    phoneConnected: ['131-phone-connected', 'From your phone: Tailscale Funnel on, and the connected client to remove'],
+    contextMenu: ['140-context-menu', 'Right-clicking a star system in the tree: open it, rename it, add a planet, or delete it']
   }
 
   // One entry per published build, newest first.
   const LOG = [
+    {
+      ver: '0.1.29', date: '8 Oct 2026', tag: 'M9 started',
+      title: 'Right-click menus on everything',
+      points: [
+        'Right-click anything to see what you can do with it: a node in the tree or a claimed one in the cosmos, an event, era, group, link, lane or theme span on the timeline or the canvas, a region, structure, character or pin on the map, globe or ground, a species in the food web, or a row in the inspector’s lists.',
+        'Each menu offers what its kind can do: open it, rename it (the cursor goes straight to its name), add to it, go to where it happened, follow a link to its cause or effect, move the playhead to it, or delete it, which one Undo brings back.',
+        'Menus work from the keyboard too (the menu key or Shift+F10, then the arrow keys); a right-drag that pans the map or turns the globe opens no menu, and keys pressed in a menu only affect the menu.',
+        'Downloads no longer find the latest release empty while a new build is being published.'
+      ],
+      shots: ['contextMenu']
+    },
     {
       ver: '0.1.25', date: '8 Oct 2026', tag: 'M8 done',
       title: 'Claude on your phone, and a security audit',
@@ -278,7 +290,7 @@
   ]
 
   const AREAS = [
-    { title: 'The universe', shots: ['universe', 'cluster', 'galaxy', 'galaxyStars', 'systemPlanets', 'claimedPlanet'] },
+    { title: 'The universe', shots: ['contextMenu', 'universe', 'cluster', 'galaxy', 'galaxyStars', 'systemPlanets', 'claimedPlanet'] },
     { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom'] },
     { title: 'Star systems and sky', shots: ['starSystem', 'planetMoons', 'moonTrack', 'colder', 'orbit'] },
     { title: 'Ecosystem', shots: ['foodWeb', 'speciesEditor'] },
