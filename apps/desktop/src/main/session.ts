@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { CUBE_FACES, EMPTY_TIMELINE, type ExecuteResult, type Target, type TerrainLayerName } from '@universe/core'
@@ -63,6 +64,12 @@ export class Session {
     const { worlds } = this.require().store
     const layer = (name: TerrainLayerName) => Array.from({ length: CUBE_FACES }, (_, face) => worlds.getLayer(worldId, name, face))
     return { revision: worlds.terrainRevision(worldId), height: layer('height'), biome: layer('biome') }
+  }
+
+  /** Keeps a file in the project with `asset.add`, undoable like any command. */
+  addAsset(name: string, mime: string, bytes: Buffer): { assetId: string; state: AppState } {
+    const assetId = randomUUID()
+    return { assetId, state: this.execute({ type: 'asset.add', payload: { id: assetId, name, mime, data: bytes.toString('base64') } }) }
   }
 
   /** A file kept in the project, such as an imported model. */

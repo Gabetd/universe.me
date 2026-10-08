@@ -2,7 +2,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session as electronSession, shell, type MenuItemConstructorOptions } from 'electron'
 import { isAllowedRequest } from '../shared/offline'
-import { IPC, type AppState, type BuildInfo, type MenuAction, type PickedFile, type Result } from '../shared/api'
+import { IPC, type AppState, type BuildInfo, type ImportedModel, type MenuAction, type Result } from '../shared/api'
 import { Session } from './session'
 import { Updater } from './updater'
 
@@ -122,8 +122,8 @@ async function saveCopy(): Promise<string | null> {
 
 const MAX_MODEL_BYTES = 64 * 1024 * 1024
 
-/** A glTF model to import: .glb, or .gltf with everything embedded (external files aren't followed). */
-async function pickModel(): Promise<PickedFile | null> {
+/** Asks for a glTF model (.glb, or .gltf with everything embedded: external files aren't followed) and keeps it in the project. */
+async function importModel(): Promise<ImportedModel | null> {
   const { canceled, filePaths } = await dialog.showOpenDialog(win!, {
     title: 'Import a 3D model',
     properties: ['openFile'],
@@ -133,8 +133,9 @@ async function pickModel(): Promise<PickedFile | null> {
   const path = filePaths[0]
   if ((await stat(path)).size > MAX_MODEL_BYTES) throw new Error('That model is over 64 MB')
   const bytes = await readFile(path)
-  const binary = path.toLowerCase().endsWith('.glb')
-  return { name: basename(path), mime: binary ? 'model/gltf-binary' : 'model/gltf+json', data: bytes.toString('base64') }
+  const mime = path.toLowerCase().endsWith('.glb') ? 'model/gltf-binary' : 'model/gltf+json'
+  const name = basename(path)
+  return { name, ...session.addAsset(name, mime, bytes) }
 }
 
 /** Menu-triggered actions that can fail show their error in a dialog, since there is no caller to return it to. */
@@ -235,7 +236,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.openProject, (_e, path?: string) => wrap(() => openProject(path)))
   ipcMain.handle(IPC.saveCopy, () => wrap(saveCopy))
   ipcMain.handle(IPC.terrain, (_e, worldId: string) => wrap(() => session.terrain(worldId)))
-  ipcMain.handle(IPC.pickModel, () => wrap(pickModel))
+  ipcMain.handle(IPC.importModel, () => wrap(importModel))
   ipcMain.handle(IPC.getAsset, (_e, id: string) => wrap(() => session.asset(id)))
   ipcMain.handle(IPC.updateStatus, () => updater.current())
   ipcMain.handle(IPC.installUpdate, () => updater.install())

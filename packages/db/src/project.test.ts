@@ -46,6 +46,9 @@ describe('Project', () => {
     p.close()
     const reopened = track(Project.open(path))
     expect(reopened.store.assets.get('model-1')).toMatchObject({ name: 'tower.glb', data: bytes })
+    // Each read is its own copy, so changing one can't touch another.
+    reopened.store.assets.get('model-1')!.data[0] = 0
+    expect(reopened.store.assets.get('model-1')!.data).toEqual(bytes)
     expect(reopened.store.records('blueprint').all().map((b) => b.name)).toEqual(['Tower'])
     // Undoing the import (in the same session) takes the file back out, and redo restores it.
     reopened.bus.execute({ type: 'asset.add', payload: { id: 'model-2', name: 'b.glb', mime: 'model/gltf-binary', data: bytesToBase64(bytes) } })

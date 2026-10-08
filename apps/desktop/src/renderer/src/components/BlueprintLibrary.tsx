@@ -9,18 +9,18 @@ const draftOf = ({ name, parts, model, maintainedByDefault, tags }: Blueprint): 
 /** The project's blueprints next to the built-in ones: copy, edit, build new ones, or import a glTF model. */
 export function BlueprintLibrary() {
   const library = useUi((s) => s.timeline.blueprints)
-  const { execute, run } = useUi.getState()
+  const { execute, run, apply } = useUi.getState()
   const rootId = useUi((s) => s.project?.rootId)
   const [editing, setEditing] = useState<BlueprintDraft | null>(null)
 
   const importModel = async () => {
-    const file = await run(window.universe.pickModel())
-    if (!file || !rootId) return
-    const assetId = crypto.randomUUID()
-    const name = file.name.replace(/\.(glb|gltf)$/i, '')
-    const draft: BlueprintDraft = { name, parts: [], model: { assetId, material: 'stone', heightM: 10 }, maintainedByDefault: true, tags: [] }
-    // The file goes into the project first; the builder then sets its height and material and adds the blueprint.
-    if (await execute({ type: 'asset.add', payload: { id: assetId, name: file.name, mime: file.mime, data: file.data } })) setEditing(draft)
+    if (!rootId) return
+    // The main process reads the file into the project; the builder then sets its height and material and adds the blueprint.
+    const imported = await run(window.universe.importModel())
+    if (!imported) return
+    apply(imported.state)
+    const name = imported.name.replace(/\.(glb|gltf)$/i, '')
+    setEditing({ name, parts: [], model: { assetId: imported.assetId, material: 'stone', heightM: 10 }, maintainedByDefault: true, tags: [] })
   }
 
   const row = (b: Blueprint, own: boolean) => (

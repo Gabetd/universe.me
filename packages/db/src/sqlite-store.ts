@@ -165,7 +165,8 @@ export class SqliteStore implements Store {
     this.assets = {
       get: (id) => {
         const row = a.get.get(id) as (Omit<Asset, 'data'> & { data: Uint8Array }) | undefined
-        return row && { id: row.id, name: row.name, mime: row.mime, data: new Uint8Array(row.data) }
+        // SQLite hands back a fresh buffer for every read, so there's no need to copy it.
+        return row && { id: row.id, name: row.name, mime: row.mime, data: row.data }
       },
       put: (asset) => void a.put.run(asset.id, asset.name, asset.mime, asset.data),
       remove: (id) => void a.remove.run(id)
