@@ -41,8 +41,8 @@ export class Session {
     return this.state()
   }
 
-  saveCopy(path: string): void {
-    this.require().saveCopy(path)
+  async saveCopy(path: string): Promise<void> {
+    await this.require().saveCopy(path)
     this.remember(path)
   }
 

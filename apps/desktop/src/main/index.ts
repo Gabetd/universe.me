@@ -119,7 +119,7 @@ async function saveCopy(): Promise<string | null> {
     filters: FILE_FILTERS
   })
   if (canceled || !filePath) return null
-  session.saveCopy(filePath)
+  await session.saveCopy(filePath)
   // The copy is now a recent file.
   buildMenu()
   return filePath

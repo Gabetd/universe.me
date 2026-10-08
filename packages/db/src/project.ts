@@ -6,6 +6,7 @@ import { SqliteHistoryLog } from './history-log'
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations'
 import { SnapshotCache, type Snapshot } from './snapshot'
 import { SqliteStore } from './sqlite-store'
+import { vacuumInto } from './vacuum'
 
 const FORMAT = 'universe.me'
 
@@ -115,10 +116,10 @@ export class Project {
     if (key === 'name') this.name = value
   }
 
-  /** Writes a compacted copy to `path`. The current project stays open at its old path. */
-  saveCopy(path: string): void {
+  /** Writes a compacted copy to `path`, off the main thread. The current project stays open at its old path. */
+  async saveCopy(path: string): Promise<void> {
     if (existsSync(path)) throw new ProjectError(`A file already exists at ${path}`)
-    this.db.prepare('VACUUM INTO ?').run(path)
+    await vacuumInto(this.path, path)
   }
 
   close(): void {

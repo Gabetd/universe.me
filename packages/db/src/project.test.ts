@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -108,13 +108,20 @@ describe('Project', () => {
     ])
   })
 
-  it('saves a copy that opens independently', () => {
+  it('saves a copy that opens independently, without blocking commands', async () => {
     const p = track(Project.create(join(dir, 'f.universe'), 'F'))
-    p.bus.execute({ type: 'node.create', payload: { parentId: p.info().rootId, kind: 'galaxy_cluster', name: 'Copied' } })
+    const { rootId } = p.info()
+    p.bus.execute({ type: 'node.create', payload: { parentId: rootId, kind: 'galaxy_cluster', name: 'Copied' } })
     const copyPath = join(dir, 'f-copy.universe')
-    p.saveCopy(copyPath)
+    const saving = p.saveCopy(copyPath)
+    // The copy is a snapshot from when it started; the project keeps taking commands meanwhile.
+    p.bus.execute({ type: 'node.create', payload: { parentId: rootId, kind: 'galaxy_cluster', name: 'Later' } })
+    await saving
+    expect(readdirSync(dir).sort()).toEqual(['f-copy.universe', 'f.universe', 'f.universe-shm', 'f.universe-wal'])
     const copy = track(Project.open(copyPath))
     expect(copy.store.nodes.all().map((n) => n.name)).toContain('Copied')
+    expect(p.store.nodes.all().map((n) => n.name)).toContain('Later')
+    await expect(p.saveCopy(copyPath)).rejects.toThrow(ProjectError)
   })
 
   it('refuses to overwrite and rejects non-projects', () => {
