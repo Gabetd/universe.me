@@ -4,6 +4,7 @@ import { playheadOf } from '../timeline/timelineStore'
 import { BIOMES } from '@universe/procgen'
 import { useUi, useWorld } from '../store'
 import { isBrushTool, useEditor, type EditorTool } from './editorStore'
+import { EcosystemView } from './EcosystemView'
 import { EventCanvas } from './EventCanvas'
 import { GlobeView } from './GlobeView'
 import { GroundView } from './GroundView'
@@ -52,8 +53,8 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
   const characters = useCharactersAt(world.id)
   const { model, change, error, bump, commit } = useTerrain(world.id, world.seed, info)
   const { pointerDown, pointerMove, finishRegion } = useSurfaceTools(world.id, model, bump, commit)
-  const activeView = hasWebGL || view === 'canvas' ? view : 'map'
-  const onSurface = activeView !== 'canvas'
+  const activeView = hasWebGL || view === 'canvas' || view === 'species' ? view : 'map'
+  const onSurface = activeView !== 'canvas' && activeView !== 'species'
   const hint = onSurface ? (activeView === 'ground' && tool === 'navigate' ? GROUND_HINT : TOOLS.find((t) => t.tool === tool)?.hint) : undefined
 
   const viewProps: SurfaceViewProps | undefined = model && {
@@ -98,6 +99,9 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
           </button>
           <button aria-pressed={activeView === 'canvas'} onClick={() => set({ view: 'canvas' })} title="This world's events as cards">
             🗂 Canvas
+          </button>
+          <button aria-pressed={activeView === 'species'} onClick={() => set({ view: 'species' })} title="What lives here, and who eats whom">
+            🦌 Species
           </button>
         </div>
         {onSurface && (
@@ -154,7 +158,9 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
             )}
           </aside>
         ) : null}
-        {activeView === 'canvas' ? (
+        {activeView === 'species' ? (
+          <EcosystemView worldId={world.id} model={model} change={change} />
+        ) : activeView === 'canvas' ? (
           <EventCanvas worldId={world.id} regions={allRegions} />
         ) : viewProps ? (
           activeView === 'globe' ? (

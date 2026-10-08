@@ -1589,3 +1589,74 @@ input[type='color'] {
 .tl-eclipse:focus-visible {
   outline: 2px solid var(--accent);
 }
+
+.eco-view {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) 1fr;
+  height: 100%;
+  min-height: 0;
+}
+.eco-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-right: 1px solid var(--border);
+  overflow: auto;
+  min-width: 0;
+}
+.eco-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.eco-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.eco-web {
+  overflow: auto;
+  min-width: 0;
+}
+.eco-col-label {
+  fill: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.eco-node {
+  cursor: pointer;
+}
+.eco-node rect {
+  fill: var(--panel, #131a2c);
+  stroke: var(--border);
+}
+.eco-node text {
+  fill: var(--text, #e6eaf6);
+  font-size: 12px;
+}
+.eco-node.selected rect {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.eco-node.dim,
+.eco-link.dim {
+  opacity: 0.3;
+}
+.eco-link {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.2;
+}
+.eco-link.lit {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.eco-link.pollinates {
+  stroke-dasharray: 4 3;
+}
+.eco-link.symbiosis,
+.eco-link.competes {
+  stroke-dasharray: 1 3;
+}
