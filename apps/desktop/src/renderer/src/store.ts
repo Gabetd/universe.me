@@ -29,7 +29,7 @@ interface UiState extends AppState {
 }
 
 export interface TimelineSelection {
-  kind: 'event' | 'era' | 'group' | 'link'
+  kind: 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan'
   ids: string[]
 }
 
@@ -106,7 +106,7 @@ function nextSelection(state: AppState, current: Selection): Selection {
     if (character) return { ...none, selectedId: character.ownerId, selectedCharacterId: character.id }
   }
   // Lanes and changes are edited in place, so only records with an inspector panel get selected.
-  if (focus && (focus.kind === 'event' || focus.kind === 'era' || focus.kind === 'group' || focus.kind === 'link')) {
+  if (focus && (focus.kind === 'event' || focus.kind === 'era' || focus.kind === 'group' || focus.kind === 'link' || focus.kind === 'theme' || focus.kind === 'themeSpan')) {
     const kind = focus.kind
     if (state.timeline[`${kind}s`].some((r) => r.id === focus.id)) {
       const ids = current.timelineSelection?.kind === kind && current.timelineSelection.ids.includes(focus.id) ? timelineSelection!.ids : [focus.id]

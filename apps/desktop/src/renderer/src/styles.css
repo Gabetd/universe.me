@@ -1855,3 +1855,78 @@ input[type='color'] {
   border: 1px solid var(--muted);
   border-top: 0;
 }
+
+/* Themes (M6): the band on the timeline and the inspector's theme editor. */
+.tl-theme-row {
+  min-height: 22px;
+}
+.tl-theme {
+  position: absolute;
+  height: 13px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 13px;
+  color: #10131c;
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: grab;
+}
+.tl-theme span {
+  font-weight: 600;
+  text-shadow: 0 0 3px rgba(255, 255, 255, 0.6);
+}
+.tl-theme.selected,
+.tl-theme:focus-visible {
+  outline: 2px solid var(--c);
+  outline-offset: 1px;
+}
+.theme-preview {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--c) 50%, var(--border));
+  background: var(--panel-2);
+}
+.theme-preview-scene {
+  height: 44px;
+  border-radius: 6px;
+  background:
+    radial-gradient(circle at 78% 38%, var(--c) 0 5px, transparent 6px),
+    linear-gradient(180deg, var(--sky) 0 55%, var(--land) 55% 78%, var(--water) 78%);
+}
+.theme-preview p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.theme-now {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--c);
+  background: var(--panel-2);
+  border-radius: 0 6px 6px 0;
+}
+.theme-now p {
+  margin: 2px 0 0;
+  line-height: 1.4;
+}
+.theme-library {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.theme-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.world-themes textarea,
+.inspector-section textarea {
+  resize: vertical;
+}

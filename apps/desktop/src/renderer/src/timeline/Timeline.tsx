@@ -23,6 +23,7 @@ import { useNow, usePlayhead, useTimelineView } from './timelineStore'
 import { useCalendar } from '../world/useSky'
 import { eventDates } from './labels'
 import { SkyTrack } from './SkyTrack'
+import { ThemeTrack } from './ThemeTrack'
 import { DerivedTrack } from './DerivedTrack'
 
 const LABELS_W = 132
@@ -211,7 +212,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
   }
 
   const fit = () => {
-    const times = [...own.events.flatMap((e) => [e.start, e.end ?? e.start]), ...own.eras.flatMap((e) => [e.start, e.end])]
+    const times = [...own.events.flatMap((e) => [e.start, e.end ?? e.start]), ...[...own.eras, ...own.themeSpans].flatMap((e) => [e.start, e.end])]
     setRange(times.length ? fitRange(Math.min(...times), Math.max(...times)) : fitRange(now, now))
   }
 
@@ -317,6 +318,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
         </div>
       </div>
 
+      <ThemeTrack owner={owner} range={range} width={width} cal={cal} labelWidth={LABELS_W} />
       <SkyTrack owner={owner} range={range} width={width} cal={cal} labelWidth={LABELS_W} />
       <DerivedTrack owner={owner} range={range} width={width} cal={cal} labelWidth={LABELS_W} />
 

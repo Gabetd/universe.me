@@ -1,10 +1,11 @@
-import { LINK_TYPES, PRECISIONS, type Command, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type TimelineEvent } from '@universe/core'
+import { LINK_TYPES, PRECISIONS, type Command, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type Theme, type ThemeSpan, type TimelineEvent } from '@universe/core'
 import { useUi, type TimelineSelection } from '../store'
 import { locationLabel } from '../timeline/labels'
 import { useEditor } from '../world/editorStore'
 import { ColorField, TagsField, TextField, TimeField } from './fields'
 import { EventEffects } from './EventEffects'
 import { NotesEditor } from './NotesEditor'
+import { ThemePanel, ThemeSpanPanel } from './ThemePanels'
 
 const PRECISION_LABELS: Record<Precision, string> = { exact: 'Exact time', day: 'Day', year: 'Year', century: 'Century', approx: 'Approximate' }
 const LINK_LABELS: Record<LinkType, [string, string]> = {
@@ -33,6 +34,10 @@ export function TimelineInspector({ selection }: { selection: TimelineSelection 
       return <GroupPanel key={key} group={record as EventGroup} />
     case 'link':
       return <LinkPanel key={key} link={record as EventLink} />
+    case 'theme':
+      return <ThemePanel key={key} theme={record as Theme} />
+    case 'themeSpan':
+      return <ThemeSpanPanel key={key} span={record as ThemeSpan} />
     default:
       return null
   }

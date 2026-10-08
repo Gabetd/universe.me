@@ -9,6 +9,7 @@ import { StructurePanel } from './StructurePanel'
 import { CharacterPanel } from './CharacterPanel'
 import { CalendarPanel, ClimatePanel } from './SkyPanels'
 import { WorldGenPanel } from './WorldGenPanel'
+import { RegionTheme, WorldThemes } from './ThemePanels'
 import { EROSION_SPEED, isAlive, stateAt } from '@universe/core'
 import { STAGE_COLORS } from '../world/structureLook'
 import { useConditionCurves } from '../world/useStructures'
@@ -38,6 +39,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
       <WorldGenPanel world={world} settings={settings} />
       <ClimatePanel world={world} settings={settings} />
       <CalendarPanel world={world} />
+      <WorldThemes world={world} />
 
       <section className="inspector-section" aria-label="Edits">
         <h3>Edits</h3>
@@ -93,6 +95,7 @@ function RegionForm({ region }: { region: Region }) {
       </div>
       <TextField label="Region name" value={region.name} required onCommit={(name) => update({ name })} />
       <ColorField label="Region color" value={region.color} onCommit={(color) => update({ color })} />
+      <RegionTheme worldId={region.worldId} regionId={region.id} />
       <RegionHistory region={region} />
       <div className="field">
         <span>Region notes</span>
