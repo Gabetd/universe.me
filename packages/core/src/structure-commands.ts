@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { CommandError, liveRecord, liveWorld } from './command-kit'
+import { CommandError, liveRecord, liveWorld, ownerOf } from './command-kit'
 import type { Command, HandlerMap } from './commands'
 import { NewId, blueprintOf, create, deleteWith, live, update } from './record-kit'
 import { base64ToBytes, bytesToBase64 } from './encoding'
@@ -79,7 +79,7 @@ export const structureHandlers: HandlerMap<StructureCommand> = {
       label: p.label ?? true,
       notes: p.notes ?? '',
       tags: p.tags ?? [...blueprint.tags]
-    })
+    }, [ownerId, blueprintId])
   },
   'structure.update': (store, { id, patch }, ctx) => update(store, 'structure', ctx, id, patch),
   // Its maintenance history goes with it; effects that named it stop naming it.
@@ -95,7 +95,7 @@ export const structureHandlers: HandlerMap<StructureCommand> = {
     const structure = liveRecord(store, 'structure', structureId)
     const existing = live(store, 'maintenance').find((m) => m.structureId === structureId && m.at === at)
     if (existing) return update(store, 'maintenance', ctx, existing.id, { maintained, ...(causeEventId !== undefined ? { causeEventId } : {}) })
-    return create(store, 'maintenance', ctx, structure.ownerId, undefined, { structureId, at, maintained, causeEventId: causeEventId ?? null })
+    return create(store, 'maintenance', ctx, structure.ownerId, undefined, { structureId, at, maintained, causeEventId: causeEventId ?? null }, [structureId])
   },
   'maintenance.update': (store, { id, patch }, ctx) => update(store, 'maintenance', ctx, id, patch),
   'maintenance.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'maintenance', id }),
@@ -113,7 +113,7 @@ export const structureHandlers: HandlerMap<StructureCommand> = {
   },
 
   'effect.create': (store, { id, eventId, ...p }, ctx) =>
-    create(store, 'effect', ctx, liveRecord(store, 'event', eventId).ownerId, id, {
+    create(store, 'effect', ctx, ownerOf(store, 'event', eventId), id, {
       eventId,
       type: p.type,
       target: p.target,
@@ -122,7 +122,7 @@ export const structureHandlers: HandlerMap<StructureCommand> = {
       maintained: p.maintained ?? false,
       rename: p.rename ?? null,
       blueprintId: p.blueprintId ?? null
-    }),
+    }, [eventId]),
   'effect.update': (store, { id, patch }, ctx) => update(store, 'effect', ctx, id, patch),
   'effect.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'effect', id })
 }

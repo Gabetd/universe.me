@@ -112,6 +112,22 @@ describe('links', () => {
     expect(events()).toHaveLength(2)
   })
 
+  it('won’t bring back a link that one made since duplicates; edits keep a link’s ends', () => {
+    const [a, b, c] = ['A', 'B', 'C'].map((t, i) => event(t, year(i)))
+    const first = bus.execute({ type: 'link.create', payload: { fromId: a!, toId: b! } }).targetId!
+    bus.execute({ type: 'link.create', payload: { fromId: b!, toId: c! } })
+    bus.execute({ type: 'link.delete', payload: { id: first } })
+    const second = bus.execute({ type: 'link.create', payload: { fromId: a!, toId: b!, type: 'enables' } }).targetId!
+    expect(() => bus.execute({ type: 'record.restore', payload: { refs: [{ kind: 'link', id: first }] } })).toThrow(/already linked/)
+    bus.execute({ type: 'link.update', payload: { id: second, patch: { type: 'precedes', note: 'Then' } } })
+    expect(store.records('link').get(second)).toMatchObject({ fromId: a, toId: b, type: 'precedes', note: 'Then' })
+    // Deleting an event takes both of its links, and undo brings them back together.
+    bus.execute({ type: 'event.delete', payload: { id: b! } })
+    expect(links()).toHaveLength(0)
+    bus.undo()
+    expect(links().map((l) => l.toId).sort()).toEqual([b, c].sort())
+  })
+
   it('finds causal chains in both directions', () => {
     const [a, b, c] = ['A', 'B', 'C'].map((t, i) => event(t, year(i)))
     bus.execute({ type: 'link.create', payload: { fromId: a!, toId: b! } })

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { Orbit, Star } from './astro'
-import { batchOf, liveRecord, previousValues, type CommandContext, type HandlerResult } from './command-kit'
+import { batchOf, ownerOf, previousValues, type CommandContext, type HandlerResult } from './command-kit'
 import type { Command, HandlerMap } from './commands'
 import { EcoLink, Species } from './ecosystem'
 import { NewId, create, deleteWith, live, update, type Fields } from './record-kit'
@@ -73,7 +73,6 @@ export const worldSimHandlers: HandlerMap<WorldSimCommand> = {
   // Its links in the food web go with it.
   'species.delete': (store, { id }, ctx, run) =>
     deleteWith(store, ctx, run, { kind: 'lifeform', id }, [], live(store, 'ecolink').filter((l) => l.fromId === id || l.toId === id).map((l) => ({ kind: 'ecolink' as const, id: l.id }))),
-  'ecolink.create': (store, { id, fromId, toId, type }, ctx) =>
-    create(store, 'ecolink', ctx, liveRecord(store, 'lifeform', fromId).ownerId, id, { fromId, toId, type: type ?? 'eats' }),
+  'ecolink.create': (store, { id, fromId, toId, type }, ctx) => create(store, 'ecolink', ctx, ownerOf(store, 'lifeform', fromId), id, { fromId, toId, type: type ?? 'eats' }, [fromId]),
   'ecolink.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'ecolink', id })
 }

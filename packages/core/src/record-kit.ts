@@ -1,5 +1,19 @@
 import { z } from 'zod'
-import { CommandError, batchOf, liveNode, liveRecord, liveRegion, liveWorld, previousValues, type CommandContext, type HandlerResult, type Run } from './command-kit'
+import {
+  CommandError,
+  batchOf,
+  checkEdge,
+  edgeTable,
+  liveNode,
+  liveRecord,
+  liveRegion,
+  liveWorld,
+  previousValues,
+  type Check,
+  type CommandContext,
+  type HandlerResult,
+  type Run
+} from './command-kit'
 import type { Command } from './commands'
 import { RECORD_KINDS, type RecordKind, type RecordOf } from './records'
 import { Id } from './schema'
@@ -16,10 +30,11 @@ export const Ref = z.object({ kind: z.enum(RECORD_KINDS as [RecordKind, ...Recor
 export type Ref = z.infer<typeof Ref>
 
 /** Checks a record against the rest of the project. */
-export const validate = <K extends RecordKind>(store: Store, kind: K, record: RecordOf<K>) => validators[kind](store, record)
+export const validate = <K extends RecordKind>(store: Store, kind: K, record: RecordOf<K>, check: Partial<Check<K>> = {}) =>
+  validators[kind](store, record, { verified: new Set(), edges: edgeTable(store), ...check })
 
-/** Checks a record against the rest of the project; run on every create and update. */
-const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>) => void } = {
+/** Checks a record against the rest of the project; run on every create, update and restore. */
+const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>, check: Check<K>) => void } = {
   event(store, e) {
     const owner = liveNode(store, e.ownerId)
     if (e.end !== null && e.end < e.start) throw new CommandError('An event cannot end before it starts')
@@ -30,11 +45,9 @@ const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>) => vo
       if (loc.kind === 'region' && liveRegion(store, loc.regionId).worldId !== e.ownerId) throw new CommandError('That region is on another world')
     }
   },
-  link(store, l) {
+  link(store, l, check) {
     if (l.fromId === l.toId) throw new CommandError('An event cannot be linked to itself')
-    for (const id of [l.fromId, l.toId]) sameOwner(liveRecord(store, 'event', id), l.ownerId, 'event')
-    const duplicate = store.records('link').all().some((o) => o.id !== l.id && o.fromId === l.fromId && o.toId === l.toId)
-    if (duplicate) throw new CommandError('Those events are already linked')
+    checkEdge(store, 'link', 'event', l, check, 'That event is on another timeline', 'Those events are already linked')
   },
   group: (store, g) => void liveNode(store, g.ownerId),
   era(store, e) {
@@ -52,17 +65,17 @@ const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>) => vo
     liveNode(store, b.ownerId)
     if (!b.parts.length && !b.model) throw new CommandError('A blueprint needs at least one part or a model')
   },
-  structure(store, s) {
-    liveWorld(store, s.ownerId)
-    blueprintOf(store, s.blueprintId)
+  structure(store, s, { verified }) {
+    if (!verified.has(s.ownerId)) liveWorld(store, s.ownerId)
+    if (!verified.has(s.blueprintId)) blueprintOf(store, s.blueprintId)
   },
-  maintenance(store, m) {
-    sameOwner(liveRecord(store, 'structure', m.structureId), m.ownerId, 'structure')
+  maintenance(store, m, { verified }) {
+    if (!verified.has(m.structureId)) sameOwner(liveRecord(store, 'structure', m.structureId), m.ownerId, 'structure')
     if (m.causeEventId) sameOwner(liveRecord(store, 'event', m.causeEventId), m.ownerId, 'event')
   },
   // Targets aren't checked: a structure or region it names may be deleted later, and then it simply reaches nothing.
-  effect(store, e) {
-    sameOwner(liveRecord(store, 'event', e.eventId), e.ownerId, 'event')
+  effect(store, e, { verified }) {
+    if (!verified.has(e.eventId)) sameOwner(liveRecord(store, 'event', e.eventId), e.ownerId, 'event')
     if (e.type === 'modify' && !e.rename && !e.blueprintId) throw new CommandError('A modify effect needs a new name or blueprint')
   },
   // A stop's event isn't checked, like effect targets: deleting the event just unlinks it.
@@ -86,12 +99,13 @@ export function sameOwner(record: { ownerId: string }, ownerId: string, what: st
 
 export type Fields<K extends RecordKind> = Omit<RecordOf<K>, 'id' | 'ownerId' | 'createdAt' | 'updatedAt' | 'deletedAt'>
 
-export function create<K extends RecordKind>(store: Store, kind: K, ctx: CommandContext, ownerId: string, id: string | undefined, fields: Fields<K>): HandlerResult {
+/** Creates a record. `verified` are ids the caller has just checked itself (see `Check`). */
+export function create<K extends RecordKind>(store: Store, kind: K, ctx: CommandContext, ownerId: string, id: string | undefined, fields: Fields<K>, verified: string[] = []): HandlerResult {
   const recordId = id ?? ctx.newId()
   if (store.records(kind).get(recordId)) throw new CommandError(`${recordId} already exists`)
   const now = ctx.now()
   const record = { ...fields, id: recordId, ownerId, createdAt: now, updatedAt: now, deletedAt: null } as RecordOf<K>
-  validate(store, kind, record)
+  validate(store, kind, record, { verified: new Set(verified) })
   store.records(kind).insert(record)
   return { inverse: { type: 'record.remove', payload: { refs: [{ kind, id: recordId }] } }, target: { kind, id: recordId }, owner: ownerId }
 }
@@ -99,7 +113,7 @@ export function create<K extends RecordKind>(store: Store, kind: K, ctx: Command
 export function update<K extends RecordKind>(store: Store, kind: K, ctx: CommandContext, id: string, patch: Partial<Fields<K>>): HandlerResult {
   const record = liveRecord(store, kind, id)
   const next = { ...record, ...stripUndefined(patch), updatedAt: ctx.now() } as RecordOf<K>
-  validate(store, kind, next)
+  validate(store, kind, next, { previous: record })
   store.records(kind).update(next)
   const inverse = { type: `${kind}.update`, payload: { id, patch: previousValues(record as Record<string, unknown>, patch as Record<string, unknown>) } } as Command
   return { inverse, target: { kind, id }, owner: record.ownerId }

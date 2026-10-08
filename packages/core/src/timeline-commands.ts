@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { batchOf, liveRecord, pickColor, previousValues } from './command-kit'
+import { batchOf, edgeTable, ownerOf, pickColor, previousValues } from './command-kit'
 import type { Command, HandlerMap } from './commands'
 import { NewId, Ref, create, deleteWith, live, setDeleted, update, validate } from './record-kit'
 import { Id } from './schema'
@@ -96,7 +96,7 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
     ),
 
   'link.create': (store, { id, fromId, ...p }, ctx) =>
-    create(store, 'link', ctx, liveRecord(store, 'event', fromId).ownerId, id, { fromId, toId: p.toId, type: p.type ?? 'causes', note: p.note ?? '' }),
+    create(store, 'link', ctx, ownerOf(store, 'event', fromId), id, { fromId, toId: p.toId, type: p.type ?? 'causes', note: p.note ?? '' }, [fromId]),
   'link.update': (store, { id, patch }, ctx) => update(store, 'link', ctx, id, patch),
   'link.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'link', id }),
 
@@ -157,7 +157,9 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
   }),
   'record.restore'(store, { refs }, ctx) {
     const owner = setDeleted(store, refs, null, ctx.now())
-    for (const { kind, id } of refs) validate(store, kind, store.records(kind).get(id)!)
+    // One read of the link tables for all the links coming back, not one each.
+    const edges = edgeTable(store)
+    for (const { kind, id } of refs) validate(store, kind, store.records(kind).get(id)!, { edges })
     return { inverse: { type: 'record.remove', payload: { refs } }, target: refs[0], owner }
   }
 }
