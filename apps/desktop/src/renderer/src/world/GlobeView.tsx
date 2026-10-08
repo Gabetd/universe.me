@@ -12,6 +12,7 @@ import type { SurfaceViewProps, TerrainChange } from './useTerrain'
 import { STAGE_COLORS } from './structureLook'
 import { EdgePush, zoomOut } from '../components/zoom'
 import { viewLabels, type ViewLabel } from './labels'
+import { SelectionRing } from './SelectionRing'
 import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
@@ -307,12 +308,7 @@ function SurfacePin({
           </mesh>
         </>
       )}
-      {(selected || hit !== undefined) && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} raycast={() => null}>
-          <ringGeometry args={[1.6, 2.1, 32]} />
-          <meshBasicMaterial color={selected ? '#ffffff' : '#ff5a5a'} transparent opacity={selected ? 0.9 : 0.35 + 0.6 * (hit ?? 0)} depthTest={false} />
-        </mesh>
-      )}
+      <SelectionRing inner={1.6} outer={2.1} lift={0.05} selected={selected} hit={hit} />
     </group>
   )
 }

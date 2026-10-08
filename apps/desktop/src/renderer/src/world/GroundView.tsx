@@ -27,6 +27,7 @@ import { viewLabels, type ViewLabel } from './labels'
 import { NEAR_ONLY, instanceTint, plantGeometry } from './plants'
 import { blueprintExtent } from './structureLook'
 import { BlueprintParts } from './StructureMesh'
+import { SelectionRing } from './SelectionRing'
 import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
 import { useGroundChunks } from './useGroundChunks'
 import type { PlacedCharacter } from './useCharacters'
@@ -459,12 +460,7 @@ function GroundStructure({ placed, ground, onClick }: { placed: PlacedStructure;
       onPointerDown={pickWith(() => onClick(structure.id))}
     >
       <BlueprintParts blueprint={blueprint} condition={state.condition} materials={state.materials} ghost={!state.exists} />
-      {(selected || hit !== undefined) && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.3, 0]} raycast={() => null}>
-          <ringGeometry args={[(extent / structure.scale) * 0.6, (extent / structure.scale) * 0.6 + Math.max(1, extent * 0.01), 64]} />
-          <meshBasicMaterial color={selected ? '#ffffff' : '#ff5a5a'} transparent opacity={selected ? 0.9 : 0.35 + 0.6 * (hit ?? 0)} depthTest={false} />
-        </mesh>
-      )}
+      <SelectionRing inner={(extent / structure.scale) * 0.6} outer={(extent / structure.scale) * 0.6 + Math.max(1, extent * 0.01)} segments={64} lift={0.3} selected={selected} hit={hit} />
     </group>
   )
 }
@@ -487,12 +483,7 @@ function Figure({ at, color, selected, ground, onClick }: { at: LatLon; color: s
       <mesh geometry={HEAD}>
         <meshStandardMaterial color="#e2b48f" roughness={0.8} />
       </mesh>
-      {selected && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} raycast={() => null}>
-          <ringGeometry args={[0.6, 0.75, 32]} />
-          <meshBasicMaterial color="#ffffff" depthTest={false} />
-        </mesh>
-      )}
+      <SelectionRing inner={0.6} outer={0.75} lift={0.05} selected={selected} solid />
     </group>
   )
 }

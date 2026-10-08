@@ -5,6 +5,7 @@ import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor } from './editorStore'
 import { showsLabel } from './labels'
+import { hitOpacity } from './SelectionRing'
 import { STAGE_COLORS } from './structureLook'
 import type { SurfaceViewProps, TerrainChange } from './useTerrain'
 
@@ -212,7 +213,7 @@ export const MapView = memo(function MapView({
         if (hit !== undefined) {
           c.beginPath()
           c.arc(x + shift, y, r + 4 / scale, 0, Math.PI * 2)
-          c.strokeStyle = `rgba(255, 90, 90, ${0.35 + 0.6 * hit})`
+          c.strokeStyle = `rgba(255, 90, 90, ${hitOpacity(hit)})`
           c.lineWidth = 2 / scale
           c.stroke()
         }
