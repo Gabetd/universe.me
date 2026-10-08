@@ -2,6 +2,7 @@ import type { Command } from './commands'
 import type { SpatialNode } from './schema'
 import type { Store } from './store'
 import type { RecordKind, RecordOf } from './records'
+import { stripUndefined } from './util'
 import { PALETTE, type Region } from './world'
 
 /** Shared plumbing for command handlers (commands.ts, timeline-commands.ts). */
@@ -33,10 +34,31 @@ export class CommandError extends Error {
   override name = 'CommandError'
 }
 
+/** What nodes, regions and records have in common: rows that are soft-deleted and know when they last changed. */
+interface Row {
+  updatedAt: string
+  deletedAt: string | null
+}
+
+/** A repository of rows (`store.nodes`, `store.regions`, `store.records(kind)`). */
+interface Rows<T extends Row> {
+  update(row: T): void
+}
+
+/** The row, deleted or not; a CommandError naming it if there's none. */
+export function requireRow<T>(row: T | undefined, what: string, id: string): T {
+  if (!row) throw new CommandError(`${what} ${id} does not exist`)
+  return row
+}
+
+/** The row if it exists and isn't deleted; otherwise a CommandError naming it. */
+function requireLive<T extends Row>(row: T | undefined, what: string, id: string): T {
+  if (row?.deletedAt) throw new CommandError(`${what} ${id} does not exist`)
+  return requireRow(row, what, id)
+}
+
 export function liveNode(store: Store, id: string): SpatialNode {
-  const node = store.nodes.get(id)
-  if (!node || node.deletedAt) throw new CommandError(`Node ${id} does not exist`)
-  return node
+  return requireLive(store.nodes.get(id), 'Node', id)
 }
 
 export function liveWorld(store: Store, id: string): SpatialNode {
@@ -46,15 +68,24 @@ export function liveWorld(store: Store, id: string): SpatialNode {
 }
 
 export function liveRegion(store: Store, id: string): Region {
-  const region = store.regions.get(id)
-  if (!region || region.deletedAt) throw new CommandError(`Region ${id} does not exist`)
-  return region
+  return requireLive(store.regions.get(id), 'Region', id)
 }
 
 export function liveRecord<K extends RecordKind>(store: Store, kind: K, id: string): RecordOf<K> {
-  const record = store.records(kind).get(id)
-  if (!record || record.deletedAt) throw new CommandError(`${kind[0]!.toUpperCase()}${kind.slice(1)} ${id} does not exist`)
-  return record
+  return requireLive(store.records(kind).get(id), `${kind[0]!.toUpperCase()}${kind.slice(1)}`, id)
+}
+
+/** Writes a patch over a row, once `check` (if any) accepts the result; returns the patch that undoes it. */
+export function patchRow<T extends Row, P extends object>(rows: Rows<T>, row: T, patch: P, now: string, check?: (next: T) => void): P {
+  const next = { ...row, ...stripUndefined(patch), updatedAt: now }
+  check?.(next)
+  rows.update(next)
+  return previousValues(row as Record<string, unknown>, patch as Record<string, unknown>) as P
+}
+
+/** Marks a row deleted at `deletedAt`, or with null, not deleted. */
+export function softDelete<T extends Row>(rows: Rows<T>, row: T, deletedAt: string | null, now: string): void {
+  rows.update({ ...row, deletedAt, updatedAt: now })
 }
 
 /** The node a live record belongs to. */

@@ -8,7 +8,9 @@ import {
   liveRecord,
   liveRegion,
   liveWorld,
-  previousValues,
+  patchRow,
+  requireRow,
+  softDelete,
   type Check,
   type CommandContext,
   type HandlerResult,
@@ -112,19 +114,16 @@ export function create<K extends RecordKind>(store: Store, kind: K, ctx: Command
 
 export function update<K extends RecordKind>(store: Store, kind: K, ctx: CommandContext, id: string, patch: Partial<Fields<K>>): HandlerResult {
   const record = liveRecord(store, kind, id)
-  const next = { ...record, ...stripUndefined(patch), updatedAt: ctx.now() } as RecordOf<K>
-  validate(store, kind, next, { previous: record })
-  store.records(kind).update(next)
-  const inverse = { type: `${kind}.update`, payload: { id, patch: previousValues(record as Record<string, unknown>, patch as Record<string, unknown>) } } as Command
+  const previous = patchRow(store.records(kind), record, patch, ctx.now(), (next) => validate(store, kind, next, { previous: record }))
+  const inverse = { type: `${kind}.update`, payload: { id, patch: previous } } as Command
   return { inverse, target: { kind, id }, owner: record.ownerId }
 }
 
 export function setDeleted(store: Store, refs: Ref[], deletedAt: string | null, now: string): string | undefined {
   let owner: string | undefined
   for (const { kind, id } of refs) {
-    const record = store.records(kind).get(id)
-    if (!record) throw new CommandError(`${kind} ${id} does not exist`)
-    store.records(kind).update({ ...record, deletedAt, updatedAt: now })
+    const record = requireRow(store.records(kind).get(id), kind, id)
+    softDelete(store.records(kind), record, deletedAt, now)
     owner ??= record.ownerId
   }
   return owner
