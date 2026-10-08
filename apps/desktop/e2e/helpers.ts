@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { _electron as electron, expect, type ElectronApplication, type Page } from '@playwright/test'
+import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 
 export interface AppHandle {
   app: ElectronApplication
@@ -72,8 +72,16 @@ const PLAYWRIGHT_SWITCHES = [
   '--disable-sync'
 ]
 
+/** A seed from a test's title (FNV-1a): each test gets a universe of its own, the same one every run. */
+function seedOf(title: string): number {
+  let hash = 0x811c9dc5
+  for (const char of title) hash = Math.imul(hash ^ char.codePointAt(0)!, 0x01000193)
+  return hash >>> 0
+}
+
 /**
  * Launches the app with a throwaway profile and update checks off (unless `env` turns them on).
+ * Every random seed the app draws comes from the test's title, so a failure can be replayed.
  * UNIVERSE_E2E_EXECUTABLE tests a packaged build instead of the dev build.
  */
 export async function launch(env: (dir: string) => Record<string, string> = () => ({})): Promise<AppHandle> {
@@ -87,7 +95,13 @@ export async function launch(env: (dir: string) => Record<string, string> = () =
       // CI machines have no GPU; this allows WebGL on the software renderer.
       '--enable-unsafe-swiftshader'
     ],
-    env: { ...process.env, UNIVERSE_USER_DATA: join(dir, 'user-data'), UNIVERSE_UPDATE_URL: 'off', ...env(dir) }
+    env: {
+      ...process.env,
+      UNIVERSE_USER_DATA: join(dir, 'user-data'),
+      UNIVERSE_UPDATE_URL: 'off',
+      UNIVERSE_E2E_SEED: String(seedOf(test.info().title)),
+      ...env(dir)
+    }
   })
   const page = await app.firstWindow()
   // The first launch on a fresh machine can be slow (Electron unpacking, a cold disk): wait for the app itself, not a fixed few seconds.
