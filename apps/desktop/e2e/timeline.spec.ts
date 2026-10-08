@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { center, clickAt, closeProject, dragPoints, drawRegion, expect, fill, inspector, newWorld, openGlobe, openMap, row, setPlayhead, shot, state, test } from './helpers'
+import { center, clickAt, closeProject, dragPoints, drawRegion, expect, fill, inspector, newWorld, openGlobe, openMap, row, setPlayhead, settledBox, shot, state, test } from './helpers'
 
 const timeline = (page: Page) => state(page, 'timeline')
 const eventBar = (page: Page, title: string) => page.locator('.tl-event', { hasText: title })
@@ -27,7 +27,7 @@ test('build a history: events, dates, links, groups, eras and warnings', async (
 
   // Drag from one event's connector onto the other to link them.
   await eventBar(page, 'Founding of Aster').hover()
-  const from = (await eventBar(page, 'Founding of Aster').locator('.tl-connector').boundingBox())!
+  const from = await settledBox(eventBar(page, 'Founding of Aster').locator('.tl-connector'))
   const to = (await eventBar(page, 'The Long War').boundingBox())!
   await dragPoints(page, center(from), { x: to.x + 20, y: to.y + to.height / 2 }, { steps: 6 })
   await expect.poll(async () => (await timeline(page)).links.length).toBe(1)

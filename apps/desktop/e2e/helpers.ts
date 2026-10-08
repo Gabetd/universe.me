@@ -287,7 +287,7 @@ export interface Point {
   x: number
   y: number
 }
-type Box = Point & { width: number; height: number }
+export type Box = Point & { width: number; height: number }
 /** Fractions of a box's width and height, e.g. [0.5, 0.5] for its middle. */
 export type Fraction = readonly [number, number]
 
@@ -312,6 +312,24 @@ export async function dragPoints(page: Page, from: Point, to: Point, { button = 
 export async function drag(page: Page, testId: string, from: Fraction, to: Fraction, button: 'left' | 'right' = 'left'): Promise<void> {
   const box = (await page.getByTestId(testId).boundingBox())!
   await dragPoints(page, within(box, from), within(box, to), { button })
+}
+
+const sameBox = (a: Box, b: Box) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.width - b.width), Math.abs(a.height - b.height)) < 0.5
+
+/** The box of something that glides into place, once it has stopped (two reads 100 ms apart agree). */
+export async function settledBox(target: Locator): Promise<Box> {
+  const read: { last: Box | null; box: Box | null } = { last: null, box: null }
+  await expect
+    .poll(
+      async () => {
+        read.last = read.box
+        read.box = await target.boundingBox()
+        return !!read.box && !!read.last && sameBox(read.box, read.last)
+      },
+      { intervals: [100] }
+    )
+    .toBe(true)
+  return read.box!
 }
 
 /** Turns the mouse wheel `times` times over the middle of `target`. */

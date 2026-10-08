@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { center, clickAt, dragPoints, expect, fill, inspector, newWorld, openMap, playhead, setPlayhead, shot, state, test } from './helpers'
+import { center, clickAt, dragPoints, expect, fill, inspector, newWorld, openMap, playhead, setPlayhead, settledBox, shot, state, test } from './helpers'
 
 const node = (page: Page, title: string) => page.locator('.event-node', { hasText: title })
 
@@ -9,8 +9,6 @@ async function addEvent(page: Page, title: string, starts: string, ends?: string
   await fill(page, 'Starts', starts)
   if (ends) await fill(page, 'Ends', ends)
 }
-
-const width = async (page: Page, title: string) => (await node(page, title).boundingBox())!.width
 
 test('events become nodes on the world canvas: move, hide, link, recede with time, and jump to them', async ({ h }) => {
   const { page } = h
@@ -35,9 +33,9 @@ test('events become nodes on the world canvas: move, hide, link, recede with tim
 
   // Link two nodes by dragging from one's handle onto the other (after fitting them all in view, for small screens).
   await page.getByRole('toolbar', { name: 'Canvas' }).getByRole('button', { name: 'Fit' }).click()
-  await page.waitForTimeout(400) // nodes glide into place
-  const target = (await node(page, 'Treaty').boundingBox())!
-  const handle = (await node(page, 'War of the Straits').getByTitle('Drag onto another node to link them').boundingBox())!
+  // The nodes glide into place.
+  const target = await settledBox(node(page, 'Treaty'))
+  const handle = await settledBox(node(page, 'War of the Straits').getByTitle('Drag onto another node to link them'))
   await dragPoints(page, center(handle), center(target))
   await expect.poll(async () => (await state(page, 'timeline')).links.length).toBe(1)
   await expect(page.locator('.canvas-link')).toHaveCount(1)
@@ -51,12 +49,10 @@ test('events become nodes on the world canvas: move, hide, link, recede with tim
 
   // As time passes, finished events recede but stay clickable.
   await setPlayhead(page, '1255')
-  await page.waitForTimeout(400)
-  const during = await width(page, 'War of the Straits')
+  const during = (await settledBox(node(page, 'War of the Straits'))).width
   await shot(page, '30-canvas-1255')
   await setPlayhead(page, '1340')
-  await page.waitForTimeout(400)
-  expect(await width(page, 'War of the Straits')).toBeLessThan(during * 0.8)
+  await expect.poll(async () => (await node(page, 'War of the Straits').boundingBox())!.width).toBeLessThan(during * 0.8)
   await shot(page, '31-canvas-1340')
 
   // Clicking a node goes to when and where it happened.
