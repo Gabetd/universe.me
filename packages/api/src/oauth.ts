@@ -20,8 +20,13 @@ const REFRESH_TTL = 90 * 24 * 60 * MINUTE
 const SIGN_IN_TTL = 10 * MINUTE
 const CODE_TTL = MINUTE
 const TRIES_PER_SIGN_IN = 5
-/** Wrong codes allowed an hour, across all sign-ins, so codes can't be guessed by starting sign-ins over and over. */
-const WRONG_PER_HOUR = 30
+/**
+ * Wrong codes allowed an hour, across all sign-ins, so codes can't be
+ * guessed by starting sign-ins over and over (8 letters from 30 is 6.6×10¹¹
+ * codes: a year of this many guesses has a 1 in 75 000 chance). High enough
+ * that someone typing wrong codes on purpose can't easily lock the user out.
+ */
+const WRONG_PER_HOUR = 1000
 const MAX_SIGN_INS = 5
 const MAX_CLIENTS = 100
 /** A registered client that never signed in is forgotten after a day. */
@@ -245,7 +250,13 @@ export class OAuth {
     const name = typeof body.client_name === 'string' && body.client_name.trim() ? body.client_name.trim().slice(0, 80) : 'An MCP client'
     const client: OAuthClient = { id: secret(), name, redirectUris: uris as string[], created: this.now(), ...(clientSecret && { secretHash: hash(clientSecret) }) }
     this.prune()
-    if (this.data.clients.length >= MAX_CLIENTS) throw new OAuthError(400, 'invalid_client_metadata', 'Too many clients are registered; try again tomorrow')
+    // Full (anyone can register): the oldest that never signed in makes room, so no one can keep the user's own client out.
+    if (this.data.clients.length >= MAX_CLIENTS) {
+      const used = new Set(this.data.grants.map((g) => g.clientId))
+      const unused = this.data.clients.findIndex((c) => !used.has(c.id))
+      if (unused < 0) throw new OAuthError(400, 'invalid_client_metadata', 'Too many clients are connected; remove one in Universe')
+      this.data.clients.splice(unused, 1)
+    }
     this.data.clients.push(client)
     this.store.save(this.data)
     return {
@@ -272,7 +283,9 @@ export class OAuth {
     if (!challenge || q.get('code_challenge_method') !== 'S256') return fail('invalid_request', 'PKCE with code_challenge_method=S256 is required')
     const resource = q.get('resource')
     if (resource && !resource.startsWith(base)) return fail('invalid_target', `This server is ${base}/mcp`)
-    if (this.pendingSignIns().length >= MAX_SIGN_INS) return page(res, 429, 'Too many sign-ins', '<p>Too many sign-ins are waiting. Try again in a few minutes.</p>')
+    // The newest sign-in always gets its code: the oldest waiting goes, so sign-ins someone else starts can't crowd the user's out.
+    const waiting = this.pendingSignIns()
+    if (waiting.length >= MAX_SIGN_INS) this.signIns.delete(waiting[0]!.id)
     const signIn: PendingSignIn = { id: secret(), client: client.name, code: newCode(), expires: this.now() + SIGN_IN_TTL, clientId: client.id, redirectUri, challenge, tries: 0, ...(q.has('state') && { state: q.get('state')! }) }
     this.signIns.set(signIn.id, signIn)
     // Gone from the app's list when it expires.

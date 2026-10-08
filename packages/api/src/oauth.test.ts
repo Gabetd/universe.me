@@ -163,6 +163,22 @@ describe('OAuth', () => {
     expect(elsewhere.status).toBe(400)
   })
 
+  it('can’t be crowded out: registrations and sign-ins someone else starts make room for the newest', async () => {
+    const register = () =>
+      fetch(`${base}/oauth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ redirect_uris: ['https://claude.example/cb'], token_endpoint_auth_method: 'none' }) })
+    for (let i = 0; i < 100; i++) await register()
+    const mine = (await register().then((r) => r.json())) as { client_id: string }
+    expect(mine.client_id).toEqual(expect.any(String))
+    const signIn = () =>
+      fetch(`${base}/oauth/authorize?${new URLSearchParams({ response_type: 'code', client_id: mine.client_id, redirect_uri: 'https://claude.example/cb', code_challenge: 'c', code_challenge_method: 'S256' })}`)
+    for (let i = 0; i < 5; i++) expect((await signIn()).status).toBe(200)
+    const before = oauth.pendingSignIns().map((s) => s.id)
+    expect((await signIn()).status).toBe(200)
+    const after = oauth.pendingSignIns().map((s) => s.id)
+    expect(after).toHaveLength(5)
+    expect(after).not.toContain(before[0])
+  })
+
   it('serves the public host with https addresses and OAuth tokens only, and not at all with phone access off', async () => {
     const meta = JSON.parse((await remote('/.well-known/oauth-protected-resource/mcp')).body)
     expect(meta).toMatchObject({ resource: `https://${PUBLIC}/mcp`, authorization_servers: [`https://${PUBLIC}`] })
