@@ -139,6 +139,22 @@ export function SwatchList({ rows, onPick }: { rows: SwatchRow[]; onPick(id: str
   )
 }
 
+/** A choice from a fixed list (its values and their labels), saved as it's picked. */
+export function SelectField<T extends string>({ label, value, options, onCommit }: { label: string; value: T; options: Record<T, string>; onCommit(v: T): void }) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <select value={value} onChange={(e) => onCommit(e.target.value as T)}>
+        {(Object.keys(options) as T[]).map((o) => (
+          <option key={o} value={o}>
+            {options[o]}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
 /** A range slider that saves once on release, not on every pixel of a drag (each save is an undo step). */
 export function CommitSlider(props: { label: string; unit?: string; min: number; max: number; step: number; value: number; onCommit(v: number): void }) {
   const [draft, setDraft] = useState<number | null>(null)

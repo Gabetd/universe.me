@@ -20,7 +20,7 @@ import { effectIcons } from '../components/EventEffects'
 import { ArrowMarkers, LINK_STYLE, WARN_COLOR } from './linkStyle'
 import { playheadOf, useNow, usePlayhead, useTimelineView } from './timelineStore'
 import { useCalendar } from '../world/useSky'
-import { eventDates } from './labels'
+import { eventDates, spanDates } from './labels'
 import { SkyTrack } from './SkyTrack'
 import { ThemeTrack } from './ThemeTrack'
 import { DerivedTrack } from './DerivedTrack'
@@ -312,7 +312,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
                 style={{ left: Math.max(0, x0), width: Math.max(12, Math.min(width, x1) - Math.max(0, x0)), ['--c' as string]: era.color }}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => selectTimeline({ kind: 'era', ids: [era.id] })}
-                title={`${era.name}: ${formatTime(era.start, 'year', cal)} – ${formatTime(era.end, 'year', cal)}`}
+                title={`${era.name}: ${spanDates(era, cal)}`}
               >
                 {era.name}
               </button>

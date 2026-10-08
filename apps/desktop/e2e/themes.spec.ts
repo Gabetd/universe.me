@@ -1,7 +1,13 @@
-import type { Page } from '@playwright/test'
-import { drawRegion, expect, inspector, newWorld, openGlobe, openMap, row, setPlayhead, shot, state, test, viewReady, type Fraction } from './helpers'
+import type { Locator, Page } from '@playwright/test'
+import { center, dragPoints, drawRegion, expect, inspector, newWorld, openGlobe, openMap, row, setPlayhead, shot, state, test, viewReady, type Fraction } from './helpers'
 
 const timeline = (page: Page) => state(page, 'timeline')
+
+/** A new theme from a preset, put on the world from the playhead, from the world's Themes section. */
+async function newTheme(themes: Locator, preset: string): Promise<void> {
+  await themes.getByLabel('Start a theme from').selectOption(preset)
+  await themes.getByRole('button', { name: 'New theme from the playhead' }).click()
+}
 
 /** The mean colour (0–255 a channel) of a patch of a view's canvas, `size` of it across, centred at a fraction of it. */
 const patch = (page: Page, testId: string, at: Fraction, size = 0.06) =>
@@ -34,8 +40,7 @@ test('themes: a library from presets, spans on the timeline that crossfade at th
   await expect(themes).toContainText('No theme at the playhead')
 
   // A Golden Age from the playhead (year 0) for a century, fading in and out over ten years.
-  await themes.getByLabel('Start a theme from').selectOption('Golden Age')
-  await themes.getByRole('button', { name: 'New theme from the playhead' }).click()
+  await newTheme(themes, 'Golden Age')
   await expect(inspector(page).getByRole('region', { name: 'Theme span' })).toBeVisible()
   const band = page.getByLabel('Theme spans')
   await expect(band.getByRole('button', { name: /^Theme span Golden Age/ })).toBeVisible()
@@ -48,8 +53,7 @@ test('themes: a library from presets, spans on the timeline that crossfade at th
   // Then the Plague Years from year 80, overlapping the Golden Age's last twenty years.
   await row(page, 'Terra Surface').click()
   await setPlayhead(page, '80')
-  await themes.getByLabel('Start a theme from').selectOption('Plague Years')
-  await themes.getByRole('button', { name: 'New theme from the playhead' }).click()
+  await newTheme(themes, 'Plague Years')
   await expect(band.getByRole('button', { name: /^Theme span Plague Years/ })).toBeVisible()
   tl = await timeline(page)
   expect(tl.themeSpans).toHaveLength(2)
@@ -57,14 +61,18 @@ test('themes: a library from presets, spans on the timeline that crossfade at th
   // The playhead decides what's in force: one theme, both crossfading, then the other.
   await row(page, 'Terra Surface').click()
   const now = themes.locator('.theme-now')
-  const accent = () => page.evaluate(() => document.documentElement.style.getPropertyValue('--accent'))
+  const accent = () => page.locator('.workspace').evaluate((el) => (el as HTMLElement).style.getPropertyValue('--theme-accent'))
+  // The playhead line is drawn in the interface's accent.
+  const accentShown = () => page.locator('.tl-line.playhead').evaluate((el) => getComputedStyle(el).borderLeftColor)
   await setPlayhead(page, '-50')
   await expect.poll(accent).toBe('')
+  const ownAccent = await accentShown()
   await setPlayhead(page, '50')
   await expect(now).toContainText('Golden Age')
   await expect(now).not.toContainText('Plague')
   // The interface takes on the theme's accent.
   await expect.poll(accent).toBe('#e0a526')
+  await expect.poll(accentShown).not.toBe(ownAccent)
   await setPlayhead(page, '85')
   await expect(now).toContainText('Golden Age')
   await expect(now).toContainText('Plague Years')
@@ -89,11 +97,8 @@ test('themes: a library from presets, spans on the timeline that crossfade at th
   // Dragging a span along the band moves it in time.
   await page.getByRole('toolbar', { name: 'Timeline' }).getByRole('button', { name: 'Fit' }).click()
   const bar = band.getByRole('button', { name: /^Theme span Golden Age/ })
-  const box = (await bar.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2, { steps: 5 })
-  await page.mouse.up()
+  const from = center((await bar.boundingBox())!)
+  await dragPoints(page, from, { x: from.x + 40, y: from.y }, { steps: 5 })
   await expect.poll(async () => (await timeline(page)).themeSpans.find((s) => s.id === golden.id)!.start).toBeGreaterThan(golden.start)
 
   // Deleting a theme (opened from the world's library) takes its spans; undo brings them back.
@@ -116,8 +121,7 @@ test('the views take on the theme in force: its light and colours on the globe, 
   expect(await shows(page, 'globe')).toBe('')
 
   // An Age of War from year 0 to 100: a stormy light, hazier air. At its height the globe is darker.
-  await themes.getByLabel('Start a theme from').selectOption('Age of War')
-  await themes.getByRole('button', { name: 'New theme from the playhead' }).click()
+  await newTheme(themes, 'Age of War')
   await setPlayhead(page, '50')
   await expect.poll(() => shows(page, 'globe')).toBe('Age of War')
   await expect.poll(async () => brightness(await planet())).toBeLessThan(brightness(plain) * 0.9)
@@ -139,8 +143,7 @@ test('the views take on the theme in force: its light and colours on the globe, 
   await drawRegion(page)
   await expect.poll(async () => (await state(page, 'regions')).length).toBe(1)
   await row(page, 'Terra Surface').click()
-  await themes.getByLabel('Start a theme from').selectOption('Ice Age')
-  await themes.getByRole('button', { name: 'New theme from the playhead' }).click()
+  await newTheme(themes, 'Ice Age')
   await setPlayhead(page, '80')
   await expect.poll(() => shows(page, 'map')).toBe('Ice Age')
   await viewReady(page)

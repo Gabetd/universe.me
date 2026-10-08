@@ -1,13 +1,29 @@
-import type { ReactNode } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 
-/** A thin row under the ruler (moons, weathering), labelled in the lane column. */
-export function TrackRow({ label, ariaLabel, labelWidth, children }: { label: string; ariaLabel: string; labelWidth: number; children: ReactNode }) {
+/** A thin row under the ruler (themes, moons, weathering), labelled in the lane column. */
+export function TrackRow({
+  label,
+  ariaLabel,
+  labelWidth,
+  className,
+  height,
+  onDoubleClick,
+  children
+}: {
+  label: string
+  ariaLabel: string
+  labelWidth: number
+  className?: string
+  height?: number
+  onDoubleClick?(e: MouseEvent<HTMLDivElement>): void
+  children: ReactNode
+}) {
   return (
-    <div className="tl-subrow">
+    <div className={className ? `tl-subrow ${className}` : 'tl-subrow'} style={height === undefined ? undefined : { height }}>
       <div className="tl-corner tl-subrow-label muted small" style={{ width: labelWidth }}>
         {label}
       </div>
-      <div className="tl-sky" aria-label={ariaLabel}>
+      <div className="tl-sky" aria-label={ariaLabel} onDoubleClick={onDoubleClick}>
         {children}
       </div>
     </div>

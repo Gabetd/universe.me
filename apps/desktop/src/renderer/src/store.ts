@@ -28,10 +28,15 @@ interface UiState extends AppState {
   selectTimeline(selection: TimelineSelection | null): void
 }
 
+/** Timeline records with an inspector panel of their own: what a timeline selection can be. */
+const PANEL_KINDS = ['event', 'era', 'group', 'link', 'theme', 'themeSpan'] as const
+
 export interface TimelineSelection {
-  kind: 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan'
+  kind: (typeof PANEL_KINDS)[number]
   ids: string[]
 }
+
+const hasPanel = (kind: string): kind is TimelineSelection['kind'] => (PANEL_KINDS as readonly string[]).includes(kind)
 
 export const useUi = create<UiState>((set, get) => ({
   ready: false,
@@ -110,7 +115,7 @@ function nextSelection(state: AppState, current: Selection): Selection {
     if (character) return { ...none, selectedId: character.ownerId, selectedCharacterId: character.id }
   }
   // Lanes and changes are edited in place, so only records with an inspector panel get selected.
-  if (focus && (focus.kind === 'event' || focus.kind === 'era' || focus.kind === 'group' || focus.kind === 'link' || focus.kind === 'theme' || focus.kind === 'themeSpan')) {
+  if (focus && hasPanel(focus.kind)) {
     const kind = focus.kind
     if (state.timeline[`${kind}s`].some((r) => r.id === focus.id)) {
       const ids = current.timelineSelection?.kind === kind && current.timelineSelection.ids.includes(focus.id) ? timelineSelection!.ids : [focus.id]

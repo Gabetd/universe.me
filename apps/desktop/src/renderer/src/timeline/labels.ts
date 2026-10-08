@@ -4,6 +4,9 @@ import { formatTime, type Calendar, type EventLocation, type Region, type Timeli
 export const locationLabel = (loc: EventLocation, regions: Region[]): string =>
   loc.kind === 'point' ? `📍 ${loc.lat.toFixed(1)}°, ${loc.lon.toFixed(1)}°` : `⬠ ${regions.find((r) => r.id === loc.regionId)?.name ?? 'Deleted region'}`
 
+/** "1204 – 1210": the years a span of time (an era, a theme span) covers. */
+export const spanDates = (s: { start: number; end: number }, cal?: Calendar): string => `${formatTime(s.start, 'year', cal)} – ${formatTime(s.end, 'year', cal)}`
+
 /** "1204" or "1204 – 1210", at the event's precision. */
 export const eventDates = (e: TimelineEvent, cal?: Calendar): string =>
   e.end === null || e.end === e.start ? formatTime(e.start, e.precision, cal) : `${formatTime(e.start, e.precision, cal)} – ${formatTime(e.end, e.precision, cal)}`

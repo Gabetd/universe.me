@@ -1,13 +1,18 @@
-import { formatTime, type Calendar, type Command, type SpatialNode, type ThemeSpan } from '@universe/core'
+import type { Calendar, SpatialNode, ThemeSpan } from '@universe/core'
 import { memo, useMemo, useState } from 'react'
-import { useUi } from '../store'
+import { updater, useUi } from '../store'
 import { useWorldThemes } from '../world/useThemeLook'
+import { spanDates } from './labels'
 import { TimeScale, snap, type TimeRange } from './scale'
+import { lastUsedTheme, themeSpanCommand } from './themeCommands'
 import { blendMask, isDark, packSpans } from './themeLayout'
+import { TrackRow } from './TrackRow'
 
 const ROW_H = 16
 /** Px at either end of a bar that resize it rather than move it. */
 const EDGE_PX = 6
+/** Px a press has to move before it's a drag, not a click. */
+const DRAG_PX = 3
 
 /** A bar being dragged: moved whole, or by one end. */
 interface Drag {
@@ -45,34 +50,26 @@ export const ThemeTrack = memo(function ThemeTrack({ owner, range, width, cal, l
     return { ...s, start, end }
   }
 
+  // A quarter of the view from there: the theme put on last, or a first one from a preset.
   const createAt = (x: number) => {
     const start = snap(scale.t(x), scale.secondsPerPx)
     const end = snap(start + (range.t1 - range.t0) / 4, scale.secondsPerPx)
-    // The theme used last, or a first one from a preset.
-    const latest = [...themes].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
-    const rootId = useUi.getState().project?.rootId
-    if (latest) return void execute({ type: 'themeSpan.create', payload: { ownerId: owner.id, themeId: latest.id, start, end } })
-    if (!rootId) return
-    const themeId = crypto.randomUUID()
-    const commands: Command[] = [
-      { type: 'theme.create', payload: { id: themeId, ownerId: rootId, preset: 'Golden Age' } },
-      { type: 'themeSpan.create', payload: { ownerId: owner.id, themeId, start, end } }
-    ]
-    void execute({ type: 'batch', payload: { commands } })
+    const themeId = lastUsedTheme()
+    const command = themeSpanCommand(owner.id, start, end, themeId ? { themeId } : { preset: 'Golden Age' })
+    if (command) void execute(command)
   }
 
   return (
-    <div className="tl-subrow tl-theme-row" style={{ height: rows * ROW_H + 6 }}>
-      <div className="tl-corner tl-subrow-label muted small" style={{ width: labelWidth }}>
-        Themes
-      </div>
-      <div
-        className="tl-sky tl-themes"
-        aria-label="Theme spans"
-        onDoubleClick={(e) => {
-          if (e.target === e.currentTarget) createAt(e.clientX - e.currentTarget.getBoundingClientRect().left)
-        }}
-      >
+    <TrackRow
+      label="Themes"
+      ariaLabel="Theme spans"
+      labelWidth={labelWidth}
+      className="tl-theme-row"
+      height={rows * ROW_H + 6}
+      onDoubleClick={(e) => {
+        if (e.target === e.currentTarget) createAt(e.clientX - e.currentTarget.getBoundingClientRect().left)
+      }}
+    >
         {!spans.length && <span className="tl-sky-note muted small">Double-click to give the world a theme from here</span>}
         {placed.map(({ span: stored, row }) => {
           const theme = themeById.get(stored.themeId)
@@ -83,7 +80,7 @@ export const ThemeTrack = memo(function ThemeTrack({ owner, range, width, cal, l
           if (x1 < 0 || x0 > width) return null
           const selected = selection?.kind === 'themeSpan' && selection.ids.includes(s.id)
           const where = s.regionId ? ` · ${regionName.get(s.regionId) ?? 'a region'}` : ''
-          const when = `${formatTime(s.start, 'year', cal)} – ${formatTime(s.end, 'year', cal)}`
+          const when = spanDates(s, cal)
           const { sky, land, water, accent } = theme.palette
           return (
             <button
@@ -106,15 +103,21 @@ export const ThemeTrack = memo(function ThemeTrack({ owner, range, width, cal, l
                 setDrag({ id: s.id, mode: edgeAt(e) ?? 'move', x0: e.clientX, dt: 0 })
               }}
               onPointerMove={(e) => {
-                if (drag?.id === s.id) setDrag({ ...drag, dt: snap((e.clientX - drag.x0) * scale.secondsPerPx, scale.secondsPerPx) })
-                else e.currentTarget.style.cursor = edgeAt(e) ? 'ew-resize' : 'grab'
+                if (drag?.id !== s.id) return void (e.currentTarget.style.cursor = edgeAt(e) ? 'ew-resize' : 'grab')
+                // Where the dragged edge (or the start, moving it whole) lands, on the grid like events.
+                const dx = e.clientX - drag.x0
+                const edge = drag.mode === 'end' ? stored.end : stored.start
+                setDrag({ ...drag, dt: Math.abs(dx) < DRAG_PX ? 0 : snap(edge + dx * scale.secondsPerPx, scale.secondsPerPx) - edge })
               }}
               onPointerUp={() => {
                 if (drag?.id !== s.id) return
                 setDrag(null)
                 if (drag.dt === 0) return selectTimeline({ kind: 'themeSpan', ids: [s.id] })
-                void execute({ type: 'themeSpan.update', payload: { id: s.id, patch: { start: s.start, end: s.end } } })
+                updater('themeSpan', s.id)({ start: s.start, end: s.end })
               }}
+              // A drag the system takes away (a window switch, a touch cancelled) leaves the span as it was.
+              onPointerCancel={() => setDrag(null)}
+              onLostPointerCapture={() => setDrag((d) => (d?.id === s.id ? null : d))}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') selectTimeline({ kind: 'themeSpan', ids: [s.id] })
               }}
@@ -128,8 +131,7 @@ export const ThemeTrack = memo(function ThemeTrack({ owner, range, width, cal, l
             </button>
           )
         })}
-      </div>
-    </div>
+    </TrackRow>
   )
 })
 

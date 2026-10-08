@@ -8,7 +8,7 @@ import { Inspector } from './Inspector'
 import { Outline } from './Outline'
 import { Viewport } from './Viewport'
 import { ZoomStage } from './ZoomOverlay'
-import { ThemeAccent } from './ThemePanels'
+import { ThemedWorkspace } from './ThemedWorkspace'
 import { zoomOut, zoomTo } from './zoom'
 import { Timeline } from '../timeline/Timeline'
 import { useTimelineView } from '../timeline/timelineStore'
@@ -64,7 +64,7 @@ export function Workspace() {
   }, [])
 
   return (
-    <div className="workspace" ref={shell}>
+    <ThemedWorkspace ref={shell}>
       <header className="topbar">
         <Breadcrumb />
         <div className="topbar-actions">
@@ -83,7 +83,6 @@ export function Workspace() {
       </aside>
       <main className="viewport-panel">
         <ZoomStage>{selected?.kind === 'world' ? <WorldEditor key={selected.id} world={selected} /> : <Viewport />}</ZoomStage>
-        <ThemeAccent />
       </main>
       <aside className="panel inspector-panel">
         <Inspector />
@@ -99,7 +98,7 @@ export function Workspace() {
           v{__BUILD_INFO__.version} · {__BUILD_INFO__.commit}
         </span>
       </footer>
-    </div>
+    </ThemedWorkspace>
   )
 }
 

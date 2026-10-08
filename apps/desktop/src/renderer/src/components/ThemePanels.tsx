@@ -1,24 +1,13 @@
-import {
-  LIGHTING_PRESETS,
-  THEME_PRESETS,
-  TYPOGRAPHY,
-  formatTime,
-  rgb01ToHex,
-  secondsPerYear,
-  spanWeight,
-  type Command,
-  type LightingPreset,
-  type SpatialNode,
-  type Theme,
-  type ThemeSpan,
-  type Typography
-} from '@universe/core'
-import { useEffect, useMemo, useState } from 'react'
-import { updater, useTimelineOwner, useUi } from '../store'
-import { usePlayhead } from '../timeline/timelineStore'
+import { THEME_PRESETS, formatTime, rgb01ToHex, secondsPerYear, spanWeight, type Command, type LightingPreset, type SpatialNode, type Theme, type ThemeSpan, type Typography } from '@universe/core'
+import { useMemo, useState } from 'react'
+import { updater, useUi, useWorld } from '../store'
+import { spanDates } from '../timeline/labels'
+import { themeSpanCommand } from '../timeline/themeCommands'
+import { playheadOf, usePlayhead } from '../timeline/timelineStore'
 import { useCalendar } from '../world/useSky'
 import { useThemeLook, useWorldThemes } from '../world/useThemeLook'
-import { ColorField, CommitSlider, DeleteButton, NotesField, NumberInput, PanelHeader, SwatchList, TagsField, TextField, TimeField } from './fields'
+import { ColorField, CommitSlider, DeleteButton, NotesField, NumberInput, PanelHeader, SelectField, Swatch, SwatchList, TagsField, TextField, TimeField } from './fields'
+import { FONT_STACKS } from './ThemedWorkspace'
 
 /**
  * Themes in the inspector (PLAN.md §4.5): the editor for a theme (its look,
@@ -29,14 +18,8 @@ import { ColorField, CommitSlider, DeleteButton, NotesField, NumberInput, PanelH
 
 const LIGHTING_LABELS: Record<LightingPreset, string> = { day: 'Clear day', golden: 'Golden hour', overcast: 'Overcast', dusk: 'Dusk', night: 'Night', storm: 'Storm' }
 const TYPE_LABELS: Record<Typography, string> = { serif: 'Serif (book)', sans: 'Sans (modern)', mono: 'Monospace (records)' }
-/** Type that every computer has: nothing is downloaded. */
-export const FONT_STACKS: Record<Typography, string> = {
-  serif: 'Georgia, Cambria, "Times New Roman", serif',
-  sans: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-  mono: 'ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace'
-}
 
-const execute = (command: Command) => void useUi.getState().execute(command)
+const execute = (command: Command | undefined) => void (command && useUi.getState().execute(command))
 
 const closePanel = () => useUi.getState().selectTimeline(null)
 
@@ -81,27 +64,9 @@ export function ThemePanel({ theme }: { theme: Theme }) {
         <ColorField label="Land" value={theme.palette.land} onCommit={setColour('land')} />
         <ColorField label="Accent" value={theme.palette.accent} onCommit={setColour('accent')} />
       </div>
-      <label className="field">
-        <span>Lighting</span>
-        <select value={theme.lighting} onChange={(e) => update({ lighting: e.target.value as LightingPreset })}>
-          {LIGHTING_PRESETS.map((l) => (
-            <option key={l} value={l}>
-              {LIGHTING_LABELS[l]}
-            </option>
-          ))}
-        </select>
-      </label>
+      <SelectField label="Lighting" value={theme.lighting} options={LIGHTING_LABELS} onCommit={(lighting) => update({ lighting })} />
       <CommitSlider label="Haze" min={0} max={1} step={0.05} value={theme.atmosphere} onCommit={(atmosphere) => update({ atmosphere })} />
-      <label className="field">
-        <span>Type</span>
-        <select value={theme.typography} onChange={(e) => update({ typography: e.target.value as Typography })}>
-          {TYPOGRAPHY.map((t) => (
-            <option key={t} value={t}>
-              {TYPE_LABELS[t]}
-            </option>
-          ))}
-        </select>
-      </label>
+      <SelectField label="Type" value={theme.typography} options={TYPE_LABELS} onCommit={(typography) => update({ typography })} />
       <TagsField label="Mood" tags={theme.mood} onCommit={(mood) => update({ mood })} />
       <TextAreaField
         label="Prose style guide"
@@ -131,14 +96,12 @@ export function ThemePanel({ theme }: { theme: Theme }) {
 
 export function ThemeSpanPanel({ span }: { span: ThemeSpan }) {
   const themes = useUi((s) => s.timeline.themes)
-  const regions = useUi((s) => s.regions)
+  const { regions } = useWorld(span.ownerId)
   const cal = useCalendar(span.ownerId)
-  const playhead = usePlayhead(span.ownerId)
   const theme = themes.find((t) => t.id === span.themeId)
   const year = secondsPerYear(cal)
   const length = (span.end - span.start) / year
   const update = updater('themeSpan', span.id)
-  const shown = Math.round(spanWeight(span, playhead) * 100)
   return (
     <section className="inspector-section" aria-label="Theme span">
       <PanelHeader icon="▬" label="Theme span" onClose={closePanel} />
@@ -181,22 +144,19 @@ export function ThemeSpanPanel({ span }: { span: ThemeSpan }) {
         <span>Where</span>
         <select aria-label="Where" value={span.regionId ?? ''} onChange={(e) => update({ regionId: e.target.value || null })}>
           <option value="">The whole world</option>
-          {regions
-            .filter((r) => r.worldId === span.ownerId)
-            .map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
+          {regions.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name}
+            </option>
+          ))}
+          {span.regionId && !regions.some((r) => r.id === span.regionId) && <option value={span.regionId}>A deleted region</option>}
         </select>
       </label>
       <label className="field">
         <span>Priority (higher shows on top where spans overlap)</span>
         <NumberInput value={span.priority} min={-100} max={100} integer onCommit={(priority) => update({ priority })} />
       </label>
-      <p className="muted small" aria-label="Theme span at the playhead">
-        {shown > 0 ? `${shown}% showing at the playhead (${formatTime(playhead, 'year', cal)}).` : `Not showing at the playhead (${formatTime(playhead, 'year', cal)}).`}
-      </p>
+      <SpanShowing span={span} />
       <DeleteButton kind="themeSpan" ids={[span.id]}>
         Delete theme span
       </DeleteButton>
@@ -206,6 +166,32 @@ export function ThemeSpanPanel({ span }: { span: ThemeSpan }) {
 
 const round = (v: number) => Math.round(v * 100) / 100
 
+/** How much of a span shows at the playhead. On its own, as it follows the playhead. */
+function SpanShowing({ span }: { span: ThemeSpan }) {
+  const playhead = usePlayhead(span.ownerId)
+  const cal = useCalendar(span.ownerId)
+  const shown = Math.round(spanWeight(span, playhead) * 100)
+  const at = formatTime(playhead, 'year', cal)
+  return (
+    <p className="muted small" aria-label="Theme span at the playhead">
+      {shown > 0 ? `${shown}% showing at the playhead (${at}).` : `Not showing at the playhead (${at}).`}
+    </p>
+  )
+}
+
+/** What's in force on a world at the playhead: its themes and how much each shows, the mood, and how to write it. */
+function ThemeNow({ worldId }: { worldId: string }) {
+  const look = useThemeLook(worldId)
+  if (!look) return <span className="muted small">No theme at the playhead.</span>
+  return (
+    <div className="theme-now" style={{ ['--c' as string]: rgb01ToHex(look.accent) }}>
+      <b>{look.layers.map((l) => `${l.theme.name}${l.weight < 0.98 ? ` ${Math.round(l.weight * 100)}%` : ''}`).join(' + ')}</b>
+      {look.dominant.mood.length > 0 && <span className="muted small">{look.dominant.mood.join(' · ')}</span>}
+      {look.dominant.style && <p className="small" style={{ fontFamily: FONT_STACKS[look.dominant.typography] }}>{look.dominant.style}</p>}
+    </div>
+  )
+}
+
 /**
  * The world's themes in its inspector: what's in force at the playhead and
  * how to write it, its spans in time order, and the library to pick from or
@@ -213,64 +199,39 @@ const round = (v: number) => Math.round(v * 100) / 100
  */
 export function WorldThemes({ world }: { world: SpatialNode }) {
   const { spans, themes } = useWorldThemes(world.id)
-  const look = useThemeLook(world.id)
   const cal = useCalendar(world.id)
-  const rootId = useUi((s) => s.project?.rootId)
-  const playhead = usePlayhead(world.id)
   const [preset, setPreset] = useState(Object.keys(THEME_PRESETS)[0]!)
-  const themeById = new Map(themes.map((t) => [t.id, t]))
   const select = useUi.getState().selectTimeline
-  const year = secondsPerYear(cal)
+  const rows = useMemo(() => {
+    const themeById = new Map(themes.map((t) => [t.id, t]))
+    return [...spans]
+      .sort((a, b) => a.start - b.start)
+      .map((s) => {
+        const t = themeById.get(s.themeId)
+        return { id: s.id, name: `${t?.name ?? 'Theme'} · ${spanDates(s, cal)}`, color: t?.palette.accent }
+      })
+  }, [spans, themes, cal])
 
-  const addSpan = (themeId: string) =>
-    execute({ type: 'themeSpan.create', payload: { ownerId: world.id, themeId, start: playhead, end: playhead + 100 * year, blendIn: 10 * year, blendOut: 10 * year } })
-  const newTheme = () => {
-    if (!rootId) return
-    const id = crypto.randomUUID()
-    // A new theme from the preset, put on the world from the playhead for a century.
-    execute({
-      type: 'batch',
-      payload: {
-        commands: [
-          { type: 'theme.create', payload: { id, ownerId: rootId, preset } },
-          { type: 'themeSpan.create', payload: { ownerId: world.id, themeId: id, start: playhead, end: playhead + 100 * year, blendIn: 10 * year, blendOut: 10 * year } }
-        ]
-      }
-    })
+  // From the playhead for a century.
+  const putOn = (theme: { themeId: string } | { preset: string }) => {
+    const start = playheadOf(world.id)
+    execute(themeSpanCommand(world.id, start, start + 100 * secondsPerYear(cal), theme))
   }
 
   return (
     <section className="inspector-section world-themes" aria-label="Themes">
       <h3>Themes</h3>
-      {look ? (
-        <div className="theme-now" style={{ ['--c' as string]: rgb01ToHex(look.accent) }}>
-          <b>{look.layers.map((l) => `${l.theme.name}${l.weight < 0.98 ? ` ${Math.round(l.weight * 100)}%` : ''}`).join(' + ')}</b>
-          {look.dominant.mood.length > 0 && <span className="muted small">{look.dominant.mood.join(' · ')}</span>}
-          {look.dominant.style && <p className="small" style={{ fontFamily: FONT_STACKS[look.dominant.typography] }}>{look.dominant.style}</p>}
-        </div>
-      ) : (
-        <span className="muted small">No theme at the playhead.</span>
-      )}
-      {spans.length > 0 && (
-        <SwatchList
-          rows={[...spans]
-            .sort((a, b) => a.start - b.start)
-            .map((s) => {
-              const t = themeById.get(s.themeId)
-              return { id: s.id, name: `${t?.name ?? 'Theme'} · ${formatTime(s.start, 'year', cal)} – ${formatTime(s.end, 'year', cal)}`, color: t?.palette.accent }
-            })}
-          onPick={(id) => select({ kind: 'themeSpan', ids: [id] })}
-        />
-      )}
+      <ThemeNow worldId={world.id} />
+      {rows.length > 0 && <SwatchList rows={rows} onPick={(id) => select({ kind: 'themeSpan', ids: [id] })} />}
       {themes.length > 0 && (
         <div className="theme-library" aria-label="Theme library">
           {themes.map((t) => (
             <span key={t.id} className="theme-chip">
               <button className="link" onClick={() => select({ kind: 'theme', ids: [t.id] })} title={`Edit ${t.name}`}>
-                <span className="swatch" style={{ background: t.palette.accent }} />
+                <Swatch color={t.palette.accent} />
                 {t.name}
               </button>
-              <button className="link small" onClick={() => addSpan(t.id)} title={`Use ${t.name} on this world from the playhead`} aria-label={`Use ${t.name} from the playhead`}>
+              <button className="link small" onClick={() => putOn({ themeId: t.id })} title={`Use ${t.name} on this world from the playhead`} aria-label={`Use ${t.name} from the playhead`}>
                 + span
               </button>
             </span>
@@ -285,7 +246,7 @@ export function WorldThemes({ world }: { world: SpatialNode }) {
             </option>
           ))}
         </select>
-        <button onClick={newTheme}>New theme from the playhead</button>
+        <button onClick={() => putOn({ preset })}>New theme from the playhead</button>
       </div>
     </section>
   )
@@ -302,36 +263,4 @@ export function RegionTheme({ worldId, regionId }: { worldId: string; regionId: 
       {here.dominant.mood.length > 0 && <span className="muted"> · {here.dominant.mood.join(' · ')}</span>}
     </p>
   )
-}
-
-/** The interface's own accent, before any theme tints it. */
-let baseAccent: string | undefined
-
-/**
- * The interface takes on the theme in force on the world in view (PLAN.md
- * §4.5's UI accent and typography): its accent, as much as the theme shows,
- * and its type for titles over the views.
- */
-export function ThemeAccent() {
-  const owner = useTimelineOwner()
-  const look = useThemeLook(owner?.kind === 'world' ? owner.id : undefined)
-  const accent = look && rgb01ToHex(look.accent)
-  const strength = look?.strength ?? 0
-  const font = look && look.strength > 0.5 ? FONT_STACKS[look.dominant.typography] : undefined
-  useEffect(() => {
-    const root = document.documentElement.style
-    if (accent) {
-      baseAccent ??= getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
-      root.setProperty('--accent', mixHex(baseAccent, accent, strength))
-    } else root.removeProperty('--accent')
-    if (font) root.setProperty('--theme-font', font)
-    else root.removeProperty('--theme-font')
-  }, [accent, strength, font])
-  return null
-}
-
-/** `a` mixed toward `b` by `k` (0–1). */
-function mixHex(a: string, b: string, k: number): string {
-  const [x, y] = [a, b].map((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255))
-  return rgb01ToHex([0, 1, 2].map((i) => x![i]! + (y![i]! - x![i]!) * k) as [number, number, number])
 }

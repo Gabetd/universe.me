@@ -5,7 +5,8 @@
   --border: #232b45;
   --text: #dde3f5;
   --muted: #8891ad;
-  --accent: #7aa2ff;
+  --accent-base: #7aa2ff;
+  --accent: var(--accent-base);
   --accent-2: #a98bff;
   --danger: #ff7a8a;
   --radius: 8px;
@@ -1837,6 +1838,10 @@ input[type='color'] {
 }
 
 /* Themes (M6): the band on the timeline and the inspector's theme editor. */
+/* The theme in force on the world in view tints the accent as much as it shows (ThemedWorkspace). */
+.workspace.themed {
+  --accent: color-mix(in srgb, var(--accent-base), var(--theme-accent) var(--theme-strength));
+}
 .tl-theme-row {
   min-height: 22px;
 }

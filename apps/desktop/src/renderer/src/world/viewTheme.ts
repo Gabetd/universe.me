@@ -1,9 +1,6 @@
-import { hexToRgb01, rgb01ToHex, type ThemeLook } from '@universe/core'
-
-type Rgb = readonly [number, number, number]
+import { hexToRgb01, mixRgb, rgb01ToHex, type Rgb, type ThemeLook } from '@universe/core'
 
 const WHITE: Rgb = [1, 1, 1]
-const mixRgb = (a: Rgb, b: Rgb, k: number): Rgb => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]
 const mix = (a: number, b: number, k: number) => a + (b - a) * k
 
 /** Two colours multiplied, as a light of one on a surface of the other. */
