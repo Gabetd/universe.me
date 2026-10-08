@@ -7,6 +7,7 @@ import type { Store } from './store'
 import { findBlueprint } from './builtin-blueprints'
 import type { Blueprint } from './structures'
 import { stripUndefined } from './util'
+import { worldSimValidators } from './world-sim-validators'
 
 /** Creating, updating and deleting records of any kind (records.ts), with each kind's checks. */
 
@@ -68,7 +69,8 @@ const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>) => vo
   character(store, c) {
     liveWorld(store, c.ownerId)
     if (c.died !== null && c.died < c.born) throw new CommandError('A character cannot die before they are born')
-  }
+  },
+  ...worldSimValidators
 }
 
 /** A blueprint by id: a built-in one or one in the project's library. */
