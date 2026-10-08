@@ -64,10 +64,11 @@ describe('generation options', () => {
     return land / (CUBE_FACES * TERRAIN_RES * TERRAIN_RES)
   }
 
+  // Two whole planets: about 2 s, more on a busy machine.
   it('puts exactly the chosen share of the surface under water', () => {
     expect(landFraction({ ...DEFAULT_TERRAIN, water: 0.3 })).toBeCloseTo(0.7, 2)
     expect(landFraction({ ...DEFAULT_TERRAIN, landform: 'archipelago', water: 0.85 })).toBeCloseTo(0.15, 2)
-  })
+  }, 20_000)
 
   it('keeps the standard palette for the default colors and retints plants', () => {
     expect(worldPalette(DEFAULT_TERRAIN).biomes).toEqual(BIOME_RGB.map((c) => [...c]))

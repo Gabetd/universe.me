@@ -47,7 +47,8 @@ export const SkyTrack = memo(function SkyTrack({ owner, range, width, cal, label
   if (!moons.length) return null
 
   const { t0, t1 } = scale.range
-  const events = all.length >= MAX_EVENTS * 3 ? [] : all.filter((e) => e.at >= t0 && e.at <= t1)
+  // Past the limit skyEvents gives none: too many to show.
+  const events = all.filter((e) => e.at >= t0 && e.at <= t1)
   const news = events.filter((e) => e.kind === 'new-moon')
   // Zoomed out too far, phases would be a smear: show only eclipses.
   const showPhases = news.length > 1 && scale.x(news[1]!.at) - scale.x(news[0]!.at) >= MIN_PX_PER_MONTH
