@@ -1,4 +1,5 @@
 import type { Star } from '@universe/core'
+import { clamp } from '@universe/procgen'
 
 export const SUN_RADIUS_KM = 695_700
 /** Gravitational parameters, km³/s². */
@@ -34,11 +35,11 @@ export function starInfo(star?: Pick<Star, 'massSun' | 'luminositySun'>): StarIn
 }
 
 /** An sRGB colour for a temperature (after Tanner Helland's fit), lightened so dim stars stay visible. */
-export function blackbody(kelvin: number): string {
-  const t = Math.min(40000, Math.max(1000, kelvin)) / 100
-  const clamp = (v: number) => Math.round(Math.min(255, Math.max(0, v)))
+function blackbody(kelvin: number): string {
+  const t = clamp(kelvin, 1000, 40000) / 100
+  const byte = (v: number) => Math.round(clamp(v, 0, 255))
   const r = t <= 66 ? 255 : 329.698727446 * (t - 60) ** -0.1332047592
   const g = t <= 66 ? 99.4708025861 * Math.log(t) - 161.1195681661 : 288.1221695283 * (t - 60) ** -0.0755148492
   const b = t >= 66 ? 255 : t <= 19 ? 0 : 138.5177312231 * Math.log(t - 10) - 305.0447927307
-  return `#${[r, g, b].map((v) => clamp(v * 0.85 + 38).toString(16).padStart(2, '0')).join('')}`
+  return `#${[r, g, b].map((v) => byte(v * 0.85 + 38).toString(16).padStart(2, '0')).join('')}`
 }

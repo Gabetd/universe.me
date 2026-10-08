@@ -1,5 +1,5 @@
 import type { Exposure } from '@universe/core'
-import { BIOME, latLonToDir, surfaceTemperature, type TerrainModel } from '@universe/procgen'
+import { BIOME, clamp, latLonToDir, surfaceTemperature, type TerrainModel } from '@universe/procgen'
 import type { WorldClimate } from './climate'
 
 /**
@@ -26,7 +26,7 @@ const GROWTH: Partial<Record<number, number>> = {
 
 /** How far inland sea air carries salt, km. */
 const SALT_KM = 25
-const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
+const clamp01 = (v: number) => clamp(v, 0, 1)
 
 export function exposureAt(model: TerrainModel, climate: WorldClimate | undefined, lat: number, lon: number): Exposure {
   const dir = latLonToDir(lat, lon)

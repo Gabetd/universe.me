@@ -1,5 +1,5 @@
 import type { Orbit, Star } from './astro'
-import { CommandError, liveNode } from './command-kit'
+import { CommandError, liveNode, liveRecord } from './command-kit'
 import type { EcoLink, Species } from './ecosystem'
 import type { Store } from './store'
 
@@ -17,9 +17,7 @@ export const worldSimValidators = {
   ecolink(store: Store, l: EcoLink) {
     if (l.fromId === l.toId && l.type !== 'competes') throw new CommandError('A species cannot eat itself')
     for (const id of [l.fromId, l.toId]) {
-      const s = store.records('lifeform').get(id)
-      if (!s || s.deletedAt) throw new CommandError(`Species ${id} does not exist`)
-      if (s.ownerId !== l.ownerId) throw new CommandError('Those species live on different worlds')
+      if (liveRecord(store, 'lifeform', id).ownerId !== l.ownerId) throw new CommandError('Those species live on different worlds')
     }
     if (store.records('ecolink').all().some((o) => o.id !== l.id && o.fromId === l.fromId && o.toId === l.toId && o.type === l.type)) throw new CommandError('Those species are already linked that way')
   }

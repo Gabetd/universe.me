@@ -6,7 +6,7 @@ import { selectNode, useTimelineOwner, useUi } from '../store'
 import { playheadOf } from '../timeline/timelineStore'
 import { useSystem } from '../world/useSky'
 import type { SystemModel } from '@universe/sim'
-import { drawOrbits } from './orbitView'
+import { drawOrbits, type CanvasTarget } from './orbitView'
 import { SkyControls } from './SkyControls'
 import { SPACE_BG } from '../theme'
 import { usePlanetTextures, type PlanetTexture } from './planetSprite'
@@ -43,11 +43,12 @@ export function Viewport() {
 
   const system = useSystem(node?.kind === 'star_system' || node?.kind === 'body' ? node.id : undefined)
   const owner = useTimelineOwner()
-  const worlds = useUi((s) => s.worlds)
-  const skyRef = useRef({ system, ownerId: owner?.id, nodes, radiusKm: new Map<string, number>() })
+  // Names and colours of the bodies, worked out once rather than every frame.
+  const bodies = useMemo(() => new Map(nodes.filter((n) => n.kind === 'body').map((n) => [n.id, { name: n.name, hue: hueOf(n.seed) }])), [nodes])
+  const skyRef = useRef({ system, ownerId: owner?.id, bodies })
   useEffect(() => {
-    skyRef.current = { system, ownerId: owner?.id, nodes, radiusKm: new Map(worlds.map((w) => [w.id, w.settings.radiusKm])) }
-  }, [system, owner?.id, nodes, worlds])
+    skyRef.current = { system, ownerId: owner?.id, bodies }
+  }, [system, owner?.id, bodies])
 
   const hover = useRef<string | null>(null)
   const targets = useRef<Target[]>([])
@@ -68,7 +69,7 @@ export function Viewport() {
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       const s = skyRef.current
-      const sky = s.system && { system: s.system, t: s.ownerId ? playheadOf(s.ownerId) : 0, nodes: s.nodes, radiusKm: s.radiusKm }
+      const sky = s.system && { system: s.system, t: s.ownerId ? playheadOf(s.ownerId) : 0, bodies: s.bodies }
       targets.current = drawScene(ctx, w, h, scene, texturesRef.current, sky, hover.current, (performance.now() - start) / 1000)
       frame = requestAnimationFrame(render)
     }
@@ -126,12 +127,7 @@ export function Viewport() {
   )
 }
 
-interface Target {
-  id: string
-  x: number
-  y: number
-  r: number
-}
+type Target = CanvasTarget
 
 interface Scene {
   node: SpatialNode
@@ -146,9 +142,7 @@ interface Sky {
   system: SystemModel
   /** Timeline time. */
   t: number
-  nodes: SpatialNode[]
-  /** World id → its radius. */
-  radiusKm: Map<string, number>
+  bodies: Map<string, { name: string; hue: number }>
 }
 
 function drawScene(
@@ -209,36 +203,22 @@ function drawScene(
     case 'body': {
       if (!sky) break
       const isSystem = node.kind === 'star_system'
-      const bodyNodes = new Map(sky.nodes.map((n) => [n.id, n]))
-      const worldOf = (bodyId: string) => sky.nodes.find((n) => n.parentId === bodyId && n.kind === 'world')
       targets.push(
         ...drawOrbits(ctx, w, h, {
           system: sky.system,
           centerId: isSystem ? null : node.id,
           t: sky.t,
           spin: t,
-          names: new Map(sky.nodes.map((n) => [n.id, n.name])),
-          radiusOf: (o) => {
-            const world = worldOf(o.bodyId)
-            return (world && sky.radiusKm.get(world.id)) ?? o.radiusKm
-          },
-          textureOf: (bodyId) => {
-            const world = worldOf(bodyId)
-            return world && textures.get(world.id)
-          },
-          hasWorld: (bodyId) => !!worldOf(bodyId),
-          hueOf: (bodyId) => hueOf(bodyNodes.get(bodyId)?.seed ?? 0),
+          bodies: sky.bodies,
+          worlds: scene.worlds,
+          textures,
+          // The planet in the middle opens its world.
+          centerTargetId: scene.world?.id,
           hoverId
         })
       )
-      if (!isSystem && scene.world) {
-        // The planet in the middle opens its world.
-        const middle = targets.find((x) => x.id === node.id)
-        if (middle) {
-          middle.id = scene.world.id
-          label(ctx, `World: ${scene.world.name}`, middle.x, middle.y + middle.r + 14, scene.world.id === hoverId)
-        }
-      }
+      const middle = !isSystem && scene.world && targets.find((x) => x.id === scene.world!.id)
+      if (middle) label(ctx, `World: ${scene.world!.name}`, middle.x, middle.y + middle.r + 14, middle.id === hoverId)
       break
     }
   }

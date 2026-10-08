@@ -1,5 +1,5 @@
 import { SUN_RADIUS_KM } from './star'
-import { orbitPosition, planetOf, positionFromStar, type BodyOrbit, type SystemModel } from './orbits'
+import { moonsOf, orbitPosition, planetOf, positionFromStar, synodicS, type BodyOrbit, type SystemModel } from './orbits'
 
 /**
  * Moon phases and eclipses (PLAN.md §7): phases from the angle between the
@@ -8,8 +8,8 @@ import { orbitPosition, planetOf, positionFromStar, type BodyOrbit, type SystemM
  * shadows to fall.
  */
 
-export const PHASE_NAMES = ['New moon', 'Waxing crescent', 'First quarter', 'Waxing gibbous', 'Full moon', 'Waning gibbous', 'Last quarter', 'Waning crescent'] as const
-export type PhaseName = (typeof PHASE_NAMES)[number]
+const PHASE_NAMES = ['New moon', 'Waxing crescent', 'First quarter', 'Waxing gibbous', 'Full moon', 'Waning gibbous', 'Last quarter', 'Waning crescent'] as const
+type PhaseName = (typeof PHASE_NAMES)[number]
 
 export interface MoonPhase {
   /** Angle from the star to the moon seen from the planet, 0–2π: 0 new, π full. */
@@ -18,9 +18,6 @@ export interface MoonPhase {
   illumination: number
   name: PhaseName
 }
-
-/** Radius of a body: its world's (given), or its orbit record's. */
-export type RadiusOf = (body: BodyOrbit) => number
 
 const TAU = Math.PI * 2
 
@@ -37,7 +34,7 @@ export function moonPhase(system: SystemModel, moon: BodyOrbit, t: number): Moon
   return { elongation, illumination: (1 - Math.cos(elongation)) / 2, name: PHASE_NAMES[Math.round(elongation / (TAU / 8)) % 8]! }
 }
 
-export type SkyEventKind = 'new-moon' | 'full-moon' | 'solar-eclipse' | 'lunar-eclipse'
+type SkyEventKind = 'new-moon' | 'full-moon' | 'solar-eclipse' | 'lunar-eclipse'
 
 export interface SkyEvent {
   at: number
@@ -52,14 +49,13 @@ export interface SkyEvent {
  * eclipses among them. Stops after `limit` events (zoomed far out there
  * would be millions).
  */
-export function skyEvents(system: SystemModel, planetId: string, t0: number, t1: number, radiusOf: RadiusOf, limit = 4000): SkyEvent[] {
+export function skyEvents(system: SystemModel, planetId: string, t0: number, t1: number, limit = 4000): SkyEvent[] {
   const planet = system.bodies.get(planetId)
   const sunPlanet = planetOf(system, planetId)
   if (!planet || !sunPlanet) return []
   const out: SkyEvent[] = []
-  const moons = [...system.bodies.values()].filter((o) => o.parentBodyId === planetId)
-  for (const moon of moons) {
-    const synodic = 1 / Math.abs(1 / moon.periodS - 1 / sunPlanet.periodS)
+  for (const moon of moonsOf(system, planetId)) {
+    const synodic = synodicS(moon, sunPlanet.periodS)
     if (!Number.isFinite(synodic) || (t1 - t0) / synodic > limit) continue
     const step = synodic / 16
     // The unwrapped elongation keeps growing; each multiple of π is a new or full moon.
@@ -91,7 +87,7 @@ export function skyEvents(system: SystemModel, planetId: string, t0: number, t1:
         const at = (lo + hi) / 2
         const full = Math.round(target / Math.PI) % 2 !== 0
         out.push({ at, kind: full ? 'full-moon' : 'new-moon', moonId: moon.bodyId })
-        const eclipse = eclipseAt(system, planet, moon, at, full, radiusOf)
+        const eclipse = eclipseAt(system, planet, moon, at, full)
         if (eclipse) out.push({ at, kind: full ? 'lunar-eclipse' : 'solar-eclipse', moonId: moon.bodyId, extent: eclipse })
       }
       t = tn
@@ -102,13 +98,13 @@ export function skyEvents(system: SystemModel, planetId: string, t0: number, t1:
 }
 
 /** Whether the new (or full) moon at `t` eclipses the star (or is eclipsed), and how much. */
-function eclipseAt(system: SystemModel, planet: BodyOrbit, moon: BodyOrbit, t: number, full: boolean, radiusOf: RadiusOf): SkyEvent['extent'] | undefined {
+function eclipseAt(system: SystemModel, planet: BodyOrbit, moon: BodyOrbit, t: number, full: boolean): SkyEvent['extent'] | undefined {
   const sunDist = Math.hypot(...positionFromStar(system, planet.bodyId, t))
   const m = orbitPosition(moon, t)
   const moonDist = Math.hypot(...m)
   const rSun = SUN_RADIUS_KM * system.star.radiusSun
-  const rPlanet = radiusOf(planet)
-  const rMoon = radiusOf(moon)
+  const rPlanet = planet.radiusKm
+  const rMoon = moon.radiusKm
   // How far the moon passes from the line through the star and the planet.
   const offset = Math.abs(m[2])
   if (!full) {

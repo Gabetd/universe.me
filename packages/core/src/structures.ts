@@ -27,7 +27,7 @@ export interface Exposure {
 }
 
 /** A temperate, inland climate: the half-lives below are for this. */
-export const TEMPERATE_EXPOSURE: Exposure = { moisture: 0.5, freezeThaw: 0.4, heat: 0.15, salt: 0.05, growth: 0.6 }
+const TEMPERATE_EXPOSURE: Exposure = { moisture: 0.5, freezeThaw: 0.4, heat: 0.15, salt: 0.05, growth: 0.6 }
 
 /**
  * How long each material lasts when nobody looks after it: the half-life of

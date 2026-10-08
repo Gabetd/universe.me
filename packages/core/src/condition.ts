@@ -1,6 +1,6 @@
 import { insidePolygon, greatCircleKm } from './geo'
 import type { TimelineData } from './records'
-import { MATERIAL_INFO, stageOf, weatherFactor, type Blueprint, type EventEffect, type Exposure, type Material, type Stage, type Structure } from './structures'
+import { MATERIAL_INFO, STAGES, stageOf, weatherFactor, type Blueprint, type EventEffect, type Exposure, type Material, type Stage, type Structure } from './structures'
 import { DEFAULT_CALENDAR, secondsPerYear, type Time } from './time'
 import { eventPlace, regionAt, type Warning } from './timeline-queries'
 import type { Region } from './world'
@@ -182,7 +182,7 @@ export function conditionCurve(structure: Structure, steps: Step[], world: Struc
   const all = (f: (c: number) => number) => (s.parts = s.parts.map(f))
   for (const step of steps) {
     const list = sharesOf(s.blueprintId)
-    const parts = s.exists ? s.parts.map((c, i) => evolve(c, step.at - s.at, s.maintained, list[i]!.decayPerYear)) : s.parts.map(() => 0)
+    const parts = evolveParts(s, list, step.at)
     s = { ...s, at: step.at, parts, exists: s.exists && overall(parts, list) > 0 }
     switch (step.kind) {
       case 'build':
@@ -228,10 +228,14 @@ function lastState(curve: ConditionCurve, t: Time): State | undefined {
   return last
 }
 
-/** Each material's condition `t` seconds after a state, and overall. */
+/** Each material's condition at `t`, played on from a state. */
+const evolveParts = (s: State, shares: MaterialShare[], t: Time) =>
+  s.exists ? s.parts.map((c, i) => evolve(c, t - s.at, s.maintained, shares[i]!.decayPerYear)) : s.parts.map(() => 0)
+
+/** Each material's condition at `t` after a state, and overall. */
 function partsAt(curve: ConditionCurve, s: State, t: Time): { parts: number[]; condition: number } {
   const list = curve.shares.get(s.blueprintId)!
-  const parts = s.exists ? s.parts.map((c, i) => evolve(c, t - s.at, s.maintained, list[i]!.decayPerYear)) : s.parts.map(() => 0)
+  const parts = evolveParts(s, list, t)
   return { parts, condition: overall(parts, list) }
 }
 
@@ -249,8 +253,7 @@ export function stateAt(curve: ConditionCurve, t: Time): StructureState {
 }
 
 /** When a weathering structure, left alone after `t`, will have eroded away: when its last material goes. Undefined if it won't. */
-export function erodesAt(curve: ConditionCurve, t: Time): Time | undefined {
-  const last = lastState(curve, t)
+export function erodesAt(curve: ConditionCurve, t: Time, last = lastState(curve, t)): Time | undefined {
   if (!last?.exists || last.maintained) return undefined
   const list = curve.shares.get(last.blueprintId)!
   const { parts, condition } = partsAt(curve, last, t)
@@ -267,8 +270,8 @@ export function erodesAt(curve: ConditionCurve, t: Time): Time | undefined {
 
 /** When a weathering structure, left alone after `t`, falls into ruin (condition under 20). Undefined if it won't, or already has. */
 export function ruinAt(curve: ConditionCurve, t: Time): Time | undefined {
-  const end = erodesAt(curve, t)
   const last = lastState(curve, t)
+  const end = erodesAt(curve, t, last)
   if (end === undefined || !last || partsAt(curve, last, t).condition < RUIN) return undefined
   // Condition only falls while weathered, so bisect for the crossing.
   let lo = t
@@ -281,8 +284,8 @@ export function ruinAt(curve: ConditionCurve, t: Time): Time | undefined {
   return hi
 }
 
-/** Where condition ruin starts (the Ruin stage). */
-const RUIN = 20
+/** Below this, a structure is a ruin: where the Damaged stage ends. */
+const RUIN = STAGES.find((s) => s.stage === 'damaged')!.from
 
 /** A moment the condition engine works out by itself: a structure falling into ruin, or eroding away, while left to weather. */
 export interface DerivedEvent {

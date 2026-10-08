@@ -22,6 +22,15 @@ export interface BodyOrbit extends OrbitFields {
 }
 
 export const DAY_S = 86_400
+/** An Earth year, for saying how long orbits take. */
+export const YEAR_S = 365.25 * DAY_S
+
+/** "92 Earth days", "11.9 Earth years" (or "92 d", "11.9 yr" with `short`). */
+export function formatPeriod(seconds: number, short = false): string {
+  const days = seconds / DAY_S
+  if (days >= 1000) return `${(seconds / YEAR_S).toFixed(days > 10_000 ? 1 : 2)}${short ? ' yr' : ' Earth years'}`
+  return `${days.toFixed(days < 10 ? 2 : short ? 0 : 1)}${short ? ' d' : ' Earth days'}`
+}
 const RAD = Math.PI / 180
 
 export const EARTH_ORBIT: OrbitFields = {
@@ -94,8 +103,12 @@ function defaultOrbit(body: SpatialNode, index: number, isMoon: boolean, withWor
   }
 }
 
-/** Builds the system model: the star and every body's orbit, stored or default. */
-export function systemModel(nodes: SpatialNode[], records: Records, systemId: string): SystemModel {
+/**
+ * Builds the system model: the star and every body's orbit, stored or
+ * default. A body with a world takes that world's radius (`worldRadiusKm`,
+ * by world id) over its orbit record's.
+ */
+export function systemModel(nodes: SpatialNode[], records: Records, systemId: string, worldRadiusKm?: ReadonlyMap<string, number>): SystemModel {
   const star = starInfo(records.stars.find((s) => s.id === starId(systemId) && !s.deletedAt))
   const bodies = new Map<string, BodyOrbit>()
   const visit = (parentId: string, parentBody: BodyOrbit | null) => {
@@ -110,8 +123,11 @@ export function systemModel(nodes: SpatialNode[], records: Records, systemId: st
       const fields = stored ?? defaultOrbit(body, index, !!parentBody, withWorld)
       // Two bodies go round their common centre: the period depends on both masses.
       const centralGM = parentBody ? GM_EARTH * (parentBody.massEarth + fields.massEarth) : GM_SUN * star.massSun + GM_EARTH * fields.massEarth
+      const world = nodes.find((n) => n.parentId === body.id && n.kind === 'world')
+      const radiusKm = (world && worldRadiusKm?.get(world.id)) || fields.radiusKm
       const orbit: BodyOrbit = {
-        ...pickFields(fields),
+        ...orbitFields(fields),
+        radiusKm,
         bodyId: body.id,
         parentBodyId: parentBody?.bodyId ?? null,
         centralGM,
@@ -126,13 +142,14 @@ export function systemModel(nodes: SpatialNode[], records: Records, systemId: st
   return { systemId, star, bodies }
 }
 
-function pickFields(o: OrbitFields): OrbitFields {
+/** Just the stored fields of an orbit (what `orbit.set` takes). */
+export function orbitFields(o: OrbitFields): OrbitFields {
   const { semiMajorAxisKm, eccentricity, inclinationDeg, phaseDeg, rotationHours, axialTiltDeg, massEarth, radiusKm, monthNames } = o
   return { semiMajorAxisKm, eccentricity, inclinationDeg, phaseDeg, rotationHours, axialTiltDeg, massEarth, radiusKm, monthNames }
 }
 
 /** Solves Kepler's equation M = E − e·sin E for the eccentric anomaly. */
-export function eccentricAnomaly(meanAnomaly: number, e: number): number {
+function eccentricAnomaly(meanAnomaly: number, e: number): number {
   let E = e < 0.8 ? meanAnomaly : Math.PI
   for (let k = 0; k < 30; k++) {
     const d = (E - e * Math.sin(E) - meanAnomaly) / (1 - e * Math.cos(E))
@@ -175,6 +192,19 @@ export function planetOf(system: SystemModel, bodyId: string): BodyOrbit | undef
   while (o?.parentBodyId) o = system.bodies.get(o.parentBodyId)
   return o
 }
+
+/** The orbit of the body a world is on, once someone has set it (until then the world keeps Earth's calendar and climate). */
+export function worldOrbit(nodes: SpatialNode[], system: SystemModel | undefined, worldId: string): BodyOrbit | undefined {
+  const bodyId = nodes.find((n) => n.id === worldId)?.parentId
+  const body = bodyId ? system?.bodies.get(bodyId) : undefined
+  return body && !body.isDefault ? body : undefined
+}
+
+/** Seconds from new moon to new moon, for a moon whose planet takes `yearS` to go round its star. */
+export const synodicS = (moon: BodyOrbit, yearS: number) => 1 / Math.abs(1 / moon.periodS - 1 / yearS)
+
+/** One turn takes (about) as long as a year: one side always faces the star. */
+export const isTidallyLocked = (siderealS: number, yearS: number) => siderealS >= yearS * 0.999
 
 /** The moons of a body, nearest first. */
 export const moonsOf = (system: SystemModel, bodyId: string) =>

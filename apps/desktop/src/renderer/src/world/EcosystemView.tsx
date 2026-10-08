@@ -1,5 +1,5 @@
-import { CUBE_FACES, DIETS, ECO_LINK_TYPES, SPECIES_KINDS, TERRAIN_RES, catalogFor, ecosystemWarnings, type Command, type Diet, type EcoLink, type Species, type SpeciesPatch } from '@universe/core'
-import { BIOMES, type TerrainModel } from '@universe/procgen'
+import { CUBE_FACES, DIETS, ECO_LINK_TYPES, SPECIES_KINDS, TERRAIN_RES, ecosystemWarnings, type Diet, type EcoLink, type Species, type SpeciesPatch } from '@universe/core'
+import { BIOMES, suggestSpecies, type TerrainModel } from '@universe/procgen'
 import { useMemo, useState } from 'react'
 import { ColorField, TagsField, TextField } from '../components/fields'
 import { NotesEditor } from '../components/NotesEditor'
@@ -11,7 +11,13 @@ import { useUi } from '../store'
  * Suggestions come from the biomes the world actually has.
  */
 
-const DIET_LABELS: Record<Diet, string> = { producer: 'Producers', herbivore: 'Herbivores', omnivore: 'Omnivores', carnivore: 'Carnivores', decomposer: 'Decomposers' }
+const DIET_LABELS: Record<Diet, { one: string; many: string }> = {
+  producer: { one: 'Producer', many: 'Producers' },
+  herbivore: { one: 'Herbivore', many: 'Herbivores' },
+  omnivore: { one: 'Omnivore', many: 'Omnivores' },
+  carnivore: { one: 'Carnivore', many: 'Carnivores' },
+  decomposer: { one: 'Decomposer', many: 'Decomposers' }
+}
 const LINK_LABELS: Record<EcoLink['type'], string> = { eats: 'Eats', pollinates: 'Pollinates', symbiosis: 'Lives with', competes: 'Competes with' }
 const biomeName = (id: number) => BIOMES.find((b) => b.id === id)?.name ?? `Biome ${id}`
 
@@ -46,23 +52,7 @@ export function EcosystemView({ worldId, model, change }: { worldId: string; mod
   const warnings = useMemo(() => ecosystemWarnings(species, links), [species, links])
 
   const suggest = () => {
-    const biomes = presentBiomes.map(([b]) => b)
-    const have = new Map(species.map((s) => [s.name.toLowerCase(), s.id]))
-    const picks = catalogFor(biomes).filter((c) => !have.has(c.name.toLowerCase()))
-    const ids = new Map(have)
-    const commands: Command[] = picks.map((c) => {
-      const id = crypto.randomUUID()
-      ids.set(c.name.toLowerCase(), id)
-      return { type: 'species.create', payload: { id, ownerId: worldId, name: c.name, kind: c.kind, diet: c.diet, color: c.color, biomes: c.biomes.filter((b) => biomes.includes(b)) } }
-    })
-    for (const c of catalogFor(biomes)) {
-      for (const food of c.eats) {
-        const from = ids.get(c.name.toLowerCase())
-        const to = ids.get(food.toLowerCase())
-        const exists = links.some((l) => l.fromId === from && l.toId === to && l.type === 'eats')
-        if (from && to && !exists && (picks.includes(c) || picks.some((p) => p.name === food))) commands.push({ type: 'ecolink.create', payload: { fromId: from, toId: to, type: 'eats' } })
-      }
-    }
+    const commands = suggestSpecies(worldId, presentBiomes.map(([b]) => b), species, links, () => crypto.randomUUID())
     if (commands.length) void execute({ type: 'batch', payload: { commands } })
   }
 
@@ -149,7 +139,7 @@ function SpeciesEditor({ species, all, links, biomes, onClose }: { species: Spec
           <select value={species.diet} onChange={(e) => update({ diet: e.target.value as Diet })}>
             {DIETS.map((d) => (
               <option key={d} value={d}>
-                {DIET_LABELS[d].slice(0, -1)}
+                {DIET_LABELS[d].one}
               </option>
             ))}
           </select>
@@ -219,19 +209,18 @@ function SpeciesEditor({ species, all, links, biomes, onClose }: { species: Spec
   )
 }
 
-const COLUMNS: Diet[] = ['producer', 'herbivore', 'omnivore', 'carnivore', 'decomposer']
 const NODE_W = 128
 const NODE_H = 28
 const GAP_Y = 10
 
 /** The food web: one column per diet, arrows from food to eater (the way energy flows). */
 function FoodWeb({ species, links, selectedId, onSelect }: { species: Species[]; links: EcoLink[]; selectedId: string | null; onSelect(id: string): void }) {
-  const columns = COLUMNS.map((d) => species.filter((s) => s.diet === d))
+  const columns = DIETS.map((d) => species.filter((s) => s.diet === d))
   const colX = (i: number) => 24 + i * (NODE_W + 72)
   const pos = new Map<string, { x: number; y: number }>()
   columns.forEach((list, i) => list.forEach((s, k) => pos.set(s.id, { x: colX(i), y: 44 + k * (NODE_H + GAP_Y) })))
   const height = Math.max(160, 64 + Math.max(0, ...columns.map((c) => c.length)) * (NODE_H + GAP_Y))
-  const width = colX(COLUMNS.length - 1) + NODE_W + 24
+  const width = colX(DIETS.length - 1) + NODE_W + 24
   const related = new Set(selectedId ? links.filter((l) => l.fromId === selectedId || l.toId === selectedId).flatMap((l) => [l.fromId, l.toId]) : [])
 
   return (
@@ -242,9 +231,9 @@ function FoodWeb({ species, links, selectedId, onSelect }: { species: Species[];
             <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)" />
           </marker>
         </defs>
-        {COLUMNS.map((d, i) => (
+        {DIETS.map((d, i) => (
           <text key={d} x={colX(i)} y={24} className="eco-col-label">
-            {DIET_LABELS[d]}
+            {DIET_LABELS[d].many}
           </text>
         ))}
         {links.map((l) => {

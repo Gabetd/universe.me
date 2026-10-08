@@ -1,5 +1,5 @@
-import { AU_KM } from '@universe/core'
-import { EARTH_ORBIT, planetOf, type SystemModel } from './orbits'
+import { AU_KM, type SpatialNode } from '@universe/core'
+import { EARTH_ORBIT, planetOf, worldOrbit, type SystemModel } from './orbits'
 
 /**
  * A world's climate from its star and orbit (PLAN.md §7), as numbers the
@@ -50,3 +50,9 @@ function surfaceTempC(luminositySun: number, distanceAu: number, eccentricity: n
 }
 
 const EARTH_MEAN_C = surfaceTempC(1, 1, EARTH_ORBIT.eccentricity)
+
+/** A world's climate, once the orbit of the body it's on has been set; undefined keeps it Earth-like. */
+export function worldClimateOf(nodes: SpatialNode[], system: SystemModel | undefined, worldId: string): WorldClimate | undefined {
+  const body = worldOrbit(nodes, system, worldId)
+  return body && worldClimate(system!, body.bodyId)
+}

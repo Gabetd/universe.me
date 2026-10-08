@@ -1,5 +1,5 @@
 import type { SpatialNode, WorldInfo } from '@universe/core'
-import { renderEquirect } from '@universe/procgen'
+import { renderEquirect, skyKey } from '@universe/procgen'
 import { useEffect, useState } from 'react'
 import { useUi } from '../store'
 import { loadTerrain } from '../world/terrainSource'
@@ -25,11 +25,7 @@ export function usePlanetTextures(worlds: SpatialNode[]): Map<string, PlanetText
   const [textures, setTextures] = useState(() => new Map<string, PlanetTexture>())
   const wanted = worlds.map((w) => [w, infos.find((i) => i.id === w.id)] as const).filter((p): p is [SpatialNode, WorldInfo] => !!p[1])
   // One key per world's current state: a new settings object or terrain revision redraws it.
-  const climateKey = (id: string) => {
-    const c = climates.get(id)
-    return c ? `${c.offsetC.toFixed(2)}:${c.gradient.toFixed(3)}` : ''
-  }
-  const key = wanted.map(([w, info]) => `${w.id}:${w.seed}:${info.terrainRevision}:${settingsVersion(info)}:${climateKey(w.id)}`).join('|')
+  const key = wanted.map(([w, info]) => `${w.id}:${w.seed}:${info.terrainRevision}:${settingsVersion(info)}:${skyKey(climates.get(w.id))}`).join('|')
 
   useEffect(() => {
     let cancelled = false
@@ -64,11 +60,11 @@ function settingsVersion(info: WorldInfo): number {
 interface SphereLut {
   canvas: HTMLCanvasElement
   image: ImageData
-  /** Per lit pixel inside the disc: where it lands, its texture row, longitude (0–1) and light. */
+  /** Per pixel inside the disc: where it lands, its texture row, longitude (0–1), and its surface normal on screen. */
   dst: Int32Array
   row: Int32Array
   lon: Float32Array
-  shade: Float32Array
+  normal: Float32Array
 }
 
 const luts = new Map<string, SphereLut>()
@@ -76,14 +72,13 @@ const luts = new Map<string, SphereLut>()
 const TILT = 0.38
 /** Light from the upper left, a little in front. */
 const DEFAULT_LIGHT = Math.atan2(0.45, -0.55)
-const LIGHT_STEPS = 48
 
 /** Light coming from `angle` on screen (radians, counter-clockwise from the right), slightly from in front so the near side never goes fully dark. */
 const lightFrom = (angle: number) => normalize([Math.cos(angle) * 0.8, Math.sin(angle) * 0.8, 0.45])
 
-/** Works out, once per size and light direction, which point of the sphere each pixel of the disc shows and how lit it is. */
-function sphereLut(size: number, texH: number, lightStep: number): SphereLut {
-  const key = `${size}:${texH}:${lightStep}`
+/** Works out, once per size, which point of the sphere each pixel of the disc shows. */
+function sphereLut(size: number, texH: number): SphereLut {
+  const key = `${size}:${texH}`
   const cached = luts.get(key)
   if (cached) return cached
   const canvas = document.createElement('canvas')
@@ -92,10 +87,9 @@ function sphereLut(size: number, texH: number, lightStep: number): SphereLut {
   const dst: number[] = []
   const row: number[] = []
   const lon: number[] = []
-  const shade: number[] = []
+  const normal: number[] = []
   const r = size / 2
   const [c, s] = [Math.cos(TILT), Math.sin(TILT)]
-  const LIGHT = lightFrom((lightStep / LIGHT_STEPS) * Math.PI * 2)
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
       const nx = (px + 0.5 - r) / r
@@ -110,12 +104,10 @@ function sphereLut(size: number, texH: number, lightStep: number): SphereLut {
       dst.push((py * size + px) * 4)
       row.push(Math.min(texH - 1, Math.floor((0.5 - lat / Math.PI) * texH)))
       lon.push(Math.atan2(nx, wz) / (2 * Math.PI) + 0.5)
-      shade.push(0.16 + 0.95 * Math.max(0, nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2]))
+      normal.push(nx, ny, nz)
     }
   }
-  const lut = { canvas, image, dst: Int32Array.from(dst), row: Int32Array.from(row), lon: Float32Array.from(lon), shade: Float32Array.from(shade) }
-  // Many sizes and directions come and go as planets move; keep the cache bounded.
-  if (luts.size > 400) luts.delete(luts.keys().next().value!)
+  const lut = { canvas, image, dst: Int32Array.from(dst), row: Int32Array.from(row), lon: Float32Array.from(lon), normal: Float32Array.from(normal) }
   luts.set(key, lut)
   return lut
 }
@@ -123,18 +115,19 @@ function sphereLut(size: number, texH: number, lightStep: number): SphereLut {
 /** Draws a globe with a world's real surface, turning (`spin` in turns) and lit from `lightAngle` (radians on screen, toward its star). */
 export function drawTexturedPlanet(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, tex: PlanetTexture, spin: number, lightAngle = DEFAULT_LIGHT): void {
   const size = Math.max(4, Math.round(radius * 2))
-  const step = ((Math.round((lightAngle / (Math.PI * 2)) * LIGHT_STEPS) % LIGHT_STEPS) + LIGHT_STEPS) % LIGHT_STEPS
-  const lut = sphereLut(size, tex.height, step)
+  const lut = sphereLut(size, tex.height)
+  const [lx, ly, lz] = lightFrom(lightAngle)
   const out = lut.image.data
   const { pixels, width } = tex
   const offset = spin - Math.floor(spin)
+  const n = lut.normal
   for (let k = 0; k < lut.dst.length; k++) {
     // Turning west to east: the land under each pixel moves on eastward.
     let u = lut.lon[k]! - offset
     if (u < 0) u += 1
     const src = (lut.row[k]! * width + Math.min(width - 1, Math.floor(u * width))) * 4
     const o = lut.dst[k]!
-    const l = lut.shade[k]!
+    const l = 0.16 + 0.95 * Math.max(0, n[k * 3]! * lx + n[k * 3 + 1]! * ly + n[k * 3 + 2]! * lz)
     out[o] = pixels[src]! * l
     out[o + 1] = pixels[src + 1]! * l
     out[o + 2] = pixels[src + 2]! * l

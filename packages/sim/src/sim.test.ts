@@ -65,11 +65,10 @@ describe('calendars', () => {
 })
 
 describe('moons', () => {
-  const radius = (o: { radiusKm: number }) => o.radiusKm
   it('go round their phases once a synodic month', () => {
     const s = system()
     const moon = s.bodies.get('moon')!
-    const events = skyEvents(s, 'earth', 0, 365.25 * DAY_S, radius)
+    const events = skyEvents(s, 'earth', 0, 365.25 * DAY_S)
     const news = events.filter((e) => e.kind === 'new-moon')
     expect(news.length).toBeGreaterThanOrEqual(12)
     expect(news.length).toBeLessThanOrEqual(13)
@@ -81,11 +80,11 @@ describe('moons', () => {
   })
 
   it('cause a few eclipses a year with a tilted orbit, and one every month without', () => {
-    const tilted = skyEvents(system(), 'earth', 0, 10 * 365.25 * DAY_S, radius).filter((e) => e.kind.endsWith('eclipse'))
+    const tilted = skyEvents(system(), 'earth', 0, 10 * 365.25 * DAY_S).filter((e) => e.kind.endsWith('eclipse'))
     expect(tilted.length / 10).toBeGreaterThan(1)
     expect(tilted.length / 10).toBeLessThan(8)
     const flat = system([earthOrbit, orbit('moon', { ...MOON_ORBIT, inclinationDeg: 0 })])
-    const every = skyEvents(flat, 'earth', 0, 365.25 * DAY_S, radius)
+    const every = skyEvents(flat, 'earth', 0, 365.25 * DAY_S)
     expect(every.filter((e) => e.kind === 'solar-eclipse').length).toBe(every.filter((e) => e.kind === 'new-moon').length)
   })
 })

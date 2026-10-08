@@ -1,5 +1,5 @@
 import { DEFAULT_CALENDAR, type Calendar, type SpatialNode } from '@universe/core'
-import { moonsOf, planetOf, type BodyOrbit, type SystemModel } from './orbits'
+import { isTidallyLocked, moonsOf, planetOf, synodicS, worldOrbit, type SystemModel } from './orbits'
 
 /**
  * Calendars from the sky (PLAN.md §4.3): a day is one turn relative to the
@@ -8,7 +8,7 @@ import { moonsOf, planetOf, type BodyOrbit, type SystemModel } from './orbits'
  * Earth-like world gets exactly the Earth calendar back.
  */
 
-export interface DerivedCalendar {
+interface DerivedCalendar {
   calendar: Calendar
   /** Unrounded, for showing: days in a year, hours in a day, days from new moon to new moon. */
   yearDays: number
@@ -19,15 +19,10 @@ export interface DerivedCalendar {
 }
 
 /** Seconds from noon to noon: one turn relative to the star, not the stars. */
-export function solarDayS(rotationHours: number, yearS: number): number {
+function solarDayS(rotationHours: number, yearS: number): number {
   const sidereal = rotationHours * 3600
-  if (sidereal >= yearS * 0.999) return yearS
+  if (isTidallyLocked(sidereal, yearS)) return yearS
   return 1 / (1 / sidereal - 1 / yearS)
-}
-
-/** Days from new moon to new moon: the moon's orbit as seen from a planet that is itself going round the star. */
-export function synodicDays(moon: BodyOrbit, planetYearS: number, dayS: number): number {
-  return 1 / (1 / moon.periodS - 1 / planetYearS) / dayS
 }
 
 const EARTH_MONTHS = DEFAULT_CALENDAR.months.map((m) => m.name)
@@ -41,7 +36,7 @@ export function deriveCalendar(system: SystemModel, bodyId: string): DerivedCale
   const days = Math.max(1, Math.round(yearS / dayS))
   // A moon's world counts months by its planet's other moons, if any; a planet by its largest moon.
   const moon = moonsOf(system, bodyId).sort((a, b) => b.massEarth - a.massEarth)[0]
-  const monthDays = moon ? synodicDays(moon, yearS, dayS) : null
+  const monthDays = moon ? synodicS(moon, yearS) / dayS : null
   const count = Math.min(24, Math.max(1, monthDays && monthDays < days ? Math.round(days / monthDays) : days >= 120 ? 12 : Math.round(days / 30) || 1))
   const names = body.monthNames?.length === count ? body.monthNames : count === 12 ? EARTH_MONTHS : Array.from({ length: count }, (_, k) => `Month ${k + 1}`)
   const months =
@@ -53,7 +48,7 @@ export function deriveCalendar(system: SystemModel, bodyId: string): DerivedCale
     yearDays: yearS / dayS,
     dayHours: dayS / 3600,
     monthDays,
-    tidallyLocked: dayS >= yearS * 0.999
+    tidallyLocked: isTidallyLocked(dayS, yearS)
   }
 }
 
@@ -69,8 +64,6 @@ function spread(total: number, count: number): number[] {
  * body's orbit has been set, otherwise the Earth calendar.
  */
 export function worldCalendar(nodes: SpatialNode[], system: SystemModel | undefined, worldId: string): Calendar {
-  const bodyId = nodes.find((n) => n.id === worldId)?.parentId
-  const body = bodyId ? system?.bodies.get(bodyId) : undefined
-  if (!system || !body || body.isDefault) return DEFAULT_CALENDAR
-  return deriveCalendar(system, body.bodyId).calendar
+  const body = worldOrbit(nodes, system, worldId)
+  return body ? deriveCalendar(system!, body.bodyId).calendar : DEFAULT_CALENDAR
 }

@@ -41,6 +41,6 @@ export async function fetchLayers(worldId: string) {
 export async function loadTerrain(world: WorldInfo, seed: number, sky?: SkyClimate): Promise<TerrainModel> {
   const [base, layers] = await Promise.all([generateBase(seed, world.settings.terrain), fetchLayers(world.id)])
   const model = new TerrainModel(world.settings, base, layers)
-  model.sky = sky
+  model.setSky(sky)
   return model
 }

@@ -67,19 +67,3 @@ describe('species', () => {
     expect(store.records('ecolink').all()).toHaveLength(2)
   })
 })
-
-describe('species catalogue', async () => {
-  const { SPECIES_CATALOG, catalogFor } = await import('./index')
-  it('only eats what it has, in a biome it shares', () => {
-    const byName = new Map(SPECIES_CATALOG.map((s) => [s.name, s]))
-    expect(byName.size).toBe(SPECIES_CATALOG.length)
-    for (const s of SPECIES_CATALOG) {
-      for (const food of s.eats) {
-        const prey = byName.get(food)
-        expect(prey, `${s.name} eats ${food}`).toBeDefined()
-        expect(prey!.biomes.some((b) => s.biomes.includes(b)), `${s.name} meets ${food}`).toBe(true)
-      }
-    }
-    expect(catalogFor([7]).map((s) => s.name)).toContain('Camel')
-  })
-})

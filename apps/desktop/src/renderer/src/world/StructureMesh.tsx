@@ -57,7 +57,8 @@ function PrimitiveParts({ blueprint, condition, materials, ghost }: { blueprint:
   }, [parts])
   // Ruins and remnants are lower than the building was.
   const slump = condition < 20 && !ghost ? 0.45 + 0.55 * (condition / 20) : 1
-  const age = ghost ? 0 : Math.min(0.65, (1 - condition / 100) * 0.8)
+  // In steps of 1%, so scrubbing the playhead doesn't recolour every part on every frame.
+  const age = ghost ? 0 : Math.round(Math.min(0.65, (1 - condition / 100) * 0.8) * 100) / 100
   return (
     <group scale={[1, slump, 1]}>
       {groups.map((list) => (

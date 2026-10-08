@@ -1,5 +1,5 @@
 import { formatTime } from '@universe/core'
-import { DAY_S, moonPhase, moonsOf, type SystemModel } from '@universe/sim'
+import { DAY_S, YEAR_S, moonPhase, moonsOf, type SystemModel } from '@universe/sim'
 import { useEffect, useState } from 'react'
 import { usePlayhead, useTimelineView } from '../timeline/timelineStore'
 import { useCalendar } from '../world/useSky'
@@ -9,7 +9,7 @@ import { useUi } from '../store'
 const SPEEDS = [
   { label: '1 day/s', perSecond: DAY_S },
   { label: '1 month/s', perSecond: 30 * DAY_S },
-  { label: '1 year/s', perSecond: 365.25 * DAY_S }
+  { label: '1 year/s', perSecond: YEAR_S }
 ]
 
 /**

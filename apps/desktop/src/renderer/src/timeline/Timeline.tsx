@@ -1,4 +1,5 @@
 import {
+  type Calendar,
   causalChain,
   formatTime,
   timeTicks,
@@ -316,8 +317,8 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
         </div>
       </div>
 
-      <SkyTrack owner={owner} scale={scale} cal={cal} labelWidth={LABELS_W} />
-      <DerivedTrack owner={owner} scale={scale} cal={cal} labelWidth={LABELS_W} />
+      <SkyTrack owner={owner} range={range} width={width} cal={cal} labelWidth={LABELS_W} />
+      <DerivedTrack owner={owner} range={range} width={width} cal={cal} labelWidth={LABELS_W} />
 
       <div className="tl-scroll">
         <div className="tl-rows" style={{ height: Math.max(layout.height + ROW_H, 0) }}>
@@ -354,6 +355,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
             {layout.lanes.flatMap((l) =>
               l.events.map((p) => (
                 <EventBar
+                  cal={cal}
                   key={p.item.id}
                   placed={p}
                   selected={selectedEvents.includes(p.item.id)}
@@ -428,12 +430,12 @@ interface EventBarProps {
   onPointerDown(e: React.PointerEvent, ev: TimelineEvent): void
   onHandlePointerDown(e: React.PointerEvent, ev: TimelineEvent, edge: 'start' | 'end'): void
   onConnectorPointerDown(e: React.PointerEvent, ev: TimelineEvent): void
+  cal: Calendar
 }
 
-function EventBar({ placed, selected, dimmed, onPointerDown, onHandlePointerDown, onConnectorPointerDown }: EventBarProps) {
+function EventBar({ placed, selected, dimmed, onPointerDown, onHandlePointerDown, onConnectorPointerDown, cal }: EventBarProps) {
   const ev = placed.item
   const allEffects = useUi((s) => s.timeline.effects)
-  const cal = useCalendar(ev.ownerId)
   // What it does to structures, one icon per kind of effect.
   const effectIcons = [...new Set(allEffects.filter((e) => e.eventId === ev.id).map((e) => EFFECT_LABELS[e.type].icon))].join('')
   const instant = ev.end === null

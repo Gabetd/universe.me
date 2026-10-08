@@ -1,8 +1,8 @@
-import type { Diet, SpeciesKind } from './ecosystem'
+import type { Command, Diet, EcoLink, Species, SpeciesKind } from '@universe/core'
+import { BIOME } from './biomes'
 
 /**
- * Species to suggest for a world, by the biomes it has (packages/procgen's
- * BIOMES ids), with who eats whom. Ordinary Earth-like life, so a world gets
+ * Species to suggest for a world, by the biomes it has, with who eats whom. Ordinary Earth-like life, so a world gets
  * a working food web to rename and change rather than an empty page.
  */
 export interface CatalogSpecies {
@@ -15,18 +15,7 @@ export interface CatalogSpecies {
   eats: string[]
 }
 
-const ICE = 1
-const TUNDRA = 2
-const TAIGA = 3
-const FOREST = 4
-const GRASSLAND = 5
-const SHRUBLAND = 6
-const DESERT = 7
-const SAVANNA = 8
-const RAINFOREST = 9
-const SWAMP = 10
-const ROCK = 11
-const BEACH = 12
+const { ice: ICE, tundra: TUNDRA, taiga: TAIGA, temperateForest: FOREST, grassland: GRASSLAND, shrubland: SHRUBLAND, desert: DESERT, savanna: SAVANNA, rainforest: RAINFOREST, swamp: SWAMP, rock: ROCK, beach: BEACH } = BIOME
 
 const flora = (name: string, color: string, biomes: number[]): CatalogSpecies => ({ name, kind: 'flora', diet: 'producer', color, biomes, eats: [] })
 const fauna = (name: string, diet: Diet, color: string, biomes: number[], eats: string[]): CatalogSpecies => ({ name, kind: 'fauna', diet, color, biomes, eats })
@@ -83,3 +72,30 @@ export const SPECIES_CATALOG: CatalogSpecies[] = [
 
 /** Catalogue species for these biomes. */
 export const catalogFor = (biomes: number[]) => SPECIES_CATALOG.filter((s) => s.biomes.some((b) => biomes.includes(b)))
+
+/**
+ * Commands that add the catalogue's species for these biomes that the world
+ * doesn't have yet (matched by name), linked to what they eat, including
+ * species it already has. `newId` makes the ids the links refer to.
+ */
+export function suggestSpecies(worldId: string, biomes: number[], species: Species[], links: EcoLink[], newId: () => string): Command[] {
+  const ids = new Map(species.map((s) => [s.name.toLowerCase(), s.id]))
+  const fits = catalogFor(biomes)
+  const picks = fits.filter((c) => !ids.has(c.name.toLowerCase()))
+  const commands: Command[] = picks.map((c) => {
+    const id = newId()
+    ids.set(c.name.toLowerCase(), id)
+    return { type: 'species.create', payload: { id, ownerId: worldId, name: c.name, kind: c.kind, diet: c.diet, color: c.color, biomes: c.biomes.filter((b) => biomes.includes(b)) } }
+  })
+  const isNew = new Set(picks.map((c) => c.name))
+  for (const c of fits) {
+    for (const food of c.eats) {
+      // Only links that involve a new species: the user may have unlinked old ones on purpose.
+      if (!isNew.has(c.name) && !isNew.has(food)) continue
+      const fromId = ids.get(c.name.toLowerCase())
+      const toId = ids.get(food.toLowerCase())
+      if (fromId && toId && !links.some((l) => l.fromId === fromId && l.toId === toId && l.type === 'eats')) commands.push({ type: 'ecolink.create', payload: { fromId, toId, type: 'eats' } })
+    }
+  }
+  return commands
+}

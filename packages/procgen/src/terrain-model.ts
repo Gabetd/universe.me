@@ -21,6 +21,14 @@ export interface SkyClimate {
   gradient: number
 }
 
+/** A world's own climate settings shifted by its star and orbit. */
+export function withSky(climate: Climate, sky: SkyClimate | undefined): Climate {
+  return sky ? { ...climate, temperature: climate.temperature + sky.offsetC, gradient: sky.gradient } : climate
+}
+
+/** Identifies a sky climate, for knowing when it changed. */
+export const skyKey = (sky: SkyClimate | undefined) => (sky ? `${sky.offsetC}:${sky.gradient}` : '')
+
 export type BrushTool = 'raise' | 'lower' | 'smooth' | 'flatten' | 'paint' | 'erase'
 
 export interface Brush {
@@ -69,7 +77,7 @@ export class TerrainModel {
   private stroke: { brush: Brush; target: number; dirty: Map<number, DirtyRect> } | undefined
   private palette: { for: WorldSettings; colors: Palette } | undefined
   /** The climate from the world's star and orbit, added to its own settings; undefined keeps it Earth-like. */
-  sky: SkyClimate | undefined
+  private sky: SkyClimate | undefined
   private climateFor: { settings: WorldSettings; sky: SkyClimate | undefined; climate: Climate } | undefined
 
   constructor(
@@ -112,12 +120,18 @@ export class TerrainModel {
     return autoBiome(cellLatitudes()[face]![cell]!, this.height(face, cell) - this.settings.seaLevel, this.base.moisture[face]![cell]!, this.climate)
   }
 
+  /** Sets the star-and-orbit climate; true if that changes anything (then every face needs recolouring). */
+  setSky(sky: SkyClimate | undefined): boolean {
+    if (skyKey(sky) === skyKey(this.sky)) return false
+    this.sky = sky
+    return true
+  }
+
   /** The climate biomes follow: the world's own settings shifted by its star and orbit. */
   get climate(): Climate {
     // Asked for every cell when recolouring, so it's rebuilt only when the settings or the sky change.
     if (this.climateFor?.settings !== this.settings || this.climateFor.sky !== this.sky) {
-      const t = this.settings.terrain
-      this.climateFor = { settings: this.settings, sky: this.sky, climate: this.sky ? { ...t, temperature: t.temperature + this.sky.offsetC, gradient: this.sky.gradient } : t }
+      this.climateFor = { settings: this.settings, sky: this.sky, climate: withSky(this.settings.terrain, this.sky) }
     }
     return this.climateFor.climate
   }

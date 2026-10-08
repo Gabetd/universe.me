@@ -1,6 +1,6 @@
-import { AU_KM, type OrbitFields, type SpatialNode, type WorldSettings } from '@universe/core'
-import { surfaceTemperature } from '@universe/procgen'
-import { DAY_S, deriveCalendar, luminosityOf, moonsOf, planetOf, worldClimate, type BodyOrbit, type SystemModel } from '@universe/sim'
+import { AU_KM, daysPerYear, type OrbitFields, type SpatialNode, type WorldSettings } from '@universe/core'
+import { surfaceTemperature, withSky } from '@universe/procgen'
+import { deriveCalendar, formatPeriod, orbitFields, worldOrbit, luminosityOf, moonsOf, planetOf, worldClimate, type BodyOrbit, type SystemModel } from '@universe/sim'
 import { useUi } from '../store'
 import { useSystem, useWorldClimate } from '../world/useSky'
 import { NumberInput, TextField } from './fields'
@@ -59,7 +59,7 @@ export function OrbitPanel({ body }: { body: SpatialNode }) {
   if (!system || !orbit) return null
   const isMoon = !!orbit.parentBodyId
   const world = nodes.find((n) => n.parentId === body.id && n.kind === 'world')
-  const set = (patch: Partial<OrbitFields>) => void execute({ type: 'orbit.set', payload: { bodyId: body.id, orbit: { ...fieldsOf(orbit), ...patch } } })
+  const set = (patch: Partial<OrbitFields>) => void execute({ type: 'orbit.set', payload: { bodyId: body.id, orbit: { ...orbitFields(orbit), ...patch } } })
   const distance = isMoon ? orbit.semiMajorAxisKm : orbit.semiMajorAxisKm / AU_KM
 
   return (
@@ -67,7 +67,7 @@ export function OrbitPanel({ body }: { body: SpatialNode }) {
       <h3>Orbit and spin</h3>
       {orbit.isDefault && <p className="muted small">Made up from the seed. Change anything to set it{world ? '; the world’s calendar and climate then follow it' : ''}.</p>}
       {/* Keyed by the values, so the boxes show them again after an undo. */}
-      <div className="field-pair" key={JSON.stringify(fieldsOf(orbit))}>
+      <div className="field-pair" key={JSON.stringify(orbitFields(orbit))}>
         <Num label={isMoon ? 'Distance (km)' : 'Distance (AU)'} value={round(distance, isMoon ? 0 : 3)} min={isMoon ? 1000 : 0.01} max={isMoon ? 1e8 : 1e4} onCommit={(v) => set({ semiMajorAxisKm: isMoon ? v : v * AU_KM })} />
         <Num label="Eccentricity" value={round(orbit.eccentricity, 4)} min={0} max={0.95} onCommit={(eccentricity) => set({ eccentricity })} />
         <Num label="Day (hours)" value={round(orbit.rotationHours, 3)} min={0.1} max={1e6} onCommit={(rotationHours) => set({ rotationHours })} />
@@ -93,18 +93,17 @@ function Derived({ system, orbit, hasWorld }: { system: SystemModel; orbit: Body
   const climate = worldClimate(system, orbit.bodyId)
   const planet = planetOf(system, orbit.bodyId)!
   const moons = moonsOf(system, orbit.bodyId)
-  const periodDays = orbit.periodS / DAY_S
   return (
     <dl className="facts-list small" aria-label="Worked out from the orbit">
       <dt>{orbit.parentBodyId ? 'Goes round in' : 'Year'}</dt>
-      <dd>{periodDays > 1000 ? `${(periodDays / 365.25).toFixed(2)} Earth years` : `${periodDays.toFixed(2)} Earth days`}</dd>
+      <dd>{formatPeriod(orbit.periodS)}</dd>
       <dt>Day</dt>
       <dd>{cal.tidallyLocked ? 'Always the same side to the star' : `${cal.dayHours.toFixed(2)} hours${Math.abs(cal.dayHours - HOURS_PER_DAY) > 0.01 ? '' : ' (like Earth)'}`}</dd>
       {hasWorld && (
         <>
           <dt>Calendar</dt>
           <dd>
-            {cal.calendar.months.reduce((n, m) => n + m.days, 0)} days in {cal.calendar.months.length} month{cal.calendar.months.length === 1 ? '' : 's'}
+            {daysPerYear(cal.calendar)} days in {cal.calendar.months.length} month{cal.calendar.months.length === 1 ? '' : 's'}
             {orbit.isDefault ? ' (used once the orbit is set)' : ''}
           </dd>
           <dt>Climate</dt>
@@ -122,7 +121,7 @@ function Derived({ system, orbit, hasWorld }: { system: SystemModel; orbit: Body
       {orbit.parentBodyId && (
         <>
           <dt>Planet’s year</dt>
-          <dd>{(planet.periodS / DAY_S).toFixed(1)} Earth days</dd>
+          <dd>{formatPeriod(planet.periodS)}</dd>
         </>
       )}
     </dl>
@@ -133,11 +132,6 @@ const round = (v: number, digits: number) => Number(v.toFixed(digits))
 
 /** "−12 °C", with a real minus sign. */
 const degrees = (c: number, digits = 0) => `${c.toFixed(digits).replace('-', '−')} °C`
-
-function fieldsOf(o: BodyOrbit): OrbitFields {
-  const { semiMajorAxisKm, eccentricity, inclinationDeg, phaseDeg, rotationHours, axialTiltDeg, massEarth, radiusKm, monthNames } = o
-  return { semiMajorAxisKm, eccentricity, inclinationDeg, phaseDeg, rotationHours, axialTiltDeg, massEarth, radiusKm, monthNames }
-}
 
 function Num(props: { label: string; value: number; min: number; max: number; onCommit(v: number): void }) {
   return (
@@ -155,23 +149,23 @@ function Num(props: { label: string; value: number; min: number; max: number; on
 export function CalendarPanel({ world }: { world: SpatialNode }) {
   const system = useSystem(world.id)
   const execute = useUi((s) => s.execute)
-  const orbit = world.parentId ? system?.bodies.get(world.parentId) : undefined
-  if (!system || !orbit) return null
-  const derived = deriveCalendar(system, orbit.bodyId)
-  const months = orbit.isDefault ? null : derived.calendar.months
+  const nodes = useUi((s) => s.nodes)
+  const orbit = worldOrbit(nodes, system, world.id)
+  const derived = orbit && deriveCalendar(system!, orbit.bodyId)
+  const months = derived?.calendar.months
   const rename = (k: number, name: string) => {
     const names = months!.map((m, j) => (j === k ? name : m.name))
-    void execute({ type: 'orbit.set', payload: { bodyId: orbit.bodyId, orbit: { ...fieldsOf(orbit), monthNames: names } } })
+    void execute({ type: 'orbit.set', payload: { bodyId: orbit!.bodyId, orbit: { ...orbitFields(orbit!), monthNames: names } } })
   }
   return (
     <section className="inspector-section" aria-label="Calendar">
       <h3>Calendar</h3>
-      {!months ? (
+      {!months || !derived ? (
         <p className="muted small">The Earth calendar, until you set the orbit of the planet this world is on (select it in the tree). Then days, years and months follow it.</p>
       ) : (
         <>
           <p className="muted small">
-            {derived.calendar.months.reduce((n, m) => n + m.days, 0)} days of {derived.dayHours.toFixed(2)} hours
+            {daysPerYear(derived.calendar)} days of {derived.dayHours.toFixed(2)} hours
             {derived.monthDays ? `; months follow the moon (${derived.monthDays.toFixed(1)} days)` : ''}.
           </p>
           <ol className="month-list" key={months.map((m) => m.name).join()}>
@@ -193,7 +187,7 @@ export function ClimatePanel({ world, settings }: { world: SpatialNode; settings
   const climate = useWorldClimate(world.id)
   const own = settings.terrain
   const at = (lat: number) =>
-    Math.round(surfaceTemperature(lat, 0, { ...own, temperature: own.temperature + (climate?.offsetC ?? 0), gradient: climate?.gradient ?? 1 }))
+    Math.round(surfaceTemperature(lat, 0, withSky(own, climate)))
   return (
     <section className="inspector-section" aria-label="Climate">
       <h3>Climate</h3>

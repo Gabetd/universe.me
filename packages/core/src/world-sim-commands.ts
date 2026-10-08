@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { Orbit, Star } from './astro'
-import { batchOf, CommandError, type CommandContext, type HandlerResult } from './command-kit'
+import { batchOf, liveRecord, previousValues, type CommandContext, type HandlerResult } from './command-kit'
 import type { Command, HandlerMap } from './commands'
 import { EcoLink, Species } from './ecosystem'
 import { NewId, create, deleteWith, live, update, type Fields } from './record-kit'
@@ -32,7 +32,6 @@ export const WORLD_SIM_COMMANDS = [
   z.object({ type: z.literal('species.update'), payload: z.object({ id: Id, patch: SpeciesFields.partial() }) }),
   z.object({ type: z.literal('species.delete'), payload: z.object({ id: Id }) }),
   z.object({ type: z.literal('ecolink.create'), payload: z.object({ ...NewId, fromId: Id, toId: Id, type: EcoLink.shape.type.optional() }) }),
-  z.object({ type: z.literal('ecolink.update'), payload: z.object({ id: Id, patch: EcoLink.pick({ type: true }) }) }),
   z.object({ type: z.literal('ecolink.delete'), payload: z.object({ id: Id }) })
 ] as const
 
@@ -42,10 +41,10 @@ type WorldSimCommand = z.infer<(typeof WORLD_SIM_COMMANDS)[number]>
 function upsert<K extends 'star' | 'orbit'>(store: Store, kind: K, ctx: CommandContext, ownerId: string, id: string, fields: Fields<K>, set: (fields: Fields<K>) => Command, reset: Command): HandlerResult {
   const existing = store.records(kind).get(id)
   if (!existing) return { ...create(store, kind, ctx, ownerId, id, fields), inverse: reset }
-  const { id: _id, ownerId: _owner, createdAt: _c, updatedAt: _u, deletedAt, ...previous } = existing
+  const { deletedAt } = existing
   if (deletedAt) store.records(kind).update({ ...existing, deletedAt: null })
   const result = update(store, kind, ctx, id, fields)
-  const restore = set(previous as unknown as Fields<K>)
+  const restore = set(previousValues(existing as Record<string, unknown>, fields as Record<string, unknown>) as Fields<K>)
   return { ...result, inverse: deletedAt ? batchOf([restore, { type: 'record.remove', payload: { refs: [{ kind: kind as RecordKind, id }] } }]) : restore }
 }
 
@@ -74,11 +73,7 @@ export const worldSimHandlers: HandlerMap<WorldSimCommand> = {
   // Its links in the food web go with it.
   'species.delete': (store, { id }, ctx, run) =>
     deleteWith(store, ctx, run, { kind: 'lifeform', id }, [], live(store, 'ecolink').filter((l) => l.fromId === id || l.toId === id).map((l) => ({ kind: 'ecolink' as const, id: l.id }))),
-  'ecolink.create'(store, { id, fromId, toId, type }, ctx) {
-    const from = store.records('lifeform').get(fromId)
-    if (!from || from.deletedAt) throw new CommandError(`Species ${fromId} does not exist`)
-    return create(store, 'ecolink', ctx, from.ownerId, id, { fromId, toId, type: type ?? 'eats' })
-  },
-  'ecolink.update': (store, { id, patch }, ctx) => update(store, 'ecolink', ctx, id, patch),
+  'ecolink.create': (store, { id, fromId, toId, type }, ctx) =>
+    create(store, 'ecolink', ctx, liveRecord(store, 'lifeform', fromId).ownerId, id, { fromId, toId, type: type ?? 'eats' }),
   'ecolink.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'ecolink', id })
 }

@@ -1,5 +1,5 @@
 import { AU_KM } from '@universe/core'
-import { DAY_S, moonPhase, moonsOf, orbitPath, orbitPosition, positionFromStar, type BodyOrbit, type SystemModel, type Vec3 } from '@universe/sim'
+import { formatPeriod, moonPhase, moonsOf, orbitPath, orbitPosition, positionFromStar, type BodyOrbit, type SystemModel, type Vec3 } from '@universe/sim'
 import { drawTexturedPlanet, type PlanetTexture } from './planetSprite'
 
 /**
@@ -8,7 +8,8 @@ import { drawTexturedPlanet, type PlanetTexture } from './planetSprite'
  * are drawn on a square-root scale so close-in and far-out orbits both fit.
  */
 
-export interface OrbitTarget {
+/** Something clickable on the canvas. */
+export interface CanvasTarget {
   id: string
   x: number
   y: number
@@ -23,17 +24,25 @@ export interface OrbitDrawing {
   t: number
   /** Wall-clock seconds, for spinning. */
   spin: number
-  names: Map<string, string>
-  /** Radius of a body in km (its world's, when it has one). */
-  radiusOf(o: BodyOrbit): number
-  textureOf(bodyId: string): PlanetTexture | undefined
-  hasWorld(bodyId: string): boolean
-  /** A colour for bodies without a world. */
-  hueOf(bodyId: string): number
+  /** Body id → its name and a colour for drawing it without a world. */
+  bodies: Map<string, { name: string; hue: number }>
+  /** Body id → the world on it, if any. */
+  worlds: Map<string, { id: string }>
+  textures: Map<string, PlanetTexture>
+  /** What clicking the centre body selects (its world, in the planet view). */
+  centerTargetId?: string
   hoverId: string | null
 }
 
 const SLANT = 0.45
+
+/** Orbit shapes don't change with time, so each orbit's path is worked out once. */
+const paths = new WeakMap<BodyOrbit, Vec3[]>()
+function pathOf(o: BodyOrbit): Vec3[] {
+  let path = paths.get(o)
+  if (!path) paths.set(o, (path = orbitPath(o)))
+  return path
+}
 
 /** Maps positions (km from the centre) to the screen. */
 function projector(cx: number, cy: number, maxPx: number, maxKm: number) {
@@ -47,12 +56,12 @@ function projector(cx: number, cy: number, maxPx: number, maxKm: number) {
 
 const bodyPx = (radiusKm: number, size: number, scale: number) => Math.max(3, Math.min(size * 0.06, size * scale * (radiusKm / 6371) ** 0.35))
 
-export function drawOrbits(ctx: CanvasRenderingContext2D, w: number, h: number, d: OrbitDrawing): OrbitTarget[] {
+export function drawOrbits(ctx: CanvasRenderingContext2D, w: number, h: number, d: OrbitDrawing): CanvasTarget[] {
   const { system, centerId, t } = d
   const cx = w / 2
   const cy = h / 2 + 10
   const size = Math.min(w, h)
-  const targets: OrbitTarget[] = []
+  const targets: CanvasTarget[] = []
   const orbiting = centerId ? moonsOf(system, centerId) : [...system.bodies.values()].filter((o) => !o.parentBodyId)
   const maxKm = Math.max(...orbiting.map((o) => o.semiMajorAxisKm * (1 + o.eccentricity)), centerId ? 400_000 : AU_KM * 1.6) * 1.08
   const maxPx = Math.min(w * 0.46, (h * 0.42) / SLANT)
@@ -76,12 +85,13 @@ export function drawOrbits(ctx: CanvasRenderingContext2D, w: number, h: number, 
     const angle = Math.atan2(starDir[1] - cy, starDir[0] - cx)
     const edge = Math.min(w, h) * 0.47
     starGlow(ctx, cx + Math.cos(angle) * edge, cy + Math.sin(angle) * edge * 0.8, 6, system.star.color)
-    drawBody(ctx, d, center, cx, cy, bodyPx(d.radiusOf(center), size, 0.12), lightAt(cx, cy), targets, false)
+    drawBody(ctx, d, center, cx, cy, bodyPx(center.radiusKm, size, 0.12), lightAt(cx, cy), targets, false)
+    if (d.centerTargetId) targets.at(-1)!.id = d.centerTargetId
   }
 
   for (const o of orbiting) {
     ctx.beginPath()
-    orbitPath(o).forEach((p, i) => {
+    pathOf(o).forEach((p, i) => {
       const [x, y] = project(p)
       if (i) ctx.lineTo(x, y)
       else ctx.moveTo(x, y)
@@ -90,17 +100,18 @@ export function drawOrbits(ctx: CanvasRenderingContext2D, w: number, h: number, 
     ctx.lineWidth = 1
     ctx.stroke()
     const [x, y] = project(orbitPosition(o, t))
-    const r = bodyPx(d.radiusOf(o), size, centerId ? 0.035 : 0.02)
+    const r = bodyPx(o.radiusKm, size, centerId ? 0.035 : 0.02)
     drawBody(ctx, d, o, x, y, r, lightAt(x, y), targets, true)
   }
   return targets
 }
 
-function drawBody(ctx: CanvasRenderingContext2D, d: OrbitDrawing, o: BodyOrbit, x: number, y: number, r: number, light: number, targets: OrbitTarget[], labelled: boolean) {
-  const surface = d.textureOf(o.bodyId)
+function drawBody(ctx: CanvasRenderingContext2D, d: OrbitDrawing, o: BodyOrbit, x: number, y: number, r: number, light: number, targets: CanvasTarget[], labelled: boolean) {
+  const world = d.worlds.get(o.bodyId)
+  const surface = world && d.textures.get(world.id)
   if (surface) drawTexturedPlanet(ctx, x, y, r, surface, d.spin / 90 + (o.phaseDeg % 360) / 360, light)
-  else plainBody(ctx, x, y, r, d.hueOf(o.bodyId), light)
-  if (d.hasWorld(o.bodyId)) {
+  else plainBody(ctx, x, y, r, d.bodies.get(o.bodyId)?.hue ?? 0, light)
+  if (world) {
     ctx.strokeStyle = 'rgba(140,200,255,0.5)'
     ctx.lineWidth = 2
     ctx.beginPath()
@@ -113,7 +124,7 @@ function drawBody(ctx: CanvasRenderingContext2D, d: OrbitDrawing, o: BodyOrbit, 
   ctx.textAlign = 'center'
   ctx.font = `${hover ? 600 : 500} 12px system-ui, sans-serif`
   ctx.fillStyle = hover ? '#ffffff' : 'rgba(210,220,245,0.85)'
-  ctx.fillText(d.names.get(o.bodyId) ?? '', x, y + r + 15)
+  ctx.fillText(d.bodies.get(o.bodyId)?.name ?? '', x, y + r + 15)
   ctx.font = '500 10px system-ui, sans-serif'
   ctx.fillStyle = 'rgba(170,182,215,0.75)'
   ctx.fillText(orbitSummary(d.system, o, d.t), x, y + r + 28)
@@ -121,8 +132,7 @@ function drawBody(ctx: CanvasRenderingContext2D, d: OrbitDrawing, o: BodyOrbit, 
 
 /** "1.00 AU · 365 d", or for a moon "384,400 km · 27.3 d · waxing gibbous". */
 function orbitSummary(system: SystemModel, o: BodyOrbit, t: number): string {
-  const days = o.periodS / DAY_S
-  const period = days >= 1000 ? `${(days / 365.25).toFixed(1)} yr` : `${days.toFixed(days < 10 ? 1 : 0)} d`
+  const period = formatPeriod(o.periodS, true)
   if (!o.parentBodyId) return `${(o.semiMajorAxisKm / AU_KM).toFixed(2)} AU · ${period}`
   const phase = moonPhase(system, o, t)
   return `${Math.round(o.semiMajorAxisKm).toLocaleString()} km · ${period} · ${phase.name.toLowerCase()}`

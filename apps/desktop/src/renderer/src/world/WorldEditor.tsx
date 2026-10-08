@@ -3,7 +3,7 @@ import { viewingDistance } from './structureLook'
 import { playheadOf } from '../timeline/timelineStore'
 import { BIOMES } from '@universe/procgen'
 import { useUi, useWorld } from '../store'
-import { isBrushTool, useEditor, type EditorTool } from './editorStore'
+import { isBrushTool, showsSurface, useEditor, type EditorTool } from './editorStore'
 import { EcosystemView } from './EcosystemView'
 import { EventCanvas } from './EventCanvas'
 import { GlobeView } from './GlobeView'
@@ -53,8 +53,9 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
   const characters = useCharactersAt(world.id)
   const { model, change, error, bump, commit } = useTerrain(world.id, world.seed, info)
   const { pointerDown, pointerMove, finishRegion } = useSurfaceTools(world.id, model, bump, commit)
-  const activeView = hasWebGL || view === 'canvas' || view === 'species' ? view : 'map'
-  const onSurface = activeView !== 'canvas' && activeView !== 'species'
+  // Without WebGL the 3D views fall back to the map.
+  const activeView = hasWebGL || !showsSurface(view) ? view : 'map'
+  const onSurface = showsSurface(activeView)
   const hint = onSurface ? (activeView === 'ground' && tool === 'navigate' ? GROUND_HINT : TOOLS.find((t) => t.tool === tool)?.hint) : undefined
 
   const viewProps: SurfaceViewProps | undefined = model && {

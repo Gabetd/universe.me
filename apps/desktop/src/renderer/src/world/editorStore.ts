@@ -10,7 +10,7 @@ import { create } from 'zustand'
 export type EditorTool = 'navigate' | BrushTool | 'region' | 'locate' | 'place' | 'move' | 'travel'
 export type SurfaceView = 'globe' | 'map'
 /** The canvas shows the world's events as cards and `species` its food web, rather than its surface; the ground is the surface up close. */
-type EditorView = SurfaceView | 'canvas' | 'ground' | 'species'
+export type EditorView = SurfaceView | 'canvas' | 'ground' | 'species'
 
 interface EditorState {
   view: EditorView
@@ -70,8 +70,11 @@ export const useEditor = create<EditorState>((set) => ({
   groundDistance: DEFAULT_GROUND_DISTANCE,
   enterGround: (at, distance = DEFAULT_GROUND_DISTANCE) => set({ view: 'ground', ground: at, groundDistance: distance }),
   leaveGround: (at) => set((s) => ({ view: s.surfaceView, lookingAt: at, lookDistance: 1.25, ground: at })),
-  startTool: (patch) => set((s) => ({ ...patch, view: s.view === 'canvas' || s.view === 'species' ? s.surfaceView : s.view })),
+  startTool: (patch) => set((s) => ({ ...patch, view: showsSurface(s.view) ? s.view : s.surfaceView })),
   set: (patch) => set(patch)
 }))
 
 export const isBrushTool = (tool: EditorTool): tool is BrushTool => !['navigate', 'region', 'locate', 'place', 'move', 'travel'].includes(tool)
+
+/** Whether a view shows the world's surface (the canvas and species views don't). */
+export const showsSurface = (view: EditorView) => view !== 'canvas' && view !== 'species'
