@@ -2,7 +2,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Project } from '@universe/db'
-import { OPERATIONS, apiContext, projectHost, type ApiHost } from './index'
+import { OPERATIONS, apiContext } from './catalog'
+import type { ApiHost } from './host'
+import { projectHost } from './project-host'
 
 /** A project file in a temp folder with one world on it (Virgo › Milky Way › Sol › Terra › Terra Surface), and a way to call operations. */
 export function testProject() {

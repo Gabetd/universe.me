@@ -17,5 +17,8 @@
     "@universe/procgen": "workspace:*",
     "@universe/sim": "workspace:*",
     "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1"
   }
 }
