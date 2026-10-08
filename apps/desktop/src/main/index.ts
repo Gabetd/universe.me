@@ -28,7 +28,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     backgroundColor: '#0b0e17',
-    title: 'Universe',
+    title: windowTitle(session.state()),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -37,6 +37,8 @@ function createWindow(): void {
     }
   })
   win.once('ready-to-show', () => win?.show())
+  // The title names the open project, so the page's own <title> mustn't replace it on a reload.
+  win.on('page-title-updated', (event) => event.preventDefault())
   win.on('closed', () => (win = null))
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) void shell.openExternal(url)
@@ -55,19 +57,25 @@ function createWindow(): void {
   if (pendingOpen) {
     const path = pendingOpen
     pendingOpen = undefined
-    win.webContents.once('did-finish-load', () => void wrap(() => session.open(path)).then(() => broadcast()))
+    win.webContents.once('did-finish-load', () => void wrap(() => openProject(path)).then((r) => r.ok && push(r.value)))
   }
 }
 
-/** Pushes new state to the renderer (for changes it didn't ask for) and refreshes the window chrome. */
-function broadcast(state: AppState = session.state()): void {
-  win?.webContents.send(IPC.stateChanged, state)
-  refreshChrome(state)
+/** Sends state the renderer didn't ask for: after a menu item, or a file opened from the system. */
+function push(state: AppState | null): void {
+  if (state) win?.webContents.send(IPC.stateChanged, state)
 }
 
-function refreshChrome(state: AppState): void {
-  win?.setTitle(state.project ? `${state.project.name} — Universe` : 'Universe')
+const windowTitle = (state: AppState) => (state.project ? `${state.project.name} — Universe` : 'Universe')
+
+/**
+ * The title and the menu (recent files, what's enabled) only change when a
+ * project opens or closes, so they're refreshed then rather than after every command.
+ */
+function switchedTo(state: AppState): AppState {
+  win?.setTitle(windowTitle(state))
   buildMenu()
+  return state
 }
 
 async function wrap<T>(fn: () => T | Promise<T>): Promise<Result<T>> {
@@ -87,9 +95,7 @@ async function newProject(): Promise<AppState | null> {
   })
   if (canceled || !filePath) return null
   const path = filePath.endsWith('.universe') ? filePath : `${filePath}.universe`
-  const state = session.create(path)
-  broadcast(state)
-  return state
+  return switchedTo(session.create(path))
 }
 
 async function openProject(path?: string): Promise<AppState | null> {
@@ -102,20 +108,19 @@ async function openProject(path?: string): Promise<AppState | null> {
     if (canceled || !filePaths[0]) return null
     path = filePaths[0]
   }
-  const state = session.open(path)
-  broadcast(state)
-  return state
+  return switchedTo(session.open(path))
 }
 
 async function saveCopy(): Promise<string | null> {
   const { canceled, filePath } = await dialog.showSaveDialog(win!, {
     title: 'Save a copy',
     buttonLabel: 'Save Copy',
-    defaultPath: session.state().project?.path.replace(/\.universe$/, ' copy.universe'),
+    defaultPath: session.path?.replace(/\.universe$/, ' copy.universe'),
     filters: FILE_FILTERS
   })
   if (canceled || !filePath) return null
   session.saveCopy(filePath)
+  // The copy is now a recent file.
   buildMenu()
   return filePath
 }
@@ -158,12 +163,12 @@ function buildMenu(): void {
     {
       label: 'File',
       submenu: [
-        { label: 'New Universe…', accelerator: 'CmdOrCtrl+N', click: fromMenu(newProject) },
-        { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: fromMenu(() => openProject()) },
+        { label: 'New Universe…', accelerator: 'CmdOrCtrl+N', click: fromMenu(async () => push(await newProject())) },
+        { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: fromMenu(async () => push(await openProject())) },
         {
           label: 'Open Recent',
           enabled: recent.length > 0,
-          submenu: recent.map((p) => ({ label: p, click: fromMenu(() => openProject(p)) }))
+          submenu: recent.map((p) => ({ label: p, click: fromMenu(async () => push(await openProject(p))) }))
         },
         { type: 'separator' },
         { label: 'Save a Copy…', accelerator: 'CmdOrCtrl+Shift+S', enabled: open, click: fromMenu(saveCopy) },
@@ -172,7 +177,7 @@ function buildMenu(): void {
           enabled: open,
           click: () => {
             session.close()
-            broadcast()
+            push(switchedTo(session.state()))
           }
         },
         ...(isMac ? [] : [{ type: 'separator' as const }, { role: 'quit' as const }])
@@ -243,7 +248,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.dismissUpdate, () => updater.dismiss())
   ipcMain.handle(IPC.closeProject, () => {
     session.close()
-    broadcast()
+    push(switchedTo(session.state()))
     return session.state()
   })
   for (const [channel, run] of [
@@ -251,21 +256,15 @@ function registerIpc(): void {
     [IPC.undo, () => session.undo()],
     [IPC.redo, () => session.redo()]
   ] as const) {
-    ipcMain.handle(channel, (_e, cmd: unknown) =>
-      wrap(() => {
-        // The renderer gets the state as the reply, so don't also push it.
-        const state = run(cmd)
-        refreshChrome(state)
-        return state
-      })
-    )
+    // The renderer gets the state as the reply, so it isn't pushed as well.
+    ipcMain.handle(channel, (_e, cmd: unknown) => wrap(() => run(cmd)))
   }
 }
 
 // macOS delivers double-clicked files through this event, possibly before `ready`.
 app.on('open-file', (event, path) => {
   event.preventDefault()
-  if (win && session) void wrap(() => openProject(path))
+  if (win && session) void wrap(() => openProject(path)).then((r) => r.ok && push(r.value))
   else pendingOpen = path
 })
 

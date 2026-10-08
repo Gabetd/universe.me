@@ -18,6 +18,11 @@ export class Session {
     return this.project !== null
   }
 
+  /** Where the open project is, if one is. */
+  get path(): string | undefined {
+    return this.project?.path
+  }
+
   state(): AppState {
     const p = this.project
     if (!p) return { project: null, nodes: [], worlds: [], regions: [], timeline: EMPTY_TIMELINE, canUndo: false, canRedo: false }
