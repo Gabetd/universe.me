@@ -22,6 +22,7 @@ import { useNow, usePlayhead, useTimelineView } from './timelineStore'
 import { useCalendar } from '../world/useSky'
 import { eventDates } from './labels'
 import { SkyTrack } from './SkyTrack'
+import { DerivedTrack } from './DerivedTrack'
 
 const LABELS_W = 132
 
@@ -316,6 +317,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
       </div>
 
       <SkyTrack owner={owner} scale={scale} cal={cal} labelWidth={LABELS_W} />
+      <DerivedTrack owner={owner} scale={scale} cal={cal} labelWidth={LABELS_W} />
 
       <div className="tl-scroll">
         <div className="tl-rows" style={{ height: Math.max(layout.height + ROW_H, 0) }}>

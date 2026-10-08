@@ -466,7 +466,7 @@ function GroundStructure({ placed, ground, onClick }: { placed: PlacedStructure;
       scale={structure.scale}
       onPointerDown={pickWith(() => onClick(structure.id))}
     >
-      <BlueprintParts blueprint={blueprint} condition={state.condition} ghost={!state.exists} />
+      <BlueprintParts blueprint={blueprint} condition={state.condition} materials={state.materials} ghost={!state.exists} />
       {(selected || hit !== undefined) && (
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.3, 0]} raycast={() => null}>
           <ringGeometry args={[(extent / structure.scale) * 0.6, (extent / structure.scale) * 0.6 + Math.max(1, extent * 0.01), 64]} />

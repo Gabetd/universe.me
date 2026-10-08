@@ -7,6 +7,10 @@ import {
   conditionCurves,
   createRootUniverse,
   erodesAt,
+  ruinAt,
+  derivedEvents,
+  weatherFactor,
+  type Exposure,
   structureWarnings,
   fromParts,
   stateAt,
@@ -70,11 +74,45 @@ describe('condition over time', () => {
     const stone = place('builtin:standing-stone', { neverDecays: true })
     const w = world()
     const curves = conditionCurves(w)
-    expect(erodesAt(curves.get(house)!, year(1000))! - year(1000)).toBeLessThan(year(400))
-    expect(erodesAt(curves.get(castle)!, year(1000))! - year(1000)).toBeGreaterThan(year(2000))
+    expect(ruinAt(curves.get(house)!, year(1000))! - year(1000)).toBeLessThan(year(400))
+    expect(ruinAt(curves.get(castle)!, year(1000))! - year(1000)).toBeGreaterThan(year(2000))
     expect(stateAt(curves.get(stone)!, year(90_000)).condition).toBe(100)
     // A faster erosion speed brings it forward.
     expect(erodesAt(conditionCurves(world(3)).get(house)!, year(1000))!).toBeLessThan(erodesAt(curves.get(house)!, year(1000))!)
+  })
+
+  it('decays part by part: a house’s thatch and wood go long before its stone chimney', () => {
+    const house = place('builtin:house', { maintained: false })
+    const curve = conditionCurves(world()).get(house)!
+    const later = stateAt(curve, year(1300))
+    expect(later.materials.thatch!).toBeLessThan(5)
+    expect(later.materials.stone!).toBeGreaterThan(70)
+    // Gone only when the last material is.
+    expect(erodesAt(curve, year(1000))! - year(1000)).toBeGreaterThan(year(3000))
+  })
+
+  it('wears faster where the weather is hard on its materials', () => {
+    const rainforest: Exposure = { moisture: 1, freezeThaw: 0, heat: 0.7, salt: 0, growth: 1 }
+    const desert: Exposure = { moisture: 0.05, freezeThaw: 0.2, heat: 1, salt: 0, growth: 0.05 }
+    expect(weatherFactor('wood', rainforest)).toBeGreaterThan(1.3)
+    expect(weatherFactor('wood', desert)).toBeLessThan(0.7)
+    expect(weatherFactor('iron', { ...desert, salt: 1 })).toBeGreaterThan(weatherFactor('iron', desert))
+    const house = place('builtin:house', { maintained: false })
+    const wet = conditionCurves({ ...world(), exposure: () => rainforest }).get(house)!
+    const dry = conditionCurves({ ...world(), exposure: () => desert }).get(house)!
+    expect(ruinAt(wet, year(1000))!).toBeLessThan(ruinAt(dry, year(1000))!)
+  })
+
+  it('derives when weathering brings a structure to ruin and erodes it away, unless something stops it', () => {
+    const left = place('builtin:tower', { maintained: false })
+    const saved = place('builtin:tower', { maintained: false })
+    const curvesBefore = conditionCurves(world())
+    const ruin = ruinAt(curvesBefore.get(saved)!, year(1000))!
+    // Maintained again before it would fall into ruin: no derived ruin for that one.
+    run('maintenance.set', { structureId: saved, at: ruin - year(5), maintained: true })
+    const events = derivedEvents(conditionCurves(world()))
+    expect(events.filter((e) => e.structureId === left).map((e) => e.kind)).toEqual(['ruin', 'eroded'])
+    expect(events.filter((e) => e.structureId === saved)).toEqual([])
   })
 
   it('is continuous when maintenance is switched off, then recovers once it is switched back on', () => {

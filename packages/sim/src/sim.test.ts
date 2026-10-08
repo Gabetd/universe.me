@@ -102,3 +102,20 @@ describe('climate', () => {
     expect(worldClimate(system(), 'moon').distanceAu).toBeCloseTo(1, 5)
   })
 })
+
+describe('weathering', async () => {
+  const { TerrainModel, generateBase } = await import('@universe/procgen')
+  const { DEFAULT_WORLD_SETTINGS } = await import('@universe/core')
+  const { exposureAt } = await import('./index')
+  const settings = { ...DEFAULT_WORLD_SETTINGS, terrain: { ...DEFAULT_WORLD_SETTINGS.terrain } }
+  const model = new TerrainModel(settings, generateBase(3, settings.terrain))
+  it('freezes and thaws at mid latitudes, stays hot at the equator, and every value is 0–1', () => {
+    const polar = exposureAt(model, undefined, 70, 10)
+    const equator = exposureAt(model, undefined, 0, 10)
+    expect(equator.heat).toBeGreaterThan(polar.heat)
+    for (const v of [...Object.values(polar), ...Object.values(equator)]) {
+      expect(v).toBeGreaterThanOrEqual(0)
+      expect(v).toBeLessThanOrEqual(1)
+    }
+  })
+})

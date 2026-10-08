@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useUi } from '../store'
 import { fetchLayers, generateBase } from './terrainSource'
 import { useWorldClimate } from './useSky'
+import { useLoadedTerrain } from './loadedTerrain'
 
 /** Which cube faces changed since the last render: views refresh only those. */
 export interface TerrainChange {
@@ -136,6 +137,11 @@ export function useTerrain(worldId: string, seed: number, info: WorldInfo | unde
     },
     [worldId, reload]
   )
+
+  // Others (erosion) read the terrain once a change is settled, not on every dab of a stroke.
+  useEffect(() => {
+    if (model && !model.isStroking) useLoadedTerrain.getState().publish(worldId, model)
+  }, [model, change, worldId])
 
   return { model, change, error, bump, commit }
 }

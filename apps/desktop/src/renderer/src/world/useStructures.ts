@@ -1,4 +1,7 @@
-import { conditionCurves, effectHits, findBlueprint, stateAt, timelineOf, type Blueprint, type ConditionCurve, type Structure, type StructureState, type StructureWorld } from '@universe/core'
+import { conditionCurves, effectHits, findBlueprint, stateAt, timelineOf, type Blueprint, type ConditionCurve, type Exposure, type Structure, type StructureState, type StructureWorld } from '@universe/core'
+import { exposureAt } from '@universe/sim'
+import { useLoadedTerrain } from './loadedTerrain'
+import { useWorldClimate } from './useSky'
 import { useMemo } from 'react'
 import { useUi, useWorld } from '../store'
 import { usePlayhead } from '../timeline/timelineStore'
@@ -20,12 +23,25 @@ export function useStructureWorld(worldId: string): StructureWorld {
   const { info, regions } = useWorld(worldId)
   const radiusKm = info?.settings.radiusKm ?? 6371
   const erosionSpeed = info?.settings.erosionSpeed ?? 1
+  const terrain = useLoadedTerrain((s) => s.models[worldId])
+  const climate = useWorldClimate(worldId)
   return useMemo(() => {
     const own = timelineOf(timeline, worldId)
     // The blueprint library belongs to the project, not the world.
     const data = { ...own, blueprints: timeline.blueprints }
-    return { data, regions, radiusKm, erosionSpeed, blueprint: (id: string) => findBlueprint(timeline.blueprints, id) }
-  }, [timeline, worldId, regions, radiusKm, erosionSpeed])
+    // The weather where each structure stands, once the world's terrain is loaded; temperate until then.
+    const cache = new Map<string, Exposure>()
+    const exposure = terrain
+      ? (s: Structure) => {
+          const key = `${s.lat}:${s.lon}`
+          let e = cache.get(key)
+          if (!e) cache.set(key, (e = exposureAt(terrain.model, climate, s.lat, s.lon)))
+          return e
+        }
+      : undefined
+    return { data, regions, radiusKm, erosionSpeed, blueprint: (id: string) => findBlueprint(timeline.blueprints, id), exposure }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `terrain.version` stands for the terrain's heights and biomes
+  }, [timeline, worldId, regions, radiusKm, erosionSpeed, terrain?.model, terrain?.version, climate])
 }
 
 /** Condition curves for every structure on a world. */

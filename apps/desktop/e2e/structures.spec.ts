@@ -50,15 +50,16 @@ test('place structures, weather them, and let events damage and destroy them', a
   await expect.poll(async () => (await records(page)).structures.map((s) => s.name)).toEqual(['Stone castle', 'House'])
   await expect(inspector(page).getByTestId('condition')).toHaveText('100 · Pristine')
 
-  // The house is abandoned in 1100; by 1180 it has weathered, and a wood-and-thatch house is gone by 1400.
+  // The house is abandoned in 1100; by 1180 it has weathered, and by 1400 its thatch and timber are gone, leaving the stone chimney.
   await setPlayhead(page, '1100')
   await inspector(page).getByLabel(/Maintained from/).uncheck()
   await setPlayhead(page, '1180')
   await expect(inspector(page).getByTestId('condition')).not.toHaveText(/Pristine/)
   await expect(inspector(page).getByText(/erodes away around/)).toBeVisible()
   await setPlayhead(page, '1400')
-  await expect(inspector(page).getByTestId('condition')).toHaveText('Gone')
-
+  await expect(inspector(page).getByTestId('condition')).toHaveText(/Remnant/)
+  await expect(inspector(page).getByLabel('Materials')).toContainText('Thatch')
+  await expect(inspector(page).getByLabel('Condition over time')).toBeVisible()
   // A siege in 1250 at the castle damages everything within 100 km, less with distance.
   await setPlayhead(page, '1250')
   await page.getByRole('button', { name: '+ Event' }).click()
@@ -95,4 +96,14 @@ test('place structures, weather them, and let events damage and destroy them', a
   for (let i = 0; i < 12; i++) await page.mouse.wheel(0, -400)
   await page.waitForTimeout(800)
   await page.screenshot({ path: 'test-results/42-structures-close.png' })
+
+  // Weathering's own milestones are on the timeline; one click makes the ruin a real event, placed at the house.
+  const ruler = (await page.locator('.tl-ruler').boundingBox())!
+  await page.mouse.move(ruler.x + ruler.width / 2, ruler.y + ruler.height / 2)
+  for (let i = 0; i < 3; i++) await page.mouse.wheel(0, 500)
+  const ruin = page.getByLabel('Weathering').getByRole('button', { name: /House falls into ruin/ })
+  await expect(ruin).toBeAttached()
+  await page.screenshot({ path: 'test-results/43-weathering.png' })
+  await ruin.click()
+  await expect(inspector(page).getByLabel('Event title')).toHaveValue('House falls into ruin')
 })

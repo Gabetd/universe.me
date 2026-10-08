@@ -14,25 +14,57 @@ export const Material = z.enum(MATERIALS)
 export type Material = z.infer<typeof Material>
 
 /**
- * How long each material lasts when nobody looks after it: the half-life of
- * its condition, in years, before the world's erosion speed. Plausible rather
- * than exact: a wooden cabin is a ruin in about 150 years, a stone castle in a
- * few thousand, a pyramid in tens of thousands. Magic never decays.
+ * What the weather does to a structure where it stands (PLAN.md §4.7), each
+ * 0–1: how wet it is, how often it freezes and thaws, how hot, how much salt
+ * the sea air carries, and how fast plants grow over things.
  */
-export const MATERIAL_INFO: Record<Material, { label: string; halfLifeYears: number; color: string }> = {
-  cloth: { label: 'Cloth', halfLifeYears: 6, color: '#d8cdb4' },
-  thatch: { label: 'Thatch', halfLifeYears: 25, color: '#c9a95c' },
-  mud: { label: 'Mud brick', halfLifeYears: 45, color: '#a88a62' },
-  wood: { label: 'Wood', halfLifeYears: 65, color: '#8b5a2b' },
-  glass: { label: 'Glass', halfLifeYears: 150, color: '#9fd3e6' },
-  iron: { label: 'Iron', halfLifeYears: 250, color: '#5d5f66' },
-  steel: { label: 'Steel', halfLifeYears: 300, color: '#9aa3ad' },
-  concrete: { label: 'Concrete', halfLifeYears: 600, color: '#b5b1a8' },
-  brick: { label: 'Brick', halfLifeYears: 900, color: '#a5523a' },
-  stone: { label: 'Stone', halfLifeYears: 1500, color: '#a39e93' },
-  earth: { label: 'Earthworks', halfLifeYears: 3000, color: '#7d6b4f' },
-  megalith: { label: 'Megalith', halfLifeYears: 10000, color: '#d8c9a3' },
-  magic: { label: 'Magic', halfLifeYears: Infinity, color: '#b48cff' }
+export interface Exposure {
+  moisture: number
+  freezeThaw: number
+  heat: number
+  salt: number
+  growth: number
+}
+
+/** A temperate, inland climate: the half-lives below are for this. */
+export const TEMPERATE_EXPOSURE: Exposure = { moisture: 0.5, freezeThaw: 0.4, heat: 0.15, salt: 0.05, growth: 0.6 }
+
+/**
+ * How long each material lasts when nobody looks after it: the half-life of
+ * its condition, in years, in a temperate climate and before the world's
+ * erosion speed. Plausible rather than exact: a wooden cabin is a ruin in
+ * about 150 years, a stone castle in a few thousand, a pyramid in tens of
+ * thousands. Magic never decays. `weather` is how much each kind of exposure
+ * wears it: wood rots in the wet, iron rusts by the sea, stone splits in
+ * frost.
+ */
+export const MATERIAL_INFO: Record<Material, { label: string; halfLifeYears: number; color: string; weather: Partial<Exposure> }> = {
+  cloth: { label: 'Cloth', halfLifeYears: 6, color: '#d8cdb4', weather: { moisture: 0.6, heat: 0.4, growth: 0.2 } },
+  thatch: { label: 'Thatch', halfLifeYears: 25, color: '#c9a95c', weather: { moisture: 0.7, growth: 0.5, heat: 0.2 } },
+  mud: { label: 'Mud brick', halfLifeYears: 45, color: '#a88a62', weather: { moisture: 1, freezeThaw: 0.4 } },
+  wood: { label: 'Wood', halfLifeYears: 65, color: '#8b5a2b', weather: { moisture: 0.7, growth: 0.5, freezeThaw: 0.2 } },
+  glass: { label: 'Glass', halfLifeYears: 150, color: '#9fd3e6', weather: { freezeThaw: 0.2, heat: 0.1 } },
+  iron: { label: 'Iron', halfLifeYears: 250, color: '#5d5f66', weather: { moisture: 0.8, salt: 1 } },
+  steel: { label: 'Steel', halfLifeYears: 300, color: '#9aa3ad', weather: { moisture: 0.5, salt: 0.8 } },
+  concrete: { label: 'Concrete', halfLifeYears: 600, color: '#b5b1a8', weather: { freezeThaw: 0.7, salt: 0.5, moisture: 0.2 } },
+  brick: { label: 'Brick', halfLifeYears: 900, color: '#a5523a', weather: { freezeThaw: 0.7, moisture: 0.3, growth: 0.2 } },
+  stone: { label: 'Stone', halfLifeYears: 1500, color: '#a39e93', weather: { freezeThaw: 0.6, growth: 0.3, moisture: 0.2, salt: 0.2 } },
+  earth: { label: 'Earthworks', halfLifeYears: 3000, color: '#7d6b4f', weather: { moisture: 0.5, growth: 0.4 } },
+  megalith: { label: 'Megalith', halfLifeYears: 10000, color: '#d8c9a3', weather: { freezeThaw: 0.3, moisture: 0.1 } },
+  magic: { label: 'Magic', halfLifeYears: Infinity, color: '#b48cff', weather: {} }
+}
+
+/**
+ * How much faster a material wears where it stands than in a temperate
+ * climate: 1 there, more where its weaknesses are (wood in a rainforest,
+ * iron by the sea), less where they aren't (wood in a desert).
+ */
+export function weatherFactor(material: Material, exposure: Exposure | undefined): number {
+  if (!exposure) return 1
+  const w = MATERIAL_INFO[material].weather
+  const sum = (e: Exposure) => (Object.keys(w) as (keyof Exposure)[]).reduce((n, k) => n + w[k]! * e[k], 0)
+  const factor = (0.5 + sum(exposure)) / (0.5 + sum(TEMPERATE_EXPOSURE))
+  return Math.min(4, Math.max(0.2, factor))
 }
 
 /** `wedge` is a gable roof: a triangular prism whose ridge runs along its depth (z). */

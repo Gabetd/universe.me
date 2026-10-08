@@ -9,6 +9,7 @@ import { goToEvent } from '../world/goToEvent'
 import { CommitSlider, TagsField, TextField, TimeField } from './fields'
 import { BlueprintOptions } from './BlueprintOptions'
 import { NotesEditor } from './NotesEditor'
+import { ConditionChart, MaterialConditions } from './ConditionChart'
 
 const STEP_LABELS: Record<Step['kind'], string> = {
   build: 'built',
@@ -65,6 +66,8 @@ export function StructurePanel({ structure }: { structure: Structure }) {
           <div className="condition-bar">
             <div style={{ width: `${state.condition}%`, background: STAGE_COLORS[state.stage] }} />
           </div>
+          {state.exists && <MaterialConditions materials={state.materials} />}
+          {curve && <ConditionChart curve={curve} builtAt={structure.builtAt} playhead={playhead} ownerId={structure.ownerId} cal={cal} />}
           {eroded !== undefined && <span className="muted small">Left weathered, it erodes away around {formatTime(eroded, 'year', cal)}.</span>}
         </div>
       )}

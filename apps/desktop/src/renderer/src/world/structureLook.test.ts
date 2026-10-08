@@ -17,4 +17,13 @@ describe('standingParts', () => {
     const shrine = part('brick', 10)
     expect(standingParts([base, part('mud', 0), shrine], 10)).not.toContain(shrine)
   })
+
+  it('with each material’s own condition, drops that material’s parts from the top down', () => {
+    const walls = part('stone', 0)
+    const lower = part('wood', 10, 3)
+    const upper = part('wood', 13, 3)
+    expect(standingParts([walls, lower, upper], 80, { stone: 95, wood: 60 })).toEqual([walls, lower, upper])
+    expect(standingParts([walls, lower, upper], 70, { stone: 95, wood: 30 })).toEqual([walls, lower])
+    expect(standingParts([walls, lower, upper], 60, { stone: 95, wood: 5 })).toEqual([walls])
+  })
 })

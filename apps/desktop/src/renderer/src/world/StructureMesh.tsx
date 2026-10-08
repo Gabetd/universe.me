@@ -1,4 +1,4 @@
-import type { Blueprint, BlueprintModel, BlueprintPart, Shape } from '@universe/core'
+import type { Blueprint, BlueprintModel, BlueprintPart, Material, Shape } from '@universe/core'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useModel } from './models'
 import * as THREE from 'three'
@@ -17,19 +17,35 @@ const GEOMETRIES: Record<Shape, THREE.BufferGeometry> = {
 }
 
 const WEATHERED = new THREE.Color('#6b6455')
+const WEATHERING_KEY = () => 'weathering-v1'
 
 /**
  * A blueprint's parts in metres, aged to `condition`: colours fade toward
  * grime, fragile parts fall away, and ruins slump. `ghost` draws it faintly
  * (destroyed, or not built yet, but selected).
  */
-export function BlueprintParts({ blueprint, condition = 100, ghost = false }: { blueprint: Blueprint; condition?: number; ghost?: boolean }) {
+export function BlueprintParts({
+  blueprint,
+  condition = 100,
+  materials,
+  ghost = false
+}: {
+  blueprint: Blueprint
+  condition?: number
+  /** Each material's own condition, when known: parts then fall material by material. */
+  materials?: Partial<Record<Material, number>>
+  ghost?: boolean
+}) {
   if (blueprint.model) return <ModelMesh model={blueprint.model} condition={condition} ghost={ghost} />
-  return <PrimitiveParts blueprint={blueprint} condition={condition} ghost={ghost} />
+  return <PrimitiveParts blueprint={blueprint} condition={condition} materials={materials} ghost={ghost} />
 }
 
-function PrimitiveParts({ blueprint, condition, ghost }: { blueprint: Blueprint; condition: number; ghost: boolean }) {
-  const parts = useMemo(() => (ghost ? blueprint.parts : standingParts(blueprint.parts, condition)), [blueprint.parts, condition, ghost])
+function PrimitiveParts({ blueprint, condition, materials, ghost }: { blueprint: Blueprint; condition: number; materials?: Partial<Record<Material, number>>; ghost: boolean }) {
+  // Material conditions change continuously; parts only fall at whole points.
+  const key = materials && Object.values(materials).map((c) => Math.floor(c!)).join()
+  const whole = Math.floor(condition)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` and `whole` stand for `materials` and `condition`
+  const parts = useMemo(() => (ghost ? blueprint.parts : standingParts(blueprint.parts, condition, materials)), [blueprint.parts, whole, key, ghost])
   // Parts of the same shape and colour are drawn as one instanced mesh, so a city of thousands of parts stays fast.
   const groups = useMemo(() => {
     const byLook = new Map<string, BlueprintPart[]>()
@@ -53,10 +69,52 @@ function PrimitiveParts({ blueprint, condition, ghost }: { blueprint: Blueprint;
 
 const UP = new THREE.Vector3(0, 1, 0)
 
+/**
+ * Weathering in the shader (PLAN.md §4.7): with age, moss gathers on the
+ * faces that look up, and grime streaks the walls, mottled so no two stones
+ * look the same. `uAge` is 0 (new) to about 0.65 (a ruin).
+ */
+function weathering(this: THREE.Material, shader: THREE.WebGLProgramParametersWithUniforms) {
+  // The uniform lives on the material, so ageing only changes a number.
+  shader.uniforms.uAge = this.userData.uAge ??= { value: 0 }
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>\nvarying float vUp;\nvarying vec3 vWorldPos;')
+    .replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+      #ifdef USE_INSTANCING
+        vUp = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * objectNormal).y;
+        vWorldPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+      #else
+        vUp = normalize(mat3(modelMatrix) * objectNormal).y;
+        vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+      #endif`
+    )
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\nuniform float uAge;\nvarying float vUp;\nvarying vec3 vWorldPos;')
+    .replace(
+      '#include <color_fragment>',
+      `#include <color_fragment>
+      float mottle = fract(sin(dot(floor(vWorldPos * 0.8), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+      float moss = smoothstep(0.4, 0.95, vUp) * smoothstep(0.08, 0.5, uAge) * (0.55 + 0.45 * mottle);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.31, 0.13), moss * 0.85);
+      float grime = uAge * (1.0 - smoothstep(-0.2, 0.6, vUp)) * (0.5 + 0.5 * mottle);
+      diffuseColor.rgb *= 1.0 - 0.45 * grime;`
+    )
+}
+
+/** Sets a weathering material's age. */
+function setAge(material: THREE.Material | THREE.Material[], age: number) {
+  for (const m of Array.isArray(material) ? material : [material]) (m.userData.uAge ??= { value: 0 }).value = age
+}
+
 function PartInstances({ parts, age, ghost }: { parts: BlueprintPart[]; age: number; ghost: boolean }) {
   const mesh = useRef<THREE.InstancedMesh>(null)
   const { shape, color } = parts[0]!
   const tinted = useMemo(() => new THREE.Color(color).lerp(WEATHERED, age), [color, age])
+  useEffect(() => {
+    if (mesh.current) setAge(mesh.current.material, age)
+  }, [age, ghost])
   useLayoutEffect(() => {
     const m = mesh.current
     if (!m) return
@@ -72,7 +130,15 @@ function PartInstances({ parts, age, ghost }: { parts: BlueprintPart[]; age: num
   }, [parts])
   return (
     <instancedMesh ref={mesh} args={[GEOMETRIES[shape], undefined, parts.length]}>
-      <meshStandardMaterial color={tinted} roughness={0.85} transparent={ghost} opacity={ghost ? 0.25 : 1} depthWrite={!ghost} />
+      <meshStandardMaterial
+        color={tinted}
+        roughness={0.85}
+        transparent={ghost}
+        opacity={ghost ? 0.25 : 1}
+        depthWrite={!ghost}
+        onBeforeCompile={weathering}
+        customProgramCacheKey={WEATHERING_KEY}
+      />
     </instancedMesh>
   )
 }

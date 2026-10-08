@@ -1,4 +1,4 @@
-import { MATERIAL_INFO, type Blueprint, type BlueprintPart, type Stage } from '@universe/core'
+import { MATERIAL_INFO, type Blueprint, type BlueprintPart, type Material, type Stage } from '@universe/core'
 
 /** One colour per condition stage, for map markers and the inspector. */
 export const STAGE_COLORS: Record<Stage, string> = {
@@ -23,17 +23,32 @@ export function blueprintExtent(b: Blueprint): number {
 export const viewingDistance = (b: Blueprint, scale: number) => Math.max(40, blueprintExtent(b) * scale * 1.4)
 
 /**
- * The parts still standing at a condition. Parts are ranked from most fragile
- * (shortest-lived material, then highest up) to sturdiest; the most fragile
- * falls when the structure becomes Damaged (45), the rest at evenly lower
- * conditions, and the sturdiest stays to the end. A part resting on others
- * falls once nothing under it stands, so nothing is left floating.
+ * The parts still standing. With each material's own condition (the
+ * condition engine works them out part by part), a material's parts fall
+ * from the top down as it decays past Damaged (45): a thatched roof is gone
+ * while the stone walls under it still stand. Without them (a preview with a
+ * single condition), parts are ranked from most fragile (shortest-lived
+ * material, then highest up) to sturdiest and fall in that order. Either
+ * way, a part resting on others falls once nothing under it stands, so
+ * nothing is left floating.
  */
-export function standingParts(parts: BlueprintPart[], condition: number): BlueprintPart[] {
-  if (condition >= 45 || parts.length < 2) return parts
-  const order = parts.map((_, i) => i).sort((a, b) => MATERIAL_INFO[parts[a]!.material].halfLifeYears - MATERIAL_INFO[parts[b]!.material].halfLifeYears || parts[b]!.at[1] - parts[a]!.at[1])
+export function standingParts(parts: BlueprintPart[], condition: number, materials?: Partial<Record<Material, number>>): BlueprintPart[] {
   const fallen = new Array<boolean>(parts.length).fill(false)
-  order.forEach((i, rank) => (fallen[i] = condition < 45 * (1 - rank / (parts.length - 1))))
+  if (materials) {
+    const byMaterial = new Map<Material, number[]>()
+    parts.forEach((p, i) => byMaterial.set(p.material, [...(byMaterial.get(p.material) ?? []), i]))
+    for (const [material, list] of byMaterial) {
+      const c = materials[material] ?? condition
+      if (c >= 45) continue
+      list.sort((a, b) => parts[b]!.at[1] + parts[b]!.size[1] - (parts[a]!.at[1] + parts[a]!.size[1]))
+      list.forEach((i, rank) => (fallen[i] = c < 45 * (1 - rank / list.length)))
+    }
+  } else {
+    if (condition >= 45 || parts.length < 2) return parts
+    const order = parts.map((_, i) => i).sort((a, b) => MATERIAL_INFO[parts[a]!.material].halfLifeYears - MATERIAL_INFO[parts[b]!.material].halfLifeYears || parts[b]!.at[1] - parts[a]!.at[1])
+    order.forEach((i, rank) => (fallen[i] = condition < 45 * (1 - rank / (parts.length - 1))))
+  }
+  if (!fallen.some(Boolean)) return parts
   const supporters = supportsOf(parts)
   for (const i of bottomUp(parts)) {
     const under = supporters[i]!
