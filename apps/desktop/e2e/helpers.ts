@@ -11,6 +11,68 @@ export interface AppHandle {
 }
 
 /**
+ * The Chromium switches Playwright gives an Electron it starts itself (playwright-core 1.63's
+ * `chromiumSwitches`, which its loader script adds to the dev build). A packaged app is started as it
+ * is and gets none, so they're passed here: without them a window that's covered or in the background,
+ * as on CI desktops, is throttled and stops drawing, and screenshots and waits on a frame stall.
+ * Windows' own occlusion tracking is turned off too, for the same reason.
+ */
+const PLAYWRIGHT_DISABLED_FEATURES = [
+  'AvoidUnnecessaryBeforeUnloadCheckSync',
+  'DestroyProfileOnBrowserClose',
+  'DialMediaRouteProvider',
+  'GlobalMediaControls',
+  'HttpsUpgrades',
+  'LensOverlay',
+  'MediaRouter',
+  'PaintHolding',
+  'ThirdPartyStoragePartitioning',
+  'BlockOriginHeaderModificationOnRedirect',
+  'Translate',
+  'AutoDeElevate',
+  'OptimizationHints',
+  'msForceBrowserSignIn',
+  'msEdgeUpdateLaunchServicesPreferredVersion'
+]
+const PLAYWRIGHT_SWITCHES = [
+  '--disable-field-trial-config',
+  '--disable-background-networking',
+  '--disable-background-timer-throttling',
+  '--disable-backgrounding-occluded-windows',
+  '--disable-back-forward-cache',
+  '--disable-breakpad',
+  '--disable-client-side-phishing-detection',
+  '--disable-component-extensions-with-background-pages',
+  '--disable-component-update',
+  '--no-default-browser-check',
+  '--disable-default-apps',
+  '--disable-dev-shm-usage',
+  '--disable-edgeupdater',
+  '--disable-extensions',
+  `--disable-features=${[...PLAYWRIGHT_DISABLED_FEATURES, 'CalculateNativeWinOcclusion'].join(',')}`,
+  '--enable-features=CDPScreenshotNewSurface',
+  '--allow-pre-commit-input',
+  '--disable-hang-monitor',
+  '--disable-ipc-flooding-protection',
+  '--disable-popup-blocking',
+  '--disable-prompt-on-repost',
+  '--disable-renderer-backgrounding',
+  '--disable-updater-scheduler',
+  '--force-color-profile=srgb',
+  '--metrics-recording-only',
+  '--no-first-run',
+  '--password-store=basic',
+  '--use-mock-keychain',
+  '--no-service-autorun',
+  '--export-tagged-pdf',
+  '--disable-search-engine-choice-screen',
+  '--unsafely-disable-devtools-self-xss-warnings',
+  '--edge-skip-compat-layer-relaunch',
+  '--disable-infobars',
+  '--disable-sync'
+]
+
+/**
  * Launches the app with a throwaway profile and update checks off (unless `env` turns them on).
  * UNIVERSE_E2E_EXECUTABLE tests a packaged build instead of the dev build.
  */
@@ -20,7 +82,7 @@ export async function launch(env: (dir: string) => Record<string, string> = () =
   const app = await electron.launch({
     ...(executablePath ? { executablePath } : {}),
     args: [
-      ...(executablePath ? [] : [join(__dirname, '..')]),
+      ...(executablePath ? PLAYWRIGHT_SWITCHES : [join(__dirname, '..')]),
       ...(process.platform === 'linux' ? ['--no-sandbox'] : []),
       // CI machines have no GPU; this allows WebGL on the software renderer.
       '--enable-unsafe-swiftshader'
