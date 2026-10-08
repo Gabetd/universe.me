@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { expect, inspector, newProject, row, shot, state, test, wheel } from './helpers'
+import { expect, inspector, newProject, row, shot, SLOW, state, test, wheel } from './helpers'
 
 const nodes = (page: Page) => state(page, 'nodes')
 
@@ -15,22 +15,48 @@ async function scroll(page: Page, dy: number, times: number) {
   await wheel(page, page.getByTestId('viewport'), dy, times)
 }
 
-/** Clicks the generated thing nearest the middle of the view (the view reports what's on it). */
+/**
+ * Turns the wheel over the middle of the viewport a notch at a time until `done` passes. Changing
+ * level takes a few notches in a row, and Chromium may merge wheel events, so it isn't a fixed count.
+ */
+async function scrollUntil(page: Page, dy: number, done: () => Promise<void>) {
+  await viewportBox(page)
+  await expect(async () => {
+    await wheel(page, page.getByTestId('viewport'), dy)
+    await done()
+  }).toPass({ timeout: SLOW })
+}
+
+/**
+ * Where the view points at something (it shows a pointer cursor), nearest its middle: spots 6 px
+ * apart, pointed at inside the page in one go. The hover is undone after, so the real one is seen anew.
+ */
+const pointable = (page: Page) =>
+  page.getByTestId('viewport').evaluate((canvas) => {
+    const rect = canvas.getBoundingClientRect()
+    const move = (x: number, y: number) => canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: rect.left + x, clientY: rect.top + y, bubbles: true }))
+    const spots: [number, number][] = []
+    for (let dy = -258; dy <= 258; dy += 6) for (let dx = -258; dx <= 258; dx += 6) if (Math.hypot(dx, dy) < 260) spots.push([dx, dy])
+    spots.sort((a, b) => Math.hypot(...a) - Math.hypot(...b))
+    for (const [dx, dy] of spots) {
+      const [x, y] = [rect.width / 2 + dx, rect.height / 2 + dy]
+      move(x, y)
+      if (canvas.style.cursor !== 'pointer') continue
+      move(-1e4, -1e4)
+      return { x, y }
+    }
+    return null
+  })
+
+/** Clicks the generated thing nearest the middle of the view, once hovering it shows its card. */
 async function clickNearestGenerated(page: Page) {
   const box = await viewportBox(page)
-  // Sweep outward from the middle until a card for something not yet claimed appears.
-  for (let r = 0; r < 260; r += 6) {
-    for (let a = 0; a < 16; a++) {
-      const x = box.x + box.width / 2 + Math.cos((a / 16) * Math.PI * 2) * r
-      const y = box.y + box.height / 2 + Math.sin((a / 16) * Math.PI * 2) * r
-      await page.mouse.move(x, y)
-      if (await page.locator('.cosmos-card', { hasText: 'not claimed yet' }).count()) {
-        await page.mouse.click(x, y)
-        return
-      }
-    }
-  }
-  throw new Error('Nothing generated near the middle of the view')
+  const found: { spot?: { x: number; y: number } | null } = {}
+  await expect.poll(async () => (found.spot = await pointable(page)), { message: 'something generated near the middle of the view' }).not.toBeNull()
+  const [x, y] = [box.x + found.spot!.x, box.y + found.spot!.y]
+  await page.mouse.move(x, y)
+  await expect(page.locator('.cosmos-card', { hasText: 'not claimed yet' })).toBeVisible()
+  await page.mouse.click(x, y)
 }
 
 test('scale navigation: claim a cluster, a galaxy and a star from what the seeds generate, zoom in and out between levels', async ({ h }) => {
@@ -84,8 +110,7 @@ test('scale navigation: claim a cluster, a galaxy and a star from what the seeds
   await shot(page, '105-claimed-planet', { wait: 600 })
 
   // Scrolling out goes back up to the system; the breadcrumb straight to the galaxy, centred on the star.
-  await scroll(page, 400, 3)
-  await expect(page.locator('.viewport-overlay.top')).toContainText('Star System view')
+  await scrollUntil(page, 400, () => expect(page.locator('.viewport-overlay.top')).toContainText('Star System view', { timeout: 1000 }))
   const galaxy = all.find((n) => n.kind === 'galaxy')!
   await page.getByRole('navigation', { name: 'Location' }).getByRole('button', { name: galaxy.name }).click()
   await expect(page.locator('.viewport-overlay.top')).toContainText('Galaxy view')
