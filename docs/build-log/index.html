@@ -90,8 +90,8 @@
     <p class="lede">What the worldbuilding app can do today, shown in screenshots taken from the real app by its end-to-end tests. Each published build adds an entry at the top.</p>
     <div class="facts">
       <span>Latest build <b id="latest-ver"></b></span>
-      <span>Milestones done <b>M0–M4</b></span>
-      <span>Next <b>M5 · Scale navigation</b></span>
+      <span>Milestones done <b>M0–M5</b></span>
+      <span>Next <b>M6 · Themes</b></span>
       <span><a href="https://github.com/Gabetd/universe.me/releases/tag/latest-build">Download the latest build</a></span>
     </div>
   </header>
@@ -114,11 +114,10 @@
 
   <section aria-labelledby="next-title">
     <div class="next">
-      <h2 id="next-title">Next up: M5</h2>
+      <h2 id="next-title">Next up: M6</h2>
       <ul>
-        <li>Galaxies, clusters and the universe, generated from seeds</li>
-        <li>Seamless zoom from a world out to its star system, galaxy and beyond</li>
-        <li>Create or claim systems and worlds at any level</li>
+        <li>A theme editor: palette, lighting, atmosphere, mood and a prose style guide</li>
+        <li>Themes over spans of the timeline (and optionally a region), blending as the playhead moves</li>
       </ul>
     </div>
   </section>
@@ -166,11 +165,28 @@
     moonTrack: ['82-moon-track', 'New and full moons and eclipses on the timeline'],
     colder: ['83-colder-world', 'Moved farther from its star: ice caps and tundra spread'],
     foodWeb: ['90-food-web', 'A food web suggested from the world’s biomes'],
-    speciesEditor: ['91-species-editor', 'Editing a species and what it eats']
+    speciesEditor: ['91-species-editor', 'Editing a species and what it eats'],
+    universe: ['100-universe', 'A universe from its seed: galaxy clusters along the cosmic web'],
+    cluster: ['101-cluster', 'Inside a claimed cluster: its galaxies'],
+    galaxy: ['102-galaxy', 'A galaxy from its seed, with its brightest stars'],
+    galaxyStars: ['103-galaxy-stars', 'Zoomed in on the galaxy: single stars, ready to claim'],
+    systemPlanets: ['104-system-planets', 'A claimed red dwarf and the planets its seed makes, faint until claimed'],
+    claimedPlanet: ['105-claimed-planet', 'A planet claimed as a world']
   }
 
   // One entry per published build, newest first.
   const LOG = [
+    {
+      ver: '0.1.19', date: '8 Oct 2026', tag: 'M5 done',
+      title: 'Scale navigation: the whole universe, one zoom',
+      points: [
+        'Every universe’s seed makes galaxy clusters along a cosmic web; clusters hold galaxies (spiral, barred, elliptical, irregular), galaxies hold stars, generated a patch at a time as you get close, and stars have planets.',
+        'Scroll in on anything to go there, out to come back up: the view you leave flies past while the next arrives from the same point. The breadcrumb and Esc zoom out the same way.',
+        'Claim anything you find (a cluster, a galaxy, a star, a planet as a world) and it’s yours, with its seed and place; or right-click to add your own anywhere.',
+        'Each level keeps its camera, and coming back up opens on where you were.'
+      ],
+      shots: ['universe', 'galaxy', 'galaxyStars', 'systemPlanets', 'claimedPlanet']
+    },
     {
       ver: '0.1.17', date: '8 Oct 2026', tag: 'M4 done',
       title: 'Star systems and simulation',
@@ -219,6 +235,7 @@
   ]
 
   const AREAS = [
+    { title: 'The universe', shots: ['universe', 'cluster', 'galaxy', 'galaxyStars', 'systemPlanets', 'claimedPlanet'] },
     { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom'] },
     { title: 'Star systems and sky', shots: ['starSystem', 'planetMoons', 'moonTrack', 'colder', 'orbit'] },
     { title: 'Ecosystem', shots: ['foodWeb', 'speciesEditor'] },
