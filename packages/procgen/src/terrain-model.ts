@@ -11,8 +11,8 @@ import {
   type WorldSettings
 } from '@universe/core'
 import { autoBiome, worldPalette, type Climate, type Palette } from './biomes'
-import { angleBetween, cellDirections, dirToFace, dirToLatLon, faceToDir, toGrid, type Vec3 } from './cubesphere'
-import { clamp } from './math'
+import { angleBetween, cellDirections, dirToFace, faceToDir, toGrid, type Vec3 } from './cubesphere'
+import { DEG, clamp } from './math'
 import type { BaseTerrain } from './generate'
 
 /** What a star and orbit do to a world's climate: degrees warmer than Earth, and how strongly it cools toward the poles. */
@@ -57,7 +57,8 @@ let latCache: Float32Array[] | undefined
 function cellLatitudes(): Float32Array[] {
   latCache ??= cellDirections().map((d) => {
     const lat = new Float32Array(CELLS)
-    for (let c = 0; c < CELLS; c++) lat[c] = dirToLatLon(d[c * 3]!, d[c * 3 + 1]!, d[c * 3 + 2]!).lat
+    // Latitude is asin(y) alone (as dirToLatLon has it).
+    for (let c = 0; c < CELLS; c++) lat[c] = Math.asin(d[c * 3 + 1]!) * DEG
     return lat
   })
   return latCache

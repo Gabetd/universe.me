@@ -7,6 +7,7 @@ import {
   BIOMES,
   buildGroundChunk,
   cellCenter,
+  cellDirections,
   chunkBounds,
   chunkOf,
   dirToFace,
@@ -40,6 +41,17 @@ describe('cube-sphere', () => {
         expect(back.face).toBe(face)
         expect(back.s).toBeCloseTo(s, 10)
         expect(back.t).toBeCloseTo(t, 10)
+      }
+    }
+  })
+
+  it('has the cell directions faceToDir gives', () => {
+    const dirs = cellDirections()
+    for (let face = 0; face < CUBE_FACES; face++) {
+      for (let k = 0; k < 3000; k++) {
+        const c = (k * 7919) % (TERRAIN_RES * TERRAIN_RES)
+        const d = faceToDir(face, cellCenter(c % TERRAIN_RES), cellCenter(Math.floor(c / TERRAIN_RES)))
+        expect([...dirs[face]!.subarray(c * 3, c * 3 + 3)]).toEqual(d.map(Math.fround))
       }
     }
   })
