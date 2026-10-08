@@ -7,6 +7,7 @@ import { TimeScale, snap, type TimeRange } from './scale'
 import { lastUsedTheme, themeSpanCommand } from './themeCommands'
 import { blendMask, isDark, packSpans } from './themeLayout'
 import { TrackRow } from './TrackRow'
+import { menuRef } from '../contextMenu'
 
 const ROW_H = 16
 /** Px at either end of a bar that resize it rather than move it. */
@@ -95,6 +96,7 @@ export const ThemeTrack = memo(function ThemeTrack({ owner, range, width, cal, l
                 ['--c' as string]: accent
               }}
               title={`${theme.name}${where}: ${when}`}
+              data-menu={menuRef('themeSpan', s.id)}
               aria-label={`Theme span ${theme.name}${where}, ${when}`}
               onPointerDown={(e) => {
                 if (e.button !== 0) return

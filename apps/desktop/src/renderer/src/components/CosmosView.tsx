@@ -26,6 +26,7 @@ import { ClaimCard, newId } from './ClaimPlanets'
 import type { GlowRequest } from './galaxy.worker'
 import GalaxyWorker from './galaxy.worker?worker'
 import { EdgePush, arrival, cameras, claimInto, zoomOut, zoomTo, type Camera } from './zoom'
+import { openElementMenu, useContextMenu, type MenuItem } from '../contextMenu'
 
 /**
  * The universe, a galaxy cluster or a galaxy (PLAN.md §5.2): a map you can
@@ -107,7 +108,6 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
   const cam = () => cameraFor(node.id, () => ({ x: 0, y: 0, upp: (extent * 2.2) / Math.max(400, window.innerWidth * 0.5) }))
   const [hover, setHover] = useState<Hit | null>(null)
   const [picked, setPicked] = useState<Hit | null>(null)
-  const [menu, setMenu] = useState<{ x: number; y: number; at: { x: number; y: number }; hit: Hit | null } | null>(null)
   const hits = useRef<Hit[]>([])
   const cells = useRef(new Map<string, Item[]>())
   const lastFrame = useRef<Frame | null>(null)
@@ -185,7 +185,6 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
           if (e.button !== 0) return
           drag.current = { ...local(e), moved: false }
           e.currentTarget.setPointerCapture(e.pointerId)
-          setMenu(null)
         }}
         onPointerMove={(e) => {
           const p = local(e)
@@ -217,8 +216,19 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
         onPointerLeave={() => setHover(null)}
         onWheel={onWheel}
         onContextMenu={(e) => {
+          e.preventDefault()
           const p = local(e)
-          setMenu({ ...p, at: toWorld(p), hit: hitAt(p) })
+          const hit = hitAt(p)
+          const at = toWorld(p)
+          const here: MenuItem = { label: `New ${KIND_LABELS[child].toLowerCase()} here`, run: () => createHere(at) }
+          // A claimed one is a node like any other; a generated one can only be claimed.
+          if (hit?.item.node) return openElementMenu({ kind: 'node', id: hit.item.node.id }, e.clientX, e.clientY, { open: () => open(hit), extra: [here] })
+          useContextMenu.getState().open({
+            x: e.clientX,
+            y: e.clientY,
+            title: hit ? `${hit.item.name} · not claimed yet` : node.name,
+            items: [...(hit ? [{ label: `Claim ${hit.item.name}`, run: () => claim(hit) }] : []), here]
+          })
         }}
       />
       <div className="viewport-overlay top">
@@ -228,23 +238,6 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
         </div>
       </div>
       {card && <ClaimCard x={card.x} y={card.y} name={card.item.name} description={describe(card.item)} onClaim={picked && !picked.item.node ? () => claim(picked) : undefined} />}
-      {menu && (
-        <div className="context-menu" style={{ left: menu.x, top: menu.y }} role="menu">
-          {menu.hit && !menu.hit.item.node && (
-            <button role="menuitem" onClick={() => (setMenu(null), claim(menu.hit!))}>
-              Claim {menu.hit.item.name}
-            </button>
-          )}
-          {menu.hit?.item.node && (
-            <button role="menuitem" onClick={() => (setMenu(null), open(menu.hit!))}>
-              Go to {menu.hit.item.name}
-            </button>
-          )}
-          <button role="menuitem" onClick={() => (setMenu(null), createHere(menu.at))}>
-            New {KIND_LABELS[child].toLowerCase()} here
-          </button>
-        </div>
-      )}
       <div className="scale-bar small" aria-label="Scale" ref={scaleRef}>
         <span className="scale-line" />
         <span />

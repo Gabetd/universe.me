@@ -24,6 +24,7 @@ import { eventDates, spanDates } from './labels'
 import { SkyTrack } from './SkyTrack'
 import { ThemeTrack } from './ThemeTrack'
 import { DerivedTrack } from './DerivedTrack'
+import { menuRef, openElementMenu } from '../contextMenu'
 
 const LABELS_W = 132
 
@@ -309,6 +310,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
               <button
                 key={era.id}
                 className={`tl-era-chip${selected ? ' selected' : ''}`}
+                data-menu={menuRef('era', era.id)}
                 style={{ left: Math.max(0, x0), width: Math.max(12, Math.min(width, x1) - Math.max(0, x0)), ['--c' as string]: era.color }}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => selectTimeline({ kind: 'era', ids: [era.id] })}
@@ -451,7 +453,17 @@ function LaneLabel({ lane, y, height }: { lane: Lane | null; y: number; height: 
     )
   }
   return (
-    <div className="tl-lane-label" style={{ top: y, height }} onDoubleClick={() => setEditing(true)} title="Double-click to rename">
+    <div
+      className="tl-lane-label"
+      style={{ top: y, height }}
+      onDoubleClick={() => setEditing(true)}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        // Renamed in place, so the timeline adds that itself.
+        openElementMenu({ kind: 'lane', id: lane.id }, e.clientX, e.clientY, { extra: [{ label: 'Rename…', run: () => setEditing(true) }] })
+      }}
+      title="Double-click to rename"
+    >
       {editing ? (
         <input
           autoFocus
@@ -500,6 +512,7 @@ const EventBar = memo(function EventBar({ placed, icons, selected, dimmed, onPoi
     <div
       className={classes}
       data-event-id={ev.id}
+      data-menu={menuRef('event', ev.id)}
       role="button"
       aria-label={ev.title}
       aria-pressed={selected}
@@ -528,6 +541,7 @@ const GroupBar = memo(function GroupBar({ placed, selected }: { placed: PlacedIt
     <div
       className={`tl-group${selected ? ' selected' : ''}${g.collapsed ? ' collapsed' : ''}`}
       data-group-id={g.id}
+      data-menu={menuRef('group', g.id)}
       style={{ left: placed.x0, top: placed.y + 3, width: placed.x1 - placed.x0, ['--c' as string]: g.color }}
       onPointerDown={(e) => {
         e.stopPropagation()
@@ -592,7 +606,7 @@ const Arrows = memo(function Arrows({ layout, links, emphasis, warned, selectedL
         const strong = l.id === selectedLinkId || emphasis?.links.has(l.id)
         return (
           <g key={l.id} className={`tl-link${strong ? ' strong' : ''}${emphasis && !strong ? ' dimmed' : ''}`} data-link-id={l.id}>
-            <path d={d} className="tl-link-hit" onPointerDown={(e) => (e.stopPropagation(), selectTimeline({ kind: 'link', ids: [l.id] }))} />
+            <path d={d} className="tl-link-hit" data-menu={menuRef('link', l.id)} onPointerDown={(e) => (e.stopPropagation(), selectTimeline({ kind: 'link', ids: [l.id] }))} />
             <path d={d} stroke={style.color} strokeDasharray={style.dash} markerEnd={style.arrow ? `url(#arrow-${warned.has(l.id) ? 'warn' : l.type})` : undefined} fill="none" />
           </g>
         )

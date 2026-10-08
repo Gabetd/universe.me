@@ -7,6 +7,7 @@ import { ArrowMarkers, LINK_STYLE } from '../timeline/linkStyle'
 import { usePlayhead, useTimelineView } from '../timeline/timelineStore'
 import { boxEdge, nodeDepth, project, type NodeDepth } from './canvasDepth'
 import { goToEvent } from './goToEvent'
+import { menuRef } from '../contextMenu'
 
 const NODE_W = 200
 const NODE_H = 86
@@ -221,7 +222,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
             const d = `M ${x1} ${y1} L ${x2} ${y2}`
             return (
               <g key={l.id} className={`canvas-link${l.id === selectedLinkId ? ' selected' : ''}`} data-link-id={l.id} style={{ opacity: 1 - 0.4 * Math.max(a.depth.depth, b.depth.depth) }}>
-                <path d={d} className="canvas-link-hit" onPointerDown={(e) => (e.stopPropagation(), selectTimeline({ kind: 'link', ids: [l.id] }))} />
+                <path d={d} className="canvas-link-hit" data-menu={menuRef('link', l.id)} onPointerDown={(e) => (e.stopPropagation(), selectTimeline({ kind: 'link', ids: [l.id] }))} />
                 <path d={d} stroke={style.color} strokeDasharray={style.dash} markerEnd={style.arrow ? `url(#canvas-arrow-${l.type})` : undefined} fill="none" />
               </g>
             )
@@ -237,6 +238,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
             <div
               key={ev.id}
               data-event-id={ev.id}
+              data-menu={menuRef('event', ev.id)}
               className={classes.filter(Boolean).join(' ')}
               role="button"
               aria-label={ev.title}

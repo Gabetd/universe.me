@@ -1,6 +1,7 @@
 import type { ThreeEvent } from '@react-three/fiber'
 import type { Vec3 } from '@universe/procgen'
 import { useMemo } from 'react'
+import { openElementMenu, type ElementKind } from '../contextMenu'
 import { useEditor } from './editorStore'
 
 /*
@@ -9,18 +10,27 @@ import { useEditor } from './editorStore'
  */
 
 /**
- * A pointer-down handler that picks the thing `id` in a 3D view (a pin, a
- * structure, a character) with the left button while navigating; with a tool
- * active, the press goes to the tool instead.
+ * Handlers for the thing `id` (of kind `kind`) in a 3D view, a pin, a
+ * structure or a character, to spread on its object: the left button picks it
+ * while navigating (with a tool active, the press goes to the tool instead),
+ * and the right button gives its options.
  */
-export function usePick(onPick: (id: string) => void, id: string) {
+export function usePick(onPick: (id: string) => void, id: string, kind: ElementKind) {
   return useMemo(
-    () => (e: ThreeEvent<PointerEvent>) => {
-      if (e.button !== 0 || useEditor.getState().tool !== 'navigate') return
-      e.stopPropagation()
-      onPick(id)
-    },
-    [onPick, id]
+    () => ({
+      onPointerDown: (e: ThreeEvent<PointerEvent>) => {
+        if (e.button !== 0 || useEditor.getState().tool !== 'navigate') return
+        e.stopPropagation()
+        onPick(id)
+      },
+      onContextMenu: (e: ThreeEvent<MouseEvent>) => {
+        // The nearest object only, and the page's own menu doesn't open as well.
+        e.stopPropagation()
+        e.nativeEvent.preventDefault()
+        openElementMenu({ kind, id }, e.nativeEvent.clientX, e.nativeEvent.clientY)
+      }
+    }),
+    [onPick, id, kind]
   )
 }
 

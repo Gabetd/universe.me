@@ -80,7 +80,7 @@ function RegionList({ worldId, regions, selectedId, onPick }: { worldId: string;
   const changes = useUi((s) => s.timeline.changes)
   const playhead = usePlayhead(worldId)
   return (
-    <section className="inspector-section">
+    <section className="inspector-section" aria-label="Regions">
       <h3>Regions</h3>
       {regions.length === 0 ? (
         <p className="muted small">None yet. Pick the ⬠ tool and click points on the world to draw one.</p>
@@ -88,6 +88,7 @@ function RegionList({ worldId, regions, selectedId, onPick }: { worldId: string;
         <SwatchList
           rows={regions.map((r) => ({ id: r.id, name: r.name, color: r.color, selected: r.id === selectedId, absent: regionAt(r, changes, playhead) ? undefined : 'Doesn’t exist at the playhead' }))}
           onPick={onPick}
+          menu="region"
         />
       )}
     </section>
@@ -131,6 +132,7 @@ function CharacterList({ worldId }: { worldId: string }) {
         <SwatchList
           rows={characters.map((c) => ({ id: c.id, name: c.name, color: c.color, selected: c.id === selectedId, absent: isAlive(c, playhead) ? undefined : 'Not alive at the playhead' }))}
           onPick={useUi.getState().selectCharacter}
+          menu="character"
         />
       )}
       <div className="add-buttons">
@@ -165,6 +167,7 @@ function StructureList({ worldId, erosionSpeed, onErosionSpeed }: { worldId: str
             return { id: x.id, name: state.name, color: STAGE_COLORS[state.stage], selected: x.id === selectedId, absent: state.exists ? undefined : 'Not standing at the playhead' }
           })}
           onPick={selectStructure}
+          menu="structure"
         />
       )}
       <CommitSlider label="Erosion speed" unit="×" min={EROSION_SPEED.min} max={EROSION_SPEED.max} step={EROSION_SPEED.step} value={erosionSpeed} onCommit={onErosionSpeed} />

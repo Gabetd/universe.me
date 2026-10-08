@@ -512,14 +512,14 @@ function GroundStructure({ placed, ground, onClick }: { placed: PlacedStructure;
   const [x, z] = toLocal(ground.frame, structure)
   // On its levelled pad.
   const y = useMemo(() => ground.standAt(x, z), [ground, x, z])
-  const pick = usePick(onClick, structure.id)
+  const pick = usePick(onClick, structure.id, 'structure')
   if (!inView(x, z)) return null
   return (
     <group
       position={[x, y, z]}
       rotation={[0, (-structure.rotation * Math.PI) / 180, 0]}
       scale={structure.scale}
-      onPointerDown={pick}
+      {...pick}
     >
       <BlueprintParts blueprint={blueprint} condition={state.condition} materials={state.materials} ghost={!state.exists} />
       <SelectionRing inner={(extent / structure.scale) * 0.6} outer={(extent / structure.scale) * 0.6 + Math.max(1, extent * 0.01)} segments={64} lift={0.3} selected={selected} hit={hit} />
@@ -532,11 +532,11 @@ const HEAD = new THREE.SphereGeometry(0.17, 12, 10).translate(0, 1.6, 0)
 
 /** A character, life-size: a little over 1.7 m tall. */
 function Figure({ id, at, color, selected, ground, onClick }: { id: string; at: LatLon; color: string; selected: boolean; ground: Ground; onClick(id: string): void }) {
-  const pick = usePick(onClick, id)
+  const pick = usePick(onClick, id, 'character')
   const [x, z] = toLocal(ground.frame, at)
   if (!inView(x, z)) return null
   return (
-    <group position={[x, ground.standAt(x, z), z]} onPointerDown={pick}>
+    <group position={[x, ground.standAt(x, z), z]} {...pick}>
       <mesh geometry={BODY}>
         <meshStandardMaterial color={color} roughness={0.7} />
       </mesh>
@@ -552,11 +552,11 @@ const POST = new THREE.CylinderGeometry(0.8, 0.8, 40, 8)
 
 /** Where an event happened: a tall coloured post, seen from afar. */
 function Beacon({ id, at, color, lit, ground, onClick }: { id: string; at: LatLon; color: string; lit: boolean; ground: Ground; onClick(id: string): void }) {
-  const pick = usePick(onClick, id)
+  const pick = usePick(onClick, id, 'event')
   const [x, z] = toLocal(ground.frame, at)
   if (!inView(x, z)) return null
   return (
-    <mesh position={[x, ground.standAt(x, z) + 20, z]} geometry={POST} onPointerDown={pick}>
+    <mesh position={[x, ground.standAt(x, z) + 20, z]} geometry={POST} {...pick}>
       <meshBasicMaterial color={color} transparent opacity={lit ? 0.95 : 0.5} />
     </mesh>
   )

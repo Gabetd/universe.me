@@ -1820,6 +1820,33 @@ input[type='color'] {
 .context-menu button:focus-visible {
   background: var(--panel);
 }
+/* The app-wide right-click menu: above everything, where the pointer was. */
+.context-menu.floating {
+  position: fixed;
+  z-index: 100;
+  max-width: 320px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.context-menu button:focus {
+  outline: none;
+  background: var(--panel);
+}
+.context-menu-title {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.context-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+.context-menu .danger-text {
+  color: var(--danger);
+}
 .scale-bar {
   position: absolute;
   right: 16px;

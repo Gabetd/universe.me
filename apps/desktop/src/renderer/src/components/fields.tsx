@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { deleteCommand, useTimelineOwner, useUi, type DeleteKind } from '../store'
 import { useCalendar } from '../world/useSky'
 import { NotesEditor } from './NotesEditor'
+import { menuRef, type ElementKind } from '../contextMenu'
 
 /**
  * Inputs that save once when editing finishes (blur, Enter, slider release),
@@ -143,13 +144,13 @@ export interface SwatchRow {
   absent?: string
 }
 
-/** A list of named colour swatches (regions, characters, structures, events); clicking one picks it. */
-export function SwatchList({ rows, onPick }: { rows: SwatchRow[]; onPick(id: string): void }) {
+/** A list of named colour swatches (regions, characters, structures, events); clicking one picks it, right-clicking it (as `menu`) gives its options. */
+export function SwatchList({ rows, onPick, menu }: { rows: SwatchRow[]; onPick(id: string): void; menu?: ElementKind }) {
   return (
     <ul className="region-list">
       {rows.map((r) => (
         <li key={r.id}>
-          <button className={`link region-row${r.selected ? ' selected' : ''}${r.absent ? ' absent' : ''}`} title={r.absent} onClick={() => onPick(r.id)}>
+          <button className={`link region-row${r.selected ? ' selected' : ''}${r.absent ? ' absent' : ''}`} title={r.absent} data-menu={menu && menuRef(menu, r.id)} onClick={() => onPick(r.id)}>
             <Swatch color={r.color} />
             {r.name}
           </button>

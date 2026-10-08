@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { ColorField, TagsField, TextField } from '../components/fields'
 import { NotesEditor } from '../components/NotesEditor'
 import { useUi } from '../store'
+import { openElementMenu } from '../contextMenu'
 
 /**
  * A world's species and food web (PLAN.md §5.5): a list with an editor on the
@@ -61,6 +62,12 @@ export function EcosystemView({ worldId, model, change, error }: { worldId: stri
     if (state?.focus?.id) setSelectedId(state.focus.id)
   }
 
+  // Opened here, in the food web's own editor.
+  const speciesMenu = (e: React.MouseEvent, id: string) => {
+    e.preventDefault()
+    openElementMenu({ kind: 'species', id }, e.clientX, e.clientY, { open: () => setSelectedId(id) })
+  }
+
   return (
     <div className="eco-view">
       <aside className="eco-side">
@@ -94,7 +101,7 @@ export function EcosystemView({ worldId, model, change, error }: { worldId: stri
           <ul className="region-list" aria-label="Species">
             {species.map((s) => (
               <li key={s.id}>
-                <button className="link region-row" onClick={() => setSelectedId(s.id)}>
+                <button className="link region-row" onClick={() => setSelectedId(s.id)} onContextMenu={(e) => speciesMenu(e, s.id)}>
                   <span className="swatch" style={{ background: s.color }} />
                   {s.name} <span className="muted small">· {s.diet}</span>
                 </button>
@@ -104,7 +111,7 @@ export function EcosystemView({ worldId, model, change, error }: { worldId: stri
           </ul>
         )}
       </aside>
-      <FoodWeb species={species} links={links} selectedId={selectedId} onSelect={setSelectedId} />
+      <FoodWeb species={species} links={links} selectedId={selectedId} onSelect={setSelectedId} onMenu={speciesMenu} />
     </div>
   )
 }
@@ -218,7 +225,19 @@ const NODE_H = 28
 const GAP_Y = 10
 
 /** The food web: one column per diet, arrows from food to eater (the way energy flows). */
-function FoodWeb({ species, links, selectedId, onSelect }: { species: Species[]; links: EcoLink[]; selectedId: string | null; onSelect(id: string): void }) {
+function FoodWeb({
+  species,
+  links,
+  selectedId,
+  onSelect,
+  onMenu
+}: {
+  species: Species[]
+  links: EcoLink[]
+  selectedId: string | null
+  onSelect(id: string): void
+  onMenu(e: React.MouseEvent, id: string): void
+}) {
   const columns = DIETS.map((d) => species.filter((s) => s.diet === d))
   const colX = (i: number) => 24 + i * (NODE_W + 72)
   const pos = new Map<string, { x: number; y: number }>()
@@ -265,7 +284,7 @@ function FoodWeb({ species, links, selectedId, onSelect }: { species: Species[];
           const p = pos.get(s.id)!
           const dim = selectedId && s.id !== selectedId && !related.has(s.id)
           return (
-            <g key={s.id} className={`eco-node${s.id === selectedId ? ' selected' : ''}${dim ? ' dim' : ''}`} transform={`translate(${p.x},${p.y})`} onClick={() => onSelect(s.id)} role="button" aria-label={s.name}>
+            <g key={s.id} className={`eco-node${s.id === selectedId ? ' selected' : ''}${dim ? ' dim' : ''}`} transform={`translate(${p.x},${p.y})`} onClick={() => onSelect(s.id)} onContextMenu={(e) => onMenu(e, s.id)} role="button" aria-label={s.name}>
               <rect width={NODE_W} height={NODE_H} rx={6} />
               <circle cx={12} cy={NODE_H / 2} r={5} fill={s.color} />
               <text x={24} y={NODE_H / 2 + 4}>

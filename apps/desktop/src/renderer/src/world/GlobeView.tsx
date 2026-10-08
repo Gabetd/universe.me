@@ -285,9 +285,9 @@ const DOT = new THREE.SphereGeometry(1, 16, 12)
 /** An event's location: a dot, brighter while the event is happening at the playhead. */
 function Pin({ pin, position, onClick }: { pin: EventPin; position: [number, number, number]; onClick(eventId: string): void }) {
   const size = pin.selected ? 0.014 : pin.active ? 0.01 : 0.007
-  const pick = usePick(onClick, pin.eventId)
+  const pick = usePick(onClick, pin.eventId, 'event')
   return (
-    <mesh position={position} scale={size} geometry={DOT} onPointerDown={pick}>
+    <mesh position={position} scale={size} geometry={DOT} {...pick}>
       <meshBasicMaterial color={pin.color} transparent opacity={pin.active || pin.selected ? 1 : 0.5} />
     </mesh>
   )
@@ -323,7 +323,7 @@ function SurfacePin({
   onClick(id: string): void
 }) {
   const group = useRef<THREE.Group>(null)
-  const pick = usePick(onClick, id)
+  const pick = usePick(onClick, id, figure ? 'character' : 'structure')
   const [x, y, z] = at
   const quaternion = useMemo(() => new THREE.Quaternion().setFromUnitVectors(UP, new THREE.Vector3(x, y, z).normalize()), [x, y, z])
   useFrame(({ camera }) => {
@@ -335,7 +335,7 @@ function SurfacePin({
       ref={group}
       position={at}
       quaternion={quaternion}
-      onPointerDown={pick}
+      {...pick}
     >
       {figure ? (
         <mesh geometry={FIGURE}>

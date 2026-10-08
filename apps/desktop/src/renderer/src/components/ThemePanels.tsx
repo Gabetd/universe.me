@@ -82,6 +82,7 @@ export function ThemePanel({ theme }: { theme: Theme }) {
           <SwatchList
             rows={uses.map((s) => ({ id: s.id, name: nodes.find((n) => n.id === s.ownerId)?.name ?? 'A world', color: theme.palette.accent }))}
             onPick={(id) => useUi.getState().selectTimeline({ kind: 'themeSpan', ids: [id] })}
+            menu="themeSpan"
           />
         ) : (
           <span className="muted small">No world yet: add a span on a world's timeline.</span>
@@ -222,7 +223,7 @@ export function WorldThemes({ world }: { world: SpatialNode }) {
     <section className="inspector-section world-themes" aria-label="Themes">
       <h3>Themes</h3>
       <ThemeNow worldId={world.id} />
-      {rows.length > 0 && <SwatchList rows={rows} onPick={(id) => select({ kind: 'themeSpan', ids: [id] })} />}
+      {rows.length > 0 && <SwatchList rows={rows} onPick={(id) => select({ kind: 'themeSpan', ids: [id] })} menu="themeSpan" />}
       {themes.length > 0 && (
         <div className="theme-library" aria-label="Theme library">
           {themes.map((t) => (

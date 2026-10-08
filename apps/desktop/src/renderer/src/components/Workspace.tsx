@@ -10,6 +10,7 @@ import { Viewport } from './Viewport'
 import { ZoomStage } from './ZoomOverlay'
 import { AiNotes, AiSuggestions, ConnectAiButton, UndoAiButton } from './AiPanels'
 import { ThemedWorkspace } from './ThemedWorkspace'
+import { ContextMenuHost } from './ContextMenu'
 import { zoomOut, zoomTo } from './zoom'
 import { Timeline } from '../timeline/Timeline'
 import { useTimelineView } from '../timeline/timelineStore'
@@ -80,6 +81,7 @@ export function Workspace() {
         </div>
       </header>
       <ErrorBanner />
+      <ContextMenuHost />
       <aside className="panel outline-panel">
         <div className="panel-title">Universe</div>
         <Outline />

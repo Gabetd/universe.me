@@ -11,6 +11,7 @@ import { STAGE_COLORS } from './structureLook'
 import { useByValue } from '../useByValue'
 import { useRegionViewThemes, useViewTheme } from './useThemeLook'
 import type { SurfaceViewProps, TerrainChange } from './useTerrain'
+import { openElementMenu, useContextMenu, type ElementRef } from '../contextMenu'
 
 const W = 1024
 const H = 512
@@ -356,6 +357,23 @@ export const MapView = memo(function MapView({
     return [((x % W) + W) % W, y]
   }
 
+  /** What's at a point on the map: pins are small, so they win over what's around them (8 screen pixels of slack), then characters and structures, then the region they're in. */
+  const elementAt = (p: [number, number]): ElementRef | undefined => {
+    const v = view.current!
+    const within = (q: LatLon, px: number) => {
+      const [x, y] = toMap(q)
+      return [-W, 0, W].some((s) => Math.hypot((x + s - p[0]) * v.scale, (y - p[1]) * v.scale) <= px)
+    }
+    const pin = pins.find((pn) => within(pn, 8))
+    if (pin) return { kind: 'event', id: pin.eventId }
+    const character = characters.find((ch) => within(ch.place, 9))
+    if (character) return { kind: 'character', id: character.character.id }
+    const structure = structures.find((st) => within(st.structure, 9))
+    if (structure) return { kind: 'structure', id: structure.structure.id }
+    const region = regions.find((r) => [-W, 0, W].some((s) => insidePolygon(p[0] + s, p[1], polygon(r.points))))
+    return region && { kind: 'region', id: region.id }
+  }
+
   const dirAt = ([x, y]: [number, number]): Vec3 => {
     const { lat, lon } = pixelToLatLon(x, y, W, H)
     return latLonToDir(lat, lon)
@@ -368,28 +386,22 @@ export const MapView = memo(function MapView({
       data-testid="map"
       data-ready={ready}
       data-theme={theme.name}
-      onContextMenu={(e) => e.preventDefault()}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        const p = mapPoint(e)
+        const hit = p && elementAt(p)
+        if (hit) openElementMenu(hit, e.clientX, e.clientY)
+        else useContextMenu.getState().close()
+      }}
       onPointerDown={(e) => {
         const p = mapPoint(e)
         const tool = useEditor.getState().tool
         if (e.button === 0 && p && onPointerDown(dirAt(p))) return
         if (e.button === 0 && p && tool === 'navigate') {
-          const v = view.current!
-          // Pins are small, so they win over the region they sit in; 8 screen pixels of slack.
-          const pin = pins.find((pn) => {
-            const [x, y] = toMap(pn)
-            return [-W, 0, W].some((s) => Math.hypot((x + s - p[0]) * v.scale, (y - p[1]) * v.scale) <= 8)
-          })
-          if (pin) return onPinClick(pin.eventId)
-          const near = (q: LatLon) => {
-            const [x, y] = toMap(q)
-            return [-W, 0, W].some((s) => Math.hypot((x + s - p[0]) * v.scale, (y - p[1]) * v.scale) <= 9)
-          }
-          const character = characters.find((ch) => near(ch.place))
-          if (character) return onCharacterClick(character.character.id)
-          const structure = structures.find((st) => near(st.structure))
-          if (structure) return onStructureClick(structure.structure.id)
-          const hit = regions.find((r) => [-W, 0, W].some((s) => insidePolygon(p[0] + s, p[1], polygon(r.points))))
+          const hit = elementAt(p)
+          if (hit?.kind === 'event') return onPinClick(hit.id)
+          if (hit?.kind === 'character') return onCharacterClick(hit.id)
+          if (hit?.kind === 'structure') return onStructureClick(hit.id)
           useUi.getState().selectRegion(hit?.id ?? null)
         }
         pan.current = { x: e.clientX, y: e.clientY }

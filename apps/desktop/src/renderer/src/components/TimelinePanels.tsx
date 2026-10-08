@@ -274,7 +274,7 @@ function GroupPanel({ group }: { group: EventGroup }) {
       </label>
       <div className="field">
         <span>Events</span>
-        <SwatchList rows={members.map((e) => ({ id: e.id, name: e.title, color: e.color }))} onPick={(id) => selectTimeline({ kind: 'event', ids: [id] })} />
+        <SwatchList rows={members.map((e) => ({ id: e.id, name: e.title, color: e.color }))} onPick={(id) => selectTimeline({ kind: 'event', ids: [id] })} menu="event" />
       </div>
       <NotesField label="Group notes" value={group.notes} onCommit={(notes) => update({ notes })} />
       <DeleteButton kind="group" ids={[group.id]}>

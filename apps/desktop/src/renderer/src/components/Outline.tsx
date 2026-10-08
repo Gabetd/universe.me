@@ -2,6 +2,7 @@ import { ancestry, buildTree, type TreeNode } from '@universe/core'
 import { memo, useCallback, useMemo, useState } from 'react'
 import { KIND_ICONS } from '../kinds'
 import { useUi } from '../store'
+import { menuRef } from '../contextMenu'
 
 export function Outline() {
   const nodes = useUi((s) => s.nodes)
@@ -52,7 +53,7 @@ const Row = memo(function Row({ node, depth, collapsed, path, toggle }: RowProps
 
   return (
     <li role="treeitem" aria-selected={selected} aria-expanded={hasChildren ? open : undefined}>
-      <div className={`tree-row${selected ? ' selected' : ''}`} style={{ paddingLeft: 8 + depth * 14 }} onClick={() => select(node.id)}>
+      <div className={`tree-row${selected ? ' selected' : ''}`} style={{ paddingLeft: 8 + depth * 14 }} data-menu={menuRef('node', node.id)} onClick={() => select(node.id)}>
         <button
           className="tree-caret link"
           style={{ visibility: hasChildren ? 'visible' : 'hidden' }}

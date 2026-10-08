@@ -438,6 +438,7 @@ Each milestone ends with something you can launch and demo.
 - Deferred from the audit: signed update manifests (an Ed25519 key kept as a GitHub secret, its public half in the app) and publishing installed copies' updates from `main` only (both the owner's call); Electron fuses (asar integrity, no NODE_OPTIONS or inspect flags; RunAsNode stays for `--mcp`) with code signing in M9; validating every row of a project on load (a crafted project can still break the window, but its colours and links no longer reach anything); the .deb installer's wait between checking and installing; a nonce the stdio server checks before handing the app its token.
 
 ### M9 — Polish & release (2 weeks)
+- [x] **Right-click menus** on everything (`contextMenu.ts`): a node in the tree or a claimed one in the cosmos, an event, era, group, link, lane or theme span on the timeline or the canvas, a region, structure, character or event pin on the map, globe or ground, a species in the food web, a row in the inspector's lists. Each gives what its kind can do (open, rename, add to it, go to it, follow a link, move the playhead, delete); the keyboard opens and moves through it too.
 - Onboarding sample universe, keyboard shortcuts, performance pass (LOD, instancing for structures).
 - Signed installers (Windows NSIS, macOS dmg + notarization, Linux AppImage/deb); auto-update already works unsigned (see M0) and should move to signature-checked updates once signed.
 - E2E tests for the main flows.
