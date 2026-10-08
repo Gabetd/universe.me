@@ -15,7 +15,7 @@ export const ROADMAP: Milestone[] = [
   { id: 'M3', title: 'Structures', status: 'done', summary: 'Blueprints, placement, event effects, weathering; ground view up close; characters' },
   { id: 'M4', title: 'Star systems & sim', status: 'done', summary: 'Orbits, calendars, moon phases and eclipses, climate, species, erosion' },
   { id: 'M5', title: 'Scale navigation', status: 'done', summary: 'Seeded universe, clusters, galaxies and planets; one zoom through them; claim anything' },
-  { id: 'M6', title: 'Themes', status: 'planned', summary: 'Themes per world and time span, blending on the timeline' },
+  { id: 'M6', title: 'Themes', status: 'done', summary: 'A theme library, theme spans on the timeline per world or region, views that blend as the playhead moves' },
   { id: 'M7', title: 'API & MCP', status: 'planned', summary: 'Local REST API and MCP server for Claude Code' },
   { id: 'M8', title: 'Polish & release', status: 'planned', summary: 'Onboarding, performance, signed installers (self-update already ships)' }
 ]

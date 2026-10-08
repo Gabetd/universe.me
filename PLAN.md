@@ -403,9 +403,11 @@ Each milestone ends with something you can launch and demo.
 - [x] **Create/claim at any level**: anything generated can be claimed (a cluster, a galaxy, a star with its mass, a planet with its orbit and, for rocky ones, a world surface its size), keeping its seed and place, so claiming changes nothing you saw; claimed things are ringed and named. Right-click to claim, open, or put a new one of your own anywhere.
 - Deferred: generated moons for claimed planets, nebulae and dust lanes, a 3D galaxy (it's a top-down map), and a keyboard way through the generated items on the maps.
 
-### M6 — Themes (1–2 weeks)
-- Theme editor (palette, lighting, atmosphere, mood, prose style guide).
-- Theme spans on the timeline (time + optional region), blending as the playhead moves.
+### M6 — Themes (1–2 weeks) — *done*
+- [x] **Theme editor** (`packages/core` themes.ts): a project-wide theme library, each theme with a palette (sky, water, land, accent), a lighting preset (day, golden, overcast, dusk, night, storm), how hazy its air is, a typeface for titles, mood words, ambience tags, a prose style guide for writers (and, from M7, the AI) and notes; six presets to start from (Golden Age, Plague Years, Ice Age, Twilight, Age of War, Verdant). Deleting a theme takes its spans with it, in one undo step.
+- [x] **Theme spans on the timeline**: a theme band above the lanes, one bar per span (from, to, the whole world or one region, a priority, fade-in and fade-out times), stacked by priority and fading at its ends; drag a bar to move it, its ends to resize it, double-click the band to add one. The world's inspector shows what's in force at the playhead, how much of each, and its mood and style guide.
+- [x] **Blending as the playhead moves**: spans composite like layers of paint (eased over their fades, higher priority on top), and the views follow: on the globe the sunlight, sky light, halo, sea and land; on the ground the sky, fog, light, sea and land, with the themes of the region it's in; on the map the theme's light and land, and inside each region with themes of its own, those. The interface takes on the accent and title type of the theme in force.
+- Deferred: a region's own themes on the globe (they show on the map and the ground), ambience sounds, and theme images.
 
 ### M7 — API & MCP (2 weeks)
 - Fastify REST + OpenAPI + WS change feed + token auth.

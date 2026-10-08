@@ -5,8 +5,8 @@ worlds, give them histories on a timeline, and (soon) let Claude Code help
 through an API. See [PLAN.md](PLAN.md) for the full design and roadmap.
 
 **Status:** M0 (Foundations), M1 (Worlds & globe), M2 (Timeline), M3
-(Structures), M4 (Star systems & simulation) and M5 (Scale navigation) are
-done. You can create `.universe` project files and build the universe tree
+(Structures), M4 (Star systems & simulation), M5 (Scale navigation) and M6
+(Themes) are done. You can create `.universe` project files and build the universe tree
 (cluster → galaxy → star system → planet → moon / world surface). Each world
 surface is generated from a seed: type any word and you get a whole planet
 (land type, water, islands, mountains, climate, colors), the same planet every
@@ -49,7 +49,17 @@ you get close, and each star its planets. Scroll in on anything to go there
 and out to come back up (or use the breadcrumb or Esc). Claim whatever you
 find, a cluster, a galaxy, a star, a planet as a world, and it becomes yours,
 keeping its seed and place; or right-click to put something of your own
-anywhere. Everything can be undone, and everything stays on your computer.
+anywhere.
+
+Give a world's ages their own look and tone with themes: a palette, a
+lighting preset, how hazy the air is, a typeface, mood words, ambience and a
+prose style guide (start from presets such as Golden Age or Plague Years).
+Lay them on the timeline's theme band over any span of time, for the whole
+world or one region, fading in and out; where they overlap, priorities decide
+what shows. As the playhead moves the globe, the map and the ground blend
+from one theme into the next (light, sky, haze, sea and land), and the app's
+accent and title type follow. Everything can be undone, and everything stays
+on your computer.
 
 ## Download and run
 
