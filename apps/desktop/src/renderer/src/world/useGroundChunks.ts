@@ -1,25 +1,9 @@
-import { chunkBounds, chunkKey, modelSampler, sampleBaseGrid, worldPalette, type ChunkId, type GroundChunk, type TerrainModel } from '@universe/procgen'
+import { chunkBounds, chunkKey, modelSampler, sampleBaseGrid, worldPalette, type ChunkId, type GroundChunk, type GroundChunkInput, type TerrainModel } from '@universe/procgen'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChunkRequest } from './ground.worker'
+import { workerCalls } from '../workerCalls'
 import GroundWorker from './ground.worker?worker'
 
-let worker: Worker | undefined
-let nextRequest = 0
-const waiting = new Map<number, (chunk: GroundChunk) => void>()
-
-function build(request: Omit<ChunkRequest, 'id'>): Promise<GroundChunk> {
-  if (!worker) {
-    worker = new GroundWorker()
-    worker.onmessage = (e: MessageEvent<{ id: number; chunk: GroundChunk }>) => {
-      waiting.get(e.data.id)?.(e.data.chunk)
-      waiting.delete(e.data.id)
-    }
-  }
-  const id = ++nextRequest
-  const done = new Promise<GroundChunk>((resolve) => waiting.set(id, resolve))
-  worker.postMessage({ id, ...request } satisfies ChunkRequest)
-  return done
-}
+const build = workerCalls<GroundChunkInput, GroundChunk>(() => new GroundWorker())
 
 /** Chunks kept around after leaving their area, so walking back is instant. */
 const KEEP = 60
@@ -51,14 +35,12 @@ export function useGroundChunks(model: TerrainModel, generation: object, seed: n
       pending.current.add(key)
       const bounds = chunkBounds(id, radiusKm)
       void build({
-        input: {
-          id,
-          frame: { origin: { lat: bounds.lat0, lon: bounds.lon0 }, radiusKm },
-          seed,
-          grid: sampleBaseGrid(base, bounds),
-          biomeColors: palette.biomes,
-          seabedColor: palette.shallow.map((c) => c * 0.7)
-        }
+        id,
+        frame: { origin: { lat: bounds.lat0, lon: bounds.lon0 }, radiusKm },
+        seed,
+        grid: sampleBaseGrid(base, bounds),
+        biomeColors: palette.biomes,
+        seabedColor: palette.shallow.map((c) => c * 0.7)
       }).then((chunk) => {
         pending.current.delete(key)
         setBuilt((prev) => {

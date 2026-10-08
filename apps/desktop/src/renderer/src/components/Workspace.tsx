@@ -8,7 +8,7 @@ import { Inspector } from './Inspector'
 import { Outline } from './Outline'
 import { Viewport } from './Viewport'
 import { ZoomStage } from './ZoomOverlay'
-import { viewCanvas, zoomOut } from './zoom'
+import { zoomOut, zoomTo } from './zoom'
 import { Timeline } from '../timeline/Timeline'
 import { useTimelineView } from '../timeline/timelineStore'
 import { WorldEditor } from '../world/WorldEditor'
@@ -52,7 +52,7 @@ export function Workspace() {
         useUi.setState({ timelineSelection: null, selectedRegionId: null })
       } else if (e.key === 'Escape' && selectedId) {
         // Escape zooms out one level, like scrolling out in the viewport.
-        zoomOut(viewCanvas())
+        zoomOut()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -66,7 +66,7 @@ export function Workspace() {
           {path.map((n, i) => (
             <span key={n.id} className="crumb">
               {i > 0 && <span className="crumb-sep">›</span>}
-              <button className="link" onClick={() => zoomOut(viewCanvas(), n.id)} aria-current={i === path.length - 1}>
+              <button className="link" onClick={() => zoomTo(n.id)} aria-current={i === path.length - 1}>
                 <span className="crumb-icon">{KIND_ICONS[n.kind]}</span>
                 {n.name}
               </button>

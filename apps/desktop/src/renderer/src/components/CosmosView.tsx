@@ -1,4 +1,4 @@
-import { KIND_LABELS, type Command, type NodeKind, type SpatialNode } from '@universe/core'
+import { ALLOWED_CHILDREN, KIND_LABELS, type SpatialNode } from '@universe/core'
 import {
   GLOW_REACH,
   cellStars,
@@ -6,23 +6,26 @@ import {
   clusterGalaxies,
   cosmicWeb,
   galaxyDensity,
-  galaxyGlowPixels,
   galaxyShape,
   landmarkStars,
   levelExtent,
   placeOf,
+  rng,
   universeClusters,
   type GalaxyShape,
   type ProcCluster,
-  type ProcGalaxy,
-  type ProcStar
+  type Procedural
 } from '@universe/procgen'
-import { starInfo } from '@universe/sim'
+import { claimGenerated, starInfo } from '@universe/sim'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
-import { label, starfield } from './canvasDraw'
-import { arrival, cameras, claimInto, zoomInto, zoomOut, zooming, type Camera } from './zoom'
+import { workerCalls } from '../workerCalls'
+import { label, ring, starGlow, starfield, targetAt, useCanvasLoop } from './canvasDraw'
+import { ClaimCard, newId } from './ClaimPlanets'
+import type { GlowRequest } from './galaxy.worker'
+import GalaxyWorker from './galaxy.worker?worker'
+import { EdgePush, arrival, cameras, claimInto, zoomOut, zoomTo, type Camera } from './zoom'
 
 /**
  * The universe, a galaxy cluster or a galaxy (PLAN.md §5.2): a map you can
@@ -32,9 +35,9 @@ import { arrival, cameras, claimInto, zoomInto, zoomOut, zooming, type Camera } 
  */
 
 type CosmosKind = 'universe' | 'galaxy_cluster' | 'galaxy'
-export const isCosmos = (kind: NodeKind): kind is CosmosKind => kind === 'universe' || kind === 'galaxy_cluster' || kind === 'galaxy'
+export const isCosmos = (node: SpatialNode): node is SpatialNode & { kind: CosmosKind } =>
+  node.kind === 'universe' || node.kind === 'galaxy_cluster' || node.kind === 'galaxy'
 
-const CHILD: Record<CosmosKind, NodeKind> = { universe: 'galaxy_cluster', galaxy_cluster: 'galaxy', galaxy: 'star_system' }
 const UNIT: Record<CosmosKind, string> = { universe: 'Mly', galaxy_cluster: 'Mly', galaxy: 'ly' }
 /** Closest each level zooms (units per pixel) before going into what's under the cursor. */
 const MIN_UPP: Record<CosmosKind, number> = { universe: 0.4, galaxy_cluster: 0.0015, galaxy: 2 }
@@ -42,89 +45,89 @@ const MIN_UPP: Record<CosmosKind, number> = { universe: 0.4, galaxy_cluster: 0.0
 const GALAXY_SCALE = 6
 
 /** Something on the map: a stored child, or one generated from the seed. */
-interface Item {
+interface Item extends Procedural {
   key: string
-  name: string
-  x: number
-  y: number
-  seed: number
   /** Stored child; undefined for a generated one. */
   node?: SpatialNode
-  star?: ProcStar
+  /** A star's mass (a star system's, once claimed). */
+  massSun?: number
   galaxy?: GalaxyShape
   cluster?: ProcCluster
 }
 
+/** Something generated from a seed, as an item on the map. */
+const generatedItem = (thing: Procedural, more: Partial<Item> = {}): Item => ({ key: `proc:${thing.seed}`, seed: thing.seed, name: thing.name, x: thing.x, y: thing.y, ...more })
+
+/** An item where it was drawn, in px from the view's corner. */
 interface Hit {
   item: Item
-  sx: number
-  sy: number
+  x: number
+  y: number
   r: number
 }
 
 export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const scaleRef = useRef<HTMLDivElement>(null)
   const nodes = useUi((s) => s.nodes)
+  const stars = useUi((s) => s.timeline.stars)
   const kind = node.kind
+  const child = ALLOWED_CHILDREN[kind][0]!
   const shape = useMemo(() => (kind === 'galaxy' ? galaxyShape(node.seed) : undefined), [kind, node.seed])
-  const extent = levelExtent(kind, node.seed)
+  const extent = useMemo(() => levelExtent(kind, node.seed), [kind, node.seed])
+  const web = useMemo(() => (kind === 'universe' ? cosmicWeb(node.seed) : []), [kind, node.seed])
 
-  // Stored children, and what the seed generates (minus anything already claimed: same seed).
-  const stored = useMemo(() => nodes.filter((n) => n.parentId === node.id), [nodes, node.id])
-  const items = useMemo<Item[]>(() => {
-    const claimed = new Set(stored.map((n) => n.seed))
-    const own: Item[] = stored.map((n) => ({ key: n.id, name: n.name, seed: n.seed, node: n, ...placeOf(n, node), galaxy: n.kind === 'galaxy' ? galaxyShape(n.seed) : undefined }))
-    const generated: Item[] =
+  // What the seed generates, and the stored children (anything claimed has the same seed, so it replaces the generated one).
+  const generated = useMemo<Item[]>(
+    () =>
       kind === 'universe'
-        ? universeClusters(node.seed).map((c) => ({ key: `proc:${c.seed}`, ...c, cluster: c }))
+        ? universeClusters(node.seed).map((c) => generatedItem(c, { cluster: c }))
         : kind === 'galaxy_cluster'
-          ? clusterGalaxies(node.seed).map((g: ProcGalaxy) => ({ key: `proc:${g.seed}`, ...g, galaxy: g.shape }))
-          : landmarkStars(shape!, node.seed).map((s) => ({ key: `proc:${s.seed}`, ...s, star: s }))
-    return [...generated.filter((g) => !claimed.has(g.seed)), ...own]
-  }, [stored, kind, node, shape])
-  const claimedSeeds = useMemo(() => new Set(stored.map((n) => n.seed)), [stored])
+          ? clusterGalaxies(node.seed).map((g) => generatedItem(g, { galaxy: g.shape }))
+          : landmarkStars(shape!, node.seed).map((s) => generatedItem(s, { massSun: s.massSun })),
+    [kind, node.seed, shape]
+  )
+  const { items, claimedSeeds } = useMemo(() => {
+    const stored = nodes.filter((n) => n.parentId === node.id)
+    const claimedSeeds = new Set(stored.map((n) => n.seed))
+    const massOf = new Map(stars.map((s) => [s.ownerId, s.massSun]))
+    const own = stored.map<Item>((n) => ({
+      key: n.id,
+      name: n.name,
+      seed: n.seed,
+      node: n,
+      ...placeOf(n, node),
+      galaxy: n.kind === 'galaxy' ? galaxyShape(n.seed) : undefined,
+      massSun: n.kind === 'star_system' ? (massOf.get(n.id) ?? 1) : undefined
+    }))
+    return { items: [...generated.filter((g) => !claimedSeeds.has(g.seed)), ...own], claimedSeeds }
+  }, [nodes, stars, node, generated])
 
   // The camera (kept per node, so coming back finds it as it was): framing the whole level at first.
   const cam = () => cameraFor(node.id, () => ({ x: 0, y: 0, upp: (extent * 2.2) / Math.max(400, window.innerWidth * 0.5) }))
-  const hoverKeyRef = useRef<string | null>(null)
   const [hover, setHover] = useState<Hit | null>(null)
   const [picked, setPicked] = useState<Hit | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; at: { x: number; y: number }; hit: Hit | null } | null>(null)
   const hits = useRef<Hit[]>([])
-  const stars = useRef(new Map<string, ProcStar[]>())
+  const cells = useRef(new Map<string, Item[]>())
+  const lastFrame = useRef<Frame | null>(null)
 
   useEffect(() => {
     // Coming up from a child: start looking at it, close in.
     const from = items.find((i) => i.node && i.node.id === arrival.fromId)
     if (from) cameras.set(node.id, { x: from.x, y: from.y, upp: MIN_UPP[kind] * 4 })
-    arrival.fromId = null
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the view opens
   }, [])
 
-  useEffect(() => {
-    const canvas = canvasRef.current!
-    const ctx = canvas.getContext('2d')!
-    let frame = 0
-    const start = performance.now()
-    const render = () => {
-      const dpr = window.devicePixelRatio || 1
-      const { clientWidth: w, clientHeight: h } = canvas
-      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
-        canvas.width = Math.round(w * dpr)
-        canvas.height = Math.round(h * dpr)
-      }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      hits.current = drawLevel(ctx, w, h, { kind, node, shape, items, claimedSeeds, cam: cam(), stars: stars.current, hoverKey: hoverKeyRef.current, t: (performance.now() - start) / 1000 })
-      frame = requestAnimationFrame(render)
-    }
-    frame = requestAnimationFrame(render)
-    return () => cancelAnimationFrame(frame)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `cam` reads the kept camera of this node
-  }, [kind, node, shape, items, claimedSeeds])
-
-  useEffect(() => {
-    hoverKeyRef.current = hover?.item.key ?? picked?.item.key ?? null
-  }, [hover, picked])
+  useCanvasLoop(canvasRef, (ctx, w, h, resized) => {
+    const c = cam()
+    // A map only changes when it's moved, resized, pointed at, edited or a glow arrives: otherwise the last frame stands.
+    const frame: Frame = { x: c.x, y: c.y, upp: c.upp, w, h, hoverKey: (picked ?? hover)?.item.key ?? null, items, glows: glowsArrived }
+    if (!resized && lastFrame.current && sameFrame(lastFrame.current, frame)) return
+    lastFrame.current = frame
+    hits.current = drawLevel(ctx, w, h, { kind, node, shape, web, items, claimedSeeds, cam: c, cells: cells.current, hoverKey: frame.hoverKey })
+    showScale(scaleRef.current, c.upp, UNIT[kind])
+  })
 
   const local = (e: { clientX: number; clientY: number }) => {
     const rect = canvasRef.current!.getBoundingClientRect()
@@ -135,37 +138,21 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
     const { x, y, upp } = cam()
     return { x: x + (p.x - c.clientWidth / 2) * upp, y: y + (p.y - c.clientHeight / 2) * upp }
   }
-  const hitAt = (p: { x: number; y: number }) => {
-    let best: Hit | null = null
-    let bestD = Infinity
-    for (const hit of hits.current) {
-      const d = Math.hypot(hit.sx - p.x, hit.sy - p.y)
-      if (d <= Math.max(hit.r, 9) && d < bestD) [best, bestD] = [hit, d]
-    }
-    return best
-  }
+  const hitAt = (p: { x: number; y: number }) => targetAt(hits.current, p.x, p.y, 9) ?? null
 
   const open = (hit: Hit) => {
-    if (hit.item.node) zoomInto(canvasRef.current, hit.item.node.id, hit.sx, hit.sy)
+    if (hit.item.node) zoomTo(hit.item.node.id, canvasRef.current, hit)
     else setPicked(hit)
   }
-
-  const claim = async (hit: Hit) => {
+  const claim = (hit: Hit) => {
     setPicked(null)
-    const item = hit.item
-    const id = crypto.randomUUID()
-    const commands: Command[] = [{ type: 'node.create', payload: { id, parentId: node.id, kind: CHILD[kind], name: item.name, seed: item.seed, position: { x: item.x, y: item.y, z: 0 } } }]
-    // A claimed star keeps the mass (and so the colour) it had on the map.
-    if (item.star) commands.push({ type: 'star.set', payload: { systemId: id, star: { massSun: Number(item.star.massSun.toFixed(3)), luminositySun: null } } })
-    await claimInto(canvasRef.current, commands, id, hit.sx, hit.sy)
+    void claimInto(claimGenerated(node, hit.item, newId), canvasRef.current, hit)
   }
-
-  const createHere = (at: { x: number; y: number }) =>
-    void useUi.getState().execute({ type: 'node.create', payload: { parentId: node.id, kind: CHILD[kind], name: `New ${KIND_LABELS[CHILD[kind]]}`, position: { ...at, z: 0 } } })
+  const createHere = (at: { x: number; y: number }) => void useUi.getState().execute({ type: 'node.create', payload: { parentId: node.id, kind: child, position: { ...at, z: 0 } } })
 
   // Panning by drag; a press that doesn't move is a click.
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null)
-  const pushes = useRef({ in: 0, out: 0 })
+  const edge = useRef(new EdgePush())
   const onWheel = (e: React.WheelEvent) => {
     const p = local(e)
     const before = toWorld(p)
@@ -173,40 +160,18 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
     const c = cam()
     const fit = (extent * 2.4) / Math.max(1, Math.min(canvas.clientWidth, canvas.clientHeight))
     const next = c.upp * Math.exp(e.deltaY * 0.0015)
-    // Past either end, a few more pushes change level (once the last change has played out).
-    if (zooming()) {
-      pushes.current = { in: 0, out: 0 }
-      c.upp = Math.min(fit, Math.max(MIN_UPP[kind], next))
-    } else if (next < MIN_UPP[kind]) {
-      pushes.current = { in: pushes.current.in + 1, out: 0 }
+    c.upp = Math.min(fit, Math.max(MIN_UPP[kind], next))
+    // Past either end, a few more pushes change level.
+    const push = next < MIN_UPP[kind] ? -1 : next > fit ? 1 : 0
+    if (edge.current.push(push)) {
+      if (push > 0) return zoomOut(canvas)
       const hit = hitAt(p) ?? hitAt({ x: canvas.clientWidth / 2, y: canvas.clientHeight / 2 })
-      if (pushes.current.in >= 3 && hit) {
-        pushes.current.in = 0
-        open(hit)
-      }
-      c.upp = MIN_UPP[kind]
-    } else if (next > fit) {
-      pushes.current = { in: 0, out: pushes.current.out + 1 }
-      if (pushes.current.out >= 3) zoomOut(canvas)
-      c.upp = fit
-    } else {
-      pushes.current = { in: 0, out: 0 }
-      c.upp = next
+      if (hit) open(hit)
     }
     // Zoom around the cursor.
     const after = toWorld(p)
     c.x += before.x - after.x
     c.y += before.y - after.y
-  }
-
-  const describe = (item: Item): string => {
-    if (item.node) return `${KIND_LABELS[item.node.kind]} in your project`
-    if (item.star) {
-      const info = starInfo({ massSun: item.star.massSun, luminositySun: null })
-      return `${spectralClass(info.temperatureK)} star · ${item.star.massSun.toFixed(2)} M☉ · not claimed yet`
-    }
-    if (item.galaxy) return `${item.galaxy.type[0]!.toUpperCase()}${item.galaxy.type.slice(1)} galaxy · ${Math.round((item.galaxy.radiusLy * 2) / 1000)},000 ly across · not claimed yet`
-    return `Galaxy cluster · ${Math.round(item.cluster!.sizeMly)} Mly across · not claimed yet`
   }
 
   const card = picked ?? hover
@@ -259,24 +224,14 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
       <div className="viewport-overlay top">
         <div className="viewport-title">{node.name}</div>
         <div className="muted small">
-          {KIND_LABELS[kind]} view{shape ? ` · ${shape.type} galaxy, ${Math.round((shape.radiusLy * 2) / 1000)},000 ly across` : ''}
+          {KIND_LABELS[kind]} view{shape ? ` · ${galaxySummary(shape).toLowerCase()}` : ''}
         </div>
       </div>
-      {card && (
-        <div className="cosmos-card" style={{ left: card.sx + 14, top: card.sy + 10 }} role="dialog" aria-label={card.item.name}>
-          <b>{card.item.name}</b>
-          <span className="muted small">{describe(card.item)}</span>
-          {picked && !picked.item.node && (
-            <button className="primary" onClick={() => void claim(picked)}>
-              Claim and go there
-            </button>
-          )}
-        </div>
-      )}
+      {card && <ClaimCard x={card.x} y={card.y} name={card.item.name} description={describe(card.item)} onClaim={picked && !picked.item.node ? () => claim(picked) : undefined} />}
       {menu && (
         <div className="context-menu" style={{ left: menu.x, top: menu.y }} role="menu">
           {menu.hit && !menu.hit.item.node && (
-            <button role="menuitem" onClick={() => (setMenu(null), void claim(menu.hit!))}>
+            <button role="menuitem" onClick={() => (setMenu(null), claim(menu.hit!))}>
               Claim {menu.hit.item.name}
             </button>
           )}
@@ -286,11 +241,14 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
             </button>
           )}
           <button role="menuitem" onClick={() => (setMenu(null), createHere(menu.at))}>
-            New {KIND_LABELS[CHILD[kind]].toLowerCase()} here
+            New {KIND_LABELS[child].toLowerCase()} here
           </button>
         </div>
       )}
-      <ScaleBar nodeId={node.id} unit={UNIT[kind]} />
+      <div className="scale-bar small" aria-label="Scale" ref={scaleRef}>
+        <span className="scale-line" />
+        <span />
+      </div>
       <div className="viewport-overlay bottom muted small">Drag to move · scroll to zoom, all the way in to go there, out to go up · right-click to add or claim</div>
     </div>
   )
@@ -302,189 +260,134 @@ function cameraFor(nodeId: string, init: () => Camera): Camera {
   return camera
 }
 
+/** What a view drew from: the same again draws the same picture. */
+interface Frame {
+  x: number
+  y: number
+  upp: number
+  w: number
+  h: number
+  hoverKey: string | null
+  items: Item[]
+  glows: number
+}
+const sameFrame = (a: Frame, b: Frame) => (Object.keys(a) as (keyof Frame)[]).every((k) => a[k] === b[k])
+
+/** "Barred galaxy · 104,000 ly across". */
+const galaxySummary = (shape: GalaxyShape) => `${shape.type[0]!.toUpperCase()}${shape.type.slice(1)} galaxy · ${Math.round((shape.radiusLy * 2) / 1000)},000 ly across`
+
+function describe(item: Item): string {
+  if (item.node) return `${KIND_LABELS[item.node.kind]} in your project`
+  if (item.massSun !== undefined) {
+    const info = starInfo({ massSun: item.massSun, luminositySun: null })
+    return `${spectralClass(info.temperatureK)} star · ${item.massSun.toFixed(2)} M☉ · not claimed yet`
+  }
+  if (item.galaxy) return `${galaxySummary(item.galaxy)} · not claimed yet`
+  return `Galaxy cluster · ${Math.round(item.cluster!.sizeMly)} Mly across · not claimed yet`
+}
+
 function spectralClass(k: number): string {
   return k > 30_000 ? 'O-type' : k > 10_000 ? 'B-type' : k > 7_500 ? 'A-type' : k > 6_000 ? 'F-type' : k > 5_200 ? 'G-type' : k > 3_700 ? 'K-type' : 'M-type red dwarf'
 }
 
-/** A bar 60–150 px long showing a round distance at the current zoom. */
-function ScaleBar({ nodeId, unit }: { nodeId: string; unit: string }) {
-  // The camera changes outside React; a few updates a second are plenty.
-  const [upp, setUpp] = useState(() => cameras.get(nodeId)?.upp ?? 1)
-  useEffect(() => {
-    const t = setInterval(() => setUpp(cameras.get(nodeId)?.upp ?? 1), 200)
-    return () => clearInterval(t)
-  }, [nodeId])
+/** The scale bar in the corner: 60–150 px long, for a round distance at the current zoom. */
+function showScale(bar: HTMLElement | null, upp: number, unit: string) {
+  if (!bar) return
   const target = upp * 100
   const pow = 10 ** Math.floor(Math.log10(target))
   const nice = [1, 2, 5, 10].map((m) => m * pow).find((v) => v >= target * 0.6) ?? pow * 10
-  return (
-    <div className="scale-bar small" aria-label="Scale">
-      <span style={{ width: nice / upp }} />
-      {nice >= 1 ? nice.toLocaleString() : nice.toPrecision(1)} {unit}
-    </div>
-  )
+  ;(bar.firstElementChild as HTMLElement).style.width = `${nice / upp}px`
+  bar.lastElementChild!.textContent = `${nice >= 1 ? nice.toLocaleString() : nice.toPrecision(1)} ${unit}`
 }
 
-interface DrawInput {
-  kind: CosmosKind
-  node: SpatialNode
-  shape: GalaxyShape | undefined
-  items: Item[]
-  claimedSeeds: Set<number>
-  cam: Camera
-  stars: Map<string, ProcStar[]>
-  hoverKey: string | null
-  t: number
+const makeGlow = workerCalls<GlowRequest, Uint8ClampedArray<ArrayBuffer>>(() => new GalaxyWorker())
+/** Glow images by seed and size, least recently drawn first, kept within a memory budget. */
+const glows = new Map<string, HTMLCanvasElement>()
+const GLOW_BUDGET_BYTES = 48 * 2 ** 20
+let glowBytes = 0
+/** Glows whose stars have come back from the worker. */
+const finished = new WeakSet<HTMLCanvasElement>()
+/** Counts them, so a view knows to draw again. */
+let glowsArrived = 0
+
+/** Glow images to choose from: px square, and how many stars make them (one size, one count, so one image per size). */
+const GLOW_SMALL = { size: 64, stars: 1_200 }
+const GLOW_MEDIUM = { size: 256, stars: 20_000 }
+const GLOW_LARGE = { size: 1024, stars: 90_000 }
+
+/** A galaxy's glow at `coarse`, or at `sharp` once that one is finished (asking for it). */
+function glowOf(shape: GalaxyShape, seed: number, coarse: typeof GLOW_SMALL, sharp?: typeof GLOW_SMALL): HTMLCanvasElement {
+  const fine = sharp && galaxyGlow(shape, seed, sharp.size, sharp.stars)
+  return fine && finished.has(fine) ? fine : galaxyGlow(shape, seed, coarse.size, coarse.stars)
 }
 
-const galaxyImages = new Map<number, HTMLCanvasElement>()
-
-/** A galaxy's glow, drawn once from thousands of its stars into an image. */
-function galaxyImage(shape: GalaxyShape, seed: number, size: number, particles: number): HTMLCanvasElement {
-  const key = seed * 4 + (size > 256 ? 1 : 0)
-  const cached = galaxyImages.get(key)
-  if (cached) return cached
+/**
+ * A galaxy's glow from `count` of its stars, `size` px square: its bright
+ * bulge at once, its stars added when the worker has scattered them.
+ */
+function galaxyGlow(shape: GalaxyShape, seed: number, size: number, count: number): HTMLCanvasElement {
+  const key = `${seed}:${size}`
+  const cached = glows.get(key)
+  if (cached) {
+    glows.delete(key)
+    glows.set(key, cached)
+    return cached
+  }
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = size
   const ctx = canvas.getContext('2d')!
   const half = size / 2
   // The bulge's glow, kept inside the image so its edges never show.
-  const glow = ctx.createRadialGradient(half, half, 0, half, half, Math.min(half, half * shape.bulge * 2.2))
-  glow.addColorStop(0, 'rgba(255,240,215,0.9)')
-  glow.addColorStop(1, 'rgba(255,220,180,0)')
-  ctx.fillStyle = glow
+  const bulge = ctx.createRadialGradient(half, half, 0, half, half, Math.min(half, half * shape.bulge * 2.2))
+  bulge.addColorStop(0, 'rgba(255,240,215,0.9)')
+  bulge.addColorStop(1, 'rgba(255,220,180,0)')
+  ctx.fillStyle = bulge
   ctx.beginPath()
   ctx.arc(half, half, half, 0, Math.PI * 2)
   ctx.fill()
-  // The stars, added over it.
-  const stars = document.createElement('canvas')
-  stars.width = stars.height = size
-  stars.getContext('2d')!.putImageData(new ImageData(galaxyGlowPixels(shape, seed, size, particles), size), 0, 0)
-  ctx.globalCompositeOperation = 'lighter'
-  ctx.drawImage(stars, 0, 0)
-  if (galaxyImages.size > 80) galaxyImages.delete(galaxyImages.keys().next().value!)
-  galaxyImages.set(key, canvas)
+  void makeGlow({ shape, seed, size, count }).then((pixels) => {
+    const layer = document.createElement('canvas')
+    layer.width = layer.height = size
+    layer.getContext('2d')!.putImageData(new ImageData(pixels, size), 0, 0)
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.drawImage(layer, 0, 0)
+    finished.add(canvas)
+    glowsArrived++
+  })
+  glows.set(key, canvas)
+  glowBytes += size * size * 4
+  for (const [k, old] of glows) {
+    if (glowBytes <= GLOW_BUDGET_BYTES) break
+    glows.delete(k)
+    glowBytes -= old.width * old.height * 4
+  }
   return canvas
 }
 
-function drawLevel(ctx: CanvasRenderingContext2D, w: number, h: number, d: DrawInput): Hit[] {
-  const { cam, kind } = d
-  const sx = (x: number) => w / 2 + (x - cam.x) / cam.upp
-  const sy = (y: number) => h / 2 + (y - cam.y) / cam.upp
-  const onScreen = (x: number, y: number, r: number) => x > -r && x < w + r && y > -r && y < h + r
-  ctx.fillStyle = SPACE_BG
-  ctx.fillRect(0, 0, w, h)
-  starfield(ctx, w, h, d.node.seed, kind === 'universe' ? 180 : 320)
-  const hits: Hit[] = []
+/** Star glows by colour (masses in quarter steps of log₂), each drawn once and stamped for every star of that colour. */
+const starSprites = new Map<number, HTMLCanvasElement>()
+const SPRITE_PX = 32
 
-  if (kind === 'universe') {
-    ctx.strokeStyle = 'rgba(120,140,220,0.14)'
-    ctx.lineWidth = Math.max(1, 60 / cam.upp)
-    ctx.lineCap = 'round'
-    for (const [x0, y0, x1, y1] of cosmicWeb(d.node.seed)) {
-      ctx.beginPath()
-      ctx.moveTo(sx(x0), sy(y0))
-      ctx.lineTo(sx(x1), sy(y1))
-      ctx.stroke()
-    }
+function starSprite(massSun: number): HTMLCanvasElement {
+  const step = Math.round(Math.log2(massSun) * 4)
+  let sprite = starSprites.get(step)
+  if (!sprite) {
+    sprite = document.createElement('canvas')
+    sprite.width = sprite.height = SPRITE_PX
+    // The glow reaches three radii out: the sprite's edge.
+    starGlow(sprite.getContext('2d')!, SPRITE_PX / 2, SPRITE_PX / 2, SPRITE_PX / 6, starInfo({ massSun: 2 ** (step / 4), luminositySun: null }).color)
+    starSprites.set(step, sprite)
   }
-
-  if (kind === 'galaxy' && d.shape) {
-    // The glow: a sharper image when zoomed in, fading out as single stars take
-    // over, leaving a faint wash as thick as the galaxy is where you're looking.
-    const fade = Math.min(1, Math.max(0, (cam.upp - MIN_UPP.galaxy) / 40))
-    if (fade > 0) {
-      const span = (d.shape.radiusLy * 2 * GLOW_REACH) / cam.upp
-      const img = galaxyImage(d.shape, d.node.seed, span > 900 ? 1024 : 256, span > 900 ? 90_000 : 20_000)
-      ctx.globalAlpha = fade
-      ctx.drawImage(img, sx(-d.shape.radiusLy * GLOW_REACH), sy(-d.shape.radiusLy * GLOW_REACH), span, span)
-      ctx.globalAlpha = 1
-    }
-    if (fade < 1) {
-      ctx.fillStyle = `rgba(150,165,230,${(0.1 * (1 - fade) * galaxyDensity(d.shape, cam.x, cam.y)).toFixed(3)})`
-      ctx.fillRect(0, 0, w, h)
-    }
-    // Close enough, the stars of the cells in view.
-    const cells = cellsIn(cam.x - (w / 2) * cam.upp, cam.y - (h / 2) * cam.upp, cam.x + (w / 2) * cam.upp, cam.y + (h / 2) * cam.upp, 220)
-    if (cells) {
-      for (const [cx, cy] of cells) {
-        const key = `${cx}:${cy}`
-        let list = d.stars.get(key)
-        if (!list) {
-          d.stars.set(key, (list = cellStars(d.shape, d.node.seed, cx, cy)))
-          if (d.stars.size > 3000) d.stars.delete(d.stars.keys().next().value!)
-        }
-        for (const s of list) {
-          if (d.claimedSeeds.has(s.seed)) continue
-          const x = sx(s.x)
-          const y = sy(s.y)
-          if (!onScreen(x, y, 4)) continue
-          const r = starRadius(s.massSun, cam.upp)
-          drawStar(ctx, x, y, r, s.massSun, `proc:${s.seed}` === d.hoverKey)
-          hits.push({ item: { key: `proc:${s.seed}`, name: s.name, x: s.x, y: s.y, seed: s.seed, star: s }, sx: x, sy: y, r: r + 3 })
-        }
-      }
-    }
-  }
-
-  for (const item of d.items) {
-    const x = sx(item.x)
-    const y = sy(item.y)
-    const hovered = item.key === d.hoverKey
-    let r: number
-    if (item.cluster || (kind === 'universe' && item.node)) {
-      r = Math.max(5, (item.cluster?.sizeMly ?? 14) / 2 / cam.upp)
-      if (!onScreen(x, y, r)) continue
-      clusterBlob(ctx, x, y, r, item.seed)
-    } else if (item.galaxy) {
-      r = Math.max(4, ((item.galaxy.radiusLy / 1e6) * GALAXY_SCALE) / cam.upp)
-      if (!onScreen(x, y, r)) continue
-      const img = galaxyImage(item.galaxy, item.seed, 128, 3000)
-      ctx.save()
-      ctx.translate(x, y)
-      ctx.drawImage(img, -r * GLOW_REACH, -r * GLOW_REACH, r * 2 * GLOW_REACH, r * 2 * GLOW_REACH)
-      ctx.restore()
-    } else {
-      // A star system: claimed ones show the star they claimed, others a plain star.
-      const mass = item.star?.massSun ?? 1
-      r = starRadius(mass, cam.upp) + (item.node ? 1.5 : 0)
-      if (!onScreen(x, y, r)) continue
-      drawStar(ctx, x, y, r, mass, hovered)
-    }
-    if (item.node) {
-      ctx.strokeStyle = 'rgba(140,200,255,0.75)'
-      ctx.lineWidth = 1.5
-      ctx.beginPath()
-      ctx.arc(x, y, r + 4, 0, Math.PI * 2)
-      ctx.stroke()
-    }
-    // Your own things are always named; generated ones when they're big enough to matter, or under the cursor.
-    if (item.node || hovered || r > 16) label(ctx, item.name, x, y + r + 15, hovered || !!item.node)
-    hits.push({ item, sx: x, sy: y, r: r + 4 })
-  }
-  return hits
+  return sprite
 }
 
 /** Stars as points of light: bigger for heavier (brighter) stars, and a little bigger close in. */
 const starRadius = (massSun: number, upp: number) => (0.8 + 0.6 * Math.min(5, massSun ** 0.4)) * (upp < 8 ? 1.5 : 1)
 
 function drawStar(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, massSun: number, hovered: boolean) {
-  const color = starInfo({ massSun, luminositySun: null }).color
-  const g = ctx.createRadialGradient(x, y, 0, x, y, r * 2.6)
-  g.addColorStop(0, '#ffffff')
-  g.addColorStop(0.25, color)
-  g.addColorStop(1, 'transparent')
-  ctx.fillStyle = g
-  ctx.beginPath()
-  ctx.arc(x, y, r * 2.6, 0, Math.PI * 2)
-  ctx.fill()
-  if (hovered) {
-    ctx.strokeStyle = '#ffffff'
-    ctx.lineWidth = 1.2
-    ctx.beginPath()
-    ctx.arc(x, y, r + 5, 0, Math.PI * 2)
-    ctx.stroke()
-  }
+  const glow = r * 2.6
+  ctx.drawImage(starSprite(massSun), x - glow, y - glow, glow * 2, glow * 2)
+  if (hovered) ring(ctx, x, y, r + 5, '#ffffff', 1.2)
 }
 
 /** A galaxy cluster from afar: a soft knot of light, speckled with galaxies. */
@@ -497,13 +400,130 @@ function clusterBlob(ctx: CanvasRenderingContext2D, x: number, y: number, r: num
   ctx.beginPath()
   ctx.arc(x, y, r, 0, Math.PI * 2)
   ctx.fill()
-  let s = seed >>> 0
+  const random = rng(seed)
+  ctx.fillStyle = 'rgba(255,245,230,0.8)'
   for (let i = 0; i < 14; i++) {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0
-    const a = (s / 4294967296) * Math.PI * 2
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0
-    const d = Math.sqrt(s / 4294967296) * r * 0.8
-    ctx.fillStyle = 'rgba(255,245,230,0.8)'
+    const a = random() * Math.PI * 2
+    const d = Math.sqrt(random()) * r * 0.8
     ctx.fillRect(x + Math.cos(a) * d, y + Math.sin(a) * d, 1.4, 1.4)
+  }
+}
+
+interface DrawInput {
+  kind: CosmosKind
+  node: SpatialNode
+  shape: GalaxyShape | undefined
+  /** The cosmic web's filaments, for the universe. */
+  web: [number, number, number, number][]
+  items: Item[]
+  claimedSeeds: Set<number>
+  cam: Camera
+  /** Each star cell's stars, generated once. */
+  cells: Map<string, Item[]>
+  hoverKey: string | null
+}
+
+/** Maps level units to the screen for a camera. */
+interface Screen {
+  sx: (x: number) => number
+  sy: (y: number) => number
+  onScreen: (x: number, y: number, r: number) => boolean
+}
+
+function drawLevel(ctx: CanvasRenderingContext2D, w: number, h: number, d: DrawInput): Hit[] {
+  const { cam } = d
+  const screen: Screen = {
+    sx: (x) => w / 2 + (x - cam.x) / cam.upp,
+    sy: (y) => h / 2 + (y - cam.y) / cam.upp,
+    onScreen: (x, y, r) => x > -r && x < w + r && y > -r && y < h + r
+  }
+  ctx.fillStyle = SPACE_BG
+  ctx.fillRect(0, 0, w, h)
+  starfield(ctx, w, h, d.node.seed, d.kind === 'universe' ? 180 : 320)
+  const hits: Hit[] = []
+  if (d.kind === 'universe') drawWeb(ctx, d, screen)
+  if (d.shape) drawGalaxy(ctx, w, h, d, d.shape, screen, hits)
+  drawItems(ctx, d, screen, hits)
+  return hits
+}
+
+function drawWeb(ctx: CanvasRenderingContext2D, d: DrawInput, { sx, sy }: Screen) {
+  ctx.strokeStyle = 'rgba(120,140,220,0.14)'
+  ctx.lineWidth = Math.max(1, 60 / d.cam.upp)
+  ctx.lineCap = 'round'
+  for (const [x0, y0, x1, y1] of d.web) {
+    ctx.beginPath()
+    ctx.moveTo(sx(x0), sy(y0))
+    ctx.lineTo(sx(x1), sy(y1))
+    ctx.stroke()
+  }
+}
+
+/** The galaxy in view: its glow, and close enough, the single stars of the cells in view. */
+function drawGalaxy(ctx: CanvasRenderingContext2D, w: number, h: number, d: DrawInput, shape: GalaxyShape, { sx, sy, onScreen }: Screen, hits: Hit[]) {
+  const { cam } = d
+  // A sharper glow when zoomed in, fading out as single stars take over,
+  // leaving a faint wash as thick as the galaxy is where you're looking.
+  const fade = Math.min(1, Math.max(0, (cam.upp - MIN_UPP.galaxy) / 40))
+  if (fade > 0) {
+    const span = (shape.radiusLy * 2 * GLOW_REACH) / cam.upp
+    const img = glowOf(shape, d.node.seed, GLOW_MEDIUM, span > 900 ? GLOW_LARGE : undefined)
+    ctx.globalAlpha = fade
+    ctx.drawImage(img, sx(-shape.radiusLy * GLOW_REACH), sy(-shape.radiusLy * GLOW_REACH), span, span)
+    ctx.globalAlpha = 1
+  }
+  if (fade < 1) {
+    ctx.fillStyle = `rgba(150,165,230,${(0.1 * (1 - fade) * galaxyDensity(shape, cam.x, cam.y)).toFixed(3)})`
+    ctx.fillRect(0, 0, w, h)
+  }
+  const cells = cellsIn(cam.x - (w / 2) * cam.upp, cam.y - (h / 2) * cam.upp, cam.x + (w / 2) * cam.upp, cam.y + (h / 2) * cam.upp, 220)
+  for (const [cx, cy] of cells ?? []) {
+    const key = `${cx}:${cy}`
+    let list = d.cells.get(key)
+    if (!list) {
+      d.cells.set(key, (list = cellStars(shape, d.node.seed, cx, cy).map((s) => generatedItem(s, { massSun: s.massSun }))))
+      if (d.cells.size > 3000) d.cells.delete(d.cells.keys().next().value!)
+    }
+    for (const item of list) {
+      if (d.claimedSeeds.has(item.seed)) continue
+      const x = sx(item.x)
+      const y = sy(item.y)
+      if (!onScreen(x, y, 4)) continue
+      const r = starRadius(item.massSun!, cam.upp)
+      drawStar(ctx, x, y, r, item.massSun!, item.key === d.hoverKey)
+      hits.push({ item, x, y, r: r + 3 })
+    }
+  }
+}
+
+/** The level's own things and its generated landmarks: clusters, galaxies or star systems. */
+function drawItems(ctx: CanvasRenderingContext2D, d: DrawInput, { sx, sy, onScreen }: Screen, hits: Hit[]) {
+  const { cam } = d
+  for (const item of d.items) {
+    const x = sx(item.x)
+    const y = sy(item.y)
+    const hovered = item.key === d.hoverKey
+    let r: number
+    if (item.cluster || (d.kind === 'universe' && item.node)) {
+      r = Math.max(5, (item.cluster?.sizeMly ?? 14) / 2 / cam.upp)
+      if (!onScreen(x, y, r)) continue
+      clusterBlob(ctx, x, y, r, item.seed)
+    } else if (item.galaxy) {
+      r = Math.max(4, ((item.galaxy.radiusLy / 1e6) * GALAXY_SCALE) / cam.upp)
+      if (!onScreen(x, y, r)) continue
+      // Small on screen, a small image is plenty.
+      const img = glowOf(item.galaxy, item.seed, GLOW_SMALL, r * 2 * GLOW_REACH > 100 ? GLOW_MEDIUM : undefined)
+      ctx.drawImage(img, x - r * GLOW_REACH, y - r * GLOW_REACH, r * 2 * GLOW_REACH, r * 2 * GLOW_REACH)
+    } else {
+      // A star system: the star it claimed, or a generated landmark star.
+      const mass = item.massSun ?? 1
+      r = starRadius(mass, cam.upp) + (item.node ? 1.5 : 0)
+      if (!onScreen(x, y, r)) continue
+      drawStar(ctx, x, y, r, mass, hovered)
+    }
+    if (item.node) ring(ctx, x, y, r + 4, 'rgba(140,200,255,0.75)', 1.5)
+    // Your own things are always named; generated ones when they're big enough to matter, or under the cursor.
+    if (item.node || hovered || r > 16) label(ctx, item.name, x, y + r + 15, hovered || !!item.node)
+    hits.push({ item, x, y, r: r + 4 })
   }
 }

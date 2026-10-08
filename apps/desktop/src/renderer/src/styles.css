@@ -1756,24 +1756,18 @@ input[type='color'] {
   height: 100%;
   pointer-events: none;
 }
-@media (prefers-reduced-motion: no-preference) {
-  .zoom-still.in {
-    animation: zoom-past 0.48s ease-in forwards;
-  }
-  .zoom-still.out {
-    animation: zoom-away 0.48s ease-out forwards;
-  }
-  .zoom-arrive.in {
-    animation: arrive-from-far 0.48s ease-out;
-  }
-  .zoom-arrive.out {
-    animation: arrive-from-near 0.48s ease-out;
-  }
+/* --zoom-ms is set by ZoomStage; with reduced motion there are no zooms at all. */
+.zoom-still.in {
+  animation: zoom-past var(--zoom-ms) ease-in forwards;
 }
-@media (prefers-reduced-motion: reduce) {
-  .zoom-still {
-    display: none;
-  }
+.zoom-still.out {
+  animation: zoom-away var(--zoom-ms) ease-out forwards;
+}
+.zoom-arrive.in {
+  animation: arrive-from-far var(--zoom-ms) ease-out;
+}
+.zoom-arrive.out {
+  animation: arrive-from-near var(--zoom-ms) ease-out;
 }
 @keyframes zoom-past {
   to {
@@ -1855,7 +1849,7 @@ input[type='color'] {
   color: var(--muted);
   pointer-events: none;
 }
-.scale-bar span {
+.scale-bar .scale-line {
   display: block;
   height: 6px;
   border: 1px solid var(--muted);

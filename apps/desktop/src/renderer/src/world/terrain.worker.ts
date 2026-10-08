@@ -1,17 +1,15 @@
 /// <reference lib="webworker" />
 import type { TerrainParams } from '@universe/core'
-import { generateBase } from '@universe/procgen'
+import { generateBase, type BaseTerrain } from '@universe/procgen'
+import { answerCalls } from '../workerCalls'
 
 export interface GenerateRequest {
-  id: number
   seed: number
   params: TerrainParams
 }
 
 // Generation takes ~0.5–1 s, so it runs here to keep the editor responsive.
-self.onmessage = (e: MessageEvent<GenerateRequest>) => {
-  const { id, seed, params } = e.data
+answerCalls<GenerateRequest, BaseTerrain>(({ seed, params }) => {
   const base = generateBase(seed, params)
-  const buffers = [...base.height, ...base.moisture].map((a) => a.buffer)
-  ;(self as unknown as Worker).postMessage({ id, base }, buffers)
-}
+  return { reply: base, transfer: [...base.height, ...base.moisture].map((a) => a.buffer) }
+})

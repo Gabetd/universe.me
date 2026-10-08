@@ -1,6 +1,7 @@
 import { AU_KM } from '@universe/core'
 import { hueOf } from '@universe/procgen'
 import { formatPeriod, moonPhase, moonsOf, orbitPath, orbitPosition, positionFromStar, type BodyOrbit, type GeneratedPlanet, type SystemModel, type Vec3 } from '@universe/sim'
+import { label, ring, starGlow, sublabel, type CanvasTarget } from './canvasDraw'
 import { drawTexturedPlanet, type PlanetTexture } from './planetSprite'
 
 /**
@@ -8,14 +9,6 @@ import { drawTexturedPlanet, type PlanetTexture } from './planetSprite'
  * put them at the timeline's playhead, seen from above at a slant. Distances
  * are drawn on a square-root scale so close-in and far-out orbits both fit.
  */
-
-/** Something clickable on the canvas. */
-export interface CanvasTarget {
-  id: string
-  x: number
-  y: number
-  r: number
-}
 
 export interface OrbitDrawing {
   system: SystemModel
@@ -96,9 +89,7 @@ export function drawOrbits(ctx: CanvasRenderingContext2D, w: number, h: number, 
   }
 
   for (const o of orbiting) {
-    tracePath(ctx, project, o)
-    ctx.strokeStyle = o.bodyId === d.hoverId ? 'rgba(170,190,255,0.55)' : 'rgba(140,160,220,0.2)'
-    ctx.stroke()
+    strokeOrbit(ctx, project, o, o.bodyId === d.hoverId ? 'rgba(170,190,255,0.55)' : 'rgba(140,160,220,0.2)')
     const [x, y] = project(orbitPosition(o, t))
     const r = bodyPx(o.radiusKm, size, centerId ? 0.035 : 0.02)
     drawBody(ctx, d, o, x, y, r, lightAt(x, y), targets, true)
@@ -108,9 +99,7 @@ export function drawOrbits(ctx: CanvasRenderingContext2D, w: number, h: number, 
   for (const { orbit: o, seed, name } of unclaimed) {
     const hover = o.bodyId === d.hoverId
     ctx.setLineDash([3, 5])
-    tracePath(ctx, project, o)
-    ctx.strokeStyle = hover ? 'rgba(170,190,255,0.45)' : 'rgba(140,160,220,0.13)'
-    ctx.stroke()
+    strokeOrbit(ctx, project, o, hover ? 'rgba(170,190,255,0.45)' : 'rgba(140,160,220,0.13)')
     ctx.setLineDash([])
     const [x, y] = project(orbitPosition(o, t))
     const r = bodyPx(o.radiusKm, size, 0.02)
@@ -118,27 +107,27 @@ export function drawOrbits(ctx: CanvasRenderingContext2D, w: number, h: number, 
     plainBody(ctx, x, y, r, hueOf(seed), lightAt(x, y))
     ctx.globalAlpha = 1
     targets.push({ id: o.bodyId, x, y, r: r + 4 })
-    if (hover) {
-      ctx.textAlign = 'center'
-      ctx.font = '600 12px system-ui, sans-serif'
-      ctx.fillStyle = '#ffffff'
-      ctx.fillText(name, x, y + r + 15)
-      ctx.font = '500 10px system-ui, sans-serif'
-      ctx.fillStyle = 'rgba(170,182,215,0.75)'
-      ctx.fillText(`${orbitSummary(system, o, t)} · not claimed yet`, x, y + r + 28)
-    }
+    if (hover) bodyLabel(ctx, name, `${orbitSummary(system, o, t)} · not claimed yet`, x, y + r, true)
   }
   return targets
 }
 
-function tracePath(ctx: CanvasRenderingContext2D, project: (p: Vec3) => [number, number], o: BodyOrbit) {
+function strokeOrbit(ctx: CanvasRenderingContext2D, project: (p: Vec3) => [number, number], o: BodyOrbit, color: string) {
   ctx.beginPath()
   pathOf(o).forEach((p, i) => {
     const [x, y] = project(p)
     if (i) ctx.lineTo(x, y)
     else ctx.moveTo(x, y)
   })
+  ctx.strokeStyle = color
   ctx.lineWidth = 1
+  ctx.stroke()
+}
+
+/** A body's name and how it goes round, under it (`bottom` is its lowest point on screen). */
+function bodyLabel(ctx: CanvasRenderingContext2D, name: string, summary: string, x: number, bottom: number, hover: boolean) {
+  label(ctx, name, x, bottom + 15, hover)
+  sublabel(ctx, summary, x, bottom + 28)
 }
 
 function drawBody(ctx: CanvasRenderingContext2D, d: OrbitDrawing, o: BodyOrbit, x: number, y: number, r: number, light: number, targets: CanvasTarget[], labelled: boolean) {
@@ -146,23 +135,9 @@ function drawBody(ctx: CanvasRenderingContext2D, d: OrbitDrawing, o: BodyOrbit, 
   const surface = world && d.textures.get(world.id)
   if (surface) drawTexturedPlanet(ctx, x, y, r, surface, d.spin / 90 + (o.phaseDeg % 360) / 360, light)
   else plainBody(ctx, x, y, r, d.bodies.get(o.bodyId)?.hue ?? 0, light)
-  if (world) {
-    ctx.strokeStyle = 'rgba(140,200,255,0.5)'
-    ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.arc(x, y, r + 2, 0, Math.PI * 2)
-    ctx.stroke()
-  }
+  if (world) ring(ctx, x, y, r + 2, 'rgba(140,200,255,0.5)', 2)
   targets.push({ id: o.bodyId, x, y, r: r + 4 })
-  if (!labelled) return
-  const hover = o.bodyId === d.hoverId
-  ctx.textAlign = 'center'
-  ctx.font = `${hover ? 600 : 500} 12px system-ui, sans-serif`
-  ctx.fillStyle = hover ? '#ffffff' : 'rgba(210,220,245,0.85)'
-  ctx.fillText(d.bodies.get(o.bodyId)?.name ?? '', x, y + r + 15)
-  ctx.font = '500 10px system-ui, sans-serif'
-  ctx.fillStyle = 'rgba(170,182,215,0.75)'
-  ctx.fillText(orbitSummary(d.system, o, d.t), x, y + r + 28)
+  if (labelled) bodyLabel(ctx, d.bodies.get(o.bodyId)?.name ?? '', orbitSummary(d.system, o, d.t), x, y + r, o.bodyId === d.hoverId)
 }
 
 /** "1.00 AU · 365 d", or for a moon "384,400 km · 27.3 d · waxing gibbous". */
@@ -171,17 +146,6 @@ function orbitSummary(system: SystemModel, o: BodyOrbit, t: number): string {
   if (!o.parentBodyId) return `${(o.semiMajorAxisKm / AU_KM).toFixed(2)} AU · ${period}`
   const phase = moonPhase(system, o, t)
   return `${Math.round(o.semiMajorAxisKm).toLocaleString()} km · ${period} · ${phase.name.toLowerCase()}`
-}
-
-function starGlow(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, color: string) {
-  const g = ctx.createRadialGradient(x, y, radius * 0.2, x, y, radius * 3)
-  g.addColorStop(0, '#fffbf0')
-  g.addColorStop(0.3, `${color}e6`)
-  g.addColorStop(1, 'transparent')
-  ctx.fillStyle = g
-  ctx.beginPath()
-  ctx.arc(x, y, radius * 3, 0, Math.PI * 2)
-  ctx.fill()
 }
 
 /** A body with no world: a shaded disc lit from the star's side. */

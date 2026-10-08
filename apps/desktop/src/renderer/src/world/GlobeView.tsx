@@ -10,7 +10,7 @@ import { isBrushTool, useEditor } from './editorStore'
 import { pickWith } from './pick'
 import type { SurfaceViewProps } from './useTerrain'
 import { STAGE_COLORS } from './structureLook'
-import { zoomOut, zooming } from '../components/zoom'
+import { EdgePush, zoomOut } from '../components/zoom'
 import { LabelLayer, LabelProjector, type ViewLabel } from './labels'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
@@ -354,15 +354,12 @@ function ZoomToGround() {
   const camera = useThree((s) => s.camera)
   const gl = useThree((s) => s.gl)
   useEffect(() => {
-    let pushesIn = 0
-    let pushesOut = 0
+    const edge = new EdgePush()
     const onWheel = (e: WheelEvent) => {
-      if (zooming()) return
       const distance = camera.position.length()
-      pushesIn = e.deltaY < 0 && distance <= MIN_DISTANCE + 0.003 ? pushesIn + 1 : 0
-      pushesOut = e.deltaY > 0 && distance >= MAX_DISTANCE - 0.01 ? pushesOut + 1 : 0
-      if (pushesOut >= 3) return zoomOut(gl.domElement)
-      if (pushesIn < 3) return
+      const push = e.deltaY < 0 && distance <= MIN_DISTANCE + 0.003 ? -1 : e.deltaY > 0 && distance >= MAX_DISTANCE - 0.01 ? 1 : 0
+      if (!edge.push(push)) return
+      if (push > 0) return zoomOut(gl.domElement)
       const ground = dirToLatLon(...(camera.position.clone().normalize().toArray() as Vec3))
       useEditor.getState().enterGround(ground)
     }
