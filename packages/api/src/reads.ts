@@ -49,6 +49,14 @@ async function structuresAt(ctx: ApiContext, worldId: string, t: number) {
   return { view, regions, curves, list: view.timeline.structures.map((s) => describeStructure(m, view, s, curves.get(s.id), t, regions)) }
 }
 
+/** A record's notes as text, worked out once per version of the record (the host keeps unchanged records between reads). */
+const noteTexts = new WeakMap<object, string>()
+function noteText(record: { notes: string }): string {
+  let text = noteTexts.get(record)
+  if (text === undefined) noteTexts.set(record, (text = htmlToText(record.notes)))
+  return text
+}
+
 /** Read-only operations: what an AI needs to know a world before it writes about it or adds to it. */
 export const READS = [
   operation({
@@ -124,18 +132,20 @@ export const READS = [
     run: ({ models: m }, { q, limit = 50 }) => {
       const data = m.data()
       const needle = q.toLowerCase()
-      const hit = (...texts: (string | string[] | undefined)[]) => texts.flat().some((x) => x && x.toLowerCase().includes(needle))
+      const has = (x: string | undefined) => !!x && x.toLowerCase().includes(needle)
+      // Names, titles and tags first; a record's notes are read as text only if those don't match.
+      const hit = (r: { notes: string }, ...texts: (string | string[] | undefined)[]) => texts.flat().some(has) || has(noteText(r))
       const t = data.timeline
       const results = [
-        ...data.nodes.filter((n) => hit(n.name, htmlToText(n.notes), n.tags)).map((n) => ({ kind: kindLabel(n), id: n.id, name: n.name, path: nodePath(data.nodes, n.id) })),
-        ...data.regions.filter((r) => hit(r.name, htmlToText(r.notes))).map((r) => ({ kind: 'Region', id: r.id, name: r.name, worldId: r.worldId })),
-        ...t.events.filter((e) => hit(e.title, htmlToText(e.notes), e.tags)).map((e) => ({ kind: 'Event', id: e.id, name: e.title, worldId: e.ownerId, when: m.date(e.ownerId, e.start, e.precision) })),
-        ...t.structures.filter((s) => hit(s.name, htmlToText(s.notes), s.tags)).map((s) => ({ kind: 'Structure', id: s.id, name: s.name, worldId: s.ownerId })),
-        ...t.characters.filter((c) => hit(c.name, htmlToText(c.notes), c.tags)).map((c) => ({ kind: 'Character', id: c.id, name: c.name, worldId: c.ownerId })),
-        ...t.lifeforms.filter((s) => hit(s.name, htmlToText(s.notes), s.tags)).map((s) => ({ kind: 'Species', id: s.id, name: s.name, worldId: s.ownerId })),
-        ...t.themes.filter((th) => hit(th.name, th.style, th.mood, htmlToText(th.notes))).map((th) => ({ kind: 'Theme', id: th.id, name: th.name })),
-        ...t.eras.filter((e) => hit(e.name)).map((e) => ({ kind: 'Era', id: e.id, name: e.name, worldId: e.ownerId })),
-        ...t.groups.filter((g) => hit(g.title, htmlToText(g.notes))).map((g) => ({ kind: 'Event group', id: g.id, name: g.title, worldId: g.ownerId }))
+        ...data.nodes.filter((n) => hit(n, n.name, n.tags)).map((n) => ({ kind: kindLabel(n), id: n.id, name: n.name, path: nodePath(data.nodes, n.id) })),
+        ...data.regions.filter((r) => hit(r, r.name)).map((r) => ({ kind: 'Region', id: r.id, name: r.name, worldId: r.worldId })),
+        ...t.events.filter((e) => hit(e, e.title, e.tags)).map((e) => ({ kind: 'Event', id: e.id, name: e.title, worldId: e.ownerId, when: m.date(e.ownerId, e.start, e.precision) })),
+        ...t.structures.filter((s) => hit(s, s.name, s.tags)).map((s) => ({ kind: 'Structure', id: s.id, name: s.name, worldId: s.ownerId })),
+        ...t.characters.filter((c) => hit(c, c.name, c.tags)).map((c) => ({ kind: 'Character', id: c.id, name: c.name, worldId: c.ownerId })),
+        ...t.lifeforms.filter((s) => hit(s, s.name, s.tags)).map((s) => ({ kind: 'Species', id: s.id, name: s.name, worldId: s.ownerId })),
+        ...t.themes.filter((th) => hit(th, th.name, th.style, th.mood)).map((th) => ({ kind: 'Theme', id: th.id, name: th.name })),
+        ...t.eras.filter((e) => hit(e, e.name)).map((e) => ({ kind: 'Era', id: e.id, name: e.name, worldId: e.ownerId })),
+        ...t.groups.filter((g) => hit(g, g.title)).map((g) => ({ kind: 'Event group', id: g.id, name: g.title, worldId: g.ownerId }))
       ]
       return { count: results.length, results: results.slice(0, limit) }
     }
