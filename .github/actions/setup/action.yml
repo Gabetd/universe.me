@@ -1,0 +1,41 @@
+name: Set up the workspace
+description: pnpm, Node 24 and the workspace's dependencies from the lockfile, plus what the job needs of Electron, kept in the Actions cache.
+inputs:
+  electron:
+    description: >-
+      What the job needs of Electron: 'none'; 'binary', the dev build's Electron, to run the
+      end-to-end tests on; or 'packaging', electron-builder's downloads (Electron for the target
+      platform and the packaging tools).
+    default: none
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 24
+        cache: pnpm
+    - name: Install dependencies (frozen lockfile)
+      shell: bash
+      run: pnpm install --frozen-lockfile
+    - name: Point Electron's downloads at one cached folder
+      id: electron
+      if: inputs.electron != 'none'
+      shell: bash
+      run: |
+        dir="$RUNNER_TEMP/electron-cache"
+        echo "electron_config_cache=$dir/electron" >> "$GITHUB_ENV"
+        echo "ELECTRON_BUILDER_CACHE=$dir/electron-builder" >> "$GITHUB_ENV"
+        echo "dir=$dir" >> "$GITHUB_OUTPUT"
+        versions=$(node -p "require('electron/package.json').version + '-' + require('electron-builder/package.json').version")
+        echo "key=electron-${{ inputs.electron }}-$RUNNER_OS-$versions" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      if: inputs.electron != 'none'
+      with:
+        path: ${{ steps.electron.outputs.dir }}
+        key: ${{ steps.electron.outputs.key }}
+    # Electron has no install script any more: without this step it is downloaded inside the first test.
+    - name: Download Electron
+      if: inputs.electron == 'binary'
+      shell: bash
+      run: node -e "require('electron')"
