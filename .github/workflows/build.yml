@@ -162,16 +162,20 @@ jobs:
           NOTES
           title="Latest build (${GITHUB_REF_NAME} @ ${short})"
           # Update the rolling release in place: deleting and recreating it races
-          # with GitHub's tag cleanup and fails on transient API errors.
+          # with GitHub's tag cleanup and fails on transient API errors. The new
+          # files go up before the old ones come down (each version's files have
+          # their own names), so a download never finds the release empty.
           if gh release view latest-build >/dev/null 2>&1; then
+            old=$(gh release view latest-build --json assets -q '.assets[].name')
             gh api -X PATCH "repos/$GH_REPO/git/refs/tags/latest-build" -f sha="$GITHUB_SHA" -F force=true
-            gh release view latest-build --json assets -q '.assets[].name' | while read -r asset; do
-              gh release delete-asset latest-build "$asset" --yes
-            done
             gh release edit latest-build --prerelease --title "$title" --notes-file notes.md
             gh release upload latest-build dist/* --clobber
+            # Then the manifest, so apps never see one that points at files not uploaded yet.
+            gh release upload latest-build update.json --clobber
+            for asset in $old; do
+              [[ -e "dist/$asset" || $asset == update.json ]] || gh release delete-asset latest-build "$asset" --yes
+            done
           else
             gh release create latest-build dist/* --prerelease --target "$GITHUB_SHA" --title "$title" --notes-file notes.md
+            gh release upload latest-build update.json --clobber
           fi
-          # Last, so apps never see a manifest that points at files not uploaded yet.
-          gh release upload latest-build update.json --clobber
