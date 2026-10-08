@@ -1,6 +1,7 @@
+import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
-import { CUBE_FACES, DEFAULT_WORLD_SETTINGS, EMPTY_TIMELINE, RECORD_KINDS, type ExecuteResult, type Target, type TerrainLayerName, type TimelineData } from '@universe/core'
+import { CUBE_FACES, EMPTY_TIMELINE, type ExecuteResult, type Target, type TerrainLayerName } from '@universe/core'
 import { Project } from '@universe/db'
 import type { AppState, WorldTerrain } from '../shared/api'
 
@@ -17,30 +18,16 @@ export class Session {
     return this.project !== null
   }
 
+  /** Where the open project is, if one is. */
+  get path(): string | undefined {
+    return this.project?.path
+  }
+
   state(): AppState {
     const p = this.project
     if (!p) return { project: null, nodes: [], worlds: [], regions: [], timeline: EMPTY_TIMELINE, canUndo: false, canRedo: false }
-    const info = p.info()
-    const nodes = p.store.nodes.all()
-    const worldIds = new Set(nodes.filter((n) => n.kind === 'world').map((n) => n.id))
-    const liveIds = new Set(nodes.map((n) => n.id))
-    const timeline = Object.fromEntries(
-      RECORD_KINDS.map((kind) => [`${kind}s`, p.store.records(kind).all().filter((r) => liveIds.has(r.ownerId))])
-    ) as TimelineData
-    return {
-      project: { path: info.path, name: info.name, rootId: info.rootId },
-      nodes,
-      worlds: [...worldIds].map((id) => ({
-        id,
-        settings: p.store.worlds.getSettings(id) ?? DEFAULT_WORLD_SETTINGS,
-        terrainRevision: p.store.worlds.terrainRevision(id)
-      })),
-      regions: p.store.regions.all().filter((r) => worldIds.has(r.worldId)),
-      timeline,
-      canUndo: p.bus.canUndo,
-      canRedo: p.bus.canRedo,
-      focus: this.focus
-    }
+    const { path, name, rootId } = p.info()
+    return { project: { path, name, rootId }, ...p.snapshot(), canUndo: p.bus.canUndo, canRedo: p.bus.canRedo, focus: this.focus }
   }
 
   create(path: string): AppState {
@@ -54,8 +41,8 @@ export class Session {
     return this.state()
   }
 
-  saveCopy(path: string): void {
-    this.require().saveCopy(path)
+  async saveCopy(path: string): Promise<void> {
+    await this.require().saveCopy(path)
     this.remember(path)
   }
 
@@ -82,6 +69,12 @@ export class Session {
     const { worlds } = this.require().store
     const layer = (name: TerrainLayerName) => Array.from({ length: CUBE_FACES }, (_, face) => worlds.getLayer(worldId, name, face))
     return { revision: worlds.terrainRevision(worldId), height: layer('height'), biome: layer('biome') }
+  }
+
+  /** Keeps a file in the project with `asset.add`, undoable like any command. */
+  addAsset(name: string, mime: string, bytes: Buffer): { assetId: string; state: AppState } {
+    const assetId = randomUUID()
+    return { assetId, state: this.execute({ type: 'asset.add', payload: { id: assetId, name, mime, data: bytes.toString('base64') } }) }
   }
 
   /** A file kept in the project, such as an imported model. */

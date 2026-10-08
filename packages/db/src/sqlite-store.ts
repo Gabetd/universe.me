@@ -4,8 +4,6 @@ import { DEFAULT_WORLD_SETTINGS, mergeWorldSettings } from '@universe/core'
 import type {
   Asset,
   AssetRepository,
-  HistoryLog,
-  HistoryRecord,
   NodeRepository,
   RecordKind,
   RecordOf,
@@ -18,26 +16,32 @@ import type {
   WorldSettingsPatch
 } from '@universe/core'
 
-interface NodeRow {
-  id: string
-  parent_id: string | null
-  kind: string
-  name: string
-  seed: number
-  pos_x: number
-  pos_y: number
-  pos_z: number
-  notes: string
-  tags: string
-  created_at: string
-  updated_at: string
-  deleted_at: string | null
+type SqlValue = string | number | null
+/** A table's columns, each with how to get its value from the object a row holds. */
+type Columns<T> = Record<string, (value: T) => SqlValue>
+/** A row as SQLite returns it: each column has the type its getter writes. */
+type RowOf<C extends Columns<never>> = { [K in keyof C]: ReturnType<C[K]> }
+
+const NODE_COLUMNS = {
+  id: (n: SpatialNode) => n.id,
+  parent_id: (n: SpatialNode) => n.parentId,
+  kind: (n: SpatialNode) => n.kind,
+  name: (n: SpatialNode) => n.name,
+  seed: (n: SpatialNode) => n.seed,
+  pos_x: (n: SpatialNode) => n.position.x,
+  pos_y: (n: SpatialNode) => n.position.y,
+  pos_z: (n: SpatialNode) => n.position.z,
+  notes: (n: SpatialNode) => n.notes,
+  tags: (n: SpatialNode) => JSON.stringify(n.tags),
+  created_at: (n: SpatialNode) => n.createdAt,
+  updated_at: (n: SpatialNode) => n.updatedAt,
+  deleted_at: (n: SpatialNode) => n.deletedAt
 }
 
-const toNode = (r: NodeRow): SpatialNode => ({
+const toNode = (r: RowOf<typeof NODE_COLUMNS>): SpatialNode => ({
   id: r.id,
   parentId: r.parent_id,
-  kind: r.kind as SpatialNode['kind'],
+  kind: r.kind,
   name: r.name,
   seed: r.seed,
   position: { x: r.pos_x, y: r.pos_y, z: r.pos_z },
@@ -48,35 +52,19 @@ const toNode = (r: NodeRow): SpatialNode => ({
   deletedAt: r.deleted_at
 })
 
-const nodeParams = (n: SpatialNode) => ({
-  id: n.id,
-  parent_id: n.parentId,
-  kind: n.kind,
-  name: n.name,
-  seed: n.seed,
-  pos_x: n.position.x,
-  pos_y: n.position.y,
-  pos_z: n.position.z,
-  notes: n.notes,
-  tags: JSON.stringify(n.tags),
-  created_at: n.createdAt,
-  updated_at: n.updatedAt,
-  deleted_at: n.deletedAt
-})
-
-interface RegionRow {
-  id: string
-  world_id: string
-  name: string
-  color: string
-  points: string
-  notes: string
-  created_at: string
-  updated_at: string
-  deleted_at: string | null
+const REGION_COLUMNS = {
+  id: (r: Region) => r.id,
+  world_id: (r: Region) => r.worldId,
+  name: (r: Region) => r.name,
+  color: (r: Region) => r.color,
+  points: (r: Region) => JSON.stringify(r.points),
+  notes: (r: Region) => r.notes,
+  created_at: (r: Region) => r.createdAt,
+  updated_at: (r: Region) => r.updatedAt,
+  deleted_at: (r: Region) => r.deletedAt
 }
 
-const toRegion = (r: RegionRow): Region => ({
+const toRegion = (r: RowOf<typeof REGION_COLUMNS>): Region => ({
   id: r.id,
   worldId: r.world_id,
   name: r.name,
@@ -88,21 +76,35 @@ const toRegion = (r: RegionRow): Region => ({
   deletedAt: r.deleted_at
 })
 
-const regionParams = (r: Region) => ({
-  id: r.id,
-  world_id: r.worldId,
-  name: r.name,
-  color: r.color,
-  points: JSON.stringify(r.points),
-  notes: r.notes,
-  created_at: r.createdAt,
-  updated_at: r.updatedAt,
-  deleted_at: r.deletedAt
-})
-
 /** `UPDATE` that fails loudly when the row is missing, instead of silently doing nothing. */
-function updateExisting(stmt: StatementSync, params: Record<string, string | number | null>, what: string): void {
+function updateExisting(stmt: StatementSync, params: Record<string, SqlValue>, what: string): void {
   if (stmt.run(params).changes === 0) throw new Error(`${what} ${params.id} does not exist`)
+}
+
+/**
+ * Reads and writes of a soft-deletable table, with the SQL made from its
+ * columns. Live rows come oldest first; `query` reads other selects the same way.
+ */
+function softDeleteTable<T extends { id: string }, C extends Columns<T>>(db: DatabaseSync, table: string, columns: C, read: (row: RowOf<C>) => T, what: string) {
+  const names = Object.keys(columns)
+  const s = {
+    get: db.prepare(`SELECT * FROM ${table} WHERE id = ?`),
+    all: db.prepare(`SELECT * FROM ${table} WHERE deleted_at IS NULL ORDER BY created_at, id`),
+    insert: db.prepare(`INSERT INTO ${table} (${names.join(', ')}) VALUES (${names.map((c) => `:${c}`).join(', ')})`),
+    update: db.prepare(`UPDATE ${table} SET ${names.filter((c) => c !== 'id').map((c) => `${c} = :${c}`).join(', ')} WHERE id = :id`)
+  }
+  const params = (value: T) => Object.fromEntries(names.map((c) => [c, columns[c]!(value)]))
+  const query = (stmt: StatementSync, ...args: SqlValue[]) => (stmt.all(...args) as unknown as RowOf<C>[]).map(read)
+  return {
+    get: (id: string) => {
+      const row = s.get.get(id) as RowOf<C> | undefined
+      return row && read(row)
+    },
+    all: () => query(s.all),
+    insert: (value: T) => void s.insert.run(params(value)),
+    update: (value: T) => updateExisting(s.update, params(value), what),
+    query
+  }
 }
 
 export class SqliteStore implements Store {
@@ -115,26 +117,9 @@ export class SqliteStore implements Store {
   private readonly recordStmts: Record<'get' | 'all' | 'insert' | 'update', StatementSync>
 
   constructor(private readonly db: DatabaseSync) {
-    const n = {
-      get: db.prepare('SELECT * FROM nodes WHERE id = ?'),
-      children: db.prepare('SELECT * FROM nodes WHERE parent_id = ? AND deleted_at IS NULL ORDER BY created_at, id'),
-      all: db.prepare('SELECT * FROM nodes WHERE deleted_at IS NULL ORDER BY created_at, id'),
-      insert: db.prepare(`INSERT INTO nodes (id, parent_id, kind, name, seed, pos_x, pos_y, pos_z, notes, tags, created_at, updated_at, deleted_at)
-        VALUES (:id, :parent_id, :kind, :name, :seed, :pos_x, :pos_y, :pos_z, :notes, :tags, :created_at, :updated_at, :deleted_at)`),
-      update: db.prepare(`UPDATE nodes SET parent_id = :parent_id, kind = :kind, name = :name, seed = :seed,
-        pos_x = :pos_x, pos_y = :pos_y, pos_z = :pos_z, notes = :notes, tags = :tags,
-        created_at = :created_at, updated_at = :updated_at, deleted_at = :deleted_at WHERE id = :id`)
-    }
-    this.nodes = {
-      get: (id) => {
-        const row = n.get.get(id) as NodeRow | undefined
-        return row && toNode(row)
-      },
-      children: (parentId) => (n.children.all(parentId) as unknown as NodeRow[]).map(toNode),
-      all: () => (n.all.all() as unknown as NodeRow[]).map(toNode),
-      insert: (node) => void n.insert.run(nodeParams(node)),
-      update: (node) => updateExisting(n.update, nodeParams(node), 'Node')
-    }
+    const { query, ...nodes } = softDeleteTable(db, 'nodes', NODE_COLUMNS, toNode, 'Node')
+    const children = db.prepare('SELECT * FROM nodes WHERE parent_id = ? AND deleted_at IS NULL ORDER BY created_at, id')
+    this.nodes = { ...nodes, children: (parentId) => query(children, parentId) }
 
     const w = {
       getSettings: db.prepare('SELECT settings FROM worlds WHERE id = ?'),
@@ -167,23 +152,8 @@ export class SqliteStore implements Store {
       bumpTerrainRevision: (id) => void w.bump.run(id)
     }
 
-    const r = {
-      get: db.prepare('SELECT * FROM regions WHERE id = ?'),
-      all: db.prepare('SELECT * FROM regions WHERE deleted_at IS NULL ORDER BY created_at, id'),
-      insert: db.prepare(`INSERT INTO regions (id, world_id, name, color, points, notes, created_at, updated_at, deleted_at)
-        VALUES (:id, :world_id, :name, :color, :points, :notes, :created_at, :updated_at, :deleted_at)`),
-      update: db.prepare(`UPDATE regions SET world_id = :world_id, name = :name, color = :color, points = :points, notes = :notes,
-        created_at = :created_at, updated_at = :updated_at, deleted_at = :deleted_at WHERE id = :id`)
-    }
-    this.regions = {
-      get: (id) => {
-        const row = r.get.get(id) as RegionRow | undefined
-        return row && toRegion(row)
-      },
-      all: () => (r.all.all() as unknown as RegionRow[]).map(toRegion),
-      insert: (region) => void r.insert.run(regionParams(region)),
-      update: (region) => updateExisting(r.update, regionParams(region), 'Region')
-    }
+    const { get, all, insert, update } = softDeleteTable(db, 'regions', REGION_COLUMNS, toRegion, 'Region')
+    this.regions = { get, all, insert, update }
 
     const a = {
       get: db.prepare('SELECT id, name, mime, data FROM assets WHERE id = ?'),
@@ -193,7 +163,8 @@ export class SqliteStore implements Store {
     this.assets = {
       get: (id) => {
         const row = a.get.get(id) as (Omit<Asset, 'data'> & { data: Uint8Array }) | undefined
-        return row && { id: row.id, name: row.name, mime: row.mime, data: new Uint8Array(row.data) }
+        // SQLite hands back a fresh buffer for every read, so there's no need to copy it.
+        return row && { id: row.id, name: row.name, mime: row.mime, data: row.data }
       },
       put: (asset) => void a.put.run(asset.id, asset.name, asset.mime, asset.data),
       remove: (id) => void a.remove.run(id)
@@ -240,17 +211,5 @@ export class SqliteStore implements Store {
     } finally {
       this.depth--
     }
-  }
-}
-
-export class SqliteHistoryLog implements HistoryLog {
-  private readonly insert: StatementSync
-
-  constructor(db: DatabaseSync) {
-    this.insert = db.prepare('INSERT INTO command_log (at, action, source, type, command, inverse) VALUES (?, ?, ?, ?, ?, ?)')
-  }
-
-  append(r: HistoryRecord): void {
-    this.insert.run(r.at, r.action, r.source, r.command.type, JSON.stringify(r.command), JSON.stringify(r.inverse))
   }
 }

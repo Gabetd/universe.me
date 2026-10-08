@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { IPC, type AppState, type MenuAction, type UniverseApi } from '../shared/api'
+import { EVENTS, INVOKE, type AppState, type InvokeMethod, type MenuAction, type UniverseApi } from '../shared/api'
 import type { UpdateStatus } from '../shared/update'
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
@@ -8,25 +8,16 @@ function subscribe<T>(channel: string, listener: (value: T) => void): () => void
   return () => ipcRenderer.removeListener(channel, handler)
 }
 
+/** Every method the main process answers, one per channel in the table. */
+const invokers = Object.fromEntries(
+  Object.entries(INVOKE).map(([method, channel]) => [method, (...args: unknown[]) => ipcRenderer.invoke(channel, ...args)])
+) as Pick<UniverseApi, InvokeMethod>
+
 const api: UniverseApi = {
-  getState: () => ipcRenderer.invoke(IPC.getState),
-  recentProjects: () => ipcRenderer.invoke(IPC.recent),
-  newProject: () => ipcRenderer.invoke(IPC.newProject),
-  openProject: (path) => ipcRenderer.invoke(IPC.openProject, path),
-  saveCopy: () => ipcRenderer.invoke(IPC.saveCopy),
-  closeProject: () => ipcRenderer.invoke(IPC.closeProject),
-  execute: (command) => ipcRenderer.invoke(IPC.execute, command),
-  getTerrain: (worldId) => ipcRenderer.invoke(IPC.terrain, worldId),
-  pickModel: () => ipcRenderer.invoke(IPC.pickModel),
-  getAsset: (id) => ipcRenderer.invoke(IPC.getAsset, id),
-  undo: () => ipcRenderer.invoke(IPC.undo),
-  redo: () => ipcRenderer.invoke(IPC.redo),
-  onState: (listener) => subscribe<AppState>(IPC.stateChanged, listener),
-  onMenu: (listener) => subscribe<MenuAction>(IPC.menu, listener),
-  updateStatus: () => ipcRenderer.invoke(IPC.updateStatus),
-  installUpdate: () => ipcRenderer.invoke(IPC.installUpdate),
-  dismissUpdate: () => ipcRenderer.invoke(IPC.dismissUpdate),
-  onUpdate: (listener) => subscribe<UpdateStatus>(IPC.updateChanged, listener)
+  ...invokers,
+  onState: (listener) => subscribe<AppState>(EVENTS.state, listener),
+  onMenu: (listener) => subscribe<MenuAction>(EVENTS.menu, listener),
+  onUpdate: (listener) => subscribe<UpdateStatus>(EVENTS.update, listener)
 }
 
 contextBridge.exposeInMainWorld('universe', api)

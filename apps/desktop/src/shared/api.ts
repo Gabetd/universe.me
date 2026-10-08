@@ -35,12 +35,12 @@ export interface WorldTerrain extends TerrainLayers {
   revision: number
 }
 
-/** A file the user picked, read for adding to the project. */
-export interface PickedFile {
+/** A model file the main process read and added to the project. */
+export interface ImportedModel {
+  assetId: string
+  /** The file's name, extension included. */
   name: string
-  mime: string
-  /** Base64, ready for an `asset.add` command. */
-  data: string
+  state: AppState
 }
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
@@ -53,12 +53,10 @@ export interface UniverseApi {
   /** Each returns `null` in `value` if the user cancelled the file dialog. */
   newProject(): Promise<Result<AppState | null>>
   openProject(path?: string): Promise<Result<AppState | null>>
-  saveCopy(): Promise<Result<string | null>>
-  closeProject(): Promise<AppState>
   execute(command: unknown): Promise<Result<AppState>>
   getTerrain(worldId: string): Promise<Result<WorldTerrain>>
-  /** Asks for a .glb/.gltf file and reads it. Null if cancelled. The renderer then adds it with `asset.add`. */
-  pickModel(): Promise<Result<PickedFile | null>>
+  /** Asks for a .glb/.gltf file and adds it to the project with `asset.add` (undoable). Null if cancelled. */
+  importModel(): Promise<Result<ImportedModel | null>>
   getAsset(id: string): Promise<Result<{ mime: string; data: Uint8Array }>>
   undo(): Promise<Result<AppState>>
   redo(): Promise<Result<AppState>>
@@ -71,23 +69,29 @@ export interface UniverseApi {
   onUpdate(listener: (status: UpdateStatus) => void): () => void
 }
 
-export const IPC = {
+/** The methods the main process answers; the others listen to what it sends. */
+export type InvokeMethod = Exclude<keyof UniverseApi, 'onState' | 'onMenu' | 'onUpdate'>
+
+/** The channel behind each method the main process answers. The preload makes those methods from this table. */
+export const INVOKE: Record<InvokeMethod, string> = {
   getState: 'state:get',
-  recent: 'project:recent',
+  recentProjects: 'project:recent',
   newProject: 'project:new',
   openProject: 'project:open',
-  saveCopy: 'project:save-copy',
-  closeProject: 'project:close',
   execute: 'cmd:execute',
-  terrain: 'world:terrain',
-  pickModel: 'asset:pick-model',
-  getAsset: 'asset:get',
   undo: 'cmd:undo',
   redo: 'cmd:redo',
-  stateChanged: 'state:changed',
-  menu: 'menu:action',
+  getTerrain: 'world:terrain',
+  importModel: 'asset:import-model',
+  getAsset: 'asset:get',
   updateStatus: 'update:status',
-  updateChanged: 'update:changed',
   installUpdate: 'update:install',
   dismissUpdate: 'update:dismiss'
+}
+
+/** Channels the main process sends on, behind `onState`, `onMenu` and `onUpdate`. */
+export const EVENTS = {
+  state: 'state:changed',
+  menu: 'menu:action',
+  update: 'update:changed'
 } as const

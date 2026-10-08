@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -27,6 +27,16 @@ describe('Project', () => {
     expect(p.store.nodes.get(info.rootId)?.kind).toBe('universe')
   })
 
+  it('keeps its name and root across a rename and a reopen', () => {
+    const path = join(dir, 'named.universe')
+    const p = Project.create(path, 'First')
+    const { rootId } = p.info()
+    p.setMeta('name', 'Second')
+    expect(p.info()).toMatchObject({ name: 'Second', rootId })
+    p.close()
+    expect(track(Project.open(path)).info()).toMatchObject({ name: 'Second', rootId })
+  })
+
   it('keeps imported files and structures inside the project file, with undo', () => {
     const path = join(dir, 'assets.universe')
     const p = Project.create(path, 'A')
@@ -36,6 +46,9 @@ describe('Project', () => {
     p.close()
     const reopened = track(Project.open(path))
     expect(reopened.store.assets.get('model-1')).toMatchObject({ name: 'tower.glb', data: bytes })
+    // Each read is its own copy, so changing one can't touch another.
+    reopened.store.assets.get('model-1')!.data[0] = 0
+    expect(reopened.store.assets.get('model-1')!.data).toEqual(bytes)
     expect(reopened.store.records('blueprint').all().map((b) => b.name)).toEqual(['Tower'])
     // Undoing the import (in the same session) takes the file back out, and redo restores it.
     reopened.bus.execute({ type: 'asset.add', payload: { id: 'model-2', name: 'b.glb', mime: 'model/gltf-binary', data: bytesToBase64(bytes) } })
@@ -95,13 +108,32 @@ describe('Project', () => {
     ])
   })
 
-  it('saves a copy that opens independently', () => {
+  it('saves a copy that opens independently, without blocking commands', async () => {
     const p = track(Project.create(join(dir, 'f.universe'), 'F'))
-    p.bus.execute({ type: 'node.create', payload: { parentId: p.info().rootId, kind: 'galaxy_cluster', name: 'Copied' } })
+    const { rootId } = p.info()
+    p.bus.execute({ type: 'node.create', payload: { parentId: rootId, kind: 'galaxy_cluster', name: 'Copied' } })
     const copyPath = join(dir, 'f-copy.universe')
-    p.saveCopy(copyPath)
+    const saving = p.saveCopy(copyPath)
+    // The copy is a snapshot from when it started; the project keeps taking commands meanwhile.
+    p.bus.execute({ type: 'node.create', payload: { parentId: rootId, kind: 'galaxy_cluster', name: 'Later' } })
+    await saving
+    expect(readdirSync(dir).sort()).toEqual(['f-copy.universe', 'f.universe', 'f.universe-shm', 'f.universe-wal'])
     const copy = track(Project.open(copyPath))
     expect(copy.store.nodes.all().map((n) => n.name)).toContain('Copied')
+    expect(p.store.nodes.all().map((n) => n.name)).toContain('Later')
+    await expect(p.saveCopy(copyPath)).rejects.toThrow(ProjectError)
+  })
+
+  it('closes while a copy is still being saved', async () => {
+    const path = join(dir, 'busy.universe')
+    const p = Project.create(path, 'Busy')
+    p.bus.execute({ type: 'node.create', payload: { parentId: p.info().rootId, kind: 'galaxy_cluster', name: 'Kept' } })
+    const saving = p.saveCopy(join(dir, 'busy-copy.universe'))
+    p.close()
+    await saving
+    for (const file of [path, join(dir, 'busy-copy.universe')]) {
+      expect(track(Project.open(file)).store.nodes.all().map((n) => n.name)).toContain('Kept')
+    }
   })
 
   it('refuses to overwrite and rejects non-projects', () => {
