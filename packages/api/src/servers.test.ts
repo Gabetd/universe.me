@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -6,7 +6,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Project } from '@universe/db'
-import { ApiServer, apiContext, lockHolder, projectHost, serveStdio, writeDiscovery } from './index'
+import { ApiServer, apiContext, lockHolder, projectHost, readDiscovery, serveStdio, writeDiscovery } from './index'
 import { testProject } from './test-project'
 
 const TOKEN = 'test-token-0123456789'
@@ -134,6 +134,30 @@ describe('the MCP server', () => {
     app.close()
     input.end()
     await done
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('answers malformed messages as JSON-RPC says, and names missing resources', async () => {
+    const post = (body: string) => fetch(`${base}/mcp`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body }).then(json)
+    expect((await post('{nope')).error.code).toBe(-32700)
+    expect((await post('[]')).error.code).toBe(-32600)
+    expect((await post(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'nope' }))).error.code).toBe(-32601)
+    expect((await post(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'resources/read', params: { uri: 'universe://world/nope' } }))).error.code).toBe(-32002)
+    expect((await fetch(`${base}/v1/worlds/%E0%A4%A`, { headers: auth })).status).toBe(400)
+  })
+})
+
+describe('discovery', () => {
+  it('ignores a file anyone else could have written, and writes its own for this user alone', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'universe-discovery-'))
+    const path = join(dir, 'api.json')
+    writeDiscovery({ pid: process.pid, port: 1, token: 't', project: null, version: 'x' }, path)
+    expect(readDiscovery(path)?.port).toBe(1)
+    if (process.platform !== 'win32') {
+      expect(statSync(path).mode & 0o777).toBe(0o600)
+      chmodSync(path, 0o644)
+      expect(readDiscovery(path)).toBeUndefined()
+    }
     rmSync(dir, { recursive: true, force: true })
   })
 })

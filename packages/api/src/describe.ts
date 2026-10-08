@@ -100,7 +100,7 @@ export function describeStructure(m: ProjectModels, view: WorldView, s: Structur
     built: m.date(s.ownerId, s.builtAt, 'year'),
     standing: state?.exists ?? false,
     condition: state ? Math.round(state.condition) : 0,
-    stage: STAGE_LABEL[state?.stage ?? 'destroyed'],
+    stage: t < s.builtAt && !state?.exists ? 'Not yet built' : STAGE_LABEL[state?.stage ?? 'destroyed'],
     maintained: state?.maintained ?? s.maintained,
     ...(where.length && { region: where.join(', ') }),
     place: { lat: round(s.lat), lon: round(s.lon) },

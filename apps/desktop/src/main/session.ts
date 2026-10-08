@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
-import { EMPTY_TIMELINE, type Command, type CommandSource, type ExecuteResult, type Target } from '@universe/core'
+import { Command as CommandSchema, CommandError, EMPTY_TIMELINE, type Command, type CommandSource, type ExecuteResult, type Target } from '@universe/core'
 import { Project } from '@universe/db'
 import type { AppState, ProposalSummary, WorldTerrain } from '../shared/api'
 
 const MAX_RECENT = 10
+/** Suggestions waiting at most: a client stuck in a loop can't fill memory with them. */
+const MAX_PROPOSALS = 200
 
 /** Owns the currently open project (one per app instance for now) and the recent-files list. */
 export class Session {
@@ -70,9 +72,12 @@ export class Session {
     return this.state()
   }
 
-  /** Holds an AI client's change for the user to accept or reject; returns its id. */
+  /** Holds an AI client's change for the user to accept or reject; returns its id. It must be a valid command, and only so many wait at once. */
   propose(command: Command, summary: string): string {
     this.require()
+    const parsed = CommandSchema.safeParse(command)
+    if (!parsed.success) throw new CommandError(`That isn’t a valid change: ${parsed.error.issues[0]?.message ?? 'unknown'}`)
+    if (this.proposals.length >= MAX_PROPOSALS) throw new CommandError(`${MAX_PROPOSALS} suggestions are already waiting for the user`)
     const id = randomUUID()
     this.proposals.push({ id, summary, at: new Date().toISOString(), command })
     return id

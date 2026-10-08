@@ -15,6 +15,16 @@ const FILE_FILTERS = [{ name: 'Universe Project', extensions: ['universe'] }]
 
 // Lets tests (and power users) keep app data somewhere other than the default profile.
 if (process.env.UNIVERSE_USER_DATA) app.setPath('userData', process.env.UNIVERSE_USER_DATA)
+
+// One app per profile: a second one (a .universe file double-clicked) hands its file to this one and quits, so two never serve or write the same project.
+const primary = app.requestSingleInstanceLock()
+if (!primary) app.quit()
+app.on('second-instance', (_event, argv) => {
+  if (win?.isMinimized()) win.restore()
+  win?.focus()
+  const file = argv.find((a) => a.endsWith('.universe'))
+  if (file) void opened(file)
+})
 // End-to-end tests pick their universe: every random seed drawn here (a new universe's, each new node's) comes from this one.
 if (process.env.UNIVERSE_E2E_SEED) Math.random = rng(Number(process.env.UNIVERSE_E2E_SEED))
 
@@ -126,10 +136,16 @@ async function openProject(path?: string): Promise<AppState | null> {
     if (canceled || !filePaths[0]) return null
     path = filePaths[0]
   }
-  // An AI client's MCP server may have the file open for a moment.
+  // An AI client's MCP server may have the file open for a moment: it's told the app is opening it, and let go of.
   const { waitForUnlock } = await import('@universe/api')
-  if (!(await waitForUnlock(path))) throw new Error('An AI client is using this project right now. Try again in a moment')
-  return switchedTo(session.open(path))
+  api.opening(path)
+  try {
+    if (!(await waitForUnlock(path))) throw new Error('An AI client is using this project right now. Try again in a moment')
+    return switchedTo(session.open(path))
+  } catch (err) {
+    api.projectChanged()
+    throw err
+  }
 }
 
 async function saveCopy(): Promise<void> {
@@ -331,6 +347,7 @@ function keepOffline(): void {
 }
 
 app.whenReady().then(async () => {
+  if (!primary) return
   keepOffline()
   registerIpc()
   createWindow()
@@ -342,7 +359,8 @@ app.whenReady().then(async () => {
     aiChange: (change) => win?.webContents.send(EVENTS.aiChange, change),
     status: (status) => win?.webContents.send(EVENTS.api, status)
   }, __BUILD_INFO__.version)
-  await api.start()
+  // Without the API the app still works: Connect AI says why it isn't listening.
+  await api.start().catch((err: Error) => console.error(`The API didn't start: ${err.message}`))
   markLoaded()
   buildMenu()
   updater.start()
@@ -356,6 +374,6 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
-  void api?.close()
+  api?.close()
   session?.close()
 })

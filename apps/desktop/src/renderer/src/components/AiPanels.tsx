@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import type { AiChange, ApiStatus } from '../../../shared/api'
+import type { AiChange, ApiSettingsPatch, ApiStatus } from '../../../shared/api'
 import { applyReply, useUi } from '../store'
+import { CopyButton } from './fields'
 
 /**
  * AI clients in the app (PLAN.md §6.3): connecting them (the Connect AI
@@ -11,13 +12,13 @@ import { applyReply, useUi } from '../store'
 const undoAi = () => applyReply(window.universe.undoAi())
 
 /** The API's status, kept up to date, and a way to change it that shows the change at once. */
-function useApiStatus(): [ApiStatus | undefined, (patch: { enabled?: boolean; review?: boolean }) => void] {
+function useApiStatus(): [ApiStatus | undefined, (patch: ApiSettingsPatch) => void] {
   const [status, setStatus] = useState<ApiStatus>()
   useEffect(() => {
     void window.universe.apiStatus().then(setStatus)
     return window.universe.onApi(setStatus)
   }, [])
-  const set = (patch: { enabled?: boolean; review?: boolean }) => {
+  const set = (patch: ApiSettingsPatch) => {
     setStatus((s) => s && { ...s, ...patch })
     void window.universe.setApi(patch).then(setStatus)
   }
@@ -26,20 +27,11 @@ function useApiStatus(): [ApiStatus | undefined, (patch: { enabled?: boolean; re
 
 /** A command to copy, in a box that selects it all. */
 function CopyField({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false)
-  const copy = () => {
-    void navigator.clipboard.writeText(value).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    })
-  }
   return (
     <div className="field">
       <span className="field-label-row">
         {label}
-        <button className="link small" onClick={copy}>
-          {copied ? 'Copied' : 'Copy'}
-        </button>
+        <CopyButton text={value} className="link small" />
       </span>
       <textarea className="copy-field" readOnly rows={3} value={value} aria-label={label} onFocus={(e) => e.currentTarget.select()} />
     </div>
@@ -61,7 +53,7 @@ export function ConnectAiButton() {
   )
 }
 
-function ConnectPanel({ status, set, onClose }: { status: ApiStatus; set(patch: { enabled?: boolean; review?: boolean }): void; onClose(): void }) {
+function ConnectPanel({ status, set, onClose }: { status: ApiStatus; set(patch: ApiSettingsPatch): void; onClose(): void }) {
   const [showToken, setShowToken] = useState(false)
   return (
     <section className="connect-panel" aria-label="Connect AI">
@@ -83,6 +75,7 @@ function ConnectPanel({ status, set, onClose }: { status: ApiStatus; set(patch: 
       <label className="checkbox">
         <input type="checkbox" checked={status.review} onChange={(e) => set({ review: e.target.checked })} /> Review AI changes before they apply
       </label>
+      <p className="small muted">Review happens here, in the app. While the app doesn’t have a project open, a stdio server writes to its file directly.</p>
       {status.connect && (
         <>
           <CopyField label="Add to Claude Code (to the app, while it’s open)" value={status.connect.http} />
@@ -129,11 +122,20 @@ export function AiNotes() {
   const canUndo = useUi((s) => s.aiChanges > 0)
   useEffect(() => {
     let key = 0
-    return window.universe.onAiChange((change) => {
+    const timers = new Set<ReturnType<typeof setTimeout>>()
+    const off = window.universe.onAiChange((change) => {
       const note = { ...change, key: key++ }
       setNotes((list) => [...list.slice(-3), note])
-      setTimeout(() => setNotes((list) => list.filter((n) => n !== note)), 8000)
+      const timer = setTimeout(() => {
+        timers.delete(timer)
+        setNotes((list) => list.filter((n) => n !== note))
+      }, 8000)
+      timers.add(timer)
     })
+    return () => {
+      off()
+      timers.forEach(clearTimeout)
+    }
   }, [])
   if (!notes.length) return null
   return (

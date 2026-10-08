@@ -1,7 +1,7 @@
 import { z } from 'zod'
+import { pathParams } from './catalog'
 import type { Operation } from './operation'
 
-const pathParams = (op: Operation) => [...op.route.path.matchAll(/:(\w+)/g)].map((m) => m[1]!)
 
 /** `/worlds/:worldId` as OpenAPI writes it: `/worlds/{worldId}`. */
 export const openApiPath = (path: string) => path.replace(/:(\w+)/g, '{$1}')

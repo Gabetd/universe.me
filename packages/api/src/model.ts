@@ -96,6 +96,15 @@ export class ProjectModels {
     this.read = undefined
   }
 
+  /** Another project was opened: nothing worked out from the last one is wanted. */
+  reset(): void {
+    this.read = undefined
+    this.systems = undefined
+    this.lastViews.clear()
+    this.terrains.clear()
+    this.engines.clear()
+  }
+
   node(id: string): SpatialNode {
     return findOr404(this.data().nodes, id, 'node')
   }

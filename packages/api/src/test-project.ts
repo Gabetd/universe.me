@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Project } from '@universe/db'
-import { OPERATIONS, apiContext } from './catalog'
+import { apiContext, runOperation } from './catalog'
 import type { ApiHost } from './host'
 import { projectHost } from './project-host'
 
@@ -18,10 +18,6 @@ export function testProject() {
   const worldId = make(bodyId, 'world', 'Terra Surface')
   const host: ApiHost = projectHost(project)
   const ctx = apiContext(host)
-  const call = async <T = Record<string, unknown>>(name: string, input: object = {}): Promise<T> => {
-    const op = OPERATIONS.find((o) => o.name === name)
-    if (!op) throw new Error(`no operation ${name}`)
-    return (await op.run(ctx, op.input.parse(input))) as T
-  }
+  const call = async <T = Record<string, unknown>>(name: string, input: object = {}): Promise<T> => (await runOperation(ctx, name, input)) as T
   return { project, host, ctx, call, worldId, systemId, galaxyId, bodyId, close: () => (project.close(), rmSync(dir, { recursive: true, force: true })) }
 }

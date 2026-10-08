@@ -81,7 +81,8 @@ function notesTarget(ctx: ApiContext, id: string): { type: string; notes: string
     ['character.update', t.characters],
     ['species.update', t.lifeforms],
     ['theme.update', t.themes],
-    ['group.update', t.groups]
+    ['group.update', t.groups],
+    ['era.update', t.eras]
   ]
   for (const [type, list] of lists) {
     const r = list.find((x) => x.id === id)
@@ -529,6 +530,11 @@ export const WRITES = [
     input: z.object({ commands: z.array(z.record(z.string(), z.unknown())).min(1), summary: z.string().min(1).max(300).describe('What these do, in a few words, for the user') }),
     route: { method: 'POST', path: '/commands' },
     write: true,
-    run: (ctx, p) => write(ctx, p.commands as unknown as Command[], p.summary)
+    run: (ctx, p) => {
+      // What the commands are, not only what the client says they do: in review mode this is what the user decides on.
+      const types = p.commands.map((c) => String(c.type))
+      const counts = [...new Set(types)].map((t) => (types.filter((x) => x === t).length > 1 ? `${t} ×${types.filter((x) => x === t).length}` : t))
+      return write(ctx, p.commands as unknown as Command[], `${p.summary} [${counts.join(', ')}]`)
+    }
   })
 ]

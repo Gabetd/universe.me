@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { worldSnapshot } from './describe'
-import { OPERATIONS } from './catalog'
+import { OPERATIONS, operationNamed, runOperation } from './catalog'
 import type { ApiContext, Operation } from './operation'
 import { errorMessage } from './errors'
 
@@ -37,7 +37,16 @@ class RpcError extends Error {
   }
 }
 
-const inputSchema = (op: Operation) => z.toJSONSchema(op.input, { io: 'input', unrepresentable: 'any' })
+/** The tool list, made once: its schemas don't change. */
+let tools: object[] | undefined
+const toolList = () =>
+  (tools ??= OPERATIONS.map((op: Operation) => ({
+    name: op.name,
+    title: op.title,
+    description: op.description,
+    inputSchema: z.toJSONSchema(op.input, { io: 'input', unrepresentable: 'any' }),
+    annotations: { title: op.title, readOnlyHint: !op.write, destructiveHint: false, openWorldHint: false }
+  })))
 
 const text = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value, null, 2))
 
@@ -75,6 +84,7 @@ export class McpServer {
   /** Answers one message (or a batch); notifications get no answer. */
   async handle(message: unknown): Promise<JsonRpcMessage | JsonRpcMessage[] | undefined> {
     if (Array.isArray(message)) {
+      if (!message.length) return { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'An empty batch' } }
       const answers = (await Promise.all(message.map((m) => this.handleOne(m)))).filter((a): a is JsonRpcMessage => !!a)
       return answers.length ? answers : undefined
     }
@@ -109,21 +119,13 @@ export class McpServer {
           instructions: INSTRUCTIONS
         }
       }
+      // Pings, and notifications that need nothing done.
       case 'ping':
-        return {}
       case 'notifications/initialized':
       case 'notifications/cancelled':
         return {}
       case 'tools/list':
-        return {
-          tools: OPERATIONS.map((op) => ({
-            name: op.name,
-            title: op.title,
-            description: op.description,
-            inputSchema: inputSchema(op),
-            annotations: { title: op.title, readOnlyHint: !op.write, destructiveHint: false, openWorldHint: false }
-          }))
-        }
+        return { tools: toolList() }
       case 'tools/call':
         return this.callTool(String(params.name), (params.arguments ?? {}) as Record<string, unknown>)
       case 'resources/list':
@@ -149,7 +151,7 @@ export class McpServer {
 
   /** A tool call: its answer, or what went wrong as a tool error the model can read and correct. */
   private async callTool(name: string, args: Record<string, unknown>) {
-    const op = OPERATIONS.find((o) => o.name === name)
+    const op = operationNamed(name)
     if (!op) throw new RpcError(-32602, `There is no tool ${name}`)
     const input = op.input.safeParse(args)
     if (!input.success) return { isError: true, content: [{ type: 'text', text: `Invalid arguments: ${z.prettifyError(input.error)}` }] }
@@ -161,8 +163,7 @@ export class McpServer {
   }
 
   private run(name: string, input: Record<string, unknown>) {
-    const op = OPERATIONS.find((o) => o.name === name)!
-    return op.run(this.ctx, op.input.parse(input))
+    return runOperation(this.ctx, name, input)
   }
 
   private worldResources() {
@@ -181,6 +182,7 @@ export class McpServer {
     const match = WORLD_URI.exec(uri)
     if (!match) throw new RpcError(-32002, `No resource ${uri}`)
     const [, worldId, part] = match
+    if (!this.ctx.host.project()?.data.nodes.some((n) => n.id === worldId && n.kind === 'world')) throw new RpcError(-32002, `No resource ${uri}`)
     const [value, mimeType] =
       part === '/bible.md'
         ? [await this.run('export_world_bible', { worldId }), 'text/markdown']

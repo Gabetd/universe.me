@@ -1,6 +1,6 @@
-import { chmodSync, closeSync, openSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
-import { tmpdir, userInfo } from 'node:os'
-import { join, resolve } from 'node:path'
+import { closeSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 
 /**
  * How an MCP server started by an AI client finds the running app: the app
@@ -15,18 +15,29 @@ export interface Discovery {
   token: string
   /** The project open in the app, if any. */
   project: string | null
+  /** A project the app is opening (waiting for an MCP server to let go of it). */
+  opening?: string
   version: string
 }
 
-const user = () => {
-  try {
-    return userInfo().username.replace(/[^\w.-]/g, '_')
-  } catch {
-    return 'user'
-  }
+/**
+ * A folder only this user can use: on Linux the session's runtime folder (or
+ * one in the home folder), never the shared /tmp, where another user could
+ * put a file of their own first; elsewhere the user's own temp folder.
+ */
+function privateDir(): string {
+  if (process.platform !== 'linux') return join(tmpdir(), 'universe-me')
+  return process.env.XDG_RUNTIME_DIR ? join(process.env.XDG_RUNTIME_DIR, 'universe-me') : join(homedir(), '.cache', 'universe-me')
 }
 
-export const discoveryPath = () => process.env.UNIVERSE_API_DISCOVERY ?? join(tmpdir(), `universe-me-api-${user()}.json`)
+export const discoveryPath = () => process.env.UNIVERSE_API_DISCOVERY ?? join(privateDir(), 'api.json')
+
+/** Whether a file is this user's and no one else can read or change it (POSIX; Windows' temp folder is the user's own). */
+function ours(path: string): boolean {
+  if (process.platform === 'win32') return true
+  const st = statSync(path)
+  return st.uid === process.getuid!() && (st.mode & 0o077) === 0
+}
 
 /** Whether a process is still running. */
 export function alive(pid: number): boolean {
@@ -38,15 +49,18 @@ export function alive(pid: number): boolean {
   }
 }
 
+/** Writes the discovery: a new file only this user can read, put in place whole. */
 export function writeDiscovery(d: Discovery, path = discoveryPath()): void {
-  writeFileSync(path, JSON.stringify(d), { mode: 0o600 })
-  // The mode only applies to a new file.
-  chmodSync(path, 0o600)
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  const temp = `${path}.${process.pid}.tmp`
+  writeFileSync(temp, JSON.stringify(d), { mode: 0o600, flag: 'w' })
+  renameSync(temp, path)
 }
 
-/** The running app's discovery, if it's still running. */
+/** The running app's discovery, if it's still running and the file is this user's alone. */
 export function readDiscovery(path = discoveryPath()): Discovery | undefined {
   try {
+    if (!ours(path)) return undefined
     const d = JSON.parse(readFileSync(path, 'utf8')) as Discovery
     return typeof d.pid === 'number' && alive(d.pid) ? d : undefined
   } catch {
@@ -111,7 +125,9 @@ export async function withProjectLock<T>(project: string, fn: () => Promise<T>):
       writeSync(fd, String(process.pid))
       closeSync(fd)
       break
-    } catch {
+    } catch (err) {
+      // Only someone else's lock is worth waiting for; a missing folder or no permission isn't.
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
       if (stale(path)) rmSync(path, { force: true })
       else if (tries > 200) throw new Error(`${project} is locked by another Universe process`)
       else await sleep(50)

@@ -57,6 +57,9 @@ export interface ApiStatus {
   connect: { http: string; stdio: string } | null
 }
 
+/** What the user can change about the API. */
+export type ApiSettingsPatch = Partial<Pick<ApiStatus, 'enabled' | 'review'>>
+
 /** A change an AI client made, for the app to show. */
 export interface AiChange {
   summary: string
@@ -99,7 +102,7 @@ export interface UniverseApi {
   /** Asks where to save a world's bible (Markdown) and writes it there; the path, or null if cancelled. */
   exportBible(worldId: string): Promise<Result<string | null>>
   apiStatus(): Promise<ApiStatus>
-  setApi(patch: { enabled?: boolean; review?: boolean }): Promise<ApiStatus>
+  setApi(patch: ApiSettingsPatch): Promise<ApiStatus>
   /** A new token: clients with the old one stop working. */
   newApiToken(): Promise<ApiStatus>
   onApi(listener: (status: ApiStatus) => void): () => void

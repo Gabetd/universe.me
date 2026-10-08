@@ -12,6 +12,9 @@ export async function exportWorldBible(ctx: ApiContext, worldId: string, format:
   return format === 'json' ? bible : markdown(bible)
 }
 
+/** A world's bible as Markdown. */
+export const worldBible = async (ctx: ApiContext, worldId: string): Promise<string> => markdown(await bibleData(ctx, worldId))
+
 type BibleData = Awaited<ReturnType<typeof bibleData>>
 
 async function bibleData({ models: m }: ApiContext, worldId: string) {
@@ -56,8 +59,11 @@ async function bibleData({ models: m }: ApiContext, worldId: string) {
   }
 }
 
+/** A name or title as Markdown text: on one line, its formatting characters taken literally. */
+const md = (text: string) => text.replace(/\s*\n\s*/g, ' ').replace(/[\\`*_[\]#<>|]/g, '\\$&')
+
 function markdown(b: BibleData): string {
-  const out: string[] = [`# ${b.world}`, '', `*${b.path}* · as of ${b.now}`, '']
+  const out: string[] = [`# ${md(b.world)}`, '', `*${md(b.path)}* · as of ${b.now}`, '']
   const section = (title: string, lines: string[]) => lines.length && out.push(`## ${title}`, '', ...lines, '')
   const para = (text: string) => (text ? [text, ''] : [])
   out.push(...para(b.notes))
@@ -65,14 +71,14 @@ function markdown(b: BibleData): string {
     `- Radius ${b.surface.radiusKm.toLocaleString('en')} km, ${b.surface.landform}${b.surface.seed ? `, grown from the seed “${b.surface.seed}”` : ''}`,
     `- A year of ${b.calendar.daysPerYear} days of ${b.calendar.hoursPerDay} hours: ${b.calendar.months.join(', ')}`
   ])
-  section('Regions', b.regions.flatMap((r) => [`### ${r.name}`, '', ...para(r.notes)]))
+  section('Regions', b.regions.flatMap((r) => [`### ${md(r.name)}`, '', ...para(r.notes)]))
   section('Eras', b.eras.map((e) => `- **${e.name}**, ${e.when}`))
   section(
     'History',
     b.history.flatMap((e) => [
-      `### ${e.when}: ${e.title}`,
+      `### ${e.when}: ${md(e.title)}`,
       '',
-      ...[e.where && `Where: ${e.where.join(', ')}`, e.group && `Part of: ${e.group}`, e.tags && `Tags: ${e.tags.join(', ')}`].filter((x): x is string => !!x).map((x) => `*${x}*  `),
+      ...[e.where && `Where: ${e.where.map(md).join(', ')}`, e.group && `Part of: ${md(e.group)}`, e.tags && `Tags: ${e.tags.map(md).join(', ')}`].filter((x): x is string => !!x).map((x) => `*${x}*  `),
       ...(e.where || e.group || e.tags ? [''] : []),
       ...para(e.notes ?? '')
     ])
@@ -80,24 +86,24 @@ function markdown(b: BibleData): string {
   section(
     'Structures',
     b.structures.flatMap((s) => [
-      `### ${s.name}`,
+      `### ${md(s.name)}`,
       '',
-      `*${s.blueprint}, built ${s.built}${s.region ? `, in ${s.region}` : ''}. ${s.standing ? `${s.stage} (${s.condition}/100), ${s.maintained ? 'maintained' : 'left to weather'}` : 'Gone'}.*`,
+      `*${md(s.blueprint)}, built ${s.built}${s.region ? `, in ${md(s.region)}` : ''}. ${s.standing ? `${s.stage} (${s.condition}/100), ${s.maintained ? 'maintained' : 'left to weather'}` : s.stage}.*`,
       '',
       ...para(s.notes)
     ])
   )
   section(
     'Characters',
-    b.characters.flatMap((c) => [`### ${c.name}`, '', `*Born ${c.born}${c.died ? `, died ${c.died}` : ''}${c.alive && c.region ? `; now in ${c.region}` : ''}.*`, '', ...para(c.notes)])
+    b.characters.flatMap((c) => [`### ${md(c.name)}`, '', `*Born ${c.born}${c.died ? `, died ${c.died}` : ''}${c.alive && c.region ? `; now in ${md(c.region)}` : ''}.*`, '', ...para(c.notes)])
   )
   section(
     'Life',
-    b.species.flatMap((s) => [`### ${s.name}`, '', `*${s.kind}, ${s.diet}${s.biomes.length ? `; lives in ${s.biomes.join(', ')}` : ''}${s.eats.length ? `; eats ${s.eats.join(', ')}` : ''}.*`, '', ...para(s.notes)])
+    b.species.flatMap((s) => [`### ${md(s.name)}`, '', `*${s.kind}, ${s.diet}${s.biomes.length ? `; lives in ${s.biomes.join(', ')}` : ''}${s.eats.length ? `; eats ${s.eats.map(md).join(', ')}` : ''}.*`, '', ...para(s.notes)])
   )
   section(
     'Ages and their tone',
-    b.themes.flatMap((th) => [`### ${th.name}, ${th.when}${th.region ? ` (${th.region})` : ''}`, '', ...(th.mood.length ? [`*${th.mood.join(' · ')}*`, ''] : []), ...para(th.style)])
+    b.themes.flatMap((th) => [`### ${md(th.name)}, ${th.when}${th.region ? ` (${md(th.region)})` : ''}`, '', ...(th.mood.length ? [`*${th.mood.map(md).join(' · ')}*`, ''] : []), ...para(th.style)])
   )
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
 }

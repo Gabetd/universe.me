@@ -43,7 +43,7 @@ export const When = z
 export function written(outcome: WriteOutcome, summary: string, ids: Record<string, string> = {}): Record<string, unknown> {
   return outcome.status === 'applied'
     ? { status: 'applied', summary, ...ids }
-    : { status: 'proposed', summary, proposalId: outcome.proposalId, note: 'Review mode is on: this waits for the user to accept it in Universe. The ids are what it will have.', ...ids }
+    : { status: 'proposed', summary, proposalId: outcome.proposalId, note: 'Review mode is on: this waits for the user to accept it in Universe. The ids are what it will have once accepted; until then nothing can refer to them.', ...ids }
 }
 
 /** A query-string flag or number: GET inputs arrive as text. */

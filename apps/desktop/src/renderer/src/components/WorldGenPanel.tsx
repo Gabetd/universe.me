@@ -1,8 +1,7 @@
 import { LANDFORMS, WORLD_RANGES, type Landform, type SpatialNode, type TerrainParams, type WorldSettings } from '@universe/core'
 import { WORLD_PRESETS, encodeWorldCode, randomSeedName, readSeed } from '@universe/procgen'
-import { useState } from 'react'
 import { updater, useUi } from '../store'
-import { ColorField, CommitSlider, NumberInput, TextField, randomSeed } from './fields'
+import { ColorField, CommitSlider, CopyButton, NumberInput, TextField, randomSeed } from './fields'
 
 const LANDFORM_LABELS: Record<Landform, string> = { continents: 'Continents', supercontinent: 'Supercontinent', archipelago: 'Archipelago' }
 
@@ -13,7 +12,6 @@ const LANDFORM_LABELS: Record<Landform, string> = { continents: 'Continents', su
  */
 export function WorldGenPanel({ world, settings }: { world: SpatialNode; settings: WorldSettings }) {
   const { execute } = useUi.getState()
-  const [copied, setCopied] = useState(false)
   const t = settings.terrain
   const locked = settings.seedText !== null
   const code = encodeWorldCode({ seed: world.seed, radiusKm: settings.radiusKm, terrain: t })
@@ -78,14 +76,7 @@ export function WorldGenPanel({ world, settings }: { world: SpatialNode; setting
           <code className="world-code" data-testid="world-code" title="Enter this as a seed to recreate exactly this planet">
             {code}
           </code>
-          <button
-            onClick={() => {
-              void navigator.clipboard.writeText(code).then(() => setCopied(true))
-              setTimeout(() => setCopied(false), 1500)
-            }}
-          >
-            {copied ? 'Copied' : 'Copy'}
-          </button>
+          <CopyButton text={code} />
         </div>
       </div>
 

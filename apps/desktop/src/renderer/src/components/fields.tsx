@@ -86,6 +86,21 @@ export function NotesField({ label, value, grow, onCommit }: { label: string; va
   )
 }
 
+/** Copies `text` to the clipboard; says "Copied" for a moment. */
+export function CopyButton({ text, className }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const t = setTimeout(() => setCopied(false), 1500)
+    return () => clearTimeout(t)
+  }, [copied])
+  return (
+    <button className={className} onClick={() => void navigator.clipboard.writeText(text).then(() => setCopied(true))}>
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  )
+}
+
 /** A small colour square. */
 export const Swatch = ({ color }: { color: string | undefined }) => <span className="swatch" style={{ background: color }} />
 

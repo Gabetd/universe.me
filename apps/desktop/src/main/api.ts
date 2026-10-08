@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ApiServer, apiContext, clearDiscovery, exportWorldBible, writeDiscovery, type ApiContext, type ApiHost } from '@universe/api'
+import { ApiServer, apiContext, clearDiscovery, worldBible, writeDiscovery, type ApiContext, type ApiHost } from '@universe/api'
 import type { TerrainParams } from '@universe/core'
 import type { BaseTerrain } from '@universe/procgen'
 import { app } from 'electron'
@@ -48,6 +48,11 @@ export class ApiController {
     this.ctx = apiContext(this.host())
   }
 
+  /** The project is about to be opened: `--mcp` servers should wait for it rather than open the file too. */
+  opening(path: string): void {
+    this.announce(path)
+  }
+
   async start(): Promise<void> {
     await this.stop()
     this.error = undefined
@@ -74,10 +79,10 @@ export class ApiController {
     this.port = null
   }
 
-  /** At quit: nothing is left listening, and no `--mcp` server is pointed here. */
-  async close(): Promise<void> {
-    await this.stop()
+  /** At quit: no `--mcp` server is pointed here any more (at once: the process may end before anything async finishes), and nothing is left listening. */
+  close(): void {
     clearDiscovery()
+    void this.stop()
   }
 
   async set(patch: Partial<Pick<ApiSettings, 'enabled' | 'review'>>): Promise<ApiStatus> {
@@ -96,8 +101,9 @@ export class ApiController {
     return this.status()
   }
 
-  /** The project opened or closed: `--mcp` servers should know which file the app has. */
+  /** The project opened or closed: `--mcp` servers should know which file the app has, and nothing from the last one is kept. */
   projectChanged(): void {
+    this.ctx.models.reset()
     this.announce()
   }
 
@@ -107,8 +113,8 @@ export class ApiController {
   }
 
   /** A world's bible as Markdown. */
-  async bible(worldId: string): Promise<string> {
-    return (await exportWorldBible(this.ctx, worldId, 'markdown')) as string
+  bible(worldId: string): Promise<string> {
+    return worldBible(this.ctx, worldId)
   }
 
   status(): ApiStatus {
@@ -124,8 +130,13 @@ export class ApiController {
     }
   }
 
-  private announce(): void {
-    writeDiscovery({ pid: process.pid, port: this.port, token: this.settings.token, project: this.session.path ?? null, version: this.version })
+  private announce(opening?: string): void {
+    try {
+      writeDiscovery({ pid: process.pid, port: this.port, token: this.settings.token, project: this.session.path ?? null, ...(opening && { opening }), version: this.version })
+    } catch (err) {
+      // The API still works over HTTP; only `--mcp` servers won't find it.
+      this.error = `Couldn’t say where the API is for stdio servers: ${(err as Error).message}`
+    }
     this.events.status(this.status())
   }
 
@@ -153,7 +164,7 @@ export class ApiController {
   }
 
   private get file(): string {
-    return join(this.userData, 'api.json')
+    return join(this.userData, 'api-settings.json')
   }
 
   private load(): ApiSettings {
@@ -164,25 +175,27 @@ export class ApiController {
       // First run, or an unreadable file: start over.
     }
     const fresh = { enabled: true, review: false, token: newToken() }
-    this.settings = fresh
-    this.save()
+    this.save(fresh)
     return fresh
   }
 
   /** The token is a secret, so the file is the user's alone. */
-  private save(): void {
-    writeFileSync(this.file, JSON.stringify(this.settings, null, 2), { mode: 0o600 })
+  private save(settings = this.settings): void {
+    writeFileSync(this.file, JSON.stringify(settings, null, 2), { mode: 0o600 })
   }
 }
 
 const newToken = () => randomBytes(24).toString('base64url')
+
+/** A word for the user's shell, taken literally: single quotes on macOS and Linux (no $, ` or \\ is read), double quotes on Windows. */
+const shellWord = (word: string) => (process.platform === 'win32' ? `"${word.replace(/"/g, '""')}"` : `'${word.replace(/'/g, `'\\''`)}'`)
 
 /** The command that adds the stdio server to Claude Code: this app's executable with --mcp, and the open project. */
 function stdioCommand(project: string | undefined): string {
   // An AppImage runs from a new mount each time: the AppImage file itself is what stays put.
   const exe = process.env.APPIMAGE ?? process.execPath
   const args = app.isPackaged ? [] : [app.getAppPath()]
-  return `claude mcp add universe -- ${[exe, ...args].map((a) => `"${a}"`).join(' ')} --mcp --project "${project ?? '<path to your .universe file>'}"`
+  return `claude mcp add universe -- ${[exe, ...args].map(shellWord).join(' ')} --mcp --project ${project ? shellWord(project) : '<path to your .universe file>'}`
 }
 
 /** Worlds' base terrain from a worker thread, so a query about structures doesn't hold up the window. */
@@ -192,19 +205,23 @@ let nextId = 0
 
 function baseTerrain(seed: number, params: TerrainParams): Promise<BaseTerrain> {
   if (!worker) {
-    worker = createTerrainWorker({})
-    worker.unref()
-    worker.on('message', ({ id, base, error }: { id: number; base?: BaseTerrain; error?: string }) => {
+    const w = createTerrainWorker({})
+    worker = w
+    w.unref()
+    w.on('message', ({ id, base, error }: { id: number; base?: BaseTerrain; error?: string }) => {
       const call = pending.get(id)
       pending.delete(id)
       if (error) call?.reject(new Error(error))
       else call?.resolve(base!)
     })
-    worker.on('error', (err) => {
+    // A worker that fails or stops takes its unanswered calls with it; the next call starts a new one.
+    const fail = (err: Error) => {
       for (const call of pending.values()) call.reject(err)
       pending.clear()
-      worker = undefined
-    })
+      if (worker === w) worker = undefined
+    }
+    w.on('error', fail)
+    w.on('exit', () => fail(new Error('The terrain worker stopped')))
   }
   const id = nextId++
   return new Promise((resolve, reject) => {

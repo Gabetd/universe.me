@@ -111,12 +111,16 @@ describe('the operations', () => {
     expect(md).toContain('# Arda Surface')
     expect(md).toContain('A cold world.\n\nIts people live underground.')
     expect(md).toContain('### 1: First light')
+    await p.call('create_event', { worldId, title: 'The *star*\nfalls', start: '2' })
+    expect(await p.call<string>('export_world_bible', { worldId })).toContain('### 2: The \\*star\\* falls')
     const json = await p.call<{ history: object[] }>('export_world_bible', { worldId, format: 'json' })
-    expect(json.history).toHaveLength(1)
+    expect(json.history).toHaveLength(2)
   })
 
   it('run any command as one undoable step, and say clearly what’s wrong', async () => {
-    await p.call('run_commands', { commands: [{ type: 'node.update', payload: { id: p.worldId, patch: { name: 'Gaia' } } }], summary: 'Renamed the world' })
+    const renamed = await p.call<{ summary: string }>('run_commands', { commands: [{ type: 'node.update', payload: { id: p.worldId, patch: { name: 'Gaia' } } }], summary: 'Renamed the world' })
+    // What the commands are, not only what the client says: what a reviewer decides on.
+    expect(renamed.summary).toBe('Renamed the world [node.update]')
     expect(p.project.snapshot().nodes.find((n) => n.id === p.worldId)!.name).toBe('Gaia')
     const types = await p.call<{ types: string[] }>('describe_commands')
     expect(types.types).toContain('event.create')

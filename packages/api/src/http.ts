@@ -1,8 +1,9 @@
 import { timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { OPERATIONS } from './catalog'
+import { OPERATIONS, pathParams } from './catalog'
 import { errorMessage, errorStatus } from './errors'
+import { ApiError } from './host'
 import { McpServer } from './mcp'
 import { openApi } from './openapi'
 import type { ApiContext, Operation } from './operation'
@@ -26,7 +27,7 @@ interface Route {
 
 const routes: Route[] = OPERATIONS.map((op) => ({
   op,
-  params: [...op.route.path.matchAll(/:(\w+)/g)].map((m) => m[1]!),
+  params: pathParams(op),
   pattern: new RegExp(`^/v1${op.route.path.replace(/:(\w+)/g, '([^/]+)')}$`)
 }))
 
@@ -41,7 +42,7 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   let size = 0
   for await (const chunk of req) {
     size += (chunk as Buffer).length
-    if (size > MAX_BODY) throw Object.assign(new Error('The request is too large'), { status: 413 })
+    if (size > MAX_BODY) throw new ApiError(413, 'The request is too large')
     chunks.push(chunk as Buffer)
   }
   const text = Buffer.concat(chunks).toString('utf8')
@@ -49,7 +50,16 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   try {
     return JSON.parse(text)
   } catch {
-    throw Object.assign(new Error('The body is not JSON'), { status: 400 })
+    throw new ApiError(400, 'The body is not JSON')
+  }
+}
+
+/** A path part as written, its %-escapes decoded; a broken escape is the client's mistake. */
+function decodePart(part: string): string {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    throw new ApiError(400, `“${part}” is not a valid path part`)
   }
 }
 
@@ -76,6 +86,8 @@ export class ApiServer {
   private readonly feeds = new Set<ServerResponse>()
   private heartbeat: ReturnType<typeof setInterval> | undefined
   private port = 0
+  /** The OpenAPI description, made once. */
+  private spec: object | undefined
 
   /** Serves `ctx`'s project (see `apiContext`), which the host may share with its own uses of the API. */
   constructor(
@@ -132,22 +144,22 @@ export class ApiServer {
       const refused = this.allowed(req)
       if (refused === 'unauthorized') {
         res.setHeader('WWW-Authenticate', 'Bearer')
-        return send(res, 401, { error: 'A bearer token is needed: copy it from Universe → Connect Claude' })
+        return send(res, 401, { error: 'A bearer token is needed: copy it from Connect AI in Universe' })
       }
       if (refused) return send(res, 403, { error: refused })
       const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
       if (url.pathname === '/mcp') return await this.serveMcp(req, res)
-      if (req.method === 'GET' && url.pathname === '/v1/openapi.json') return send(res, 200, openApi(OPERATIONS, this.options.version))
+      if (req.method === 'GET' && url.pathname === '/v1/openapi.json') return send(res, 200, (this.spec ??= openApi(OPERATIONS, this.options.version)))
       if (req.method === 'GET' && url.pathname === '/v1/changes') return this.openFeed(res)
       const matching = routes.filter((r) => r.pattern.test(url.pathname))
       if (matching.length && !matching.some((r) => r.op.route.method === req.method)) {
         res.setHeader('Allow', matching.map((r) => r.op.route.method).join(', '))
         return send(res, 405, { error: `Use ${matching.map((r) => r.op.route.method).join(' or ')} here` })
       }
-      for (const route of matching) {
-        if (req.method !== route.op.route.method) continue
+      const route = matching.find((r) => r.op.route.method === req.method)
+      if (route) {
         const match = route.pattern.exec(url.pathname)!
-        const params = Object.fromEntries(route.params.map((p, i) => [p, decodeURIComponent(match[i + 1]!)]))
+        const params = Object.fromEntries(route.params.map((p, i) => [p, decodePart(match[i + 1]!)]))
         const body = req.method === 'GET' ? queryInput(url) : await readJson(req)
         if (typeof body !== 'object' || body === null || Array.isArray(body)) return send(res, 400, { error: 'The body must be a JSON object' })
         const input = route.op.input.parse({ ...body, ...params })
@@ -156,8 +168,7 @@ export class ApiServer {
       }
       send(res, 404, { error: `No route ${req.method} ${url.pathname}. See /v1/openapi.json` })
     } catch (err) {
-      const status = (err as { status?: number }).status ?? errorStatus(err)
-      send(res, status, { error: errorMessage(err) })
+      send(res, errorStatus(err), { error: errorMessage(err) })
     }
   }
 
@@ -168,7 +179,13 @@ export class ApiServer {
       res.setHeader('Allow', 'POST')
       return send(res, 405, { error: 'This MCP server answers POSTs only' })
     }
-    const answer = await this.mcp.handle(await readJson(req))
+    let message: unknown
+    try {
+      message = await readJson(req)
+    } catch (err) {
+      return send(res, err instanceof ApiError && err.status === 413 ? 413 : 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: errorMessage(err) } })
+    }
+    const answer = await this.mcp.handle(message)
     if (!answer) return void res.writeHead(202).end()
     send(res, 200, answer)
   }
