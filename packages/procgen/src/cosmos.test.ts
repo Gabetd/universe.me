@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { STAR_CELL_LY, cellStars, cellsIn, clusterGalaxies, cosmicWeb, galaxyDensity, galaxyShape, landmarkStars, placeOf, universeClusters } from './cosmos'
+import { STAR_CELL_LY, cellStars, cellsIn, clusterGalaxies, cosmicWeb, galaxyDensity, galaxyGlowPixels, galaxyShape, landmarkStars, levelExtent, placeOf, universeClusters } from './cosmos'
 
 describe('the cosmos from seeds', () => {
   it('gives each galaxy a shape, densest at its centre', () => {
@@ -25,6 +25,24 @@ describe('the cosmos from seeds', () => {
     // Mostly small stars.
     const many = Array.from({ length: 20 }, (_, i) => cellStars(shape, 11, i - 10, 0)).flat()
     expect(many.filter((s) => s.massSun < 1).length).toBeGreaterThan(many.length * 0.6)
+  })
+
+  it("draws a galaxy's glow from its stars, brightest in the middle, the same every time", () => {
+    const shape = galaxyShape(21)
+    const pixels = galaxyGlowPixels(shape, 21, 64, 4000)
+    expect(pixels).toHaveLength(64 * 64 * 4)
+    expect(galaxyGlowPixels(shape, 21, 64, 4000)).toEqual(pixels)
+    const alpha = (x: number, y: number) => pixels[(y * 64 + x) * 4 + 3]!
+    let middle = 0
+    let corner = 0
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) {
+        middle += alpha(28 + x, 28 + y)
+        corner += alpha(x, y)
+      }
+    }
+    expect(middle).toBeGreaterThan(corner)
+    expect(levelExtent('galaxy', 21)).toBeCloseTo(shape.radiusLy * 1.25)
   })
 
   it('only lists cells for a view small enough to fill with single stars', () => {

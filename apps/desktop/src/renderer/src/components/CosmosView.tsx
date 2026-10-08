@@ -1,14 +1,15 @@
 import { KIND_LABELS, type Command, type NodeKind, type SpatialNode } from '@universe/core'
 import {
-  LEVEL_EXTENT,
+  GLOW_REACH,
   cellStars,
   cellsIn,
   clusterGalaxies,
   cosmicWeb,
   galaxyDensity,
-  galaxyParticles,
+  galaxyGlowPixels,
   galaxyShape,
   landmarkStars,
+  levelExtent,
   placeOf,
   universeClusters,
   type GalaxyShape,
@@ -66,7 +67,7 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
   const nodes = useUi((s) => s.nodes)
   const kind = node.kind
   const shape = useMemo(() => (kind === 'galaxy' ? galaxyShape(node.seed) : undefined), [kind, node.seed])
-  const extent = shape ? shape.radiusLy * 1.25 : LEVEL_EXTENT[kind]!
+  const extent = levelExtent(kind, node.seed)
 
   // Stored children, and what the seed generates (minus anything already claimed: same seed).
   const stored = useMemo(() => nodes.filter((n) => n.parentId === node.id), [nodes, node.id])
@@ -347,7 +348,6 @@ function galaxyImage(shape: GalaxyShape, seed: number, size: number, particles: 
   canvas.width = canvas.height = size
   const ctx = canvas.getContext('2d')!
   const half = size / 2
-  const k = half / (shape.radiusLy * 1.15)
   // The bulge's glow, kept inside the image so its edges never show.
   const glow = ctx.createRadialGradient(half, half, 0, half, half, Math.min(half, half * shape.bulge * 2.2))
   glow.addColorStop(0, 'rgba(255,240,215,0.9)')
@@ -356,15 +356,12 @@ function galaxyImage(shape: GalaxyShape, seed: number, size: number, particles: 
   ctx.beginPath()
   ctx.arc(half, half, half, 0, Math.PI * 2)
   ctx.fill()
+  // The stars, added over it.
+  const stars = document.createElement('canvas')
+  stars.width = stars.height = size
+  stars.getContext('2d')!.putImageData(new ImageData(galaxyGlowPixels(shape, seed, size, particles), size), 0, 0)
   ctx.globalCompositeOperation = 'lighter'
-  const p = galaxyParticles(shape, seed, particles)
-  const dot = Math.max(1, size / 512)
-  for (let i = 0; i < p.length; i += 3) {
-    const d = p[i + 2]!
-    // Old yellow stars in the middle, young blue ones out in the arms.
-    ctx.fillStyle = d > 0.6 ? 'rgba(255,226,180,0.16)' : `hsla(${shape.hue > 180 ? 215 : 205}, 70%, 78%, 0.13)`
-    ctx.fillRect(half + p[i]! * k, half + p[i + 1]! * k, dot, dot)
-  }
+  ctx.drawImage(stars, 0, 0)
   if (galaxyImages.size > 80) galaxyImages.delete(galaxyImages.keys().next().value!)
   galaxyImages.set(key, canvas)
   return canvas
@@ -397,10 +394,10 @@ function drawLevel(ctx: CanvasRenderingContext2D, w: number, h: number, d: DrawI
     // over, leaving a faint wash as thick as the galaxy is where you're looking.
     const fade = Math.min(1, Math.max(0, (cam.upp - MIN_UPP.galaxy) / 40))
     if (fade > 0) {
-      const span = (d.shape.radiusLy * 2.3) / cam.upp
+      const span = (d.shape.radiusLy * 2 * GLOW_REACH) / cam.upp
       const img = galaxyImage(d.shape, d.node.seed, span > 900 ? 1024 : 256, span > 900 ? 90_000 : 20_000)
       ctx.globalAlpha = fade
-      ctx.drawImage(img, sx(-d.shape.radiusLy * 1.15), sy(-d.shape.radiusLy * 1.15), span, span)
+      ctx.drawImage(img, sx(-d.shape.radiusLy * GLOW_REACH), sy(-d.shape.radiusLy * GLOW_REACH), span, span)
       ctx.globalAlpha = 1
     }
     if (fade < 1) {
@@ -445,7 +442,7 @@ function drawLevel(ctx: CanvasRenderingContext2D, w: number, h: number, d: DrawI
       const img = galaxyImage(item.galaxy, item.seed, 128, 3000)
       ctx.save()
       ctx.translate(x, y)
-      ctx.drawImage(img, -r * 1.15, -r * 1.15, r * 2.3, r * 2.3)
+      ctx.drawImage(img, -r * GLOW_REACH, -r * GLOW_REACH, r * 2 * GLOW_REACH, r * 2 * GLOW_REACH)
       ctx.restore()
     } else {
       // A star system: claimed ones show the star they claimed, others a plain star.

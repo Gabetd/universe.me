@@ -3,7 +3,7 @@ import { createNoise3D, type NoiseFunction3D } from 'simplex-noise'
 import { BIOME } from './biomes'
 import { latLonToDir } from './cubesphere'
 import { clamp } from './math'
-import { rng, subSeed } from './random'
+import { cellSeed, rng, subSeed } from './random'
 import type { TerrainModel } from './terrain-model'
 
 /**
@@ -327,7 +327,7 @@ function scatterPlants(input: GroundChunkInput, detail: GroundDetail, base: Base
   for (const biome of new Set(input.grid.biome)) for (const p of Object.keys(FLORA[biome] ?? {})) kinds.add(p as Plant)
   for (const plant of PLANTS) {
     if (!kinds.has(plant)) continue
-    const random = rng(subSeed(input.seed ^ Math.imul(input.id.row, 73856093) ^ Math.imul(input.id.col, 19349663), PLANTS.indexOf(plant) + 1))
+    const random = rng(subSeed(cellSeed(input.seed, input.id.row, input.id.col), PLANTS.indexOf(plant) + 1))
     const most = Math.max(...[...new Set(input.grid.biome)].map((biome) => FLORA[biome]?.[plant]?.[0] ?? 0))
     const list: number[] = []
     for (let k = 0; k < most; k++) {

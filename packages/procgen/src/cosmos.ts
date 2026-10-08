@@ -1,6 +1,6 @@
 import type { NodeKind, Vec3 } from '@universe/core'
-import { clamp } from './math'
-import { rng, subSeed } from './random'
+import { clamp, smoothstep } from './math'
+import { cellSeed, rng, subSeed } from './random'
 import { randomSeedName } from './world-seed'
 
 /**
@@ -57,7 +57,7 @@ export interface ProcCluster extends Procedural {
 
 const TAU = Math.PI * 2
 
-export const nameFor = (seed: number) => randomSeedName(rng(subSeed(seed, 0x4e41)))
+const nameFor = (seed: number) => randomSeedName(rng(subSeed(seed, 0x4e41)))
 
 export function galaxyShape(seed: number): GalaxyShape {
   const r = rng(subSeed(seed, 0x6a1a))
@@ -75,42 +75,50 @@ export function galaxyShape(seed: number): GalaxyShape {
   }
 }
 
-/** Into the galaxy's own frame: unturned and unsquashed, in units of its radius. */
-function galaxyFrame(shape: GalaxyShape, x: number, y: number): [number, number] {
-  const c = Math.cos(-shape.angle)
-  const s = Math.sin(-shape.angle)
-  return [(x * c - y * s) / shape.radiusLy, (x * s + y * c) / shape.radiusLy / shape.flatten]
-}
-
 /**
- * How crowded with stars a point of the galaxy is, 0–1: a bright centre
+ * How crowded with stars each point of the galaxy is, 0–1: a bright centre
  * fading outward, and for spirals, the arms (and the bar of a barred
- * spiral). Irregulars are patchy.
+ * spiral). Irregulars are patchy. Worked out once per shape, for the
+ * generators that ask about thousands of points.
  */
-export function galaxyDensity(shape: GalaxyShape, x: number, y: number): number {
-  const [u, v] = galaxyFrame(shape, x, y)
-  const r = Math.hypot(u, v)
-  if (r > 1.15) return 0
-  const core = Math.exp(-(r * r) / (2 * shape.bulge * shape.bulge))
-  const disc = Math.exp(-r * 3.2)
-  if (shape.type === 'elliptical') return clamp(core * 0.9 + disc * 0.3, 0, 1)
-  if (shape.type === 'irregular') {
-    const patch = 0.5 + 0.5 * Math.sin(u * 9.1 + Math.sin(v * 7.3) * 2) * Math.cos(v * 8.7 - u * 3)
-    return clamp(disc * patch * 1.3 + core * 0.3, 0, 1)
+export function densityField(shape: GalaxyShape): (x: number, y: number) => number {
+  // Into the galaxy's own frame: unturned and unsquashed, in units of its radius.
+  const c = Math.cos(-shape.angle) / shape.radiusLy
+  const s = Math.sin(-shape.angle) / shape.radiusLy
+  const squash = 1 / shape.flatten
+  const spread = 2 * shape.bulge * shape.bulge
+  return (x, y) => {
+    const u = x * c - y * s
+    const v = (x * s + y * c) * squash
+    const r = Math.hypot(u, v)
+    if (r > 1.15) return 0
+    const core = Math.exp(-(r * r) / spread)
+    const disc = Math.exp(-r * 3.2)
+    if (shape.type === 'elliptical') return clamp(core * 0.9 + disc * 0.3, 0, 1)
+    if (shape.type === 'irregular') {
+      const patch = 0.5 + 0.5 * Math.sin(u * 9.1 + Math.sin(v * 7.3) * 2) * Math.cos(v * 8.7 - u * 3)
+      return clamp(disc * patch * 1.3 + core * 0.3, 0, 1)
+    }
+    // Distance from the nearest arm, as an angle: arms are logarithmic spirals.
+    const theta = Math.atan2(v, u)
+    const along = Math.log(Math.max(r, 0.02)) * shape.twist
+    const phase = (((theta - along) * shape.arms) / TAU) % 1
+    const off = Math.min(Math.abs(phase - Math.round(phase)), 1)
+    const arm = Math.exp(-((off * 4) ** 2)) * smoothstep(0.08, 0.3, r)
+    const bar = shape.type === 'barred' ? Math.exp(-((v / 0.05) ** 2)) * (Math.abs(u) < 0.3 ? 1 : 0) : 0
+    return clamp(core * 0.95 + disc * (0.18 + 0.82 * arm) + bar * 0.6, 0, 1)
   }
-  // Distance from the nearest arm, as an angle: arms are logarithmic spirals.
-  const theta = Math.atan2(v, u)
-  const along = Math.log(Math.max(r, 0.02)) * shape.twist
-  const phase = (((theta - along) * shape.arms) / TAU) % 1
-  const off = Math.min(Math.abs(phase - Math.round(phase)), 1)
-  const arm = Math.exp(-((off * 4) ** 2)) * smoothRise(r, 0.08, 0.3)
-  const bar = shape.type === 'barred' ? Math.exp(-((v / 0.05) ** 2)) * (Math.abs(u) < 0.3 ? 1 : 0) : 0
-  return clamp(core * 0.95 + disc * (0.18 + 0.82 * arm) + bar * 0.6, 0, 1)
 }
 
-const smoothRise = (x: number, a: number, b: number) => {
-  const t = clamp((x - a) / (b - a), 0, 1)
-  return t * t * (3 - 2 * t)
+/** The density at one point (see `densityField`). */
+export const galaxyDensity = (shape: GalaxyShape, x: number, y: number) => densityField(shape)(x, y)
+
+/** One try at a point within `spread` radii of a galaxy's centre, kept as often as stars crowd there. */
+function tryStarPoint(shape: GalaxyShape, density: (x: number, y: number) => number, r: () => number, spread: number) {
+  const x = (r() * 2 - 1) * shape.radiusLy * spread
+  const y = (r() * 2 - 1) * shape.radiusLy * spread
+  const d = density(x, y)
+  return r() < d ? { x, y, d } : undefined
 }
 
 /** Light years on a side of a galaxy's star cells; stars are generated a cell at a time, as they come into view. */
@@ -126,10 +134,11 @@ export function cellStars(shape: GalaxyShape, galaxySeed: number, cx: number, cy
   const x0 = cx * STAR_CELL_LY
   const y0 = cy * STAR_CELL_LY
   const density = galaxyDensity(shape, x0 + STAR_CELL_LY / 2, y0 + STAR_CELL_LY / 2)
-  const r = rng(subSeed(galaxySeed ^ Math.imul(cx, 73856093) ^ Math.imul(cy, 19349663), 0x57a2))
+  const cell = cellSeed(galaxySeed, cx, cy)
+  const r = rng(subSeed(cell, 0x57a2))
   const count = Math.floor(density * STARS_PER_CELL + r())
   return Array.from({ length: count }, (_, i) => {
-    const seed = subSeed(galaxySeed ^ Math.imul(cx, 2654435761) ^ Math.imul(cy, 40503), i + 1)
+    const seed = subSeed(cell, i + 1)
     return { seed, name: nameFor(seed), x: x0 + r() * STAR_CELL_LY, y: y0 + r() * STAR_CELL_LY, massSun: starMass(r()) }
   })
 }
@@ -152,33 +161,65 @@ export function cellsIn(x0: number, y0: number, x1: number, y1: number, max = 40
  */
 export function landmarkStars(shape: GalaxyShape, galaxySeed: number, count = 160): ProcStar[] {
   const r = rng(subSeed(galaxySeed, 0x1a4d))
+  const density = densityField(shape)
   const out: ProcStar[] = []
   for (let tries = 0; out.length < count && tries < count * 40; tries++) {
-    const x = (r() * 2 - 1) * shape.radiusLy
-    const y = (r() * 2 - 1) * shape.radiusLy
-    if (r() > galaxyDensity(shape, x, y)) continue
+    const p = tryStarPoint(shape, density, r, 1)
+    if (!p) continue
     const seed = subSeed(galaxySeed, 0x10000 + out.length)
-    out.push({ seed, name: nameFor(seed), x, y, massSun: 2 + r() * 14 })
+    out.push({ seed, name: nameFor(seed), x: p.x, y: p.y, massSun: 2 + r() * 14 })
   }
   return out
 }
 
-/** Points scattered as a galaxy's stars fall, for drawing its glow. */
-export function galaxyParticles(shape: GalaxyShape, seed: number, count: number): Float32Array {
+/** How much a galaxy's glow image shows past its radius. */
+export const GLOW_REACH = 1.15
+
+/**
+ * A galaxy's stars as a `size`² RGBA image (not premultiplied), from `count`
+ * of them scattered as they fall: old yellow stars in the middle, young blue
+ * ones out in the arms. The image spans GLOW_REACH radii each way. Pure
+ * arithmetic, so it can be made off the UI thread.
+ */
+export function galaxyGlowPixels(shape: GalaxyShape, seed: number, size: number, count: number): Uint8ClampedArray<ArrayBuffer> {
   const r = rng(subSeed(seed, 0x9a17))
-  const out = new Float32Array(count * 3)
-  let n = 0
-  for (let tries = 0; n < count && tries < count * 30; tries++) {
-    const x = (r() * 2 - 1) * shape.radiusLy * 1.1
-    const y = (r() * 2 - 1) * shape.radiusLy * 1.1
-    const d = galaxyDensity(shape, x, y)
-    if (r() > d) continue
-    out[n * 3] = x
-    out[n * 3 + 1] = y
-    out[n * 3 + 2] = d
+  const density = densityField(shape)
+  // Light added up, premultiplied, the way stars drawn over each other add up.
+  const sum = new Float32Array(size * size * 4)
+  const half = size / 2
+  const k = half / (shape.radiusLy * GLOW_REACH)
+  const dot = Math.max(1, Math.round(size / 512))
+  const young = shape.hue > 180 ? [160, 192, 238] : [160, 205, 238]
+  for (let n = 0, tries = 0; n < count && tries < count * 30; tries++) {
+    const p = tryStarPoint(shape, density, r, 1.1)
+    if (!p) continue
     n++
+    const [cr, cg, cb, a] = p.d > 0.6 ? [255, 226, 180, 0.16] : [young[0]!, young[1]!, young[2]!, 0.13]
+    const px = Math.floor(half + p.x * k)
+    const py = Math.floor(half + p.y * k)
+    for (let dy = 0; dy < dot; dy++) {
+      for (let dx = 0; dx < dot; dx++) {
+        const x = px + dx
+        const y = py + dy
+        if (x < 0 || y < 0 || x >= size || y >= size) continue
+        const o = (y * size + x) * 4
+        sum[o] = sum[o]! + cr * a
+        sum[o + 1] = sum[o + 1]! + cg * a
+        sum[o + 2] = sum[o + 2]! + cb * a
+        sum[o + 3] = sum[o + 3]! + a
+      }
+    }
   }
-  return out.subarray(0, n * 3)
+  const out = new Uint8ClampedArray(size * size * 4)
+  for (let o = 0; o < out.length; o += 4) {
+    const a = Math.min(1, sum[o + 3]!)
+    if (!a) continue
+    out[o] = Math.min(255, sum[o]!) / a
+    out[o + 1] = Math.min(255, sum[o + 1]!) / a
+    out[o + 2] = Math.min(255, sum[o + 2]!) / a
+    out[o + 3] = a * 255
+  }
+  return out
 }
 
 /** Galaxies of a cluster, in Mly from its centre. */
@@ -193,10 +234,13 @@ export function clusterGalaxies(clusterSeed: number, count = 36): ProcGalaxy[] {
   })
 }
 
+/** Where the cosmic web's filaments meet, the first draws of a universe's generator: clusters and filaments both start here. */
+const webKnots = (r: () => number) => Array.from({ length: 9 }, () => [(r() * 2 - 1) * 4000, (r() * 2 - 1) * 2600] as const)
+
 /** Clusters of a universe, in Mly, strung along filaments (the cosmic web). */
 export function universeClusters(universeSeed: number, count = 48): ProcCluster[] {
   const r = rng(subSeed(universeSeed, 0xc105))
-  const knots = Array.from({ length: 9 }, () => [(r() * 2 - 1) * 4000, (r() * 2 - 1) * 2600] as const)
+  const knots = webKnots(r)
   return Array.from({ length: count }, (_, i) => {
     const seed = subSeed(universeSeed, 0x300 + i)
     // Somewhere along a filament between two knots of the web.
@@ -210,8 +254,7 @@ export function universeClusters(universeSeed: number, count = 48): ProcCluster[
 
 /** The filaments the clusters lie along, as line segments, for drawing the cosmic web. */
 export function cosmicWeb(universeSeed: number): [number, number, number, number][] {
-  const r = rng(subSeed(universeSeed, 0xc105))
-  const knots = Array.from({ length: 9 }, () => [(r() * 2 - 1) * 4000, (r() * 2 - 1) * 2600] as const)
+  const knots = webKnots(rng(subSeed(universeSeed, 0xc105)))
   // Each knot joins its two nearest; a pair that chose each other is one filament.
   const pairs = new Set<string>()
   knots.forEach((a, i) => {
@@ -228,8 +271,10 @@ export function cosmicWeb(universeSeed: number): [number, number, number, number
   })
 }
 
-/** How big each level is, in its own units: how far out its view goes. */
-export const LEVEL_EXTENT: Partial<Record<NodeKind, number>> = { universe: 5000, galaxy_cluster: 12, galaxy: 80_000 }
+/** How far out from its centre a level's view goes, in its own units (a galaxy's depends on its shape). */
+export function levelExtent(kind: NodeKind, seed: number): number {
+  return kind === 'universe' ? 5000 : kind === 'galaxy_cluster' ? 12 : kind === 'galaxy' ? galaxyShape(seed).radiusLy * 1.25 : 1
+}
 
 /**
  * Where a stored node sits in its parent's frame: its own position, or, for
@@ -243,14 +288,14 @@ export function placeOf(node: { kind: NodeKind; seed: number; position: Vec3 }, 
   if (parent?.kind === 'galaxy') {
     // On the disc, where its stars are.
     const shape = galaxyShape(parent.seed)
+    const density = densityField(shape)
     for (let k = 0; k < 200; k++) {
-      const px = (r() * 2 - 1) * shape.radiusLy * 0.8
-      const py = (r() * 2 - 1) * shape.radiusLy * 0.8
-      if (r() < galaxyDensity(shape, px, py)) return { x: px, y: py }
+      const p = tryStarPoint(shape, density, r, 0.8)
+      if (p) return { x: p.x, y: p.y }
     }
     return { x: Math.cos(a) * shape.radiusLy * 0.3, y: Math.sin(a) * shape.radiusLy * 0.3 }
   }
-  const extent = (parent && LEVEL_EXTENT[parent.kind]) ?? 1
+  const extent = parent ? levelExtent(parent.kind, parent.seed) : 1
   const d = extent * (0.15 + r() * 0.45)
   return { x: Math.cos(a) * d, y: Math.sin(a) * d * 0.7 }
 }
