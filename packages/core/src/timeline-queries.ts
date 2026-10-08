@@ -2,6 +2,7 @@ import type { SpatialNode } from './schema'
 import type { Time } from './time'
 import type { TimelineData } from './records'
 import { ORDERED_LINKS, type EntityChange, type EventGroup, type EventLink, type TimelineEvent } from './timeline'
+import { byId, memoize } from './util'
 import type { LatLon, Region } from './world'
 
 /**
@@ -24,11 +25,23 @@ export function timelineOf(data: TimelineData, ownerId: string): TimelineData {
 /** Start and end of an event; an instant ends where it starts. */
 export const eventSpan = (e: TimelineEvent): [Time, Time] => [e.start, e.end ?? e.start]
 
+/** Every group's span (see `groupSpan`), from one pass over the events, once per array. Empty groups are missing. */
+export const groupSpans = memoize((events: TimelineEvent[]): ReadonlyMap<string, readonly [Time, Time]> => {
+  const spans = new Map<string, [Time, Time]>()
+  for (const e of events) {
+    if (!e.groupId) continue
+    const [start, end] = eventSpan(e)
+    const span = spans.get(e.groupId)
+    if (!span) spans.set(e.groupId, [start, end])
+    else spans.set(e.groupId, [Math.min(span[0], start), Math.max(span[1], end)])
+  }
+  return spans
+})
+
 /** A group spans all of its events. Undefined for an empty group. */
 export function groupSpan(group: EventGroup, events: TimelineEvent[]): [Time, Time] | undefined {
-  const members = events.filter((e) => e.groupId === group.id)
-  if (!members.length) return undefined
-  return [Math.min(...members.map((e) => e.start)), Math.max(...members.map((e) => eventSpan(e)[1]))]
+  const span = groupSpans(events).get(group.id)
+  return span && [span[0], span[1]]
 }
 
 /** Whether an event is happening at `t`. Instants count within `slack` seconds of their moment. */
@@ -37,9 +50,21 @@ export function isActiveAt(e: TimelineEvent, t: Time, slack = 0): boolean {
   return t >= start - slack && t <= end + slack
 }
 
+/** Each entity's changes in time order, sorted once per array of changes. */
+export const indexChanges = memoize((changes: EntityChange[]): ReadonlyMap<string, readonly EntityChange[]> => {
+  const byEntity = new Map<string, EntityChange[]>()
+  for (const c of changes) {
+    const list = byEntity.get(c.entityId)
+    if (list) list.push(c)
+    else byEntity.set(c.entityId, [c])
+  }
+  for (const list of byEntity.values()) list.sort((a, b) => a.at - b.at)
+  return byEntity
+})
+
 /** A region as of time `t`, or undefined if it doesn't exist then. */
 export function regionAt(region: Region, changes: EntityChange[], t: Time): Region | undefined {
-  const own = changes.filter((c) => c.entityId === region.id).sort((a, b) => a.at - b.at)
+  const own = indexChanges(changes).get(region.id) ?? []
   // A region with a founding date doesn't exist before it; otherwise it always has.
   let exists = !own.some((c) => c.change === 'appear')
   let state = region
@@ -61,22 +86,104 @@ export function regionsAt(regions: Region[], changes: EntityChange[], t: Time): 
  * downstream (its effects). Contains `eventId` itself only if it's in a loop.
  */
 export function causalChain(links: EventLink[], eventId: string, direction: 'up' | 'down'): Set<string> {
-  // Index the links once, so the walk is linear in the number of links.
+  return reach(linkGraph(links, direction), eventId)
+}
+
+/** Each event's neighbours along links, downstream (its effects) or upstream (its causes), in link order. */
+function linkGraph(links: EventLink[], direction: 'up' | 'down'): Map<string, string[]> {
   const next = new Map<string, string[]>()
   for (const l of links) {
     const [a, b] = direction === 'down' ? [l.fromId, l.toId] : [l.toId, l.fromId]
-    next.set(a, [...(next.get(a) ?? []), b])
+    const list = next.get(a)
+    if (list) list.push(b)
+    else next.set(a, [b])
   }
+  return next
+}
+
+/** What a walk from `start` finds, in the order it finds them, going only to nodes that pass `within`. */
+function reach(next: Map<string, string[]>, start: string, within: (id: string) => boolean = () => true): Set<string> {
   const seen = new Set<string>()
-  const stack = [eventId]
+  const stack = [start]
   while (stack.length) {
     for (const id of next.get(stack.pop()!) ?? []) {
-      if (seen.has(id)) continue
+      if (seen.has(id) || !within(id)) continue
       seen.add(id)
-      if (id !== eventId) stack.push(id)
+      if (id !== start) stack.push(id)
     }
   }
   return seen
+}
+
+/**
+ * The strongly connected components of a graph (Tarjan's algorithm, with an
+ * explicit stack so long chains can't overflow the call stack): each node's
+ * component number, and which components are loops (more than one node, or
+ * a node leading to itself).
+ */
+function components(next: Map<string, string[]>): { component: Map<string, number>; loops: Set<number> } {
+  const index = new Map<string, number>()
+  const low = new Map<string, number>()
+  const component = new Map<string, number>()
+  const loops = new Set<number>()
+  // Nodes visited but not yet in a component, and the walk's path: each node with the next link to follow.
+  const open: string[] = []
+  const work: [string, number][] = []
+  const visit = (id: string) => {
+    index.set(id, index.size)
+    low.set(id, index.get(id)!)
+    open.push(id)
+    work.push([id, 0])
+  }
+  let count = 0
+  for (const root of next.keys()) {
+    if (index.has(root)) continue
+    visit(root)
+    while (work.length) {
+      const top = work[work.length - 1]!
+      const [v, i] = top
+      const out = next.get(v) ?? []
+      if (i < out.length) {
+        top[1]++
+        const w = out[i]!
+        if (!index.has(w)) visit(w)
+        else if (!component.has(w)) low.set(v, Math.min(low.get(v)!, index.get(w)!))
+        continue
+      }
+      work.pop()
+      const parent = work[work.length - 1]
+      if (parent) low.set(parent[0], Math.min(low.get(parent[0])!, low.get(v)!))
+      if (low.get(v) !== index.get(v)) continue
+      let size = 0
+      let w: string
+      do {
+        w = open.pop()!
+        component.set(w, count)
+        size++
+      } while (w !== v)
+      if (size > 1 || out.includes(v)) loops.add(count)
+      count++
+    }
+  }
+  return { component, loops }
+}
+
+/**
+ * Causal loops: for each, the first of `events` in it, then the rest of it
+ * in the order a walk downstream from that event finds them. Only links
+ * inside a loop lead back into it, so walking those alone keeps that order.
+ */
+function causalLoops(events: TimelineEvent[], next: Map<string, string[]>): [TimelineEvent, string[]][] {
+  const { component, loops } = components(next)
+  const reported = new Set<number>()
+  const out: [TimelineEvent, string[]][] = []
+  for (const e of events) {
+    const c = component.get(e.id)
+    if (c === undefined || !loops.has(c) || reported.has(c)) continue
+    reported.add(c)
+    out.push([e, [...reach(next, e.id, (id) => component.get(id) === c)].filter((id) => id !== e.id)])
+  }
+  return out
 }
 
 export interface Warning {
@@ -107,19 +214,14 @@ export function timelineWarnings(data: Pick<TimelineData, 'events' | 'links' | '
   }
 
   const ordered = data.links.filter((l) => ORDERED_LINKS.includes(l.type))
-  const reported = new Set<string>()
-  for (const e of data.events) {
-    if (reported.has(e.id) || !causalChain(ordered, e.id, 'down').has(e.id)) continue
-    const loop = [...causalChain(ordered, e.id, 'down')].filter((id) => id !== e.id && causalChain(ordered, id, 'down').has(e.id))
-    loop.forEach((id) => reported.add(id))
-    reported.add(e.id)
+  for (const [e, loop] of causalLoops(data.events, linkGraph(ordered, 'down'))) {
     warnings.push({
       message: `Causal loop: ${[e, ...loop.map((id) => events.get(id)!)].map((x) => `“${x.title}”`).join(' → ')} lead back to each other`,
       refs: [e.id, ...loop].map((id) => ({ kind: 'event' as const, id }))
     })
   }
 
-  const regionNames = new Map(regions.map((r) => [r.id, r.name]))
+  const regionById = byId(regions)
   for (const c of data.changes) {
     const cause = c.causeEventId ? events.get(c.causeEventId) : undefined
     if (!cause) continue
@@ -127,7 +229,7 @@ export function timelineWarnings(data: Pick<TimelineData, 'events' | 'links' | '
     if (c.at < start || c.at > end) {
       const what = { appear: 'appears', vanish: 'disappears', update: 'changes' }[c.change]
       warnings.push({
-        message: `${regionNames.get(c.entityId) ?? 'A region'} ${what} outside the time of “${cause.title}”, its cause`,
+        message: `${regionById.get(c.entityId)?.name ?? 'A region'} ${what} outside the time of “${cause.title}”, its cause`,
         refs: [{ kind: 'change', id: c.id }, { kind: 'event', id: cause.id }]
       })
     }
@@ -136,7 +238,7 @@ export function timelineWarnings(data: Pick<TimelineData, 'events' | 'links' | '
   for (const e of data.events) {
     for (const loc of e.locations) {
       if (loc.kind !== 'region') continue
-      const region = regions.find((r) => r.id === loc.regionId)
+      const region = regionById.get(loc.regionId)
       if (region && !regionAt(region, data.changes, e.start)) {
         warnings.push({ message: `“${e.title}” happens in ${region.name}, which doesn't exist at that time`, refs: [{ kind: 'event', id: e.id }, { kind: 'region', id: region.id }] })
       }
