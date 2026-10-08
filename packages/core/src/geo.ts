@@ -12,18 +12,42 @@ export function greatCircleKm(a: LatLon, b: LatLon, radiusKm: number): number {
 
 /** Whether a point is inside a lat/lon polygon. Longitudes are unwrapped around the polygon, so shapes across ±180° work. */
 export function insidePolygon(p: LatLon, polygon: LatLon[]): boolean {
-  if (polygon.length < 3) return false
-  const unwrap = (lon: number, ref: number) => lon + Math.round((ref - lon) / 360) * 360
+  return polygonTester(polygon)(p)
+}
+
+/** The longitude `lon` names, moved by whole turns to within 180° of `ref`. */
+const unwrap = (lon: number, ref: number) => lon + Math.round((ref - lon) / 360) * 360
+
+/**
+ * `insidePolygon` for one polygon and many points: the polygon is unwrapped
+ * once, and points outside its bounds are turned away before the ray test.
+ */
+export function polygonTester(polygon: LatLon[]): (p: LatLon) => boolean {
+  if (polygon.length < 3) return () => false
   const pts: [number, number][] = []
   for (const q of polygon) pts.push([unwrap(q.lon, pts[pts.length - 1]?.[0] ?? q.lon), q.lat])
-  const x = unwrap(p.lon, pts.reduce((s, q) => s + q[0], 0) / pts.length)
-  let inside = false
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const [xi, yi] = pts[i]!
-    const [xj, yj] = pts[j]!
-    if (yi > p.lat !== yj > p.lat && x < ((xj - xi) * (p.lat - yi)) / (yj - yi) + xi) inside = !inside
+  const mid = pts.reduce((s, q) => s + q[0], 0) / pts.length
+  // Off to the side of the outline, a point crosses its edges an even number of times (or none), so it's outside.
+  // The x bounds get a margin for the rounding of the crossing points.
+  let [minX, maxX, minY, maxY] = [Infinity, -Infinity, Infinity, -Infinity]
+  for (const [x, y] of pts) {
+    minX = Math.min(minX, x - 1e-6)
+    maxX = Math.max(maxX, x + 1e-6)
+    minY = Math.min(minY, y)
+    maxY = Math.max(maxY, y)
   }
-  return inside
+  return (p) => {
+    if (p.lat < minY || p.lat > maxY) return false
+    const x = unwrap(p.lon, mid)
+    if (x < minX || x > maxX) return false
+    let inside = false
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, yi] = pts[i]!
+      const [xj, yj] = pts[j]!
+      if (yi > p.lat !== yj > p.lat && x < ((xj - xi) * (p.lat - yi)) / (yj - yi) + xi) inside = !inside
+    }
+    return inside
+  }
 }
 
 /** The point a fraction `f` of the way along the great circle from `a` to `b`. */

@@ -9,6 +9,7 @@ import {
   erodesAt,
   ruinAt,
   derivedEvents,
+  effectHits,
   weatherFactor,
   type Exposure,
   structureWarnings,
@@ -177,6 +178,21 @@ describe('condition over time', () => {
     expect(at(id, year(1499))).toMatchObject({ name: 'Watchtower', blueprintId: 'builtin:tower', maintained: true })
     expect(at(id, year(1500))).toMatchObject({ name: 'Old Tower', blueprintId: 'builtin:lighthouse', maintained: false })
     expect(() => run('effect.create', { eventId: e, type: 'modify', target: { kind: 'structures', ids: [id] } })).toThrow(/new name or blueprint/)
+  })
+
+  it('works out an effect’s hits once per world, and again when the world changes', () => {
+    const house = place('builtin:house', { lat: 0, lon: 0 })
+    const fire = event(year(1100))
+    const effectId = run('effect.create', { eventId: fire, type: 'damage', target: { kind: 'structures', ids: [house] }, filter: { tags: [], materials: ['thatch'] } }).targetId!
+    const w = world()
+    const effect = w.data.effects.find((e) => e.id === effectId)!
+    const hits = effectHits(effect, w)
+    expect(hits).toEqual([{ structureId: house, strength: 1 }])
+    expect(effectHits(effect, w)).toBe(hits)
+    const stone = place('builtin:standing-stone', { lat: 0, lon: 0 })
+    w.data = { ...w.data, structures: [...w.data.structures, ...store.records('structure').all().filter((s) => s.id === stone)] }
+    expect(effectHits({ ...effect, target: { kind: 'structures', ids: [house, stone] } }, w)).toEqual([{ structureId: house, strength: 1 }])
+    expect(effectHits({ ...effect, target: { kind: 'structures', ids: [house, stone] }, filter: { tags: [], materials: ['megalith'] } }, w)).toEqual([{ structureId: stone, strength: 1 }])
   })
 
   it('gives the same answer for the same inputs', () => {

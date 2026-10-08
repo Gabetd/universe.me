@@ -1,9 +1,11 @@
-import { insidePolygon, greatCircleKm } from './geo'
+import { greatCircleKm, polygonTester } from './geo'
 import type { TimelineData } from './records'
 import { MATERIAL_INFO, STAGES, stageOf, weatherFactor, type Blueprint, type EventEffect, type Exposure, type Material, type Stage, type Structure } from './structures'
 import { DEFAULT_CALENDAR, secondsPerYear, type Time } from './time'
+import type { TimelineEvent } from './timeline'
 import { eventPlace, regionAt, type Warning } from './timeline-queries'
-import type { Region } from './world'
+import { byId, memoize } from './util'
+import type { LatLon, Region } from './world'
 
 /**
  * Structure condition over time (PLAN.md §4.7). Nothing here is stored: a
@@ -93,10 +95,7 @@ export interface ConditionCurve {
  * stands. Magic never decays.
  */
 export function materialShares(blueprint: Blueprint | undefined, exposure: Exposure | undefined, erosionSpeed: number, neverDecays = false): MaterialShare[] {
-  const volumes = new Map<Material, number>()
-  if (!blueprint) volumes.set('stone', 1)
-  else if (blueprint.model) volumes.set(blueprint.model.material, 1)
-  else for (const p of blueprint.parts) volumes.set(p.material, (volumes.get(p.material) ?? 0) + p.size[0] * p.size[1] * p.size[2])
+  const volumes = blueprint ? volumesOf(blueprint) : new Map<Material, number>([['stone', 1]])
   const total = [...volumes.values()].reduce((a, b) => a + b, 0) || 1
   return [...volumes].map(([material, volume]) => {
     const halfLife = MATERIAL_INFO[material].halfLifeYears
@@ -106,6 +105,14 @@ export function materialShares(blueprint: Blueprint | undefined, exposure: Expos
 }
 
 const overall = (parts: number[], shares: MaterialShare[]) => Math.min(100, parts.reduce((n, c, i) => n + c * shares[i]!.weight, 0))
+
+/** How much of each material a blueprint is made of, added up once per blueprint (a city has thousands of parts). */
+const volumesOf = memoize((b: Blueprint): ReadonlyMap<Material, number> => {
+  const volumes = new Map<Material, number>()
+  if (b.model) volumes.set(b.model.material, 1)
+  else for (const p of b.parts) volumes.set(p.material, (volumes.get(p.material) ?? 0) + p.size[0] * p.size[1] * p.size[2])
+  return volumes
+})
 
 export const materialsOf = (b: Blueprint | undefined): Material[] => (b ? (b.model ? [b.model.material] : [...new Set(b.parts.map((p) => p.material))]) : [])
 
@@ -118,20 +125,70 @@ function evolve(condition: number, dt: number, maintained: boolean, decayPerYear
   return Math.max(0, (condition + FLOOR) * Math.exp(-decayPerYear * years) - FLOOR)
 }
 
+export interface EffectHit {
+  structureId: string
+  strength: number
+}
+
+/** What working out effects needs from a world, looked up by id; see `worldIndex`. */
+interface WorldIndex {
+  events: Map<string, TimelineEvent>
+  /** Each owner's structures, in data order. */
+  structures: Map<string, Structure[]>
+  regions: Map<string, Region>
+  /** The materials of each blueprint, by id, and each region's point-in-polygon test: made when first needed. */
+  materials: Map<string, ReadonlySet<Material>>
+  insideRegion: Map<string, (p: LatLon) => boolean>
+  /** Hits of each effect seen so far: the condition curves and the warnings both ask. */
+  hits: WeakMap<EventEffect, EffectHit[]>
+}
+
+const indexes = new WeakMap<StructureWorld, { inputs: unknown[]; index: WorldIndex }>()
+
+/** A world's index, made once and kept while what it was made from stays the same. */
+function worldIndex(world: StructureWorld): WorldIndex {
+  const { data } = world
+  const inputs = [data.events, data.structures, data.changes, data.blueprints, world.regions, world.blueprint, world.radiusKm]
+  const cached = indexes.get(world)
+  if (cached?.inputs.every((x, i) => x === inputs[i])) return cached.index
+  const structures = new Map<string, Structure[]>()
+  for (const s of data.structures) {
+    const list = structures.get(s.ownerId)
+    if (list) list.push(s)
+    else structures.set(s.ownerId, [s])
+  }
+  const index = { events: byId(data.events), structures, regions: byId(world.regions), materials: new Map(), insideRegion: new Map(), hits: new WeakMap() }
+  indexes.set(world, { inputs, index })
+  return index
+}
+
 /** Which structures an effect reaches, and how strongly (1 at full strength, less with falloff). */
-export function effectHits(effect: EventEffect, world: StructureWorld): { structureId: string; strength: number }[] {
-  const event = world.data.events.find((e) => e.id === effect.eventId)
+export function effectHits(effect: EventEffect, world: StructureWorld): EffectHit[] {
+  const index = worldIndex(world)
+  let hits = index.hits.get(effect)
+  if (!hits) index.hits.set(effect, (hits = findHits(effect, world, index)))
+  return hits
+}
+
+function findHits(effect: EventEffect, world: StructureWorld, index: WorldIndex): EffectHit[] {
+  const event = index.events.get(effect.eventId)
   if (!event) return []
-  const onWorld = world.data.structures.filter((s) => s.ownerId === effect.ownerId)
+  const onWorld = index.structures.get(effect.ownerId) ?? []
   const { tags, materials } = effect.filter
-  const passes = (s: Structure) =>
-    (!tags.length || s.tags.some((t) => tags.includes(t))) && (!materials.length || materialsOf(world.blueprint(s.blueprintId)).some((m) => materials.includes(m)))
+  const madeOf = (s: Structure) => {
+    let has = index.materials.get(s.blueprintId)
+    if (!has) index.materials.set(s.blueprintId, (has = new Set(materialsOf(world.blueprint(s.blueprintId)))))
+    return materials.some((m) => has.has(m))
+  }
+  const passes = (s: Structure) => (!tags.length || s.tags.some((t) => tags.includes(t))) && (!materials.length || madeOf(s))
   const t = effect.target
   if (t.kind === 'structures') return onWorld.filter((s) => t.ids.includes(s.id) && passes(s)).map((s) => ({ structureId: s.id, strength: 1 }))
   if (t.kind === 'region') {
-    const region = world.regions.find((r) => r.id === t.regionId)
+    const region = index.regions.get(t.regionId)
     if (!region || !regionAt(region, world.data.changes, event.start)) return []
-    return onWorld.filter((s) => passes(s) && insidePolygon(s, region.points)).map((s) => ({ structureId: s.id, strength: 1 }))
+    let inside = index.insideRegion.get(region.id)
+    if (!inside) index.insideRegion.set(region.id, (inside = polygonTester(region.points)))
+    return onWorld.filter((s) => passes(s) && inside(s)).map((s) => ({ structureId: s.id, strength: 1 }))
   }
   const center = eventPlace(event, world.regions)
   if (!center) return []
