@@ -2,7 +2,7 @@ import { CUBE_FACES, TERRAIN_RES, type LatLon } from '@universe/core'
 import { dirToLatLon, faceToDir, latLonToDir, renderFaceTexture, type TerrainModel, type Vec3 } from '@universe/procgen'
 import { Line, Stars } from '@react-three/drei'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
@@ -217,6 +217,9 @@ function RegionLines({
 }) {
   const selectedId = useUi((s) => s.selectedRegionId)
   const draft = useEditor((s) => s.draft)
+  const invalidate = useThree((s) => s.invalidate)
+  // The draft line goes away on its own (saved or cancelled), not as the view renders: draw it gone.
+  useLayoutEffect(() => invalidate(), [draft, invalidate])
   // Outlines follow the terrain once a stroke is done, not on every dab of it.
   const settled = model.isStroking ? 'stroking' : change
   const outlines = useMemo(

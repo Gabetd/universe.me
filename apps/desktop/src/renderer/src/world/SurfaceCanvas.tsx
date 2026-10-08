@@ -1,6 +1,6 @@
 import { OrbitControls, type OrbitControlsProps } from '@react-three/drei'
 import { Canvas, addAfterEffect, useThree } from '@react-three/fiber'
-import { createContext, useContext, useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { useEditor } from './editorStore'
 import { LabelLayer, LabelProjector, type ViewLabel } from './labels'
@@ -51,7 +51,9 @@ export function SurfaceCanvas({
   return (
     <div className="globe-wrap" {...wrap}>
       <Canvas camera={camera} data-testid={testId} data-ready={ready} frameloop="demand" gl={GL}>
-        <ReadyContext value={setReady}>{children}</ReadyContext>
+        <ReadyContext value={setReady}>
+          <Scene>{children}</Scene>
+        </ReadyContext>
         {/* After the scene, so labels follow where it has just moved the camera. */}
         <LabelProjector items={labels} labels={labelEls} />
         <RedrawOnResize />
@@ -61,6 +63,26 @@ export function SurfaceCanvas({
       {overlay}
     </div>
   )
+}
+
+/**
+ * The view's scene. r3f draws a frame when objects are added or changed, but
+ * not when they're taken away (a structure gone, a ring put away): this draws
+ * one whenever the view renders with fewer objects than before. Parts of a
+ * scene that take objects away on their own (not as the view renders) call
+ * `invalidate` themselves.
+ */
+function Scene({ children }: { children: ReactNode }) {
+  const scene = useThree((s) => s.scene)
+  const invalidate = useThree((s) => s.invalidate)
+  const objects = useRef(0)
+  useLayoutEffect(() => {
+    let count = 0
+    scene.traverse(() => void count++)
+    if (count < objects.current) invalidate()
+    objects.current = count
+  })
+  return <>{children}</>
 }
 
 /** Resizing the canvas clears it: draw it again. */
