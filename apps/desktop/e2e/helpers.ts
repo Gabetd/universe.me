@@ -28,6 +28,8 @@ export async function launch(env: (dir: string) => Record<string, string> = () =
     env: { ...process.env, UNIVERSE_USER_DATA: join(dir, 'user-data'), UNIVERSE_UPDATE_URL: 'off', ...env(dir) }
   })
   const page = await app.firstWindow()
+  // The first launch on a fresh machine can be slow (Electron unpacking, a cold disk): wait for the app itself, not a fixed few seconds.
+  await page.getByRole('button', { name: 'New Universe…' }).waitFor({ timeout: 60_000 })
   return {
     app,
     page,
