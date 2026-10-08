@@ -2,7 +2,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session as electronSession, shell, type MenuItemConstructorOptions } from 'electron'
 import { isAllowedRequest } from '../shared/offline'
-import { IPC, type AppState, type BuildInfo, type ImportedModel, type MenuAction, type Result } from '../shared/api'
+import { EVENTS, INVOKE, type AppState, type BuildInfo, type ImportedModel, type InvokeMethod, type MenuAction, type Result, type UniverseApi } from '../shared/api'
 import { Session } from './session'
 import { Updater } from './updater'
 
@@ -16,7 +16,7 @@ if (process.env.UNIVERSE_USER_DATA) app.setPath('userData', process.env.UNIVERSE
 
 let win: BrowserWindow | null = null
 let session: Session
-const updater = new Updater((status) => win?.webContents.send(IPC.updateChanged, status))
+const updater = new Updater((status) => win?.webContents.send(EVENTS.update, status))
 /** A .universe file passed on the command line or via Finder before the window was ready. */
 let pendingOpen: string | undefined = process.argv.find((a) => a.endsWith('.universe'))
 
@@ -63,7 +63,7 @@ function createWindow(): void {
 
 /** Sends state the renderer didn't ask for: after a menu item, or a file opened from the system. */
 function push(state: AppState | null): void {
-  if (state) win?.webContents.send(IPC.stateChanged, state)
+  if (state) win?.webContents.send(EVENTS.state, state)
 }
 
 const windowTitle = (state: AppState) => (state.project ? `${state.project.name} — Universe` : 'Universe')
@@ -152,7 +152,7 @@ function fromMenu(fn: () => Promise<unknown>): () => void {
 }
 
 function sendMenu(action: MenuAction): () => void {
-  return () => win?.webContents.send(IPC.menu, action)
+  return () => win?.webContents.send(EVENTS.menu, action)
 }
 
 function buildMenu(): void {
@@ -234,31 +234,29 @@ function buildMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
+/** How the main process answers an API method: with its reply, or a promise of it. */
+type Answer<M extends InvokeMethod> = (...args: Parameters<UniverseApi[M]>) => ReturnType<UniverseApi[M]> | Awaited<ReturnType<UniverseApi[M]>>
+
+/** Answers one API method; its arguments and reply are checked against `UniverseApi`. */
+function handle<M extends InvokeMethod>(method: M, answer: Answer<M>): void {
+  ipcMain.handle(INVOKE[method], (_e, ...args) => answer(...(args as Parameters<UniverseApi[M]>)))
+}
+
 function registerIpc(): void {
-  ipcMain.handle(IPC.getState, () => session.state())
-  ipcMain.handle(IPC.recent, () => session.recent())
-  ipcMain.handle(IPC.newProject, () => wrap(newProject))
-  ipcMain.handle(IPC.openProject, (_e, path?: string) => wrap(() => openProject(path)))
-  ipcMain.handle(IPC.saveCopy, () => wrap(saveCopy))
-  ipcMain.handle(IPC.terrain, (_e, worldId: string) => wrap(() => session.terrain(worldId)))
-  ipcMain.handle(IPC.importModel, () => wrap(importModel))
-  ipcMain.handle(IPC.getAsset, (_e, id: string) => wrap(() => session.asset(id)))
-  ipcMain.handle(IPC.updateStatus, () => updater.current())
-  ipcMain.handle(IPC.installUpdate, () => updater.install())
-  ipcMain.handle(IPC.dismissUpdate, () => updater.dismiss())
-  ipcMain.handle(IPC.closeProject, () => {
-    session.close()
-    push(switchedTo(session.state()))
-    return session.state()
-  })
-  for (const [channel, run] of [
-    [IPC.execute, (cmd: unknown) => session.execute(cmd)],
-    [IPC.undo, () => session.undo()],
-    [IPC.redo, () => session.redo()]
-  ] as const) {
-    // The renderer gets the state as the reply, so it isn't pushed as well.
-    ipcMain.handle(channel, (_e, cmd: unknown) => wrap(() => run(cmd)))
-  }
+  handle('getState', () => session.state())
+  handle('recentProjects', () => session.recent())
+  handle('newProject', () => wrap(newProject))
+  handle('openProject', (path) => wrap(() => openProject(path)))
+  handle('getTerrain', (worldId) => wrap(() => session.terrain(worldId)))
+  handle('importModel', () => wrap(importModel))
+  handle('getAsset', (id) => wrap(() => session.asset(id)))
+  // Commands get the new state as the reply, so it isn't pushed as well.
+  handle('execute', (command) => wrap(() => session.execute(command)))
+  handle('undo', () => wrap(() => session.undo()))
+  handle('redo', () => wrap(() => session.redo()))
+  handle('updateStatus', () => updater.current())
+  handle('installUpdate', () => updater.install())
+  handle('dismissUpdate', () => updater.dismiss())
 }
 
 // macOS delivers double-clicked files through this event, possibly before `ready`.
