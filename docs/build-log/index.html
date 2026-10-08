@@ -90,8 +90,8 @@
     <p class="lede">What the worldbuilding app can do today, shown in screenshots taken from the real app by its end-to-end tests. Each published build adds an entry at the top.</p>
     <div class="facts">
       <span>Latest build <b id="latest-ver"></b></span>
-      <span>Milestones done <b>M0–M3</b></span>
-      <span>Working on <b>M4 · Star systems &amp; sim</b></span>
+      <span>Milestones done <b>M0–M4</b></span>
+      <span>Next <b>M5 · Scale navigation</b></span>
       <span><a href="https://github.com/Gabetd/universe.me/releases/tag/latest-build">Download the latest build</a></span>
     </div>
   </header>
@@ -114,14 +114,11 @@
 
   <section aria-labelledby="next-title">
     <div class="next">
-      <h2 id="next-title">Next up: M4</h2>
+      <h2 id="next-title">Next up: M5</h2>
       <ul>
-        <li>Star system editor with real orbits, and an orbit view driven by the timeline</li>
-        <li>Calendars worked out from each world's day, year and moons</li>
-        <li>Moon phases and eclipses as a track on the timeline</li>
-        <li>Climate from the star and orbit, suggesting biomes</li>
-        <li>Species library and food-web graph</li>
-        <li>Erosion driven by climate, part by part, with condition graphs</li>
+        <li>Galaxies, clusters and the universe, generated from seeds</li>
+        <li>Seamless zoom from a world out to its star system, galaxy and beyond</li>
+        <li>Create or claim systems and worlds at any level</li>
       </ul>
     </div>
   </section>
@@ -162,11 +159,31 @@
     groundClose: ['63-ground-close', 'Woods, hills and fields around the city'],
     charMap: ['70-character-map', 'A character’s lifespan and journey'],
     charGround: ['71-character-ground', 'The character, life-size on the ground'],
-    update: ['update-banner', 'The update banner offering a new build']
+    update: ['update-banner', 'The update banner offering a new build'],
+    weathering: ['43-weathering', 'Each material’s condition, a condition chart, and weathering milestones on the timeline'],
+    starSystem: ['80-star-system', 'A star system: planets where they are at the playhead, and the habitable zone'],
+    planetMoons: ['81-planet-moons', 'A planet’s orbit and spin, with its year, day, calendar and climate'],
+    moonTrack: ['82-moon-track', 'New and full moons and eclipses on the timeline'],
+    colder: ['83-colder-world', 'Moved farther from its star: ice caps and tundra spread'],
+    foodWeb: ['90-food-web', 'A food web suggested from the world’s biomes'],
+    speciesEditor: ['91-species-editor', 'Editing a species and what it eats']
   }
 
   // One entry per published build, newest first.
   const LOG = [
+    {
+      ver: '0.1.17', date: '8 Oct 2026', tag: 'M4 done',
+      title: 'Star systems and simulation',
+      points: [
+        'Real orbits: a star with a mass and brightness, planets and moons with distances, tilts and days, drawn where they are at the playhead, with play controls.',
+        'Each world’s calendar follows from its day, year and moon; every date in the app uses it.',
+        'Moon phases and eclipses on the timeline; click an eclipse to make it an event.',
+        'The star and distance set the climate, and the biomes follow it.',
+        'A species library and food web per world, suggested from its biomes.',
+        'Erosion by climate, material by material: the thatch goes before the stone. Condition charts, weathering milestones, moss and grime.'
+      ],
+      shots: ['starSystem', 'moonTrack', 'colder', 'foodWeb', 'weathering']
+    },
     {
       ver: '0.1.16', date: '8 Oct 2026', tag: 'After M3',
       title: 'Up close, from orbit, and people',
@@ -203,12 +220,13 @@
 
   const AREAS = [
     { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom'] },
-    { title: 'From orbit', shots: ['orbit', 'system', 'planet', 'welcome'] },
+    { title: 'Star systems and sky', shots: ['starSystem', 'planetMoons', 'moonTrack', 'colder', 'orbit'] },
+    { title: 'Ecosystem', shots: ['foodWeb', 'speciesEditor'] },
     { title: 'Timeline and canvas', shots: ['timeline', 'worldAtTime', 'globeAtTime', 'canvas1', 'canvas2', 'canvas3'] },
-    { title: 'Structures', shots: ['structGlobe', 'structPanel', 'effects', 'pins', 'builder', 'builderRuin', 'model', 'blueprints'] },
+    { title: 'Structures', shots: ['structGlobe', 'structPanel', 'weathering', 'effects', 'pins', 'builder', 'builderRuin', 'model', 'blueprints'] },
     { title: 'On the ground', shots: ['ground', 'groundClose', 'charGround'] },
     { title: 'Characters', shots: ['charMap', 'charGround'] },
-    { title: 'Updates', shots: ['update'] }
+    { title: 'Updates and the start', shots: ['update', 'welcome'] }
   ]
 
   const viewer = document.getElementById('viewer')
