@@ -75,6 +75,10 @@ export const toGrid = (s: number): number => ((s + 1) / 2) * TERRAIN_RES - 0.5
 /** Face coordinate of a cell center. */
 export const cellCenter = (i: number): number => ((i + 0.5) / TERRAIN_RES) * 2 - 1
 
+const clampCell = (v: number) => clamp(v, 0, TERRAIN_RES - 1)
+/** The cell (j * TERRAIN_RES + i) nearest face coordinates s, t on their face. */
+export const nearestCell = (s: number, t: number): number => clampCell(Math.round(toGrid(t))) * TERRAIN_RES + clampCell(Math.round(toGrid(s)))
+
 let dirCache: Float32Array[] | undefined
 /**
  * Unit direction of every cell center, xyz-interleaved, one array per face.
@@ -101,6 +105,13 @@ export function cellDirections(): Float32Array[] {
   })
   return dirCache
 }
+
+/**
+ * For each face, the first face whose cells have the same latitudes, give or
+ * take the sign: y is v / len on the four round the equator and ±1 / len on
+ * the two at the poles.
+ */
+export const LATITUDE_TWIN = [0, 0, 2, 2, 0, 0] as const
 
 /** +Y is north; longitude 0 faces +Z and 90°E faces +X. */
 export function dirToLatLon(x: number, y: number, z: number): LatLon {

@@ -11,7 +11,7 @@ import {
   type WorldSettings
 } from '@universe/core'
 import { biomeAt, climateTerms, polarity, wetBand, worldPalette, type Climate, type ClimateTerms, type Palette } from './biomes'
-import { angleBetween, cellDirections, dirToFace, faceToDir, toGrid, type FacePoint, type Vec3 } from './cubesphere'
+import { LATITUDE_TWIN, angleBetween, cellDirections, dirToFace, faceToDir, nearestCell, toGrid, type FacePoint, type Vec3 } from './cubesphere'
 import { DEG, bilerp, clamp } from './math'
 import type { BaseTerrain } from './generate'
 
@@ -59,8 +59,6 @@ export interface FaceRect extends CellRect {
   face: number
 }
 
-const WHOLE_FACE: CellRect = { x0: 0, y0: 0, x1: TERRAIN_RES - 1, y1: TERRAIN_RES - 1 }
-
 /** The parts of a cell's climate that come from its latitude alone (see biomeAt), so they're worked out once. */
 interface LatitudeTerms {
   polar: Float64Array
@@ -68,28 +66,50 @@ interface LatitudeTerms {
 }
 
 let latitudeCache: LatitudeTerms[] | undefined
-/** Each face's latitude terms per cell. Faces 0, 1, 4 and 5 have the same latitudes cell for cell, and 2 and 3 mirror each other, so they share. */
+/** Each face's latitude terms per cell; faces with the same latitudes (LATITUDE_TWIN) share them. */
 function latitudeTerms(): LatitudeTerms[] {
   if (latitudeCache) return latitudeCache
-  const made: { abs: Float32Array; terms: LatitudeTerms }[] = []
-  latitudeCache = cellDirections().map((d) => {
-    // A cell's latitude is asin(y) (as dirToLatLon has it); only its distance from the equator matters.
-    const abs = new Float32Array(CELLS)
-    for (let c = 0; c < CELLS; c++) abs[c] = Math.abs(Math.asin(d[c * 3 + 1]!) * DEG)
-    const same = made.find((m) => m.abs.every((v, c) => v === abs[c]))
-    if (same) return same.terms
-    const terms = { polar: Float64Array.from(abs, polarity), band: Float64Array.from(abs, wetBand) }
-    made.push({ abs, terms })
+  const dirs = cellDirections()
+  const made = new Map<number, LatitudeTerms>()
+  latitudeCache = LATITUDE_TWIN.map((twin) => {
+    let terms = made.get(twin)
+    if (!terms) made.set(twin, (terms = latitudeTermsOf(dirs[twin]!)))
     return terms
   })
   return latitudeCache
+}
+
+function latitudeTermsOf(dirs: Float32Array): LatitudeTerms {
+  // A cell's latitude is asin(y) (as dirToLatLon has it); only its distance from the equator matters.
+  const abs = new Float32Array(CELLS)
+  for (let c = 0; c < CELLS; c++) abs[c] = Math.abs(Math.asin(dirs[c * 3 + 1]!) * DEG)
+  const polar = new Float64Array(CELLS)
+  const band = new Float64Array(CELLS)
+  const half = TERRAIN_RES / 2
+  for (let j = 0, c = 0; j < TERRAIN_RES; j++) {
+    for (let i = 0; i < TERRAIN_RES; i++, c++) {
+      // A face's quarters mirror each other: a cell with the same latitude as its mirror image in the first quarter (worked out already) reuses its terms.
+      const m = (j < half ? j : TERRAIN_RES - 1 - j) * TERRAIN_RES + (i < half ? i : TERRAIN_RES - 1 - i)
+      if (m !== c && abs[m] === abs[c]) {
+        polar[c] = polar[m]!
+        band[c] = band[m]!
+      } else {
+        polar[c] = polarity(abs[c]!)
+        band[c] = wetBand(abs[c]!)
+      }
+    }
+  }
+  return { polar, band }
 }
 
 /** A face's display colours (RGBA, unlit): cut to bytes as the globe's texture has them, and rounded as a canvas stores them. */
 interface FaceColors {
   truncated: Uint8Array
   rounded: Uint8ClampedArray
-  fresh: boolean
+  /** 1 for each cell coloured since the colours last went stale. */
+  colored: Uint8Array
+  /** Every cell is coloured. */
+  whole: boolean
 }
 
 const FACE_CENTERS = Array.from({ length: CUBE_FACES }, (_, f) => faceToDir(f, 0, 0))
@@ -195,7 +215,7 @@ export class TerrainModel {
 
   /** Nearest cell to a located point, on its face. */
   cellOf({ s, t }: FacePoint): number {
-    return clampCell(Math.round(toGrid(t))) * TERRAIN_RES + clampCell(Math.round(toGrid(s)))
+    return nearestCell(s, t)
   }
 
   /** Bilinearly interpolated height in meters at a located point. */
@@ -223,9 +243,14 @@ export class TerrainModel {
     return this.heightOf(this.locate(x, y, z))
   }
 
-  /** Writes the cell's display color (no lighting) into `out` at `offset`. */
+  /** Writes the cell's display color (no lighting) into `out` at `offset`. Colours just that cell if its face isn't coloured yet. */
   color(face: number, cell: number, out: Uint8Array | Uint8ClampedArray, offset: number): void {
-    const colors = this.freshColors(face)
+    const colors = this.colorsOf(face)
+    if (!colors.colored[cell]) {
+      const x = cell % TERRAIN_RES
+      const y = (cell - x) / TERRAIN_RES
+      this.paint(colors, face, x, y, x, y)
+    }
     // A canvas's pixels round and other bytes cut down: each gets what writing the colour itself would give.
     const from = out instanceof Uint8ClampedArray ? colors.rounded : colors.truncated
     for (let k = 0; k < 4; k++) out[offset + k] = from[cell * 4 + k]!
@@ -238,22 +263,27 @@ export class TerrainModel {
    * face, once), so read it but don't write to it.
    */
   faceColors(face: number): Uint8Array {
-    return this.freshColors(face).truncated
+    return this.wholeFace(face).truncated
   }
 
   /** faceColors rounded to the nearest byte rather than down, as `color` writes into a canvas's pixels: what the map shows. */
   roundedFaceColors(face: number): Uint8ClampedArray {
-    return this.freshColors(face).rounded
+    return this.wholeFace(face).rounded
   }
 
-  private freshColors(face: number): FaceColors {
-    this.checkColors()
-    const colors = (this.faceColorCache[face] ??= { truncated: new Uint8Array(CELLS * 4), rounded: new Uint8ClampedArray(CELLS * 4), fresh: false })
-    if (!colors.fresh) {
-      this.paint(face, WHOLE_FACE, colors)
-      colors.fresh = true
+  private wholeFace(face: number): FaceColors {
+    const colors = this.colorsOf(face)
+    if (!colors.whole) {
+      this.paint(colors, face, 0, 0, TERRAIN_RES - 1, TERRAIN_RES - 1)
+      colors.whole = true
     }
     return colors
+  }
+
+  /** A face's colour cache, current as far as it goes. */
+  private colorsOf(face: number): FaceColors {
+    this.checkColors()
+    return (this.faceColorCache[face] ??= { truncated: new Uint8Array(CELLS * 4), rounded: new Uint8ClampedArray(CELLS * 4), colored: new Uint8Array(CELLS), whole: false })
   }
 
   /** Marks every face's colours stale if the settings or the base they were made from have been replaced. */
@@ -264,11 +294,15 @@ export class TerrainModel {
   }
 
   private staleColors(): void {
-    for (const colors of this.faceColorCache) if (colors) colors.fresh = false
+    for (const colors of this.faceColorCache) {
+      if (!colors) continue
+      colors.colored.fill(0)
+      colors.whole = false
+    }
   }
 
-  /** Recolours a rectangle of a face's cells: water by its depth, land by its biome and a little lighter up high. */
-  private paint(face: number, { x0, y0, x1, y1 }: CellRect, { truncated, rounded }: FaceColors): void {
+  /** Recolours the cells of a face from (x0, y0) to (x1, y1): water by its depth, land by its biome and a little lighter up high. */
+  private paint({ truncated, rounded, colored }: FaceColors, face: number, x0: number, y0: number, x1: number, y1: number): void {
     // Everything that's the same for every cell, looked up once.
     const { shallow, deep, biomes } = this.colors
     const terms = this.climateState.terms
@@ -303,6 +337,7 @@ export class TerrainModel {
         rounded[o + 1] = g
         rounded[o + 2] = b
         rounded[o + 3] = 255
+        colored[c] = 1
       }
     }
   }
@@ -379,11 +414,11 @@ export class TerrainModel {
         grow(dirty, rect.x1, rect.y1)
       } else stroke.dirty.set(face, { x0: rect.x0, y0: rect.y0, x1: rect.x1, y1: rect.y1 })
     }
-    // Keep the colours up to date: recolour what changed on faces already coloured.
+    // Keep the colours up to date: recolour what changed on faces that have been coloured.
     this.checkColors()
     for (const rect of touched) {
       const colors = this.faceColorCache[rect.face]
-      if (colors?.fresh) this.paint(rect.face, rect, colors)
+      if (colors) this.paint(colors, rect.face, rect.x0, rect.y0, rect.x1, rect.y1)
     }
     return touched
   }
@@ -427,7 +462,6 @@ const NEIGHBORS = [
   [0, -1]
 ] as const
 
-const clampCell = (v: number) => clamp(v, 0, TERRAIN_RES - 1)
 const clampInt16 = (v: number) => clamp(Math.round(v), -32768, 32767)
 
 /** Grows a rectangle to take in cell (x, y). */

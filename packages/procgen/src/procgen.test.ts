@@ -5,6 +5,7 @@ import {
   autoBiome,
   BIOME,
   BIOMES,
+  LATITUDE_TWIN,
   buildGroundChunk,
   cellCenter,
   cellDirections,
@@ -54,6 +55,16 @@ describe('cube-sphere', () => {
         const d = faceToDir(face, cellCenter(c % TERRAIN_RES), cellCenter(Math.floor(c / TERRAIN_RES)))
         for (let a = 0; a < 3; a++) if (dirs[face]![c * 3 + a] !== Math.fround(d[a]!)) differing++
       }
+    }
+    expect(differing).toBe(0)
+  })
+
+  it('names the faces whose cells have the same latitudes', () => {
+    const dirs = cellDirections()
+    let differing = 0
+    for (let face = 0; face < CUBE_FACES; face++) {
+      const twin = dirs[LATITUDE_TWIN[face]!]!
+      for (let c = 0; c < TERRAIN_RES * TERRAIN_RES; c++) if (Math.abs(dirs[face]![c * 3 + 1]!) !== Math.abs(twin[c * 3 + 1]!)) differing++
     }
     expect(differing).toBe(0)
   })
