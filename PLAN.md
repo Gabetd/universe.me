@@ -42,8 +42,8 @@ API.
 | Rich text | **TipTap** (ProseMirror) | Notes on structures, events, and entities, stored as HTML. @-mentions linking to other entities come later. |
 | Storage | **SQLite** via Node's built-in `node:sqlite` + asset folder | One `.universe` project file. Transactional, queryable, and simple to back up. Built into Electron and Node, so there's no native module to rebuild per OS. FTS5 is included. |
 | Validation / schema | **Zod** | One schema shared by the UI, REST API, and MCP tool definitions. |
-| Local API | **Fastify** inside the Electron main process | REST + WebSocket change feed, bound to 127.0.0.1. |
-| AI integration | **MCP server** (`@modelcontextprotocol/sdk`), stdio + HTTP | Plugs straight into Claude Code (`claude mcp add`). |
+| Local API | Node's **`node:http`** inside the Electron main process (`packages/api`) | REST + server-sent-event change feed, bound to 127.0.0.1. One table of operations serves REST and MCP. (Fastify and the MCP SDK were planned; a small server of our own keeps the app small, offline and in our hands. The SDK's client checks it in the tests.) |
+| AI integration | **MCP server** (JSON-RPC over stdio + Streamable HTTP) | Plugs straight into Claude Code (`claude mcp add`). |
 | Procedural gen | simplex-noise, seeded PRNG | Terrain, galaxies, and starfields that regenerate the same way from a seed. |
 | Testing | Vitest (unit), Playwright (Electron E2E) | |
 | Monorepo | pnpm workspaces | Add Turborepo once build times call for caching. |
@@ -65,8 +65,7 @@ universe.me/
 │  ├─ procgen/              # seeded cube-sphere terrain, biomes, brushes, map rendering
 │  ├─ timeline-ui/          # timeline React component
 │  ├─ editor-3d/            # r3f scenes: globe, system, galaxy, cluster
-│  ├─ api/                  # Fastify REST + WS routes (thin layer over core)
-│  └─ mcp/                  # MCP server (stdio binary + HTTP transport)
+│  └─ api/                  # the operations, served as REST + MCP (HTTP and stdio); thin layer over core
 ├─ docs/
 └─ PLAN.md
 ```
@@ -285,33 +284,33 @@ An `EventEffect` attaches to any event. Structure effect types:
 ## 6. AI integration (API + MCP)
 
 ### 6.1 Local REST API
-- Runs inside the app at `http://127.0.0.1:<port>` and starts with the app (or headless via `universe serve <project.universe>`).
-- Auth: per-project bearer token stored in the OS keychain, which can be copied from Settings.
-- OpenAPI spec generated from the Zod schemas.
-- Endpoints (all under `/v1`):
-  - `GET /universes`, `GET /nodes/:id`, `GET /nodes/:id/children`
-  - `GET/POST/PATCH/DELETE /worlds`, `/worlds/:id/structures`, `/regions`, `/species`, `/ecosystem-links`
-  - `GET/POST/PATCH/DELETE /worlds/:id/events`, `POST /events/:id/links`, `POST /event-groups`
-  - `GET /worlds/:id/themes`, `POST /theme-spans`
-  - `POST /events/:id/effects`, `GET /structures/:id/condition?from=&to=` (condition curve + breakpoints), `POST /structures/:id/maintenance` (`{at, maintained}`)
-  - `GET /worlds/:id/snapshot?at=<time>`: the full world state at a moment (structures present with condition stage, active theme, moon phases)
-  - `GET /search?q=`
-  - `GET /worlds/:id/export?format=markdown|json`: a "world bible" document
-  - `WS /v1/changes`: live change feed, so the UI updates when the AI makes an edit
+- Runs inside the app at `http://127.0.0.1:47615` (or the next free port) and starts with the app; Connect AI turns it off and on.
+- Auth: a bearer token for the app (it serves whichever project is open), kept in a file only the user can read and shown in Connect AI, where a new one can be made.
+- OpenAPI description generated from the operations' Zod schemas, at `GET /v1/openapi.json`.
+- Endpoints (all under `/v1`), one per operation; reads are GETs with inputs in the query, writes POSTs with a JSON body. For example:
+  - `GET /worlds`, `GET /tree`, `GET /worlds/:worldId`, `GET /search?q=`
+  - `GET /worlds/:worldId/events?from=&to=&tags=`, `POST /worlds/:worldId/events`, `GET /events/:eventId/chain`, `POST /event-links`, `POST /event-groups`
+  - `GET /worlds/:worldId/structures?at=&regionId=&stage=`, `GET /structures/:structureId/condition?at=` (condition, stage and why), `POST /structures/:structureId/maintenance`, `POST /events/:eventId/effects`
+  - `GET /worlds/:worldId/theme?at=&regionId=`, `POST /themes`, `POST /worlds/:worldId/theme-spans`
+  - `GET /worlds/:worldId/snapshot?at=`: the world at a moment (events happening, regions, structures standing with condition, characters alive, the theme in force, moon phases)
+  - `GET /worlds/:worldId/export?format=markdown|json`: the "world bible"
+  - `POST /commands`: any core command (or several, as one undo step)
+  - `GET /changes`: the change feed, as server-sent events (what changed, and whether the app or an AI client changed it)
 
-### 6.2 MCP server (`packages/mcp`)
+### 6.2 MCP server (`packages/api`)
 Two ways to run it:
-- **stdio**: `universe-mcp --project ~/Worlds/Aerth.universe`. It talks to the running app's API if one is up, and otherwise opens the SQLite file directly (with a file lock).
-- **HTTP**: exposed by the running app for remote MCP clients.
+- **stdio**: `Universe --mcp --project ~/Worlds/Aerth.universe` (the app's own executable). It goes through the running app while the app has that project open, and otherwise opens the SQLite file directly, locked for each message.
+- **HTTP**: `/mcp` on the running app (Streamable HTTP, answering with JSON).
 
-Registration in Claude Code:
+Registration in Claude Code (Connect AI shows both with the real paths and token):
 ```bash
-claude mcp add universe -- universe-mcp --project ~/Worlds/Aerth.universe
+claude mcp add --transport http universe http://127.0.0.1:47615/mcp --header "Authorization: Bearer <token>"
+claude mcp add universe -- /Applications/Universe.app/Contents/MacOS/Universe --mcp --project ~/Worlds/Aerth.universe
 ```
 
 **Tools** (each one is a thin wrapper over a core command or query):
-- Read: `list_worlds`, `get_world`, `get_world_snapshot(at)`, `search`, `list_events(range, tags)`, `get_event_chain(eventId, direction)`, `get_theme_at(worldId, time, regionId?)`, `list_structures(regionId?, at?, stage?)`, `get_structure_condition(structureId, at)` (condition, stage, and *why*: the events and decay behind it), `get_ecosystem(biome?)`, `get_star_system`, `get_moon_phase(worldId, time)`
-- Write: `create_event`, `add_event_effect`, `link_events`, `group_events`, `create_structure`, `set_maintenance(structureId, at, maintained)`, `update_note`, `create_species`, `create_theme`, `assign_theme_span`, `create_world`, `create_star_system`
+- Read: `list_worlds`, `get_world`, `get_world_snapshot(at)`, `search`, `list_events(range, tags)`, `get_event_chain(eventId, direction)`, `get_theme_at(worldId, time, regionId?)`, `list_structures(regionId?, at?, stage?)`, `get_structure_condition(structureId, at)` (condition, stage, and *why*: the events and decay behind it), `get_ecosystem(biome?)`, `get_star_system`, `get_moon_phase(worldId, time)`; also `get_tree`, `get_event`, `list_themes`, `list_blueprints`, `list_characters`, `export_world_bible`, `describe_commands`
+- Write: `create_event`, `add_event_effect`, `link_events`, `group_events`, `create_structure`, `set_maintenance(structureId, at, maintained)`, `update_note`, `create_species`, `create_theme`, `assign_theme_span`, `create_world`, `create_star_system`; also `update_event`, `create_character`, `create_region`, `link_species`, and `run_commands` for any core command
 - Analysis: `check_consistency` (effects before causes, structures used before they're built or after they've eroded, species outside their habitat), `project_decay(structureId)` (when it will become a ruin or be destroyed if left weathered)
 
 **Resources**: `universe://world/{id}`, `universe://world/{id}/timeline`, `universe://world/{id}/bible.md`. These let the AI load context without many tool calls.
@@ -409,11 +408,12 @@ Each milestone ends with something you can launch and demo.
 - [x] **Blending as the playhead moves**: spans composite like layers of paint (eased over their fades, higher priority on top), and the views follow: on the globe the sunlight, sky light, halo, sea and land; on the ground the sky, fog, light, sea and land, with the themes of the region it's in; on the map the theme's light and land, and inside each region with themes of its own, those. The interface takes on the accent and title type of the theme in force.
 - Deferred: a region's own themes on the globe (they show on the map and the ground), where two regions with themes of their own overlap on the map (the later one's shows there), ambience sounds, and theme images.
 
-### M7 — API & MCP (2 weeks)
-- Fastify REST + OpenAPI + WS change feed + token auth.
-- MCP server (stdio + HTTP), tools/resources/prompts listed above; `claude mcp add` docs.
-- AI-source tagging, one-click undo, optional review mode.
-- Markdown world-bible export.
+### M7 — API & MCP (2 weeks) — *done*
+- [x] **REST API** (`packages/api`): one table of operations (38: 21 reads such as worlds, a world at a moment, search, events and their causal chains, the theme in force, structures' condition and why, decay, the ecosystem, star systems, moon phases, consistency; writes as thin wrappers over core commands, plus `run_commands` for any command) served under `/v1` on 127.0.0.1, with an OpenAPI description made from their Zod schemas and a change feed as server-sent events. Every request needs the bearer token; requests from web pages (an Origin header) and for other hosts are turned away. Dates are written in the world's calendar ("15 Mar 1204"), notes as plain text.
+- [x] **MCP server**: every operation as a tool (read-only ones marked so), each world's overview, timeline and bible as resources, `write_scene` and `brainstorm_history` prompts. Over HTTP at `/mcp` in the running app, and over stdio as `Universe --mcp --project <file>`, which goes through the app while it has the project open and otherwise opens the file itself, locked, one message at a time. The Connect AI panel gives both `claude mcp add` commands (see the README).
+- [x] **AI changes**: tagged as the AI's in the command history, shown at once with a note, taken back in one click (Undo AI); in review mode they wait as suggestions to accept or reject.
+- [x] **World bible**: a world as one Markdown document (calendar, regions, history in order, structures, characters, life, the tone of each age), from the world's inspector, the API and an MCP resource.
+- Deferred: the token in the OS keychain (it's in a file only the user can read), WebSockets for the change feed (server-sent events do it with less), `universe serve` without the app (the stdio server covers headless use), suggestions kept across restarts, and a region's notes and changes over time in the bible.
 
 ### M8 — Polish & release (2 weeks)
 - Onboarding sample universe, keyboard shortcuts, performance pass (LOD, instancing for structures).

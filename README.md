@@ -1,12 +1,12 @@
 # Universe
 
 A desktop worldbuilding app: build universes, galaxies, star systems and
-worlds, give them histories on a timeline, and (soon) let Claude Code help
-through an API. See [PLAN.md](PLAN.md) for the full design and roadmap.
+worlds, give them histories on a timeline, and let Claude Code help through
+a local API and MCP server. See [PLAN.md](PLAN.md) for the full design and roadmap.
 
 **Status:** M0 (Foundations), M1 (Worlds & globe), M2 (Timeline), M3
-(Structures), M4 (Star systems & simulation), M5 (Scale navigation) and M6
-(Themes) are done. You can create `.universe` project files and build the universe tree
+(Structures), M4 (Star systems & simulation), M5 (Scale navigation), M6
+(Themes) and M7 (API & MCP) are done. You can create `.universe` project files and build the universe tree
 (cluster → galaxy → star system → planet → moon / world surface). Each world
 surface is generated from a seed: type any word and you get a whole planet
 (land type, water, islands, mountains, climate, colors), the same planet every
@@ -60,6 +60,31 @@ what shows. As the playhead moves the globe, the map and the ground blend
 from one theme into the next (light, sky, haze, sea and land), and the app's
 accent and title type follow. Everything can be undone, and everything stays
 on your computer.
+
+## Connect Claude Code
+
+Universe runs a local API and MCP server while it's open (on 127.0.0.1 only,
+behind a token). Open **Connect AI** in the top bar and copy one of its
+commands:
+
+```bash
+# Through the running app: changes show at once and undo in one click.
+claude mcp add --transport http universe http://127.0.0.1:47615/mcp --header "Authorization: Bearer <token>"
+
+# Or as a stdio server, which also works while the app is closed
+# (it goes through the app whenever the app has the project open).
+claude mcp add universe -- "<path to the Universe executable>" --mcp --project "<path to your .universe file>"
+```
+
+Claude can then read your worlds (a world at any moment, its history and
+causes, structures' condition and why, the theme and prose style of an age, the
+sky, the food web), add to them (events, links, structures, characters,
+species, themes, regions, notes) and check them for mistakes. Every change it
+makes is tagged as the AI's: a note shows what it did, **Undo AI** takes its
+latest changes back in one click, and with **Review AI changes** on they wait
+for you to accept or reject them. The same operations are a REST API under
+`/v1` (described at `/v1/openapi.json`), with a change feed at `/v1/changes`.
+Any world exports as a Markdown world bible from its inspector.
 
 ## Download and run
 
