@@ -2,12 +2,16 @@
 # Runs the GitHub pipelines (.github/workflows/ci.yml and build.yml) locally,
 # against a clean checkout of HEAD, so a push can't turn them red.
 #
-#   pnpm ci:local           everything CI runs on Linux, plus a small-screen pass
-#   pnpm ci:local --quick   skip packaging (lint, typecheck, unit + e2e only)
+#   pnpm ci:local           everything CI runs on Linux
+#   pnpm ci:local --quick   skip packaging (lint, typecheck, unit + dev-build e2e only)
 #
 # Like CI it tests what is committed, not the working tree: uncommitted or
 # untracked files are not included. Windows and macOS legs can't run here; the
-# small-screen e2e pass stands in for the Windows runners' 1024×768 display.
+# dev-build e2e pass runs at the Windows runners' 1024×768, as ci.yml's does.
+#
+# The app is built once, stamped with a build version as build.yml stamps it, for
+# both e2e passes and the package. Lint, typecheck and unit tests run side by side;
+# the e2e passes, which time things, one at a time with nothing else running.
 set -euo pipefail
 
 QUICK=0
@@ -16,6 +20,7 @@ QUICK=0
 ROOT=$(git rev-parse --show-toplevel)
 CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/universe-ci
 ACTIONLINT_VERSION=1.7.7
+VERSION=0.1.9999
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/universe-ci.XXXXXX")
 START=$SECONDS
 
@@ -26,6 +31,36 @@ cleanup() {
   rm -rf "$WORK"
 }
 trap cleanup EXIT
+
+# Runs each "name: command" at once, each into its own log; once all have
+# finished, shows how long each took and the output of any that failed.
+parallel() {
+  local names=() pids=() failed=() job name
+  for job in "$@"; do
+    name=${job%%:*}
+    (
+      start=$SECONDS status=0
+      bash -c "${job#*: }" >"$WORK/$name.log" 2>&1 || status=$?
+      echo $((SECONDS - start)) >"$WORK/$name.time"
+      exit $status
+    ) &
+    names+=("$name")
+    pids+=($!)
+  done
+  for i in "${!pids[@]}"; do
+    if wait "${pids[$i]}"; then
+      printf '  \033[32m✔\033[0m %s (%ss)\n' "${names[$i]}" "$(cat "$WORK/${names[$i]}.time")"
+    else
+      printf '  \033[31m✘\033[0m %s (%ss)\n' "${names[$i]}" "$(cat "$WORK/${names[$i]}.time")"
+      failed+=("${names[$i]}")
+    fi
+  done
+  for name in "${failed[@]}"; do
+    printf '\n\033[1;31m── %s ──\033[0m\n' "$name"
+    cat "$WORK/$name.log"
+  done
+  ((${#failed[@]} == 0)) || fail "${failed[*]}"
+}
 
 if [[ -n $(git -C "$ROOT" status --porcelain) ]]; then
   printf '\033[33mNote: uncommitted changes are not tested (CI only sees commits).\033[0m\n'
@@ -50,35 +85,28 @@ printf '#!/bin/sh\nexec sleep 600\n' > "$WORK/bin/xdg-open"
 chmod +x "$WORK/bin/xdg-open"
 export PATH="$WORK/bin:$PATH"
 
-step "ci.yml: install (frozen lockfile)"
+step "Set up: install (frozen lockfile) and download Electron (.github/actions/setup)"
 pnpm install --frozen-lockfile --prefer-offline >/dev/null || fail "pnpm install --frozen-lockfile failed (lockfile out of date?)"
+node -e "require('electron')" >/dev/null || fail "downloading Electron"
 
-step "ci.yml: lint"
-pnpm lint || fail "lint"
-step "ci.yml: typecheck"
-pnpm typecheck || fail "typecheck"
-step "ci.yml: unit tests"
-pnpm test || fail "unit tests"
-step "ci.yml: end-to-end tests (Xvfb)"
-xvfb-run -a pnpm test:e2e || fail "e2e tests"
+step "Build the app, stamped $VERSION"
+(cd apps/desktop && npm pkg set version=$VERSION && pnpm build >/dev/null) || fail "build"
 
-step "Small screen e2e (1024×768, like the Windows runners)"
-(cd apps/desktop && xvfb-run -a -s "-screen 0 1024x768x24" npx playwright test) || fail "e2e tests on a small screen"
+step "Lint, typecheck and unit tests, side by side"
+parallel "lint: pnpm lint" "typecheck: pnpm typecheck" "unit-tests: pnpm test"
+
+step "ci.yml: end-to-end tests on the dev build (Xvfb, 1024×768)"
+(cd apps/desktop && xvfb-run -a -s "-screen 0 1024x768x24" npx playwright test) || fail "e2e tests"
 
 if [[ $QUICK == 0 ]]; then
-  step "build.yml: stamp version and package for Linux"
-  (cd apps/desktop && npm pkg set version=0.1.9999 && pnpm dist) || fail "packaging"
+  step "build.yml: package for Linux"
+  (cd apps/desktop && npx electron-builder --publish never) || fail "packaging"
 
-  step "build.yml: smoke-test the packaged Linux app"
+  step "build.yml: end-to-end tests on the packaged Linux app"
   (cd apps/desktop && UNIVERSE_E2E_EXECUTABLE=$PWD/release/linux-unpacked/universe-desktop xvfb-run -a npx playwright test) || fail "packaged app e2e"
 
-  step "build.yml: update manifest"
-  node scripts/update-manifest.mjs apps/desktop/release 0.1.9999 local > "$WORK/update.json"
-  node -e '
-    const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))
-    for (const key of ["linux-appimage-x64", "linux-deb-x64"]) if (!m.files[key]) throw new Error("manifest has no " + key)
-    if (!m.files["linux-appimage-x64"].name.includes("0.1.9999")) throw new Error("installers are not stamped with the build version")
-  ' "$WORK/update.json" || fail "update manifest"
+  step "build.yml: update manifest (the Linux installers)"
+  node scripts/update-manifest.mjs apps/desktop/release $VERSION local linux > "$WORK/update.json" || fail "update manifest"
 fi
 
 # Remembered so the pre-push hook doesn't run a full pass again for this commit.
