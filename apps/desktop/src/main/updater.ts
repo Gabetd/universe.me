@@ -117,8 +117,10 @@ async function download(url: string, dest: string, expected: UpdateFile, onProgr
   let reported = -1
   try {
     for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-      hash.update(chunk)
       received += chunk.length
+      // More than the manifest says: not the file it means. Stop rather than fill the disk.
+      if (received > expected.size) throw new Error('The download was bigger than expected. Try again.')
+      hash.update(chunk)
       const percent = Math.floor((received / expected.size) * 100)
       if (percent !== reported) onProgress(Math.min(1, (reported = percent) / 100))
       if (!out.write(chunk)) await once(out, 'drain')
