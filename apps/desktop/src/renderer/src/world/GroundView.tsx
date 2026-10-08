@@ -275,7 +275,9 @@ function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center
   useEffect(() => onLoaded(chunks.size), [chunks.size, onLoaded])
   useReadyWhenDrawn(chunks.size === wanted.length)
   const middle = chunkOf(center, radiusKm)
-  const foliage = useMemo(() => new THREE.Color(model.settings.terrain.vegetationColor), [model.settings.terrain.vegetationColor])
+  const vegetationColor = model.settings.terrain.vegetationColor
+  const plants = useMemo(() => new PlantGeometries(new THREE.Color(vegetationColor)), [vegetationColor])
+  useEffect(() => () => plants.dispose(), [plants])
   const footprints = useMemo<Footprint[]>(
     () =>
       structures.flatMap(({ structure, state, blueprint }) => {
@@ -298,7 +300,7 @@ function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center
             chunk={chunk}
             ring={ring}
             ground={ground}
-            foliage={foliage}
+            plants={plants}
             footprints={footprints}
             onPointerDown={props.onPointerDown}
             onPointerMove={props.onPointerMove}
@@ -314,7 +316,7 @@ function ChunkView({
   chunk,
   ring,
   ground,
-  foliage,
+  plants,
   footprints,
   onPointerDown,
   onPointerMove
@@ -322,7 +324,7 @@ function ChunkView({
   chunk: GroundChunk
   ring: number
   ground: Ground
-  foliage: THREE.Color
+  plants: PlantGeometries
   footprints: Footprint[]
   onPointerDown: SurfaceViewProps['onPointerDown']
   onPointerMove: SurfaceViewProps['onPointerMove']
@@ -370,7 +372,7 @@ function ChunkView({
       </mesh>
       {Object.entries(chunk.plants).map(([plant, list]) =>
         ring > 0 && NEAR_ONLY.includes(plant as Plant) ? null : (
-          <PlantInstances key={plant} plant={plant as Plant} list={list} share={RING_SHARE[ring] ?? 0} foliage={foliage} footprints={local} level={level} />
+          <PlantInstances key={plant} plant={plant as Plant} list={list} share={RING_SHARE[ring] ?? 0} plants={plants} footprints={local} level={level} />
         )
       )}
     </group>
@@ -380,12 +382,20 @@ function ChunkView({
 /** How much of a chunk's plants are drawn, by its distance in chunks from the middle of the view: the far ones are thinned. */
 const RING_SHARE = [1, 0.55, 0.25]
 
-const geometries = new Map<string, THREE.BufferGeometry>()
-function sharedPlantGeometry(plant: Plant, foliage: THREE.Color): THREE.BufferGeometry {
-  const key = `${plant}:${foliage.getHexString()}`
-  let g = geometries.get(key)
-  if (!g) geometries.set(key, (g = plantGeometry(plant, foliage)))
-  return g
+/** The plants' shapes in the world's foliage colour, made as they're first needed and let go with the colour or the view. */
+class PlantGeometries {
+  private made = new Map<Plant, THREE.BufferGeometry>()
+  constructor(private foliage: THREE.Color) {}
+
+  get(plant: Plant): THREE.BufferGeometry {
+    let g = this.made.get(plant)
+    if (!g) this.made.set(plant, (g = plantGeometry(plant, this.foliage)))
+    return g
+  }
+
+  dispose() {
+    for (const g of this.made.values()) g.dispose()
+  }
 }
 
 /** All of one kind of plant on a chunk, as one instanced mesh; `share` draws only that fraction of them (farther chunks). */
@@ -393,14 +403,14 @@ function PlantInstances({
   plant,
   list,
   share,
-  foliage,
+  plants,
   footprints,
   level
 }: {
   plant: Plant
   list: Float32Array
   share: number
-  foliage: THREE.Color
+  plants: PlantGeometries
   footprints: Footprint[]
   level(x: number, z: number, y: number): number
 }) {
@@ -441,7 +451,7 @@ function PlantInstances({
   }, [kept, list, plant, level, invalidate])
   if (!kept.length) return null
   return (
-    <instancedMesh key={kept.length} ref={mesh} args={[sharedPlantGeometry(plant, foliage), undefined, kept.length]} raycast={() => null}>
+    <instancedMesh key={kept.length} ref={mesh} args={[plants.get(plant), undefined, kept.length]} raycast={() => null}>
       <meshStandardMaterial vertexColors roughness={0.95} metalness={0} flatShading />
     </instancedMesh>
   )

@@ -38,15 +38,24 @@ function load(assetId: string): Promise<THREE.Object3D> {
   return model
 }
 
-/** A fresh copy of a model (its own materials, so it can be tinted), or null while loading or if it failed. */
+/** Each material of each mesh in `object`. */
+function eachMaterial(object: THREE.Object3D, f: (m: THREE.Material) => void) {
+  object.traverse((o) => {
+    const mesh = o as THREE.Mesh
+    if (mesh.isMesh) for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) f(m)
+  })
+}
+
+/** A fresh copy of a model (its own materials, so it can be tinted; let go when it's no longer used), or null while loading or if it failed. */
 export function useModel(assetId: string): THREE.Object3D | null {
   const [model, setModel] = useState<{ id: string; object: THREE.Object3D } | null>(null)
   useEffect(() => {
     let live = true
+    let copy: THREE.Object3D | undefined
     load(assetId).then(
       (source) => {
         if (!live) return
-        const object = source.clone(true)
+        const object = (copy = source.clone(true))
         object.traverse((o) => {
           const mesh = o as THREE.Mesh
           if (mesh.isMesh) mesh.material = Array.isArray(mesh.material) ? mesh.material.map((m) => m.clone()) : mesh.material.clone()
@@ -57,6 +66,8 @@ export function useModel(assetId: string): THREE.Object3D | null {
     )
     return () => {
       live = false
+      // Its geometry and textures are the loaded model's, shared by every copy; only the materials are its own.
+      if (copy) eachMaterial(copy, (m) => m.dispose())
     }
   }, [assetId])
   return model?.id === assetId ? model.object : null
