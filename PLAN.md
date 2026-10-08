@@ -20,12 +20,13 @@ API.
 6. **Visual editing**: sculpt and paint terrain, place structures, attach rich text to structures.
 7. **Living structures**: events can build, damage, repair, or destroy structures. Each structure has a Maintained/Weathered toggle, and weathered structures erode over time until they're destroyed.
 8. **AI access**: a local REST API and an MCP server, so Claude Code (or any MCP client) can read and edit worlds.
+9. **From the phone**: Claude on a phone (a claude.ai custom connector) reaches the universe open on the user's computer, through a tunnel the user turns on.
 
 ### Non-goals (v1)
 - Multiplayer or real-time collaboration (keep the data model sync-ready, but don't build sync yet).
 - Physically accurate simulation. Physics only needs to be good enough to tell consistent stories.
 - Game-engine-level graphics. Aim for clean and readable, not photoreal.
-- Cloud hosting. Everything is local-first.
+- Cloud hosting. Everything is local-first: the project stays on the user's computer, and phone access goes to it there (the tunnel carries the traffic, it stores nothing).
 
 ---
 
@@ -322,6 +323,14 @@ claude mcp add universe -- /Applications/Universe.app/Contents/MacOS/Universe --
 - Optional **"review mode"**: AI writes land as *proposals* that the user accepts or rejects in the app.
 - A toast notification shows in the app whenever an external client changes something.
 
+### 6.4 From the phone (remote MCP)
+Claude on a phone can't reach `127.0.0.1`: a claude.ai custom connector (added once on claude.ai, then on every device signed in to it, the phone app included) is called from Anthropic's servers, so it needs a public HTTPS address with a real certificate, and OAuth instead of a pasted token.
+- **Tunnel: Tailscale Funnel.** The app keeps listening on 127.0.0.1 only. The user installs Tailscale and signs in; Connect AI finds it, turns on Funnel for the API's port (`tailscale funnel --bg <port>`, or the user runs it) and shows the public address, `https://<computer>.<tailnet>.ts.net/mcp`, to add as a custom connector on claude.ai (Settings → Connectors). Funnel forwards to the app with the public host in `Host`; the app accepts that host and no other. Phone access can be turned off in the app (it then turns away every request for the public host) and Funnel turned off from the same place.
+- **OAuth 2.1** (the MCP authorization spec, 2025-06-18): protected-resource and authorization-server metadata, dynamic client registration, authorization codes with PKCE (S256), access tokens (an hour) and rotating refresh tokens (90 days unused). The sign-in page is the app's own (no scripts, nothing from elsewhere): it asks for a code the app shows on the computer, so only someone who can see the app's screen can connect a device. Five wrong tries and the request is void; requests last ten minutes.
+- **Devices**: each connected client is listed in Connect AI with when it was added and last used, and can be removed (its tokens stop working at once). Tokens are kept hashed, in a file only the user can read.
+- The same operations, notes, Undo AI and review mode as on the computer: a phone's writes are the AI's like any other client's. The REST API answers OAuth tokens too.
+- The computer has to be on with the app running; otherwise the connector says it can't reach the server.
+
 ---
 
 ## 7. Simulation details (`packages/sim`)
@@ -355,7 +364,7 @@ Each milestone ends with something you can launch and demo.
 - [x] `core` command bus with undo/redo, Zod schemas, SQLite + migrations, command history log.
 - [x] Create/open/save-a-copy `.universe` project, recent projects. Main layout (breadcrumb, outline, viewport, inspector, timeline placeholder).
 - [x] Universe tree editing (cluster → galaxy → system → planet → moon/world) with a seeded 2D placeholder viewport.
-- [ ] Code signing (Windows certificate, Apple Developer ID). Deferred to M8; builds are unsigned until then.
+- [ ] Code signing (Windows certificate, Apple Developer ID). Deferred to M9; builds are unsigned until then.
 - [x] *Added after M2:* self-update. Each CI build is versioned `0.1.<run>` and publishes an `update.json` manifest (file names, sizes, SHA-512) with the installers. The app checks it at launch and hourly (and from Help → Check for Updates); a dismissable banner offers the new version, and **Upgrade now** downloads, verifies and installs it, then restarts, with no further input: NSIS installer run silently, portable exe swapped, macOS `.app` replaced from the zip, AppImage replaced in place. A `.deb` install needs the system password (root).
 - [x] *Added after M2:* local only. All data lives in the project's SQLite file (built into the app via `node:sqlite`, no server). The main process cancels every network request except the app's own files and the self-updater's download from this repo's GitHub release; pages can't reach the network at all, and links open in the browser instead of the app window.
 
@@ -415,7 +424,13 @@ Each milestone ends with something you can launch and demo.
 - [x] **World bible**: a world as one Markdown document (calendar, regions, history in order, structures, characters, life, the tone of each age), from the world's inspector, the API and an MCP resource.
 - Deferred: the token in the OS keychain (it's in a file only the user can read), WebSockets for the change feed (server-sent events do it with less), `universe serve` without the app (the stdio server covers headless use), suggestions kept across restarts, review mode for the stdio server while the app doesn't have the project open (it writes to the file directly then), accepting all suggestions in one step, and a region's notes and changes over time in the bible.
 
-### M8 — Polish & release (2 weeks)
+### M8 — Phone access (1–2 weeks) — *active*
+- [ ] **OAuth for the API** (`packages/api` oauth.ts): metadata, dynamic client registration, a sign-in page that takes a code shown in the app, PKCE, access and refresh tokens, devices removed one at a time.
+- [ ] **Tailscale Funnel in Connect AI**: finds Tailscale, turns Funnel on and off for the API's port, shows the public address and the custom-connector steps for claude.ai; phone access on and off.
+- [ ] **Pairing and devices in the app**: the code to type while a device connects, the list of connected devices and removing one.
+- [ ] Tests: the official MCP client through the whole OAuth flow, in `packages/api` and against the app.
+
+### M9 — Polish & release (2 weeks)
 - Onboarding sample universe, keyboard shortcuts, performance pass (LOD, instancing for structures).
 - Signed installers (Windows NSIS, macOS dmg + notarization, Linux AppImage/deb); auto-update already works unsigned (see M0) and should move to signature-checked updates once signed.
 - E2E tests for the main flows.
@@ -444,6 +459,7 @@ Each milestone ends with something you can launch and demo.
 | Erosion results that feel wrong for the story | Per-world erosion speed slider, editable material half-lives, per-structure "never decays", and manual damage/repair events to correct any outcome. |
 | Scope creep (simulation depth) | Sim is "plausible, deterministic, overridable". Every derived value can be manually set. |
 | AI edits corrupting data | All writes validated by Zod + core invariants, tagged and undoable, optional review mode. |
+| A public address for the API (phone access) | Off by default; only through Funnel to 127.0.0.1; OAuth with a code only the app's screen shows; tokens hashed, short-lived and revocable per device; Origin and Host checks kept. |
 | Electron bundle size | Acceptable for v1. Tauri migration path is possible because the logic lives in framework-agnostic packages. |
 
 ---
