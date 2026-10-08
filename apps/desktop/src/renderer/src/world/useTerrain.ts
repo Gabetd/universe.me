@@ -1,4 +1,4 @@
-import type { Command, LatLon, Region, TerrainParams, WorldInfo } from '@universe/core'
+import type { Command, LatLon, Region, WorldInfo } from '@universe/core'
 import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
 import { TerrainModel, shapeKey, type Vec3 } from '@universe/procgen'
