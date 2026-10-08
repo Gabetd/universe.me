@@ -66,4 +66,13 @@ describe('species', () => {
     bus.undo()
     expect(store.records('ecolink').all()).toHaveLength(2)
   })
+
+  it('undoes and redoes an edit (stored as a lifeform, edited as a species)', () => {
+    const id = run('species.create', { ownerId: worldId, name: 'Grass', kind: 'flora' }).targetId!
+    run('species.update', { id, patch: { name: 'Moss', biomes: [3] } })
+    expect(bus.undo()?.command).toEqual({ type: 'species.update', payload: { id, patch: { name: 'Grass', biomes: [] } } })
+    expect(store.records('lifeform').get(id)).toMatchObject({ name: 'Grass', biomes: [] })
+    bus.redo()
+    expect(store.records('lifeform').get(id)).toMatchObject({ name: 'Moss', biomes: [3] })
+  })
 })

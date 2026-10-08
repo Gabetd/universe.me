@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { Id, RecordMeta } from './schema'
+import { Id, Name, RecordMeta } from './schema'
 import { Time } from './time'
-import { HexColor } from './world'
+import { HexColor, LatLon } from './world'
 
 /**
  * Structures (PLAN.md §4.7): buildings placed on a world from blueprints,
@@ -93,7 +93,7 @@ export type BlueprintModel = z.infer<typeof BlueprintModel>
 /** A reusable structure template. The project's library is owned by its root node. */
 export const Blueprint = z.object({
   ...RecordMeta,
-  name: z.string().min(1).max(200),
+  name: Name,
   parts: z.array(BlueprintPart),
   model: BlueprintModel.nullable(),
   /** Whether new structures from it start out maintained (a castle) or weathering (a standing stone). */
@@ -105,10 +105,9 @@ export type Blueprint = z.infer<typeof Blueprint>
 /** A structure on a world. Its condition at any time is derived (condition.ts), never stored. */
 export const Structure = z.object({
   ...RecordMeta,
-  name: z.string().min(1).max(200),
+  name: Name,
   blueprintId: Id,
-  lat: z.number().min(-90).max(90),
-  lon: z.number().min(-180).max(180),
+  ...LatLon.shape,
   /** Degrees around the vertical. */
   rotation: z.number(),
   scale: z.number().positive(),
@@ -164,7 +163,7 @@ export const EventEffect = z.object({
   /** set_maintenance. */
   maintained: z.boolean(),
   /** modify: a new name, and/or a new blueprint (an expansion, a conversion). */
-  rename: z.string().min(1).max(200).nullable(),
+  rename: Name.nullable(),
   blueprintId: Id.nullable()
 })
 export type EventEffect = z.infer<typeof EventEffect>

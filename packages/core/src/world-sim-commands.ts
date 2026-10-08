@@ -1,12 +1,10 @@
 import { z } from 'zod'
 import { Orbit, Star } from './astro'
-import { batchOf, liveRecord, previousValues, type CommandContext, type HandlerResult } from './command-kit'
-import type { Command, HandlerMap } from './commands'
+import { ownerOf } from './command-kit'
+import type { HandlerMap } from './commands'
 import { EcoLink, Species } from './ecosystem'
-import { NewId, create, deleteWith, live, update, type Fields } from './record-kit'
-import type { RecordKind } from './records'
+import { ById, NewId, create, deleteWith, deletes, recordCrud, refsWhere, upsert } from './record-kit'
 import { Id } from './schema'
-import type { Store } from './store'
 
 const StarFields = Star.pick({ massSun: true, luminositySun: true })
 const OrbitFields = Orbit.pick({
@@ -20,6 +18,8 @@ export type OrbitFields = z.infer<typeof OrbitFields>
 export const starId = (systemId: string) => `star:${systemId}`
 export const orbitId = (bodyId: string) => `orbit:${bodyId}`
 
+const species = recordCrud('lifeform', SpeciesFields, 'species')
+
 export const WORLD_SIM_COMMANDS = [
   /** Sets a system's star (creating its record the first time). */
   z.object({ type: z.literal('star.set'), payload: z.object({ systemId: Id, star: StarFields }) }),
@@ -29,31 +29,20 @@ export const WORLD_SIM_COMMANDS = [
   z.object({ type: z.literal('orbit.reset'), payload: z.object({ bodyId: Id }) }),
 
   z.object({ type: z.literal('species.create'), payload: SpeciesFields.partial().extend({ ...NewId, ownerId: Id, name: Species.shape.name }) }),
-  z.object({ type: z.literal('species.update'), payload: z.object({ id: Id, patch: SpeciesFields.partial() }) }),
-  z.object({ type: z.literal('species.delete'), payload: z.object({ id: Id }) }),
+  ...species.commands,
   z.object({ type: z.literal('ecolink.create'), payload: z.object({ ...NewId, fromId: Id, toId: Id, type: EcoLink.shape.type.optional() }) }),
-  z.object({ type: z.literal('ecolink.delete'), payload: z.object({ id: Id }) })
+  z.object({ type: z.literal('ecolink.delete'), payload: ById })
 ] as const
 
 type WorldSimCommand = z.infer<(typeof WORLD_SIM_COMMANDS)[number]>
 
-/** Creates the owner's single record, or replaces its fields (bringing it back if it was reset). Undo puts back what was there. */
-function upsert<K extends 'star' | 'orbit'>(store: Store, kind: K, ctx: CommandContext, ownerId: string, id: string, fields: Fields<K>, set: (fields: Fields<K>) => Command, reset: Command): HandlerResult {
-  const existing = store.records(kind).get(id)
-  if (!existing) return { ...create(store, kind, ctx, ownerId, id, fields), inverse: reset }
-  const { deletedAt } = existing
-  if (deletedAt) store.records(kind).update({ ...existing, deletedAt: null })
-  const result = update(store, kind, ctx, id, fields)
-  const restore = set(previousValues(existing as Record<string, unknown>, fields as Record<string, unknown>) as Fields<K>)
-  return { ...result, inverse: deletedAt ? batchOf([restore, { type: 'record.remove', payload: { refs: [{ kind: kind as RecordKind, id }] } }]) : restore }
-}
-
 export const worldSimHandlers: HandlerMap<WorldSimCommand> = {
+  // Set in full, so what undo puts back is full too.
   'star.set': (store, { systemId, star }, ctx) =>
-    upsert(store, 'star', ctx, systemId, starId(systemId), star, (previous) => ({ type: 'star.set', payload: { systemId, star: previous } }), { type: 'star.reset', payload: { systemId } }),
+    upsert(store, 'star', ctx, systemId, starId(systemId), star, (previous) => ({ type: 'star.set', payload: { systemId, star: previous as typeof star } }), { type: 'star.reset', payload: { systemId } }),
   'star.reset': (store, { systemId }, ctx, run) => deleteWith(store, ctx, run, { kind: 'star', id: starId(systemId) }),
   'orbit.set': (store, { bodyId, orbit }, ctx) =>
-    upsert(store, 'orbit', ctx, bodyId, orbitId(bodyId), orbit, (previous) => ({ type: 'orbit.set', payload: { bodyId, orbit: previous } }), {
+    upsert(store, 'orbit', ctx, bodyId, orbitId(bodyId), orbit, (previous) => ({ type: 'orbit.set', payload: { bodyId, orbit: previous as typeof orbit } }), {
       type: 'orbit.reset',
       payload: { bodyId }
     }),
@@ -69,11 +58,10 @@ export const worldSimHandlers: HandlerMap<WorldSimCommand> = {
       notes: p.notes ?? '',
       tags: p.tags ?? []
     }),
-  'species.update': (store, { id, patch }, ctx) => update(store, 'lifeform', ctx, id, patch),
-  // Its links in the food web go with it.
+  'species.update': species.update,
+  // Its links in the food web (which share its owner) go with it.
   'species.delete': (store, { id }, ctx, run) =>
-    deleteWith(store, ctx, run, { kind: 'lifeform', id }, [], live(store, 'ecolink').filter((l) => l.fromId === id || l.toId === id).map((l) => ({ kind: 'ecolink' as const, id: l.id }))),
-  'ecolink.create': (store, { id, fromId, toId, type }, ctx) =>
-    create(store, 'ecolink', ctx, liveRecord(store, 'lifeform', fromId).ownerId, id, { fromId, toId, type: type ?? 'eats' }),
-  'ecolink.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'ecolink', id })
+    deleteWith(store, ctx, run, { kind: 'lifeform', id }, ({ ownerId }) => ({ remove: refsWhere(store, 'ecolink', ownerId, (l) => l.fromId === id || l.toId === id) })),
+  'ecolink.create': (store, { id, fromId, toId, type }, ctx) => create(store, 'ecolink', ctx, ownerOf(store, 'lifeform', fromId), id, { fromId, toId, type: type ?? 'eats' }, [fromId]),
+  'ecolink.delete': deletes('ecolink')
 }

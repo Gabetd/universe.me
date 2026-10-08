@@ -53,7 +53,7 @@ export class TrackedStore implements Store {
 
   constructor(private readonly inner: Store) {
     const { nodes, regions, worlds } = inner
-    this.nodes = { get: (id) => nodes.get(id), children: (id) => nodes.children(id), all: () => nodes.all(), ...this.noteWrites(nodes, (c) => c.nodes) }
+    this.nodes = { get: (id) => nodes.get(id), children: (id) => nodes.children(id), all: () => nodes.all(), root: () => nodes.root(), ...this.noteWrites(nodes, (c) => c.nodes) }
     this.regions = { get: (id) => regions.get(id), all: () => regions.all(), ...this.noteWrites(regions, (c) => c.regions) }
     const world = (id: Id) => void this.noting().worlds.add(id)
     this.worlds = {
@@ -80,7 +80,7 @@ export class TrackedStore implements Store {
     let repo = this.recordRepos.get(kind) as RecordRepository<RecordOf<K>> | undefined
     if (!repo) {
       const inner = this.inner.records(kind)
-      repo = { get: (id) => inner.get(id), all: () => inner.all(), ...this.noteWrites(inner, (c) => c.record(kind)) }
+      repo = { get: (id) => inner.get(id), all: () => inner.all(), byOwner: (ownerId) => inner.byOwner(ownerId), ...this.noteWrites(inner, (c) => c.record(kind)) }
       this.recordRepos.set(kind, repo as RecordRepository<unknown>)
     }
     return repo

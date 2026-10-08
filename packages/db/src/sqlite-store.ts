@@ -114,12 +114,13 @@ export class SqliteStore implements Store {
   readonly assets: AssetRepository
   private depth = 0
   private readonly recordRepos = new Map<RecordKind, RecordRepository<unknown>>()
-  private readonly recordStmts: Record<'get' | 'all' | 'insert' | 'update', StatementSync>
+  private readonly recordStmts: Record<'get' | 'all' | 'byOwner' | 'insert' | 'update', StatementSync>
 
   constructor(private readonly db: DatabaseSync) {
     const { query, ...nodes } = softDeleteTable(db, 'nodes', NODE_COLUMNS, toNode, 'Node')
     const children = db.prepare('SELECT * FROM nodes WHERE parent_id = ? AND deleted_at IS NULL ORDER BY created_at, id')
-    this.nodes = { ...nodes, children: (parentId) => query(children, parentId) }
+    const root = db.prepare('SELECT * FROM nodes WHERE parent_id IS NULL AND deleted_at IS NULL ORDER BY created_at, id LIMIT 1')
+    this.nodes = { ...nodes, children: (parentId) => query(children, parentId), root: () => query(root)[0] }
 
     const w = {
       getSettings: db.prepare('SELECT settings FROM worlds WHERE id = ?'),
@@ -174,6 +175,7 @@ export class SqliteStore implements Store {
     this.recordStmts = {
       get: db.prepare('SELECT data FROM records WHERE kind = ? AND id = ?'),
       all: db.prepare('SELECT data FROM records WHERE kind = ? AND deleted_at IS NULL ORDER BY rowid'),
+      byOwner: db.prepare('SELECT data FROM records WHERE kind = ? AND owner_id = ? AND deleted_at IS NULL ORDER BY rowid'),
       insert: db.prepare('INSERT INTO records (kind, id, owner_id, data, deleted_at) VALUES (:kind, :id, :owner_id, :data, :deleted_at)'),
       update: db.prepare('UPDATE records SET owner_id = :owner_id, data = :data, deleted_at = :deleted_at WHERE kind = :kind AND id = :id')
     }
@@ -185,9 +187,11 @@ export class SqliteStore implements Store {
       const s = this.recordStmts
       const params = (r: RecordOf<K>) => ({ kind, id: r.id, owner_id: r.ownerId, data: JSON.stringify(r), deleted_at: r.deletedAt })
       const parse = (row: { data: string } | undefined) => row && (JSON.parse(row.data) as RecordOf<K>)
+      const parseAll = (rows: unknown[]) => (rows as { data: string }[]).map((row) => parse(row)!)
       const typed: RecordRepository<RecordOf<K>> = {
         get: (id) => parse(s.get.get(kind, id) as { data: string } | undefined),
-        all: () => (s.all.all(kind) as unknown as { data: string }[]).map((row) => parse(row)!),
+        all: () => parseAll(s.all.all(kind)),
+        byOwner: (ownerId) => parseAll(s.byOwner.all(kind, ownerId)),
         insert: (record) => void s.insert.run(params(record)),
         update: (record) => updateExisting(s.update, params(record), kind)
       }

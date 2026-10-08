@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { CommandError } from './command-kit'
 import type { HandlerMap } from './commands'
-import { NewId, create, deleteWith, live, update } from './record-kit'
+import { NewId, create, deleteWith, live, recordCrud } from './record-kit'
 import { Id } from './schema'
 import { THEME_PRESETS, Theme, ThemeSpan } from './themes'
 import { Time } from './time'
@@ -11,15 +11,16 @@ const SpanFields = ThemeSpan.pick({ themeId: true, start: true, end: true, regio
 export type ThemePatch = Partial<z.infer<typeof ThemeFields>>
 export type ThemeSpanPatch = Partial<z.infer<typeof SpanFields>>
 
+const theme = recordCrud('theme', ThemeFields)
+const span = recordCrud('themeSpan', SpanFields)
+
 export const THEME_COMMANDS = [
   /** A theme in the library of `ownerId` (the project's universe), starting from a preset if named. */
   z.object({ type: z.literal('theme.create'), payload: ThemeFields.partial().extend({ ...NewId, ownerId: Id, preset: z.string().optional() }) }),
-  z.object({ type: z.literal('theme.update'), payload: z.object({ id: Id, patch: ThemeFields.partial() }) }),
-  /** Deletes a theme and every span that uses it. */
-  z.object({ type: z.literal('theme.delete'), payload: z.object({ id: Id }) }),
+  /** `theme.delete` takes every span that uses the theme with it. */
+  ...theme.commands,
   z.object({ type: z.literal('themeSpan.create'), payload: SpanFields.partial().extend({ ...NewId, ownerId: Id, themeId: Id, start: Time, end: Time }) }),
-  z.object({ type: z.literal('themeSpan.update'), payload: z.object({ id: Id, patch: SpanFields.partial() }) }),
-  z.object({ type: z.literal('themeSpan.delete'), payload: z.object({ id: Id }) })
+  ...span.commands
 ] as const
 
 type ThemeCommand = z.infer<(typeof THEME_COMMANDS)[number]>
@@ -41,9 +42,10 @@ export const themeHandlers: HandlerMap<ThemeCommand> = {
       notes: p.notes ?? ''
     })
   },
-  'theme.update': (store, { id, patch }, ctx) => update(store, 'theme', ctx, id, patch),
+  'theme.update': theme.update,
+  // Spans of it on any world go with it.
   'theme.delete': (store, { id }, ctx, run) =>
-    deleteWith(store, ctx, run, { kind: 'theme', id }, [], live(store, 'themeSpan').filter((s) => s.themeId === id).map((s) => ({ kind: 'themeSpan' as const, id: s.id }))),
+    deleteWith(store, ctx, run, { kind: 'theme', id }, () => ({ remove: live(store, 'themeSpan').flatMap((s) => (s.themeId === id ? [{ kind: 'themeSpan' as const, id: s.id }] : [])) })),
   'themeSpan.create': (store, { id, ownerId, ...p }, ctx) =>
     create(store, 'themeSpan', ctx, ownerId, id, {
       themeId: p.themeId,
@@ -54,6 +56,6 @@ export const themeHandlers: HandlerMap<ThemeCommand> = {
       blendIn: p.blendIn ?? 0,
       blendOut: p.blendOut ?? 0
     }),
-  'themeSpan.update': (store, { id, patch }, ctx) => update(store, 'themeSpan', ctx, id, patch),
-  'themeSpan.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'themeSpan', id })
+  'themeSpan.update': span.update,
+  'themeSpan.delete': span.delete
 }

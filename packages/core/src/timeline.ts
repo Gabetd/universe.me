@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { Id, RecordMeta } from './schema'
+import { Id, Name, RecordMeta } from './schema'
 import { Precision, Time } from './time'
 import { HexColor, LatLon } from './world'
 
@@ -16,7 +16,7 @@ export type EventLocation = z.infer<typeof EventLocation>
 
 export const TimelineEvent = z.object({
   ...RecordMeta,
-  title: z.string().min(1).max(200),
+  title: Name,
   start: Time,
   /** Null for an instant (a moment rather than a span). */
   end: Time.nullable(),
@@ -55,7 +55,7 @@ export type EventLink = z.infer<typeof EventLink>
 /** Several events merged into one ("The Great War"). Its span is its events' span. */
 export const EventGroup = z.object({
   ...RecordMeta,
-  title: z.string().min(1).max(200),
+  title: Name,
   color: HexColor,
   notes: z.string(),
   collapsed: z.boolean()
@@ -65,7 +65,7 @@ export type EventGroup = z.infer<typeof EventGroup>
 /** A named background span ("Age of Ice"). */
 export const Era = z.object({
   ...RecordMeta,
-  name: z.string().min(1).max(200),
+  name: Name,
   start: Time,
   end: Time,
   color: HexColor,
@@ -82,7 +82,7 @@ export const Lane = z.object({
 export type Lane = z.infer<typeof Lane>
 
 /** What an EntityChange can change about a region. Reshaping over time comes later. */
-export const RegionChangePatch = z.object({ name: z.string().min(1).max(200).optional(), color: HexColor.optional() })
+export const RegionChangePatch = z.object({ name: Name.optional(), color: HexColor.optional() })
 export type RegionChangePatch = z.infer<typeof RegionChangePatch>
 
 /**

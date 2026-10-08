@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import { batchOf, liveRecord, pickColor, previousValues } from './command-kit'
+import { batchOf, edgeTable, ownerOf, pickColor, previousValues } from './command-kit'
 import type { Command, HandlerMap } from './commands'
-import { NewId, Ref, create, deleteWith, live, setDeleted, update, validate } from './record-kit'
-import { Id } from './schema'
+import { NewId, Ref, clearRefs, create, deleteWith, live, recordCrud, refsWhere, setDeleted, upsert, validate } from './record-kit'
+import { Id, Name } from './schema'
 import { Time } from './time'
 import { EntityChange, Era, EventGroup, EventLink, Lane, LinkType, TimelineEvent } from './timeline'
 
@@ -13,45 +13,43 @@ const EventFields = TimelineEvent.pick({
 const EraFields = Era.pick({ name: true, start: true, end: true, color: true, notes: true })
 const ChangeFields = EntityChange.pick({ at: true, change: true, patch: true, causeEventId: true, note: true })
 
+const events = recordCrud('event', EventFields)
+const links = recordCrud('link', EventLink.pick({ type: true, note: true }))
+const groups = recordCrud('group', EventGroup.pick({ title: true, color: true, notes: true, collapsed: true }))
+const eras = recordCrud('era', EraFields)
+const lanes = recordCrud('lane', Lane.pick({ name: true, order: true }))
+const changes = recordCrud('change', ChangeFields)
+
 export const TIMELINE_COMMANDS = [
   z.object({
     type: z.literal('event.create'),
     payload: EventFields.partial().extend({ ...NewId, ownerId: Id, start: Time })
   }),
-  z.object({ type: z.literal('event.update'), payload: z.object({ id: Id, patch: EventFields.partial() }) }),
-  z.object({ type: z.literal('event.delete'), payload: z.object({ id: Id }) }),
+  ...events.commands,
 
   z.object({
     type: z.literal('link.create'),
     payload: z.object({ ...NewId, fromId: Id, toId: Id, type: LinkType.optional(), note: z.string().optional() })
   }),
-  z.object({ type: z.literal('link.update'), payload: z.object({ id: Id, patch: EventLink.pick({ type: true, note: true }).partial() }) }),
-  z.object({ type: z.literal('link.delete'), payload: z.object({ id: Id }) }),
+  ...links.commands,
 
   z.object({
     type: z.literal('group.create'),
-    payload: z.object({ ...NewId, ownerId: Id, title: z.string().min(1).max(200).optional(), color: EventGroup.shape.color.optional(), eventIds: z.array(Id).min(1) })
+    payload: z.object({ ...NewId, ownerId: Id, title: Name.optional(), color: EventGroup.shape.color.optional(), eventIds: z.array(Id).min(1) })
   }),
-  z.object({
-    type: z.literal('group.update'),
-    payload: z.object({ id: Id, patch: EventGroup.pick({ title: true, color: true, notes: true, collapsed: true }).partial() })
-  }),
-  z.object({ type: z.literal('group.delete'), payload: z.object({ id: Id }) }),
+  ...groups.commands,
 
   z.object({ type: z.literal('era.create'), payload: EraFields.partial().extend({ ...NewId, ownerId: Id, start: Time, end: Time }) }),
-  z.object({ type: z.literal('era.update'), payload: z.object({ id: Id, patch: EraFields.partial() }) }),
-  z.object({ type: z.literal('era.delete'), payload: z.object({ id: Id }) }),
+  ...eras.commands,
 
   z.object({ type: z.literal('lane.create'), payload: z.object({ ...NewId, ownerId: Id, name: Lane.shape.name.optional(), order: z.number().optional() }) }),
-  z.object({ type: z.literal('lane.update'), payload: z.object({ id: Id, patch: Lane.pick({ name: true, order: true }).partial() }) }),
-  z.object({ type: z.literal('lane.delete'), payload: z.object({ id: Id }) }),
+  ...lanes.commands,
 
   z.object({
     type: z.literal('change.create'),
     payload: ChangeFields.partial().extend({ ...NewId, ownerId: Id, entityKind: EntityChange.shape.entityKind, entityId: Id, at: Time, change: EntityChange.shape.change })
   }),
-  z.object({ type: z.literal('change.update'), payload: z.object({ id: Id, patch: ChangeFields.partial() }) }),
-  z.object({ type: z.literal('change.delete'), payload: z.object({ id: Id }) }),
+  ...changes.commands,
 
   z.object({ type: z.literal('timeline.update'), payload: z.object({ ownerId: Id, patch: z.object({ now: Time.optional() }) }) }),
 
@@ -78,27 +76,24 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
       canvas: p.canvas ?? null,
       canvasHidden: p.canvasHidden ?? false
     }),
-  'event.update': (store, { id, patch }, ctx) => update(store, 'event', ctx, id, patch),
+  'event.update': events.update,
   // Its links and structure effects can't outlive it, so they go (and come back) with it; maintenance changes it caused stay, uncaused.
+  // Those all share its owner; a character's stops aren't checked, so every character is looked at.
   'event.delete': (store, { id }, ctx, run) =>
-    deleteWith(
-      store, ctx, run, { kind: 'event', id },
-      [
-        ...live(store, 'maintenance').filter((m) => m.causeEventId === id).map((m): Command => ({ type: 'maintenance.update', payload: { id: m.id, patch: { causeEventId: null } } })),
+    deleteWith(store, ctx, run, { kind: 'event', id }, ({ ownerId }) => ({
+      detach: [
+        ...clearRefs(store, 'maintenance', ownerId, 'causeEventId', id),
         ...live(store, 'character')
           .filter((c) => c.stops.some((s) => s.eventId === id))
           .map((c): Command => ({ type: 'character.update', payload: { id: c.id, patch: { stops: c.stops.map((s) => (s.eventId === id ? { ...s, eventId: null } : s)) } } }))
       ],
-      [
-        ...live(store, 'link').filter((l) => l.fromId === id || l.toId === id).map((l) => ({ kind: 'link' as const, id: l.id })),
-        ...live(store, 'effect').filter((e) => e.eventId === id).map((e) => ({ kind: 'effect' as const, id: e.id }))
-      ]
-    ),
+      remove: [...refsWhere(store, 'link', ownerId, (l) => l.fromId === id || l.toId === id), ...refsWhere(store, 'effect', ownerId, (e) => e.eventId === id)]
+    })),
 
   'link.create': (store, { id, fromId, ...p }, ctx) =>
-    create(store, 'link', ctx, liveRecord(store, 'event', fromId).ownerId, id, { fromId, toId: p.toId, type: p.type ?? 'causes', note: p.note ?? '' }),
-  'link.update': (store, { id, patch }, ctx) => update(store, 'link', ctx, id, patch),
-  'link.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'link', id }),
+    create(store, 'link', ctx, ownerOf(store, 'event', fromId), id, { fromId, toId: p.toId, type: p.type ?? 'causes', note: p.note ?? '' }, [fromId]),
+  'link.update': links.update,
+  'link.delete': links.delete,
 
   'group.create'(store, { id, ownerId, title, color, eventIds }, ctx, run) {
     const created = create(store, 'group', ctx, ownerId, id, { title: title ?? 'New group', color: color ?? pickColor(ctx), notes: '', collapsed: false })
@@ -106,30 +101,22 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
     const undo = eventIds.map((eventId) => run({ type: 'event.update', payload: { id: eventId, patch: { groupId } } }).inverse)
     return { ...created, inverse: batchOf([...undo.reverse(), created.inverse]) }
   },
-  'group.update': (store, { id, patch }, ctx) => update(store, 'group', ctx, id, patch),
+  'group.update': groups.update,
   // Deleting a group keeps its events, just ungrouped.
-  'group.delete': (store, { id }, ctx, run) =>
-    deleteWith(
-      store, ctx, run, { kind: 'group', id },
-      live(store, 'event').filter((e) => e.groupId === id).map((e) => ({ type: 'event.update', payload: { id: e.id, patch: { groupId: null } } }))
-    ),
+  'group.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'group', id }, ({ ownerId }) => ({ detach: clearRefs(store, 'event', ownerId, 'groupId', id) })),
 
   'era.create': (store, { id, ownerId, ...p }, ctx) =>
     create(store, 'era', ctx, ownerId, id, { name: p.name ?? 'New era', start: p.start, end: p.end, color: p.color ?? pickColor(ctx), notes: p.notes ?? '' }),
-  'era.update': (store, { id, patch }, ctx) => update(store, 'era', ctx, id, patch),
-  'era.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'era', id }),
+  'era.update': eras.update,
+  'era.delete': eras.delete,
 
   'lane.create': (store, { id, ownerId, name, order }, ctx) => {
-    const last = Math.max(0, ...live(store, 'lane').filter((l) => l.ownerId === ownerId).map((l) => l.order))
+    const last = Math.max(0, ...store.records('lane').byOwner(ownerId).map((l) => l.order))
     return create(store, 'lane', ctx, ownerId, id, { name: name ?? 'New lane', order: order ?? last + 1 })
   },
-  'lane.update': (store, { id, patch }, ctx) => update(store, 'lane', ctx, id, patch),
+  'lane.update': lanes.update,
   // Events in a deleted lane move to the default lane.
-  'lane.delete': (store, { id }, ctx, run) =>
-    deleteWith(
-      store, ctx, run, { kind: 'lane', id },
-      live(store, 'event').filter((e) => e.laneId === id).map((e) => ({ type: 'event.update', payload: { id: e.id, patch: { laneId: null } } }))
-    ),
+  'lane.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'lane', id }, ({ ownerId }) => ({ detach: clearRefs(store, 'event', ownerId, 'laneId', id) })),
 
   'change.create': (store, { id, ownerId, ...p }, ctx) =>
     create(store, 'change', ctx, ownerId, id, {
@@ -141,15 +128,19 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
       causeEventId: p.causeEventId ?? null,
       note: p.note ?? ''
     }),
-  'change.update': (store, { id, patch }, ctx) => update(store, 'change', ctx, id, patch),
-  'change.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'change', id }),
+  'change.update': changes.update,
+  'change.delete': changes.delete,
 
-  'timeline.update'(store, { ownerId, patch }, ctx) {
-    const existing = store.records('timeline').get(ownerId)
-    if (!existing) create(store, 'timeline', ctx, ownerId, ownerId, { now: 0 })
-    const result = update(store, 'timeline', ctx, ownerId, patch)
-    return { ...result, inverse: { type: 'timeline.update', payload: { ownerId, patch: previousValues(existing ?? { now: 0 }, patch) } }, target: undefined }
-  },
+  // A timeline's settings start out at their defaults, so undoing the first change goes back to those.
+  'timeline.update': (store, { ownerId, patch }, ctx) => ({
+    ...upsert(
+      store, 'timeline', ctx, ownerId, ownerId, { now: patch.now ?? 0 },
+      (previous) => ({ type: 'timeline.update', payload: { ownerId, patch: previous } }),
+      { type: 'timeline.update', payload: { ownerId, patch: previousValues({ now: 0 }, patch) } },
+      patch
+    ),
+    target: undefined
+  }),
 
   'record.remove': (store, { refs }, ctx) => ({
     inverse: { type: 'record.restore', payload: { refs } },
@@ -157,7 +148,9 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
   }),
   'record.restore'(store, { refs }, ctx) {
     const owner = setDeleted(store, refs, null, ctx.now())
-    for (const { kind, id } of refs) validate(store, kind, store.records(kind).get(id)!)
+    // One read of the link tables for all the links coming back, not one each.
+    const edges = edgeTable(store)
+    for (const { kind, id } of refs) validate(store, kind, store.records(kind).get(id)!, { edges })
     return { inverse: { type: 'record.remove', payload: { refs } }, target: refs[0], owner }
   }
 }

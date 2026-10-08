@@ -2,13 +2,12 @@ import { z } from 'zod'
 import { ALLOWED_CHILDREN, Id, KIND_LABELS, NodeKind, NodePatch, Seed, Vec3, type SpatialNode } from './schema'
 import { base64ToBytes, bytesToBase64 } from './encoding'
 import type { Store } from './store'
-import { CommandError, batchOf, liveNode, liveRegion, liveWorld, pickColor, previousValues, type CommandContext, type HandlerResult, type Run } from './command-kit'
+import { CommandError, batchOf, liveNode, liveRegion, liveWorld, newNode, patchRow, pickColor, requireRow, softDelete, type CommandContext, type HandlerResult, type Run } from './command-kit'
 import { CHARACTER_COMMANDS, characterHandlers } from './character-commands'
 import { THEME_COMMANDS, themeHandlers } from './theme-commands'
 import { WORLD_SIM_COMMANDS, worldSimHandlers } from './world-sim-commands'
 import { STRUCTURE_COMMANDS, structureHandlers } from './structure-commands'
 import { TIMELINE_COMMANDS, timelineHandlers } from './timeline-commands'
-import { stripUndefined } from './util'
 import {
   CUBE_FACES,
   DEFAULT_WORLD_SETTINGS,
@@ -117,26 +116,13 @@ export const handlers: Handlers = {
     const id = p.id ?? ctx.newId()
     if (store.nodes.get(id)) throw new CommandError(`Node ${id} already exists`)
     const now = ctx.now()
-    store.nodes.insert({
-      id,
-      parentId: parent.id,
-      kind: p.kind,
-      name: p.name ?? `New ${KIND_LABELS[p.kind]}`,
-      seed: p.seed ?? ctx.randomSeed(),
-      position: p.position ?? { x: 0, y: 0, z: 0 },
-      notes: p.notes ?? '',
-      tags: p.tags ?? [],
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null
-    })
+    store.nodes.insert(newNode({ ...p, id, parentId: parent.id, name: p.name ?? `New ${KIND_LABELS[p.kind]}`, seed: p.seed ?? ctx.randomSeed() }, now))
     return { inverse: { type: 'node.delete', payload: { id } }, target: { kind: 'node', id } }
   },
 
   'node.update'(store, { id, patch }, ctx) {
-    const node = liveNode(store, id)
-    store.nodes.update({ ...node, ...stripUndefined(patch), updatedAt: ctx.now() })
-    return { inverse: { type: 'node.update', payload: { id, patch: previousValues(node, patch) } }, target: { kind: 'node', id } }
+    const previous = patchRow(store.nodes, liveNode(store, id), patch, ctx.now())
+    return { inverse: { type: 'node.update', payload: { id, patch: previous } }, target: { kind: 'node', id } }
   },
 
   'node.delete'(store, { id }, ctx) {
@@ -144,13 +130,10 @@ export const handlers: Handlers = {
     if (node.parentId === null) throw new CommandError('The universe itself cannot be deleted')
     // Soft-delete the node and its live descendants. Descendants deleted
     // earlier stay deleted when this is undone, because they are not collected here.
-    const ids = [node.id, ...liveDescendants(store, node.id).map((n) => n.id)]
+    const nodes = [node, ...liveDescendants(store, node.id)]
     const now = ctx.now()
-    for (const nid of ids) {
-      const n = store.nodes.get(nid)!
-      store.nodes.update({ ...n, deletedAt: now, updatedAt: now })
-    }
-    return { inverse: { type: 'node.restore', payload: { ids } }, target: { kind: 'node', id: node.parentId } }
+    for (const n of nodes) softDelete(store.nodes, n, now, now)
+    return { inverse: { type: 'node.restore', payload: { ids: nodes.map((n) => n.id) } }, target: { kind: 'node', id: node.parentId } }
   },
 
   'world.update'(store, { id, patch }) {
@@ -221,40 +204,30 @@ export const handlers: Handlers = {
 
   'region.update'(store, { id, patch }, ctx) {
     const region = liveRegion(store, id)
-    store.regions.update({ ...region, ...stripUndefined(patch), updatedAt: ctx.now() })
-    return { inverse: { type: 'region.update', payload: { id, patch: previousValues(region, patch) } }, target: { kind: 'region', id }, owner: region.worldId }
+    const previous = patchRow(store.regions, region, patch, ctx.now())
+    return { inverse: { type: 'region.update', payload: { id, patch: previous } }, target: { kind: 'region', id }, owner: region.worldId }
   },
 
   'region.delete'(store, { id }, ctx) {
     const region = liveRegion(store, id)
     const now = ctx.now()
-    store.regions.update({ ...region, deletedAt: now, updatedAt: now })
+    softDelete(store.regions, region, now, now)
     return { inverse: { type: 'region.restore', payload: { id } }, target: { kind: 'node', id: region.worldId }, owner: region.worldId }
   },
 
   'region.restore'(store, { id }, ctx) {
-    const region = store.regions.get(id)
-    if (!region) throw new CommandError(`Region ${id} does not exist`)
-    store.regions.update({ ...region, deletedAt: null, updatedAt: ctx.now() })
+    const region = requireRow(store.regions.get(id), 'Region', id)
+    softDelete(store.regions, region, null, ctx.now())
     return { inverse: { type: 'region.delete', payload: { id } }, target: { kind: 'region', id }, owner: region.worldId }
   },
 
   'node.restore'(store, { ids }, ctx) {
     const now = ctx.now()
-    for (const nid of ids) {
-      const n = store.nodes.get(nid)
-      if (!n) throw new CommandError(`Node ${nid} does not exist`)
-      store.nodes.update({ ...n, deletedAt: null, updatedAt: now })
-    }
+    for (const nid of ids) softDelete(store.nodes, requireRow(store.nodes.get(nid), 'Node', nid), null, now)
     // ids[0] is the root of the restored subtree, so deleting it again re-collects the same set.
     return { inverse: { type: 'node.delete', payload: { id: ids[0]! } }, target: { kind: 'node', id: ids[0]! } }
   }
 }
-
-
-
-
-
 
 /** Applies an already-validated command inside the current transaction. */
 export function applyCommand(store: Store, command: Command, ctx: CommandContext): HandlerResult {
@@ -262,9 +235,12 @@ export function applyCommand(store: Store, command: Command, ctx: CommandContext
   return handler(store, command.payload as never, ctx, (c) => applyCommand(store, c, ctx))
 }
 
-function liveDescendants(store: Store, id: string): SpatialNode[] {
-  const out: SpatialNode[] = []
-  for (const child of store.nodes.children(id)) out.push(child, ...liveDescendants(store, child.id))
+/** A node's live descendants, each before its own (one query per node that has any). */
+function liveDescendants(store: Store, id: string, out: SpatialNode[] = []): SpatialNode[] {
+  for (const child of store.nodes.children(id)) {
+    out.push(child)
+    liveDescendants(store, child.id, out)
+  }
   return out
 }
 

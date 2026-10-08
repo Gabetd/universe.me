@@ -29,6 +29,9 @@ export const KIND_LABELS: Record<NodeKind, string> = {
 export const Id = z.string().min(1)
 export type Id = z.infer<typeof Id>
 
+/** The name or title of anything a user names. */
+export const Name = z.string().min(1).max(200)
+
 /** Fields every record in the `records` table has. `ownerId` is the node it belongs to. */
 export const RecordMeta = {
   id: Id,
@@ -48,7 +51,7 @@ export const SpatialNode = z.object({
   id: Id,
   parentId: Id.nullable(),
   kind: NodeKind,
-  name: z.string().min(1).max(200),
+  name: Name,
   seed: Seed,
   /** Position relative to the parent's frame; units depend on the parent's kind. */
   position: Vec3,

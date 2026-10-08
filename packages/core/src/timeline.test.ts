@@ -1,5 +1,24 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { CommandBus, MemoryStore, createRootUniverse, eventPlace, fromParts, regionAt, timelineWarnings, causalChain, timelineOwner } from './index'
+import {
+  CommandBus,
+  LINK_TYPES,
+  MemoryStore,
+  ORDERED_LINKS,
+  createRootUniverse,
+  eventPlace,
+  fromParts,
+  groupSpan,
+  groupSpans,
+  indexChanges,
+  regionAt,
+  timelineWarnings,
+  causalChain,
+  timelineOwner,
+  type EntityChange,
+  type EventGroup,
+  type EventLink,
+  type TimelineEvent
+} from './index'
 
 let store: MemoryStore
 let bus: CommandBus
@@ -91,6 +110,22 @@ describe('links', () => {
     bus.undo()
     expect(links()).toHaveLength(1)
     expect(events()).toHaveLength(2)
+  })
+
+  it('won’t bring back a link that one made since duplicates; edits keep a link’s ends', () => {
+    const [a, b, c] = ['A', 'B', 'C'].map((t, i) => event(t, year(i)))
+    const first = bus.execute({ type: 'link.create', payload: { fromId: a!, toId: b! } }).targetId!
+    bus.execute({ type: 'link.create', payload: { fromId: b!, toId: c! } })
+    bus.execute({ type: 'link.delete', payload: { id: first } })
+    const second = bus.execute({ type: 'link.create', payload: { fromId: a!, toId: b!, type: 'enables' } }).targetId!
+    expect(() => bus.execute({ type: 'record.restore', payload: { refs: [{ kind: 'link', id: first }] } })).toThrow(/already linked/)
+    bus.execute({ type: 'link.update', payload: { id: second, patch: { type: 'precedes', note: 'Then' } } })
+    expect(store.records('link').get(second)).toMatchObject({ fromId: a, toId: b, type: 'precedes', note: 'Then' })
+    // Deleting an event takes both of its links, and undo brings them back together.
+    bus.execute({ type: 'event.delete', payload: { id: b! } })
+    expect(links()).toHaveLength(0)
+    bus.undo()
+    expect(links().map((l) => l.toId).sort()).toEqual([b, c].sort())
   })
 
   it('finds causal chains in both directions', () => {
@@ -185,6 +220,71 @@ describe('warnings', () => {
     expect(messages).toContain('“Effect” starts before “Cause”, which causes it')
     expect(messages.some((m) => m.startsWith('Causal loop'))).toBe(true)
   })
+
+  it('finds the same causal loops, in the same order, as walking back from every event', () => {
+    // The first way of finding loops: an event is in one if a walk downstream from it comes back.
+    const chainOf = (links: EventLink[], id: string) => {
+      const next = new Map<string, string[]>()
+      for (const l of links) next.set(l.fromId, [...(next.get(l.fromId) ?? []), l.toId])
+      const seen = new Set<string>()
+      const stack = [id]
+      while (stack.length) {
+        for (const x of next.get(stack.pop()!) ?? []) {
+          if (seen.has(x)) continue
+          seen.add(x)
+          if (x !== id) stack.push(x)
+        }
+      }
+      return seen
+    }
+    const expected = (events: TimelineEvent[], links: EventLink[]) => {
+      const ordered = links.filter((l) => ORDERED_LINKS.includes(l.type))
+      const reported = new Set<string>()
+      const loops: string[][] = []
+      for (const e of events) {
+        if (reported.has(e.id) || !chainOf(ordered, e.id).has(e.id)) continue
+        const loop = [e.id, ...[...chainOf(ordered, e.id)].filter((id) => id !== e.id && chainOf(ordered, id).has(e.id))]
+        loop.forEach((id) => reported.add(id))
+        loops.push(loop)
+      }
+      return loops
+    }
+    let seed = 3
+    const random = (n: number) => ((seed = (seed * 1103515245 + 12345) >>> 0) >>> 8) % n
+    for (const [count, linkCount] of [[300, 200], [300, 330], [200, 600]] as const) {
+      const evs = Array.from({ length: count }, (_, i): TimelineEvent => ({
+        id: `e${i}`, ownerId: worldId, title: `E${i}`, start: random(1000), end: null, precision: 'year', laneId: null, groupId: null, color: '#ffffff', notes: '', tags: [], locations: [], createdAt: '', updatedAt: '', deletedAt: null
+      }))
+      const lnks = Array.from({ length: linkCount }, (_, i): EventLink => ({
+        id: `l${i}`, ownerId: worldId, fromId: `e${random(count)}`, toId: `e${random(count)}`, type: LINK_TYPES[random(LINK_TYPES.length)]!, note: '', createdAt: '', updatedAt: '', deletedAt: null
+      }))
+      const loops = timelineWarnings({ events: evs, links: lnks, changes: [] }, [])
+        .filter((w) => w.message.startsWith('Causal loop'))
+        .map((w) => w.refs.map((r) => r.id))
+      const want = expected(evs, lnks)
+      expect(want.length).toBeGreaterThan(0)
+      expect(loops).toEqual(want)
+    }
+  })
+})
+
+describe('indexed queries', () => {
+  const ev = (id: string, start: number, end: number | null, groupId: string | null) => ({ id, start, end, groupId }) as TimelineEvent
+  const change = (id: string, entityId: string, at: number, change: 'appear' | 'vanish') => ({ id, entityId, at, change, patch: {} }) as unknown as EntityChange
+
+  it('spans every group in one pass', () => {
+    const events = [ev('a', 5, 9, 'g'), ev('b', 1, null, 'g'), ev('c', 20, 30, 'h'), ev('d', 0, 100, null)]
+    expect(groupSpans(events)).toEqual(new Map([['g', [1, 9]], ['h', [20, 30]]]))
+    expect(groupSpan({ id: 'g' } as EventGroup, events)).toEqual([1, 9])
+    expect(groupSpan({ id: 'empty' } as EventGroup, events)).toBeUndefined()
+  })
+
+  it('sorts each entity’s changes once per list, keeping equal times in their order', () => {
+    const changes = [change('3', 'r', 30, 'vanish'), change('1', 's', 10, 'appear'), change('2a', 'r', 10, 'appear'), change('2b', 'r', 10, 'vanish')]
+    expect(indexChanges(changes).get('r')!.map((c) => c.id)).toEqual(['2a', '2b', '3'])
+    expect(indexChanges(changes)).toBe(indexChanges(changes))
+    expect(indexChanges(changes).get('nothing')).toBeUndefined()
+  })
 })
 
 describe('timeline owner and settings', () => {
@@ -197,7 +297,10 @@ describe('timeline owner and settings', () => {
   it('sets “now” undoably', () => {
     bus.execute({ type: 'timeline.update', payload: { ownerId: worldId, patch: { now: year(1500) } } })
     expect(store.records('timeline').get(worldId)!.now).toBe(year(1500))
-    bus.undo()
+    bus.execute({ type: 'timeline.update', payload: { ownerId: worldId, patch: { now: year(1600) } } })
+    expect(bus.undo()?.command).toEqual({ type: 'timeline.update', payload: { ownerId: worldId, patch: { now: year(1500) } } })
+    // The first change undoes to the default, keeping the record.
+    expect(bus.undo()?.command).toEqual({ type: 'timeline.update', payload: { ownerId: worldId, patch: { now: 0 } } })
     expect(store.records('timeline').get(worldId)!.now).toBe(0)
   })
 })

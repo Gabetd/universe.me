@@ -10,6 +10,8 @@ export interface NodeRepository {
   children(parentId: Id): SpatialNode[]
   /** Every live node. */
   all(): SpatialNode[]
+  /** The live node without a parent: the universe. */
+  root(): SpatialNode | undefined
   insert(node: SpatialNode): void
   update(node: SpatialNode): void
 }
@@ -40,6 +42,8 @@ export interface RecordRepository<T> {
   get(id: Id): T | undefined
   /** Every live record. */
   all(): T[]
+  /** Every live record of one owner, in the order of `all()`. */
+  byOwner(ownerId: Id): T[]
   insert(record: T): void
   update(record: T): void
 }
@@ -73,7 +77,13 @@ class MemoryTable<T extends { id: Id; deletedAt: string | null }> {
   rows = new Map<Id, T>()
 
   get = (id: Id): T | undefined => clone(this.rows.get(id))
-  live = (): T[] => [...this.rows.values()].filter((r) => !r.deletedAt).map((r) => clone(r)!)
+  /** Live rows that pass `keep`, copied. */
+  where = (keep: (row: T) => boolean): T[] => {
+    const out: T[] = []
+    for (const r of this.rows.values()) if (!r.deletedAt && keep(r)) out.push(clone(r))
+    return out
+  }
+  live = (): T[] => this.where(() => true)
   insert = (row: T): void => {
     if (this.rows.has(row.id)) throw new Error(`${row.id} already exists`)
     this.rows.set(row.id, clone(row)!)
@@ -101,8 +111,9 @@ export class MemoryStore implements Store {
 
   nodes: NodeRepository = {
     get: this.nodeTable.get,
-    children: (parentId) => this.nodeTable.live().filter((n) => n.parentId === parentId),
+    children: (parentId) => this.nodeTable.where((n) => n.parentId === parentId),
     all: this.nodeTable.live,
+    root: () => this.nodeTable.where((n) => n.parentId === null)[0],
     insert: this.nodeTable.insert,
     update: this.nodeTable.update
   }
@@ -116,7 +127,7 @@ export class MemoryStore implements Store {
 
   records<K extends RecordKind>(kind: K): RecordRepository<RecordOf<K>> {
     const t = this.recordTables.get(kind)! as unknown as MemoryTable<RecordOf<K>>
-    return { get: t.get, all: t.live, insert: t.insert, update: t.update }
+    return { get: t.get, all: t.live, byOwner: (ownerId) => t.where((r) => r.ownerId === ownerId), insert: t.insert, update: t.update }
   }
 
   worlds: WorldRepository = {

@@ -2,3 +2,23 @@
 export function stripUndefined<T extends object>(obj: T): Partial<T> {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as Partial<T>
 }
+
+/**
+ * `fn` worked out once per argument object. Arrays and records from the
+ * store are never changed in place (a change makes a new one), so a cached
+ * answer stays right for as long as its argument is around.
+ */
+export function memoize<K extends object, V>(fn: (key: K) => V): (key: K) => V {
+  const cache = new WeakMap<K, V>()
+  return (key) => {
+    if (!cache.has(key)) cache.set(key, fn(key))
+    return cache.get(key)!
+  }
+}
+
+/** Looks items up by id; the first of equal ids wins, as with `find`. */
+export function byId<T extends { id: string }>(items: readonly T[]): Map<string, T> {
+  const map = new Map<string, T>()
+  for (const item of items) if (!map.has(item.id)) map.set(item.id, item)
+  return map
+}
