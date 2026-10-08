@@ -84,16 +84,27 @@ export function chunksAround(p: LatLon, radiusKm: number, ring: number): ChunkId
   return out.sort((a, b) => a.d - b.d).map((o) => o.id)
 }
 
-/** The globe-scale terrain at a point: metres above sea level and the biome there. */
-export type BaseSampler = (lat: number, lon: number) => { elevation: number; biome: number }
+/** The globe-scale terrain: metres above sea level, and the biome, at a point. Heights are wanted far more often, so they come alone. */
+export interface BaseSampler {
+  elevation(lat: number, lon: number): number
+  biome(lat: number, lon: number): number
+  /** The biome everywhere, if there's only one (a chunk inside one biome): then its edges needn't be worked out. */
+  only?: number
+}
 
 /** The base terrain from a live model (in the UI thread). */
 export function modelSampler(model: TerrainModel): BaseSampler {
   const dir: Vec3 = [0, 0, 0]
-  return (lat, lon) => {
+  const at = (lat: number, lon: number) => {
     latLonToDir(lat, lon, dir)
-    const p = model.locate(dir[0], dir[1], dir[2])
-    return { elevation: model.heightOf(p) - model.settings.seaLevel, biome: model.biome(p.face, model.cellOf(p)) }
+    return model.locate(dir[0], dir[1], dir[2])
+  }
+  return {
+    elevation: (lat, lon) => model.heightOf(at(lat, lon)) - model.settings.seaLevel,
+    biome: (lat, lon) => {
+      const p = at(lat, lon)
+      return model.biome(p.face, model.cellOf(p))
+    }
   }
 }
 
@@ -112,9 +123,10 @@ export function sampleBaseGrid(base: BaseSampler, bounds: ChunkBounds): BaseGrid
   const biome: number[] = []
   for (let j = 0; j < GRID; j++) {
     for (let i = 0; i < GRID; i++) {
-      const s = base(bounds.lat0 + ((bounds.lat1 - bounds.lat0) * j) / (GRID - 1), bounds.lon0 + ((bounds.lon1 - bounds.lon0) * i) / (GRID - 1))
-      elevation.push(s.elevation)
-      biome.push(s.biome)
+      const lat = bounds.lat0 + ((bounds.lat1 - bounds.lat0) * j) / (GRID - 1)
+      const lon = bounds.lon0 + ((bounds.lon1 - bounds.lon0) * i) / (GRID - 1)
+      elevation.push(base.elevation(lat, lon))
+      biome.push(base.biome(lat, lon))
     }
   }
   return { bounds, elevation, biome }
@@ -122,16 +134,21 @@ export function sampleBaseGrid(base: BaseSampler, bounds: ChunkBounds): BaseGrid
 
 /** Reads a sampled grid back, interpolating heights (biomes: the nearest sample). */
 export function gridSampler(grid: BaseGrid): BaseSampler {
-  const { bounds: b } = grid
-  return (lat, lon) => {
-    const gx = clamp(((lon - b.lon0) / (b.lon1 - b.lon0)) * (GRID - 1), 0, GRID - 1)
-    const gy = clamp(((lat - b.lat0) / (b.lat1 - b.lat0)) * (GRID - 1), 0, GRID - 1)
-    const i0 = Math.min(GRID - 2, Math.floor(gx))
-    const j0 = Math.min(GRID - 2, Math.floor(gy))
-    const e = grid.elevation
-    const k = j0 * GRID + i0
-    const elevation = bilerp(e[k]!, e[k + 1]!, e[k + GRID]!, e[k + GRID + 1]!, gx - i0, gy - j0)
-    return { elevation, biome: grid.biome[Math.round(gy) * GRID + Math.round(gx)]! }
+  const { bounds: b, elevation: e, biome } = grid
+  // Where a point is on the grid, in samples.
+  const gx = (lon: number) => clamp(((lon - b.lon0) / (b.lon1 - b.lon0)) * (GRID - 1), 0, GRID - 1)
+  const gy = (lat: number) => clamp(((lat - b.lat0) / (b.lat1 - b.lat0)) * (GRID - 1), 0, GRID - 1)
+  return {
+    elevation(lat, lon) {
+      const x = gx(lon)
+      const y = gy(lat)
+      const i0 = Math.min(GRID - 2, Math.floor(x))
+      const j0 = Math.min(GRID - 2, Math.floor(y))
+      const k = j0 * GRID + i0
+      return bilerp(e[k]!, e[k + 1]!, e[k + GRID]!, e[k + GRID + 1]!, x - i0, y - j0)
+    },
+    biome: (lat, lon) => biome[Math.round(gy(lat)) * GRID + Math.round(gx(lon))]!,
+    only: biome.every((v) => v === biome[0]) ? biome[0] : undefined
   }
 }
 
@@ -176,7 +193,7 @@ export class GroundDetail {
    * hills and bumps, rougher where the land is high.
    */
   elevation(base: BaseSampler, lat: number, lon: number): number {
-    const { elevation } = base(lat, lon)
+    const elevation = base.elevation(lat, lon)
     const d = this.dirAt(lat, lon)
     return elevation + octaves(this.hills, d[0], d[1], d[2], this.hillFreqs, 9 + clamp(Math.abs(elevation) * 0.04, 0, 110), 0.4)
   }
@@ -190,7 +207,8 @@ export class GroundDetail {
 
   /** The biome at a point, with edges made ragged so they don't follow the globe's grid. */
   biome(base: BaseSampler, lat: number, lon: number): number {
-    return base(lat + this.patch(lat, lon, 1) * this.jitter, lon + this.patch(lat, lon, 2) * this.jitter).biome
+    if (base.only !== undefined) return base.only
+    return base.biome(lat + this.patch(lat, lon, 1) * this.jitter, lon + this.patch(lat, lon, 2) * this.jitter)
   }
 }
 
@@ -270,33 +288,51 @@ export function buildGroundChunk(input: GroundChunkInput): GroundChunk {
   const base = gridSampler(grid)
   const b = grid.bounds
   const n = CHUNK_SEGMENTS + 1
-  const positions: number[] = []
-  const colors: number[] = []
-  const indices: number[] = []
+  // The grid's vertices, then two skirt vertices for each segment of the four edges.
+  const vertices = n * n + 4 * CHUNK_SEGMENTS * 2
+  const positions = new Float32Array(vertices * 3)
+  const colors = new Float32Array(vertices * 3)
+  const indices = new Uint32Array(CHUNK_SEGMENTS * CHUNK_SEGMENTS * 6 + 4 * CHUNK_SEGMENTS * 12)
+  // Per grid vertex, for the skirt below it: its height, its colour before light and shade, and its light.
+  const heights = new Float64Array(n * n)
+  const ground = new Float64Array(n * n * 3)
+  const light = new Float64Array(n * n)
 
-  const vertex = (lat: number, lon: number, drop = 0) => {
-    const [x, z] = toLocal(frame, { lat, lon })
-    const y = detail.elevation(base, lat, lon)
-    positions.push(x, y - drop, z)
-    const rgb = y < 0 ? input.seabedColor : y < 1.5 ? (input.biomeColors[BIOME.beach] ?? input.seabedColor) : input.biomeColors[detail.biome(base, lat, lon)]!
-    // Some variation, so a field isn't one flat colour: lighter and darker patches, and bare earth here and there.
-    const v = 0.86 + 0.12 * detail.patch(lat, lon, 3) + (drop ? -0.25 : 0)
-    const bare = y < 1.5 ? 0 : clamp(detail.patch(lat, lon, 5) * 1.6 - 0.7, 0, 0.45)
-    for (let k = 0; k < 3; k++) colors.push(((rgb[k]! * (1 - bare) + EARTH[k]! * bare) / 255) * v)
-    return positions.length / 3 - 1
+  for (let j = 0, t = 0; j < n; j++) {
+    for (let i = 0; i < n; i++, t++) {
+      const lat = b.lat0 + ((b.lat1 - b.lat0) * j) / CHUNK_SEGMENTS
+      const lon = b.lon0 + ((b.lon1 - b.lon0) * i) / CHUNK_SEGMENTS
+      const [x, z] = toLocal(frame, { lat, lon })
+      const y = detail.elevation(base, lat, lon)
+      positions[t * 3] = x
+      positions[t * 3 + 1] = heights[t] = y
+      positions[t * 3 + 2] = z
+      const rgb = y < 0 ? input.seabedColor : y < 1.5 ? (input.biomeColors[BIOME.beach] ?? input.seabedColor) : input.biomeColors[detail.biome(base, lat, lon)]!
+      // Some variation, so a field isn't one flat colour: lighter and darker patches, and bare earth here and there.
+      const v = (light[t] = 0.86 + 0.12 * detail.patch(lat, lon, 3))
+      const bare = y < 1.5 ? 0 : clamp(detail.patch(lat, lon, 5) * 1.6 - 0.7, 0, 0.45)
+      for (let k = 0; k < 3; k++) colors[t * 3 + k] = (ground[t * 3 + k] = (rgb[k]! * (1 - bare) + EARTH[k]! * bare) / 255) * v
+    }
   }
-
-  for (let j = 0; j < n; j++) {
-    for (let i = 0; i < n; i++) vertex(b.lat0 + ((b.lat1 - b.lat0) * j) / CHUNK_SEGMENTS, b.lon0 + ((b.lon1 - b.lon0) * i) / CHUNK_SEGMENTS)
-  }
+  let next = n * n
+  let index = 0
   // North is −z, so with i east and j north these wind counter-clockwise seen from above.
   for (let j = 0; j < CHUNK_SEGMENTS; j++) {
     for (let i = 0; i < CHUNK_SEGMENTS; i++) {
       const a = j * n + i
-      indices.push(a, a + 1, a + n + 1, a, a + n + 1, a + n)
+      indices.set([a, a + 1, a + n + 1, a, a + n + 1, a + n], index)
+      index += 6
     }
   }
   // Skirts: a strip hanging down from each edge, so neighbours that sample their shared edge differently never show a gap.
+  // A skirt vertex is the one above it, dropped and in shadow.
+  const skirt = (top: number) => {
+    positions[next * 3] = positions[top * 3]!
+    positions[next * 3 + 1] = heights[top]! - SKIRT_M
+    positions[next * 3 + 2] = positions[top * 3 + 2]!
+    for (let k = 0; k < 3; k++) colors[next * 3 + k] = ground[top * 3 + k]! * (light[top]! - 0.25)
+    return next++
+  }
   const edges: [number, number][][] = [
     Array.from({ length: n }, (_, i) => [0, i]),
     Array.from({ length: n }, (_, i) => [CHUNK_SEGMENTS, CHUNK_SEGMENTS - i]),
@@ -309,21 +345,14 @@ export function buildGroundChunk(input: GroundChunkInput): GroundChunk {
       const [j1, i1] = edge[k + 1]!
       const top0 = j0 * n + i0
       const top1 = j1 * n + i1
-      const lat = (j: number) => b.lat0 + ((b.lat1 - b.lat0) * j) / CHUNK_SEGMENTS
-      const lon = (i: number) => b.lon0 + ((b.lon1 - b.lon0) * i) / CHUNK_SEGMENTS
-      const low0 = vertex(lat(j0), lon(i0), SKIRT_M)
-      const low1 = vertex(lat(j1), lon(i1), SKIRT_M)
-      indices.push(top0, low0, low1, top0, low1, top1, top0, low1, low0, top0, top1, low1)
+      const low0 = skirt(top0)
+      const low1 = skirt(top1)
+      indices.set([top0, low0, low1, top0, low1, top1, top0, low1, low0, top0, top1, low1], index)
+      index += 12
     }
   }
 
-  return {
-    id,
-    positions: Float32Array.from(positions),
-    colors: Float32Array.from(colors),
-    indices: Uint32Array.from(indices),
-    plants: scatterPlants(input, detail, base)
-  }
+  return { id, positions, colors, indices, plants: scatterPlants(input, detail, base) }
 }
 
 /** Plants and rocks for a chunk, by its biomes; none in the sea, reeds only at the water's edge. */
@@ -346,7 +375,9 @@ function scatterPlants(input: GroundChunkInput, detail: GroundDetail, base: Base
       const turn = random() * TAU
       const tint = random()
       const [count, clump] = FLORA[detail.biome(base, lat, lon)]?.[plant] ?? [0, 0]
-      // Thinned to this spot's biome, and gathered into woods and meadows with clearings between.
+      // Thinned to this spot's biome (patchiness is at most 1, so this one goes whatever its patch)…
+      if (keep * most >= count) continue
+      // …and gathered into woods and meadows with clearings between.
       const patchiness = 1 - clump + clump * clamp01(0.5 + detail.patch(lat, lon, PLANTS.indexOf(plant) + 4) * 1.4)
       if (keep * most >= count * patchiness) continue
       const y = detail.elevation(base, lat, lon)

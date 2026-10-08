@@ -17,9 +17,7 @@ import {
 } from './ground'
 
 const R = 6371
-const flat =
-  (biome: number, elevation = 120): BaseSampler =>
-  () => ({ elevation, biome })
+const flat = (biome: number, elevation = 120): BaseSampler => ({ elevation: () => elevation, biome: () => biome })
 
 function chunk(id: ChunkId, base: BaseSampler, frame: LocalFrame = { origin: { lat: 45, lon: 7 }, radiusKm: R }) {
   return buildGroundChunk({
