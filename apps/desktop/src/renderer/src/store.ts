@@ -187,20 +187,16 @@ export function updater<K extends UpdateKind>(kind: K, id: string): (patch: Patc
 /** Deletes records of one kind in one undo step; undefined when there are none. */
 export const deleteCommand = (kind: DeleteKind, ids: string[]): Command | undefined => asCommand(ids.map((id) => ({ type: `${kind}.delete`, payload: { id } }) as Command))
 
-/** The records of one owner (a world, a node), filtered again only when the list changes. */
-export function useOwned<T extends { ownerId: string }>(list: T[], ownerId: string): T[] {
-  return useMemo(() => list.filter((r) => r.ownerId === ownerId), [list, ownerId])
-}
-
 /** One owner's timeline records of a kind (`'events'`, `'lanes'`…): re-rendered and filtered again only when that kind changes. */
 export function useOwnRecords<K extends keyof TimelineData>(key: K, ownerId: string): TimelineData[K] {
-  return useOwned(useUi((s) => s.timeline[key]) as { ownerId: string }[], ownerId) as TimelineData[K]
+  const list = useUi((s) => s.timeline[key]) as { ownerId: string }[]
+  return useMemo(() => list.filter((r) => r.ownerId === ownerId), [list, ownerId]) as TimelineData[K]
 }
 
 const indexes = new WeakMap<object, Map<string, unknown>>()
 
 /** A list's records by id, built once per list (the store keeps a list while none of its records change). */
-export function byId<T extends { id: string }>(list: T[]): Map<string, T> {
+function byId<T extends { id: string }>(list: T[]): Map<string, T> {
   let index = indexes.get(list) as Map<string, T> | undefined
   if (!index) {
     index = new Map(list.map((r) => [r.id, r]))
