@@ -3,7 +3,7 @@ import { memo, useMemo, useState } from 'react'
 import { useUi } from '../store'
 import { useWorldThemes } from '../world/useThemeLook'
 import { TimeScale, snap, type TimeRange } from './scale'
-import { blendMask, packSpans } from './themeLayout'
+import { blendMask, isDark, packSpans } from './themeLayout'
 
 const ROW_H = 16
 /** Px at either end of a bar that resize it rather than move it. */
@@ -88,15 +88,13 @@ export const ThemeTrack = memo(function ThemeTrack({ owner, range, width, cal, l
           return (
             <button
               key={s.id}
-              className={`tl-theme${selected ? ' selected' : ''}`}
+              className={`tl-theme${selected ? ' selected' : ''}${isDark(land) ? ' light-ink' : ''}`}
               style={{
                 left: x0,
                 width: Math.max(8, x1 - x0),
                 top: 3 + row * ROW_H,
                 // A span that starts off to the left keeps its name in view.
                 paddingLeft: Math.max(6, 6 - x0),
-                background: `linear-gradient(90deg, ${sky}, ${land} 55%, ${water})`,
-                maskImage: blendMask(s),
                 ['--c' as string]: accent
               }}
               title={`${theme.name}${where}: ${when}`}
@@ -121,7 +119,9 @@ export const ThemeTrack = memo(function ThemeTrack({ owner, range, width, cal, l
                 if (e.key === 'Enter' || e.key === ' ') selectTimeline({ kind: 'themeSpan', ids: [s.id] })
               }}
             >
-              <span>
+              {/* The palette fades in and out with the span; the name stays readable. */}
+              <span className="tl-theme-fill" style={{ background: `linear-gradient(90deg, ${sky}, ${land} 55%, ${water})`, maskImage: blendMask(s) }} />
+              <span className="tl-theme-name">
                 {theme.name}
                 {where}
               </span>

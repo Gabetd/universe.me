@@ -1,6 +1,6 @@
 import type { ThemeSpan } from '@universe/core'
 import { describe, expect, it } from 'vitest'
-import { blendMask, packSpans } from './themeLayout'
+import { blendMask, isDark, packSpans } from './themeLayout'
 
 const span = (id: string, start: number, end: number, priority = 0) =>
   ({ id, ownerId: 'w', themeId: 't', start, end, regionId: null, priority, blendIn: 0, blendOut: 0, createdAt: '', updatedAt: '', deletedAt: null }) as ThemeSpan
@@ -17,5 +17,10 @@ describe('the theme band', () => {
 
   it('fades a bar over its blend times', () => {
     expect(blendMask({ start: 0, end: 100, blendIn: 25, blendOut: 10 })).toContain('#000 25.0%, #000 90.0%')
+  })
+
+  it('names a bar in light type on a dark palette', () => {
+    expect(isDark('#6d5c3e')).toBe(true)
+    expect(isDark('#c9d6df')).toBe(false)
   })
 })

@@ -1,4 +1,4 @@
-import type { ThemeSpan } from '@universe/core'
+import { hexToRgb01, type ThemeSpan } from '@universe/core'
 
 /** Spans on rows of the theme band so overlapping ones don't cover each other, higher priorities on the top rows. */
 export function packSpans(spans: readonly ThemeSpan[]): { span: ThemeSpan; row: number }[] {
@@ -19,4 +19,10 @@ export function blendMask(span: Pick<ThemeSpan, 'start' | 'end' | 'blendIn' | 'b
   const inPct = Math.min(100, (span.blendIn / length) * 100)
   const outPct = Math.max(inPct, 100 - (span.blendOut / length) * 100)
   return `linear-gradient(90deg, rgba(0,0,0,0.3) 0%, #000 ${inPct.toFixed(1)}%, #000 ${outPct.toFixed(1)}%, rgba(0,0,0,0.3) 100%)`
+}
+
+/** Whether a colour is dark enough to want light text on it (by its perceived brightness). */
+export function isDark(hex: string): boolean {
+  const [r, g, b] = hexToRgb01(hex)
+  return 0.299 * r + 0.587 * g + 0.114 * b < 0.45
 }

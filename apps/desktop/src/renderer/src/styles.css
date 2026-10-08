@@ -1843,6 +1843,7 @@ input[type='color'] {
 .tl-theme {
   position: absolute;
   height: 13px;
+  background: transparent;
   padding: 0 6px;
   border: 0;
   border-radius: 4px;
@@ -1855,9 +1856,21 @@ input[type='color'] {
   text-overflow: ellipsis;
   cursor: grab;
 }
-.tl-theme span {
+.tl-theme-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.tl-theme-name {
+  position: relative;
   font-weight: 600;
   text-shadow: 0 0 3px rgba(255, 255, 255, 0.6);
+}
+.tl-theme.light-ink {
+  color: #f4f1ea;
+}
+.tl-theme.light-ink .tl-theme-name {
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.75);
 }
 .tl-theme.selected,
 .tl-theme:focus-visible {
