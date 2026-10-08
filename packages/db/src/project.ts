@@ -118,7 +118,9 @@ export class Project {
 
 function openDb(path: string): DatabaseSync {
   const db = new DatabaseSync(path)
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 2000;')
+  // NORMAL skips the sync on every commit (WAL syncs at checkpoints instead): a commit still survives the
+  // app crashing, and only an OS crash or power cut can lose the last few. FULL made each command ~2.5x slower.
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 2000;')
   return db
 }
 
