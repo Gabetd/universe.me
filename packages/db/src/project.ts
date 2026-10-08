@@ -1,7 +1,9 @@
 import { existsSync } from 'node:fs'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import { CommandBus, createRootUniverse, findRoot, type CommandBusOptions, type Store } from '@universe/core'
+import { TrackedStore } from './changes'
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations'
+import { SnapshotCache, type Snapshot } from './snapshot'
 import { SqliteHistoryLog, SqliteStore } from './sqlite-store'
 
 const FORMAT = 'universe.me'
@@ -26,6 +28,7 @@ export class Project {
   readonly bus: CommandBus
   private closed = false
   private readonly meta: { get: StatementSync; set: StatementSync }
+  private readonly snapshots: SnapshotCache
   /** Read once: the name only changes through `setMeta` and the root is never deleted. */
   private name: string | undefined
   private rootId = ''
@@ -35,7 +38,11 @@ export class Project {
     private readonly db: DatabaseSync,
     busOptions: Omit<CommandBusOptions, 'log'>
   ) {
-    this.store = new SqliteStore(db)
+    // Every write goes through the tracked store, so a snapshot reloads only what changed; reads go straight to SQLite.
+    const sqlite = new SqliteStore(db)
+    const tracked = new TrackedStore(sqlite)
+    this.store = tracked
+    this.snapshots = new SnapshotCache(sqlite, () => tracked.takeChanges())
     this.bus = new CommandBus(this.store, { ...busOptions, log: new SqliteHistoryLog(db) })
     this.meta = {
       get: db.prepare('SELECT value FROM meta WHERE key = ?'),
@@ -91,6 +98,11 @@ export class Project {
       rootId: this.rootId,
       schemaVersion: SCHEMA_VERSION
     }
+  }
+
+  /** Everything live in the project. Cheap to call again: only what was written since the last call is reloaded. */
+  snapshot(): Snapshot {
+    return this.snapshots.snapshot()
   }
 
   getMeta(key: string): string | undefined {
