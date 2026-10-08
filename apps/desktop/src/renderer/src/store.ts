@@ -2,6 +2,7 @@ import { EMPTY_TIMELINE, timelineOwner, type Command, type SpatialNode } from '@
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import type { AppState, Result } from '../../shared/api'
+import { reconcile } from './reconcile'
 
 interface UiState extends AppState {
   ready: boolean
@@ -48,7 +49,8 @@ export const useUi = create<UiState>((set, get) => ({
   selectedCharacterId: null,
   error: null,
 
-  apply(state) {
+  apply(reply) {
+    const state = reconcile(get(), reply)
     set({ ...state, ready: true, ...nextSelection(state, get()) })
   },
 
