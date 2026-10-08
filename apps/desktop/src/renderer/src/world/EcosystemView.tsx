@@ -89,7 +89,7 @@ export function EcosystemView({ worldId, model, change, error }: { worldId: stri
           </ul>
         )}
         {selected ? (
-          <SpeciesEditor key={`${selected.id}:${selected.updatedAt}`} species={selected} all={species} links={links} biomes={presentBiomes.map(([b]) => b)} onClose={() => setSelectedId(null)} />
+          <SpeciesEditor key={selected.id} species={selected} all={species} links={links} biomes={presentBiomes.map(([b]) => b)} onClose={() => setSelectedId(null)} />
         ) : (
           <ul className="region-list" aria-label="Species">
             {species.map((s) => (

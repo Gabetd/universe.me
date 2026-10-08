@@ -58,7 +58,8 @@ export const useUi = create<UiState>((set, get) => ({
 
   apply(reply) {
     const state = reconcile(get(), reply)
-    set({ ...state, ready: true, ...nextSelection(state, get()) })
+    const before = get()
+    set({ ...state, ready: true, ...nextSelection(state, before, isNew(before, state.focus) || selectionGone(state, before)) })
   },
 
   select: (id) => set({ selectedId: id, ...NOTHING_ON_WORLD }),
@@ -96,12 +97,37 @@ const NOTHING_ON_WORLD = { selectedRegionId: null, selectedStructureId: null, se
 type Selection = Pick<UiState, 'selectedId' | 'selectedRegionId' | 'selectedStructureId' | 'selectedCharacterId' | 'timelineSelection'>
 
 /**
- * Selects what the last command targeted (a region or structure selects its
+ * Whether the last command's target wasn't there before it: something made
+ * (or brought back by undo). Only that, or the selection going, moves the
+ * selection: editing what's already there, from a list in another record's
+ * panel say, leaves the panel where it is.
+ */
+function isNew(before: UiState, focus: AppState['focus']): boolean {
+  if (!focus) return false
+  const list: { id: string }[] = focus.kind === 'node' ? before.nodes : focus.kind === 'region' ? before.regions : before.timeline[`${focus.kind}s`]
+  return !list.some((r) => r.id === focus.id)
+}
+
+/** Whether something selected is gone (deleted, or undone away): the selection then moves to what the command points at, its parent say. */
+function selectionGone(state: AppState, before: Selection): boolean {
+  const missing = (list: { id: string }[], id: string | null) => !!id && !list.some((r) => r.id === id)
+  const tl = before.timelineSelection
+  return (
+    missing(state.nodes, before.selectedId) ||
+    missing(state.regions, before.selectedRegionId) ||
+    missing(state.timeline.structures, before.selectedStructureId) ||
+    missing(state.timeline.characters, before.selectedCharacterId) ||
+    (!!tl && tl.ids.some((id) => missing(state.timeline[`${tl.kind}s`], id)))
+  )
+}
+
+/**
+ * Selects what the last command made (a region or structure selects its
  * world too, a timeline record selects itself); otherwise keeps the selection
  * while it exists.
  */
-function nextSelection(state: AppState, current: Selection): Selection {
-  const { focus } = state
+function nextSelection(state: AppState, current: Selection, fresh: boolean): Selection {
+  const focus = fresh ? state.focus : undefined
   const timelineSelection = keptTimelineSelection(state, current.timelineSelection)
   const none = NOTHING_ON_WORLD
   if (focus?.kind === 'region') {

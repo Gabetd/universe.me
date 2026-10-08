@@ -1,5 +1,5 @@
 import type { SpatialNode } from '@universe/core'
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { KIND_ICONS, addOptions, kindLabel } from '../kinds'
 import { selectNode, updater, useUi } from '../store'
 import { DeleteButton, NotesField, NumberInput, TagsField, TextField, randomSeed } from './fields'
@@ -7,23 +7,26 @@ import { TimelineInspector } from './TimelinePanels'
 import { WorldPanel } from './WorldPanel'
 import { OrbitPanel, StarPanel } from './SkyPanels'
 import { PlanetsToClaim } from './ClaimPlanets'
+import { useSteadyScroll } from '../useSteadyScroll'
 
 export function Inspector() {
   const node = useUi(selectNode)
   const timelineSelection = useUi((s) => s.timelineSelection)
-  const regionId = useUi((s) => s.selectedRegionId)
-  const top = useRef<HTMLDivElement>(null)
-  // Something new was picked: show its panel from the top.
-  const picked = `${timelineSelection?.kind}:${timelineSelection?.ids.join()}:${regionId}`
-  useEffect(() => {
-    top.current?.closest('.inspector-panel')?.scrollTo({ top: 0 })
-  }, [picked])
-  if (!node) return <p className="muted pad">Select something in the universe tree.</p>
-  // Re-mount the form when the node changes (including via undo) so fields show stored values.
+  // What the inspector is showing: picking something else shows its panel from the top; while it's the same, the panel stays still.
+  const menu = useUi((s) => [s.selectedId, s.selectedRegionId, s.selectedStructureId, s.selectedCharacterId, s.timelineSelection?.kind, s.timelineSelection?.ids.join()].join(':'))
+  const content = useRef<HTMLDivElement>(null)
+  useSteadyScroll(content, menu)
   return (
-    <div className="inspector" ref={top}>
-      {timelineSelection && <TimelineInspector selection={timelineSelection} />}
-      <NodeForm key={`${node.id}:${node.updatedAt}`} node={node} />
+    <div className="inspector" ref={content}>
+      {!node ? (
+        <p className="muted pad">Select something in the universe tree.</p>
+      ) : (
+        <>
+          {timelineSelection && <TimelineInspector selection={timelineSelection} />}
+          {/* A form per node; its fields show new stored values (undo, an edit elsewhere) themselves, so a save doesn't rebuild the panel. */}
+          <NodeForm key={node.id} node={node} />
+        </>
+      )}
     </div>
   )
 }
@@ -48,15 +51,15 @@ function NodeForm({ node }: { node: SpatialNode }) {
         <TagsField label="Tags" tags={node.tags} onCommit={(tags) => update({ tags })} />
         {/* A world's seed lives with its generation options. */}
         {node.kind !== 'world' && (
-        <label className="field">
-          <span>Seed</span>
-          <div className="field-row">
-            <NumberInput value={node.seed} min={0} max={0xffffffff} integer onCommit={(seed) => update({ seed })} />
-            <button title="New random seed" aria-label="New random seed" onClick={() => update({ seed: randomSeed() })}>
-              🎲
-            </button>
-          </div>
-        </label>
+          <label className="field">
+            <span>Seed</span>
+            <div className="field-row">
+              <NumberInput value={node.seed} min={0} max={0xffffffff} integer onCommit={(seed) => update({ seed })} />
+              <button title="New random seed" aria-label="New random seed" onClick={() => update({ seed: randomSeed() })}>
+                🎲
+              </button>
+            </div>
+          </label>
         )}
         <NotesField label="Notes" value={node.notes} grow onCommit={(notes) => update({ notes })} />
       </section>
@@ -66,7 +69,19 @@ function NodeForm({ node }: { node: SpatialNode }) {
           <span>Add inside {node.name}</span>
           <div className="add-buttons">
             {options.map((o) => (
-              <button key={o.kind} onClick={() => void execute({ type: 'node.create', payload: { parentId: node.id, kind: o.kind, name: `New ${o.label}` } })}>
+              <button
+                key={o.kind}
+                onClick={() =>
+                  void execute({
+                    type: 'node.create',
+                    payload: {
+                      parentId: node.id,
+                      kind: o.kind,
+                      name: `New ${o.label}`
+                    }
+                  })
+                }
+              >
                 + {o.label}
               </button>
             ))}

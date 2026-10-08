@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AiChange, ApiSettingsPatch, ApiStatus } from '../../../shared/api'
 import { applyReply, useUi } from '../store'
+import { useSteadyScroll } from '../useSteadyScroll'
 import { CopyButton } from './fields'
 
 /**
@@ -55,48 +56,52 @@ export function ConnectAiButton() {
 
 function ConnectPanel({ status, set, onClose }: { status: ApiStatus; set(patch: ApiSettingsPatch): void; onClose(): void }) {
   const [showToken, setShowToken] = useState(false)
+  const body = useRef<HTMLDivElement>(null)
+  useSteadyScroll(body, 'connect')
   return (
     <section className="connect-panel" aria-label="Connect AI">
-      <div className="inspector-kind">
-        🤖 Connect AI
-        <button className="link close" aria-label="Close connect AI" onClick={onClose}>
-          ✕
-        </button>
-      </div>
-      <p className="small muted">
-        Let Claude Code (or any MCP client) read this universe and add to it, through a server on this computer only. Each change it makes shows here and can be undone in one click.
-      </p>
-      <label className="checkbox">
-        <input type="checkbox" checked={status.enabled} onChange={(e) => set({ enabled: e.target.checked })} /> Let AI connect
-      </label>
-      <p className="small" aria-label="Connection status">
-        {!status.enabled ? 'Off: no client can connect.' : status.port !== null ? `Listening on 127.0.0.1:${status.port}.` : (status.error ?? 'Starting…')}
-      </p>
-      <label className="checkbox">
-        <input type="checkbox" checked={status.review} onChange={(e) => set({ review: e.target.checked })} /> Review AI changes before they apply
-      </label>
-      <p className="small muted">Review happens here, in the app. While the app doesn’t have a project open, a stdio server writes to its file directly.</p>
-      {status.connect && (
-        <>
-          <CopyField label="Add to Claude Code (to the app, while it’s open)" value={status.connect.http} />
-          <CopyField label="Or run it as a stdio server (works with the app closed too)" value={status.connect.stdio} />
-          <div className="field">
-            <span className="field-label-row">
-              Token
-              <button className="link small" onClick={() => setShowToken(!showToken)}>
-                {showToken ? 'Hide' : 'Show'}
-              </button>
-            </span>
-            <code className="token">{showToken ? status.token : '•'.repeat(24)}</code>
-            <span className="small muted">
-              REST: http://127.0.0.1:{status.port}/v1 (described at /v1/openapi.json), with the header <code>Authorization: Bearer &lt;token&gt;</code>.
-            </span>
-          </div>
-          <button className="link small" onClick={() => void window.universe.newApiToken()}>
-            New token (clients with the old one stop working)
+      <div className="connect-body" ref={body}>
+        <div className="inspector-kind">
+          🤖 Connect AI
+          <button className="link close" aria-label="Close connect AI" onClick={onClose}>
+            ✕
           </button>
-        </>
-      )}
+        </div>
+        <p className="small muted">
+          Let Claude Code (or any MCP client) read this universe and add to it, through a server on this computer only. Each change it makes shows here and can be undone in one click.
+        </p>
+        <label className="checkbox">
+          <input type="checkbox" checked={status.enabled} onChange={(e) => set({ enabled: e.target.checked })} /> Let AI connect
+        </label>
+        <p className="small" aria-label="Connection status">
+          {!status.enabled ? 'Off: no client can connect.' : status.port !== null ? `Listening on 127.0.0.1:${status.port}.` : (status.error ?? 'Starting…')}
+        </p>
+        <label className="checkbox">
+          <input type="checkbox" checked={status.review} onChange={(e) => set({ review: e.target.checked })} /> Review AI changes before they apply
+        </label>
+        <p className="small muted">Review happens here, in the app. While the app doesn’t have a project open, a stdio server writes to its file directly.</p>
+        {status.connect && (
+          <>
+            <CopyField label="Add to Claude Code (to the app, while it’s open)" value={status.connect.http} />
+            <CopyField label="Or run it as a stdio server (works with the app closed too)" value={status.connect.stdio} />
+            <div className="field">
+              <span className="field-label-row">
+                Token
+                <button className="link small" onClick={() => setShowToken(!showToken)}>
+                  {showToken ? 'Hide' : 'Show'}
+                </button>
+              </span>
+              <code className="token">{showToken ? status.token : '•'.repeat(24)}</code>
+              <span className="small muted">
+                REST: http://127.0.0.1:{status.port}/v1 (described at /v1/openapi.json), with the header <code>Authorization: Bearer &lt;token&gt;</code>.
+              </span>
+            </div>
+            <button className="link small" onClick={() => void window.universe.newApiToken()}>
+              New token (clients with the old one stop working)
+            </button>
+          </>
+        )}
+      </div>
     </section>
   )
 }

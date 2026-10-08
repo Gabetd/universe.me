@@ -66,8 +66,8 @@ export function OrbitPanel({ body }: { body: SpatialNode }) {
     <section className="inspector-section" aria-label="Orbit">
       <h3>Orbit and spin</h3>
       {orbit.isDefault && <p className="muted small">Made up from the seed. Change anything to set it{world ? '; the world’s calendar and climate then follow it' : ''}.</p>}
-      {/* Keyed by the values, so the boxes show them again after an undo. */}
-      <div className="field-pair" key={JSON.stringify(orbitFields(orbit))}>
+      {/* The boxes show new stored values themselves (after an undo, say). */}
+      <div className="field-pair">
         <Num label={isMoon ? 'Distance (km)' : 'Distance (AU)'} value={round(distance, isMoon ? 0 : 3)} min={isMoon ? 1000 : 0.01} max={isMoon ? 1e8 : 1e4} onCommit={(v) => set({ semiMajorAxisKm: isMoon ? v : v * AU_KM })} />
         <Num label="Eccentricity" value={round(orbit.eccentricity, 4)} min={0} max={0.95} onCommit={(eccentricity) => set({ eccentricity })} />
         <Num label="Day (hours)" value={round(orbit.rotationHours, 3)} min={0.1} max={1e6} onCommit={(rotationHours) => set({ rotationHours })} />

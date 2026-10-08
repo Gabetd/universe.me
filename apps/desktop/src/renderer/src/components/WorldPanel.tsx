@@ -29,9 +29,9 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
 
   return (
     <>
-      {selectedRegion && <RegionForm key={`${selectedRegion.id}:${selectedRegion.updatedAt}`} region={selectedRegion} />}
-      {selectedStructure && <StructurePanel key={`${selectedStructure.id}:${selectedStructure.updatedAt}`} structure={selectedStructure} />}
-      {selectedCharacter && <CharacterPanel key={`${selectedCharacter.id}:${selectedCharacter.updatedAt}`} character={selectedCharacter} />}
+      {selectedRegion && <RegionForm key={selectedRegion.id} region={selectedRegion} />}
+      {selectedStructure && <StructurePanel key={selectedStructure.id} structure={selectedStructure} />}
+      {selectedCharacter && <CharacterPanel key={selectedCharacter.id} character={selectedCharacter} />}
 
       <WorldGenPanel world={world} settings={settings} />
       <ClimatePanel world={world} settings={settings} />

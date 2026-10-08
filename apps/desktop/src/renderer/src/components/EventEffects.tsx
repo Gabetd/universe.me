@@ -54,7 +54,7 @@ export function EventEffects({ event }: { event: TimelineEvent }) {
     <div className="field" aria-label="Effects on structures">
       <span>Effects on structures</span>
       {effects.map((effect) => (
-        <EffectEditor key={`${effect.id}:${effect.updatedAt}`} effect={effect} event={event} />
+        <EffectEditor key={effect.id} effect={effect} event={event} />
       ))}
       <div className="add-buttons">
         <button

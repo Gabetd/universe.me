@@ -8,14 +8,19 @@ import { NotesEditor } from './NotesEditor'
  * Inputs that save once when editing finishes (blur, Enter, slider release),
  * not on every keystroke: each save is one undo step.
  */
-export function TextField(props: { label: string; value: string; placeholder?: string; required?: boolean; onCommit(v: string): void }) {
-  const [text, setText] = useState(props.value)
-  // A new stored value (a save, undo, an edit elsewhere) replaces what's shown.
-  const [stored, setStored] = useState(props.value)
-  if (stored !== props.value) {
-    setStored(props.value)
-    setText(props.value)
+/** Text being edited, replaced by each new stored value (a save, undo, an edit elsewhere). */
+function useDraft(value: string): [string, (text: string) => void] {
+  const [text, setText] = useState(value)
+  const [stored, setStored] = useState(value)
+  if (stored !== value) {
+    setStored(value)
+    setText(value)
   }
+  return [text, setText]
+}
+
+export function TextField(props: { label: string; value: string; placeholder?: string; required?: boolean; onCommit(v: string): void }) {
+  const [text, setText] = useDraft(props.value)
   const commit = () => {
     const v = text.trim()
     if (props.required && !v) setText(props.value)
@@ -204,7 +209,7 @@ export function CommitSlider(props: { label: string; unit?: string; min: number;
 }
 
 export function NumberInput(props: { value: number; min: number; max: number; integer?: boolean; onCommit(v: number): void }) {
-  const [text, setText] = useState(String(props.value))
+  const [text, setText] = useDraft(String(props.value))
   const commit = () => {
     const v = Number(text)
     const valid = Number.isFinite(v) && v >= props.min && v <= props.max && (!props.integer || Number.isInteger(v))

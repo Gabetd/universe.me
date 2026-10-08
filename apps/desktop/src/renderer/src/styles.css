@@ -1954,13 +1954,15 @@ input[type='color'] {
   width: 420px;
   max-height: 70vh;
   overflow: auto;
-  display: grid;
-  gap: 10px;
-  padding: 12px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.connect-body {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
 }
 .copy-field {
   font-family: ui-monospace, Consolas, Menlo, monospace;
