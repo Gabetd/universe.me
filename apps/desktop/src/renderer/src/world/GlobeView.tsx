@@ -8,7 +8,7 @@ import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor, type EditorTool } from './editorStore'
 import { pickWith } from './pick'
-import type { SurfaceViewProps } from './useTerrain'
+import type { SurfaceViewProps, TerrainChange } from './useTerrain'
 import { STAGE_COLORS } from './structureLook'
 import { EdgePush, zoomOut } from '../components/zoom'
 import type { ViewLabel } from './labels'
@@ -90,27 +90,24 @@ function Planet({
 }: SurfaceViewProps) {
   const exaggeration = useEditor((s) => s.exaggeration)
   const invalidate = useThree((s) => s.invalidate)
-  const faces = useMemo(() => ALL_FACES.map(createFace), [])
+  const { faces } = surfaceOf(model)
+  /** The change this view last brought the faces up to. */
+  const seen = useRef<{ colored?: TerrainChange; shaped?: TerrainChange }>({})
   const cursor = useRef<THREE.Mesh>(null)
   const hover = useRef<Vec3 | null>(null)
   const radiusM = model.settings.radiusKm * 1000
   const scale = exaggeration / radiusM
   const seaRadius = 1 + model.settings.seaLevel * scale
 
-  // Recolor only the faces that changed.
   useEffect(() => {
-    for (const f of change.faces === 'all' ? ALL_FACES : change.faces) updateTexture(faces[f]!, model)
-    invalidate()
-  }, [change, faces, model, invalidate])
+    if (colorFaces(model, change, seen.current.colored)) invalidate()
+    seen.current.colored = change
+  }, [change, model, invalidate])
 
-  // Reshape the changed faces, or all of them when the relief scale changed (colors don't depend on it).
-  const shapedScale = useRef<number>(undefined)
   useEffect(() => {
-    const list = scale !== shapedScale.current || change.faces === 'all' ? ALL_FACES : change.faces
-    shapedScale.current = scale
-    for (const f of list) updateGeometry(faces[f]!, model, scale)
-    invalidate()
-  }, [change, faces, model, scale, invalidate])
+    if (shapeFaces(model, change, scale, seen.current.shaped)) invalidate()
+    seen.current.shaped = change
+  }, [change, model, scale, invalidate])
 
   useEffect(() => () => faces.forEach((f) => (f.geometry.dispose(), f.texture.dispose())), [faces])
   // The terrain is in once the effects above have run.
@@ -423,47 +420,118 @@ function slerp(a: THREE.Vector3, b: THREE.Vector3, t: number): Vec3 {
   return v.toArray()
 }
 
+/** The faces' vertex grid: `SEGMENTS` + 1 vertices along each edge, few enough for 16-bit indices. */
+const GRID = SEGMENTS + 1
+
+/** What every planet's faces share: each face's unit vertex directions, the texture coordinates and the triangles. */
+let grids: { dirs: Float32Array[]; index: THREE.BufferAttribute[]; uv: THREE.BufferAttribute } | undefined
+
+function faceGrids() {
+  if (grids) return grids
+  const uvs = new Float32Array(GRID * GRID * 2)
+  for (let b = 0; b < GRID; b++) {
+    for (let a = 0; a < GRID; a++) {
+      uvs[(b * GRID + a) * 2] = a / SEGMENTS
+      uvs[(b * GRID + a) * 2 + 1] = b / SEGMENTS
+    }
+  }
+  // Wound to face outward on faces whose axes run one way, or the other: every face uses one of the two.
+  const triangles = (outward: boolean) => {
+    const indices = new Uint16Array(SEGMENTS * SEGMENTS * 6)
+    let i = 0
+    for (let b = 0; b < SEGMENTS; b++) {
+      for (let a = 0; a < SEGMENTS; a++) {
+        const v00 = b * GRID + a
+        const v10 = v00 + 1
+        const v01 = v00 + GRID
+        const v11 = v01 + 1
+        indices.set(outward ? [v00, v10, v11, v00, v11, v01] : [v00, v11, v10, v00, v01, v11], i)
+        i += 6
+      }
+    }
+    return new THREE.BufferAttribute(indices, 1)
+  }
+  const windings = [triangles(false), triangles(true)]
+  const dirs = ALL_FACES.map((f) => {
+    const out = new Float32Array(GRID * GRID * 3)
+    const dir: Vec3 = [0, 0, 0]
+    for (let b = 0; b < GRID; b++) {
+      for (let a = 0; a < GRID; a++) {
+        faceToDir(f, (a / SEGMENTS) * 2 - 1, (b / SEGMENTS) * 2 - 1, dir)
+        out.set(dir, (b * GRID + a) * 3)
+      }
+    }
+    return out
+  })
+  const index = dirs.map((d) => {
+    const p = (a: number, b: number) => new THREE.Vector3().fromArray(d, (b * GRID + a) * 3)
+    return windings[new THREE.Vector3().crossVectors(p(1, 0).sub(p(0, 0)), p(0, 1).sub(p(0, 0))).dot(p(0, 0)) > 0 ? 1 : 0]!
+  })
+  return (grids = { dirs, index, uv: new THREE.BufferAttribute(uvs, 2) })
+}
+
 interface Face {
   index: number
   geometry: THREE.BufferGeometry
   texture: THREE.DataTexture
   pixels: Uint8Array
-  /** Unit direction of each vertex, computed once. */
+  /** Unit direction of each vertex. */
   dirs: Float32Array
 }
 
+/**
+ * A planet's faces as last drawn, kept while the planet is (so going back to
+ * the globe redraws nothing unless the terrain changed): the change their
+ * colors and their shapes (at relief `scale`) were last brought up to.
+ */
+interface Surface {
+  faces: Face[]
+  colored?: TerrainChange
+  shaped?: TerrainChange
+  scale?: number
+}
+
+const surfaces = new WeakMap<TerrainModel, Surface>()
+
+function surfaceOf(model: TerrainModel): Surface {
+  let surface = surfaces.get(model)
+  if (!surface) surfaces.set(model, (surface = { faces: ALL_FACES.map(createFace) }))
+  return surface
+}
+
+const changedFaces = (change: TerrainChange) => (change.faces === 'all' ? ALL_FACES : change.faces)
+
+/**
+ * Recolors a planet's faces up to `change`: just the ones it touched if they
+ * show `seen` (the change before it, as the view saw it), else all of them.
+ * Returns whether any were redone.
+ */
+function colorFaces(model: TerrainModel, change: TerrainChange, seen: TerrainChange | undefined): boolean {
+  const surface = surfaceOf(model)
+  if (surface.colored === change) return false
+  for (const f of surface.colored && surface.colored === seen ? changedFaces(change) : ALL_FACES) updateTexture(surface.faces[f]!, model)
+  surface.colored = change
+  return true
+}
+
+/** Reshapes them likewise, or all of them when the relief scale changed (colors don't depend on it). */
+function shapeFaces(model: TerrainModel, change: TerrainChange, scale: number, seen: TerrainChange | undefined): boolean {
+  const surface = surfaceOf(model)
+  if (surface.shaped === change && surface.scale === scale) return false
+  const some = surface.shaped && surface.shaped === seen && surface.scale === scale
+  for (const f of some ? changedFaces(change) : ALL_FACES) updateGeometry(surface.faces[f]!, model, scale)
+  surface.shaped = change
+  surface.scale = scale
+  return true
+}
+
 function createFace(index: number): Face {
-  const n = SEGMENTS + 1
-  const dirs = new Float32Array(n * n * 3)
-  const uvs = new Float32Array(n * n * 2)
-  const dir: Vec3 = [0, 0, 0]
-  for (let b = 0; b < n; b++) {
-    for (let a = 0; a < n; a++) {
-      const k = b * n + a
-      faceToDir(index, (a / SEGMENTS) * 2 - 1, (b / SEGMENTS) * 2 - 1, dir)
-      dirs.set(dir, k * 3)
-      uvs[k * 2] = a / SEGMENTS
-      uvs[k * 2 + 1] = b / SEGMENTS
-    }
-  }
-  // Wind triangles so they face outward, whichever way this face's axes run.
-  const p = (a: number, b: number) => new THREE.Vector3(...dirs.subarray((b * n + a) * 3, (b * n + a) * 3 + 3))
-  const outward = new THREE.Vector3().crossVectors(p(1, 0).sub(p(0, 0)), p(0, 1).sub(p(0, 0))).dot(p(0, 0)) > 0
-  const indices: number[] = []
-  for (let b = 0; b < SEGMENTS; b++) {
-    for (let a = 0; a < SEGMENTS; a++) {
-      const v00 = b * n + a
-      const v10 = v00 + 1
-      const v01 = v00 + n
-      const v11 = v01 + 1
-      if (outward) indices.push(v00, v10, v11, v00, v11, v01)
-      else indices.push(v00, v11, v10, v00, v01, v11)
-    }
-  }
+  const grid = faceGrids()
+  const dirs = grid.dirs[index]!
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(dirs.slice(), 3))
-  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
-  geometry.setIndex(indices)
+  geometry.setAttribute('uv', grid.uv)
+  geometry.setIndex(grid.index[index]!)
   const pixels = new Uint8Array(TERRAIN_RES * TERRAIN_RES * 4)
   const texture = new THREE.DataTexture(pixels, TERRAIN_RES, TERRAIN_RES, THREE.RGBAFormat)
   texture.colorSpace = THREE.SRGBColorSpace

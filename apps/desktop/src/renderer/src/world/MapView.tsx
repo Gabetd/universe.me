@@ -1,11 +1,11 @@
 import type { LatLon } from '@universe/core'
-import { brushRows, latLonToDir, latLonToPixel, pixelToLatLon, renderEquirect, type Vec3 } from '@universe/procgen'
+import { brushRows, latLonToDir, latLonToPixel, pixelToLatLon, renderEquirect, type TerrainModel, type Vec3 } from '@universe/procgen'
 import { useEffect, useRef, useState } from 'react'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor } from './editorStore'
 import { STAGE_COLORS } from './structureLook'
-import type { SurfaceViewProps } from './useTerrain'
+import type { SurfaceViewProps, TerrainChange } from './useTerrain'
 
 const W = 1024
 const H = 512
@@ -39,6 +39,44 @@ function insidePolygon(x: number, y: number, poly: [number, number][]): boolean 
   return inside
 }
 
+/**
+ * A planet's map image, kept while the planet is (so going back to the map
+ * draws nothing new unless the terrain changed), and the change it was last
+ * brought up to.
+ */
+interface MapImage {
+  canvas: HTMLCanvasElement
+  image: ImageData
+  drawn?: TerrainChange
+}
+
+const mapImages = new WeakMap<TerrainModel, MapImage>()
+
+function mapImageOf(model: TerrainModel): MapImage {
+  let map = mapImages.get(model)
+  if (!map) {
+    const canvas = document.createElement('canvas')
+    canvas.width = W
+    canvas.height = H
+    mapImages.set(model, (map = { canvas, image: new ImageData(W, H) }))
+  }
+  return map
+}
+
+/**
+ * Brings a planet's map image up to `change`: just the rows a brush dab
+ * touched if it shows `seen` (the change before it, as the view saw it),
+ * else all of it.
+ */
+function drawMapImage(model: TerrainModel, change: TerrainChange, seen: TerrainChange | undefined): void {
+  const map = mapImageOf(model)
+  if (map.drawn === change) return
+  const [y0, y1] = change.dab && map.drawn && map.drawn === seen ? brushRows(change.dab.dir, change.dab.radius, H) : [0, H]
+  renderEquirect(model, map.image.data, W, H, y0, y1)
+  map.canvas.getContext('2d')!.putImageData(map.image, 0, 0, 0, Math.max(0, y0), W, Math.min(H, y1) - Math.max(0, y0))
+  map.drawn = change
+}
+
 export function MapView({
   model,
   change,
@@ -56,7 +94,8 @@ export function MapView({
   onDoubleClick
 }: SurfaceViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const terrain = useRef<{ canvas: HTMLCanvasElement; image: ImageData } | null>(null)
+  /** The change this view last brought the map image up to. */
+  const seen = useRef<TerrainChange>(undefined)
   const view = useRef<View | null>(null)
   const hover = useRef<[number, number] | null>(null)
   const pan = useRef<{ x: number; y: number } | null>(null)
@@ -67,18 +106,9 @@ export function MapView({
   const selectedRegionId = useUi((s) => s.selectedRegionId)
   const draft = useEditor((s) => s.draft)
 
-  // Re-render the terrain image: just the rows the last dab touched, or all of it.
   useEffect(() => {
-    if (!terrain.current) {
-      const canvas = document.createElement('canvas')
-      canvas.width = W
-      canvas.height = H
-      terrain.current = { canvas, image: new ImageData(W, H) }
-    }
-    const { canvas, image } = terrain.current
-    const [y0, y1] = change.dab ? brushRows(change.dab.dir, change.dab.radius, H) : [0, H]
-    renderEquirect(model, image.data, W, H, y0, y1)
-    canvas.getContext('2d')!.putImageData(image, 0, 0, 0, Math.max(0, y0), W, Math.min(H, y1) - Math.max(0, y0))
+    drawMapImage(model, change, seen.current)
+    seen.current = change
     dirty.current = true
   }, [model, change])
 
@@ -98,6 +128,7 @@ export function MapView({
   useEffect(() => {
     const canvas = canvasRef.current!
     const ctx = canvas.getContext('2d')!
+    const terrain = mapImageOf(model).canvas
     let frame = 0
     const draw = () => {
       frame = requestAnimationFrame(draw)
@@ -118,7 +149,7 @@ export function MapView({
         view.current.oy = ch / 2 - y * view.current.scale
         pendingFocus.current = null
       }
-      if (!dirty.current || !view.current || !terrain.current) return
+      if (!dirty.current || !view.current) return
       dirty.current = false
       const v = view.current
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -128,7 +159,7 @@ export function MapView({
       ctx.imageSmoothingEnabled = v.scale < 2
       // Draw the map and its neighbors so panning sideways wraps around the planet.
       for (const shift of [-W, 0, W]) {
-        ctx.drawImage(terrain.current.canvas, shift, 0)
+        ctx.drawImage(terrain, shift, 0)
         drawOverlays(ctx, shift, v.scale)
       }
       setReady(true)
