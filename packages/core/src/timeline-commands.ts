@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { batchOf, liveRecord, pickColor, previousValues } from './command-kit'
-import type { HandlerMap } from './commands'
+import type { Command, HandlerMap } from './commands'
 import { NewId, Ref, create, deleteWith, live, setDeleted, update, validate } from './record-kit'
 import { Id } from './schema'
 import { Time } from './time'
@@ -83,7 +83,12 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
   'event.delete': (store, { id }, ctx, run) =>
     deleteWith(
       store, ctx, run, { kind: 'event', id },
-      live(store, 'maintenance').filter((m) => m.causeEventId === id).map((m) => ({ type: 'maintenance.update', payload: { id: m.id, patch: { causeEventId: null } } })),
+      [
+        ...live(store, 'maintenance').filter((m) => m.causeEventId === id).map((m): Command => ({ type: 'maintenance.update', payload: { id: m.id, patch: { causeEventId: null } } })),
+        ...live(store, 'character')
+          .filter((c) => c.stops.some((s) => s.eventId === id))
+          .map((c): Command => ({ type: 'character.update', payload: { id: c.id, patch: { stops: c.stops.map((s) => (s.eventId === id ? { ...s, eventId: null } : s)) } } }))
+      ],
       [
         ...live(store, 'link').filter((l) => l.fromId === id || l.toId === id).map((l) => ({ kind: 'link' as const, id: l.id })),
         ...live(store, 'effect').filter((e) => e.eventId === id).map((e) => ({ kind: 'effect' as const, id: e.id }))

@@ -1,10 +1,11 @@
 import type { z } from 'zod'
+import { Character } from './characters'
 import { Blueprint, EventEffect, MaintenanceChange, Structure } from './structures'
 import { EntityChange, Era, EventGroup, EventLink, Lane, TimelineEvent, TimelineSettings } from './timeline'
 
 /**
  * Every kind of record kept in the generic `records` table: the timeline
- * (timeline.ts) and structures (structures.ts). Each record belongs to a node
+ * (timeline.ts), structures (structures.ts) and characters (characters.ts). Each record belongs to a node
  * through `ownerId`, mostly a world.
  */
 export const RECORD_SCHEMAS = {
@@ -18,7 +19,8 @@ export const RECORD_SCHEMAS = {
   blueprint: Blueprint,
   structure: Structure,
   maintenance: MaintenanceChange,
-  effect: EventEffect
+  effect: EventEffect,
+  character: Character
 } as const
 export type RecordKind = keyof typeof RECORD_SCHEMAS
 export const RECORD_KINDS = Object.keys(RECORD_SCHEMAS) as RecordKind[]

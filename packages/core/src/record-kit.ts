@@ -63,6 +63,11 @@ const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>) => vo
   effect(store, e) {
     sameOwner(liveRecord(store, 'event', e.eventId), e.ownerId, 'event')
     if (e.type === 'modify' && !e.rename && !e.blueprintId) throw new CommandError('A modify effect needs a new name or blueprint')
+  },
+  // A stop's event isn't checked, like effect targets: deleting the event just unlinks it.
+  character(store, c) {
+    liveWorld(store, c.ownerId)
+    if (c.died !== null && c.died < c.born) throw new CommandError('A character cannot die before they are born')
   }
 }
 
