@@ -19,6 +19,8 @@ import { TimeScale, fitRange, panRange, snap, zoomRange, type TimeRange } from '
 import { EFFECT_LABELS } from '../components/EventEffects'
 import { ArrowMarkers, LINK_STYLE, WARN_COLOR } from './linkStyle'
 import { useNow, usePlayhead, useTimelineView } from './timelineStore'
+import { useCalendar } from '../world/useSky'
+import { eventDates } from './labels'
 
 const LABELS_W = 132
 
@@ -48,6 +50,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
 
   const now = useNow(owner.id)
   const playhead = usePlayhead(owner.id)
+  const cal = useCalendar(owner.id)
   // Only this timeline's range: other timelines' view changes don't re-render it.
   const storedRange = useTimelineView((s) => s.ranges[owner.id])
   const view = useTimelineView.getState()
@@ -209,7 +212,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
     setRange(times.length ? fitRange(Math.min(...times), Math.max(...times)) : fitRange(now, now))
   }
 
-  const ticks = timeTicks(range.t0, range.t1, width)
+  const ticks = timeTicks(range.t0, range.t1, width, cal)
   const groupable = selectedEvents.length >= 2
 
   return (
@@ -295,7 +298,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
                 style={{ left: Math.max(0, x0), width: Math.max(12, Math.min(width, x1) - Math.max(0, x0)), ['--c' as string]: era.color }}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => selectTimeline({ kind: 'era', ids: [era.id] })}
-                title={`${era.name}: ${formatTime(era.start, 'year')} – ${formatTime(era.end, 'year')}`}
+                title={`${era.name}: ${formatTime(era.start, 'year', cal)} – ${formatTime(era.end, 'year', cal)}`}
               >
                 {era.name}
               </button>
@@ -307,7 +310,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
             </span>
           ))}
           <Marker className="tl-now-marker" x={scale.x(now)} label="Now" />
-          <Marker className="tl-playhead-marker" x={scale.x(playhead)} label={formatTime(playhead, precisionFor(scale))} />
+          <Marker className="tl-playhead-marker" x={scale.x(playhead)} label={formatTime(playhead, precisionFor(scale), cal)} />
         </div>
       </div>
 
@@ -425,6 +428,7 @@ interface EventBarProps {
 function EventBar({ placed, selected, dimmed, onPointerDown, onHandlePointerDown, onConnectorPointerDown }: EventBarProps) {
   const ev = placed.item
   const allEffects = useUi((s) => s.timeline.effects)
+  const cal = useCalendar(ev.ownerId)
   // What it does to structures, one icon per kind of effect.
   const effectIcons = [...new Set(allEffects.filter((e) => e.eventId === ev.id).map((e) => EFFECT_LABELS[e.type].icon))].join('')
   const instant = ev.end === null
@@ -437,7 +441,7 @@ function EventBar({ placed, selected, dimmed, onPointerDown, onHandlePointerDown
       role="button"
       aria-label={ev.title}
       aria-pressed={selected}
-      title={`${ev.title}\n${formatTime(ev.start, ev.precision)}${ev.end !== null ? ` – ${formatTime(ev.end, ev.precision)}` : ''}`}
+      title={`${ev.title}\n${eventDates(ev, cal)}`}
       style={{ left: placed.x0, top: placed.y + 3, width: instant ? undefined : placed.x1 - placed.x0, ['--c' as string]: ev.color }}
       onPointerDown={(e) => onPointerDown(e, ev)}
       onDoubleClick={(e) => e.stopPropagation()}

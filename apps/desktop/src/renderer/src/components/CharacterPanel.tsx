@@ -1,13 +1,12 @@
-import { DEFAULT_CALENDAR, ageAt, characterAt, eventPlace, formatDuration, formatTime, isAlive, type Character, type CharacterPatch } from '@universe/core'
+import { ageAt, characterAt, eventPlace, formatDuration, formatTime, isAlive, type Character, type CharacterPatch } from '@universe/core'
 import { useMemo } from 'react'
 import { useUi } from '../store'
 import { usePlayhead, useTimelineView } from '../timeline/timelineStore'
 import { useEditor } from '../world/editorStore'
+import { useCalendar } from '../world/useSky'
 import { sendCharacter } from '../world/sendCharacter'
 import { ColorField, TagsField, TextField, TimeField } from './fields'
 import { NotesEditor } from './NotesEditor'
-
-const DAY = DEFAULT_CALENDAR.secondsPerDay
 
 const latLon = (p: { lat: number; lon: number }) => `${Math.abs(p.lat).toFixed(3)}°${p.lat >= 0 ? 'N' : 'S'} ${Math.abs(p.lon).toFixed(3)}°${p.lon >= 0 ? 'E' : 'W'}`
 
@@ -17,6 +16,7 @@ export function CharacterPanel({ character }: { character: Character }) {
   const allEvents = useUi((s) => s.timeline.events)
   const regions = useUi((s) => s.regions)
   const playhead = usePlayhead(character.ownerId)
+  const cal = useCalendar(character.ownerId)
   const update = (patch: CharacterPatch) => void execute({ type: 'character.update', payload: { id: character.id, patch } })
   const place = characterAt(character, playhead)
   const alive = isAlive(character, playhead)
@@ -48,10 +48,10 @@ export function CharacterPanel({ character }: { character: Character }) {
       </div>
       <p className="small" data-testid="character-status">
         {playhead < character.born
-          ? `Not born yet at ${formatTime(playhead, 'year')}.`
+          ? `Not born yet at ${formatTime(playhead, 'year', cal)}.`
           : !alive
-            ? `Died aged ${ageAt(character, playhead)}.`
-            : `Aged ${ageAt(character, playhead)} at ${formatTime(playhead, 'year')}${
+            ? `Died aged ${ageAt(character, playhead, cal)}.`
+            : `Aged ${ageAt(character, playhead, cal)} at ${formatTime(playhead, 'year', cal)}${
                 place ? (place.travelling ? `, on the way to stop ${place.stop + 1}` : `, at ${latLon(place)}`) : ', with nowhere to be yet'
               }.`}
       </p>
@@ -77,7 +77,7 @@ export function CharacterPanel({ character }: { character: Character }) {
           <option value="">Go to an event…</option>
           {events.map(({ event }) => (
             <option key={event.id} value={event.id}>
-              {formatTime(event.start, event.precision)} · {event.title}
+              {formatTime(event.start, event.precision, cal)} · {event.title}
             </option>
           ))}
         </select>
@@ -92,11 +92,11 @@ export function CharacterPanel({ character }: { character: Character }) {
             {character.stops.map((stop, i) => (
               <li key={`${stop.at}:${i}`}>
                 <button className="link" title="Move the playhead here" onClick={() => useTimelineView.getState().setPlayhead(character.ownerId, stop.at)}>
-                  {formatTime(stop.at, 'day')}
+                  {formatTime(stop.at, 'day', cal)}
                 </button>{' '}
                 {i === 0 ? 'starts at' : 'arrives at'} {latLon(stop)}
                 {stop.eventId && <> for {eventTitle(stop.eventId) ?? 'an event'}</>}
-                {i > 0 && stop.travel > 0 && <span className="muted"> after {formatDuration(Math.max(stop.travel, DAY))} on the road</span>}{' '}
+                {i > 0 && stop.travel > 0 && <span className="muted"> after {formatDuration(Math.max(stop.travel, cal.secondsPerDay), cal)} on the road</span>}{' '}
                 <button
                   className="link"
                   aria-label={`Remove stop ${i + 1}`}

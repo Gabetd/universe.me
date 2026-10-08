@@ -43,6 +43,23 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await expect(inspector(page).getByLabel('Worked out from the orbit')).toContainText('days in')
   await expect(page.getByTestId('sky-readout')).toContainText('Luna:')
   await page.screenshot({ path: 'test-results/81-planet-moons.png' })
+
+  // The world's calendar follows: its months can be renamed, and dates are written with them.
+  await row(page, 'Terra Surface').click()
+  const calendar = inspector(page).getByLabel('Calendar', { exact: true })
+  await expect(calendar).toContainText('days of 30.')
+  const first = calendar.getByLabel('Month 1 name')
+  await first.fill('Frostmoon')
+  await first.press('Enter')
+  const playhead = page.getByRole('toolbar', { name: 'Timeline' }).getByLabel('Playhead')
+  await playhead.fill('3 Frostmoon 120')
+  await playhead.press('Enter')
+  // Shown at the timeline's zoom (years); typed with the new month name, it was understood.
+  await expect(playhead).toHaveValue('120')
+  await expect(playhead).toHaveAttribute('aria-invalid', 'false')
+
+  // Undo goes back to the Earth calendar.
   await page.getByRole('button', { name: /Undo/ }).click()
-  await expect(inspector(page).getByLabel('Orbit', { exact: true })).toContainText('Made up from the seed')
+  await page.getByRole('button', { name: /Undo/ }).click()
+  await expect(calendar).toContainText('The Earth calendar')
 })

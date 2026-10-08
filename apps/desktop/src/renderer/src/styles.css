@@ -1518,3 +1518,17 @@ input[type='color'] {
   margin: 0;
   min-width: 0;
 }
+
+.month-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+.month-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 8px;
+}

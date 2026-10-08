@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { greatCircleKm, slerpLatLon } from './geo'
 import { Id, RecordMeta } from './schema'
-import { DEFAULT_CALENDAR, Time, secondsPerYear } from './time'
+import { DEFAULT_CALENDAR, Time, secondsPerYear, type Calendar } from './time'
 import { HexColor, type LatLon } from './world'
 
 /**
@@ -53,10 +53,10 @@ export function walkingTime(a: LatLon, b: LatLon, radiusKm: number): number {
 
 export const isAlive = (c: Pick<Character, 'born' | 'died'>, t: Time) => t >= c.born && (c.died === null || t <= c.died)
 
-/** Age in whole years at `t` (or at death, if `t` is later). */
-export function ageAt(c: Pick<Character, 'born' | 'died'>, t: Time): number {
+/** Age in whole years of the world's calendar at `t` (or at death, if `t` is later). */
+export function ageAt(c: Pick<Character, 'born' | 'died'>, t: Time, cal: Calendar = DEFAULT_CALENDAR): number {
   const until = c.died === null ? t : Math.min(t, c.died)
-  return Math.max(0, Math.floor((until - c.born) / secondsPerYear(DEFAULT_CALENDAR)))
+  return Math.max(0, Math.floor((until - c.born) / secondsPerYear(cal)))
 }
 
 /** Where the character is at `t`, or undefined while they aren't alive (or have nowhere to be). */

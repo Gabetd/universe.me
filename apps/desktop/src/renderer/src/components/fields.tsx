@@ -1,5 +1,7 @@
 import { formatTime, parseTime, type Precision } from '@universe/core'
 import { useEffect, useRef, useState } from 'react'
+import { useTimelineOwner } from '../store'
+import { useCalendar } from '../world/useSky'
 
 /**
  * Inputs that save once when editing finishes (blur, Enter, slider release),
@@ -112,6 +114,7 @@ function blurOnEnter(e: React.KeyboardEvent<HTMLInputElement>) {
  * A date on the timeline, typed the way people write them ("1204",
  * "15 Mar 1204", "c. 1200", "4.5 billion years ago"). Saves on blur or Enter;
  * text that isn't a date is flagged and put back. With `allowEmpty`, clearing it saves null.
+ * Dates are in the calendar of the timeline in view.
  */
 export function TimeField(props: {
   label: string
@@ -121,7 +124,8 @@ export function TimeField(props: {
   placeholder?: string
   onCommit(value: { t: number; precision: Precision } | null): void
 }) {
-  const shown = props.value === null ? '' : formatTime(props.value, props.precision)
+  const cal = useCalendar(useTimelineOwner()?.id)
+  const shown = props.value === null ? '' : formatTime(props.value, props.precision, cal)
   const [draft, setDraft] = useState<string | null>(null)
   const [invalid, setInvalid] = useState(false)
   const cancelled = useRef(false)
@@ -131,7 +135,7 @@ export function TimeField(props: {
     setDraft(null)
     if (text === null || text.trim() === shown) return
     if (!text.trim() && props.allowEmpty) return props.onCommit(null)
-    const parsed = parseTime(text)
+    const parsed = parseTime(text, cal)
     setInvalid(!parsed)
     if (parsed) props.onCommit(parsed)
   }

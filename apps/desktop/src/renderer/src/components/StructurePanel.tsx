@@ -4,6 +4,7 @@ import { useUi } from '../store'
 import { STAGE_COLORS, viewingDistance } from '../world/structureLook'
 import { useConditionCurves } from '../world/useStructures'
 import { useEditor } from '../world/editorStore'
+import { useCalendar } from '../world/useSky'
 import { goToEvent } from '../world/goToEvent'
 import { CommitSlider, TagsField, TextField, TimeField } from './fields'
 import { BlueprintOptions } from './BlueprintOptions'
@@ -25,6 +26,7 @@ export function StructurePanel({ structure }: { structure: Structure }) {
   const maintenances = useUi((s) => s.timeline.maintenances)
   const { curves } = useConditionCurves(structure.ownerId)
   const playhead = usePlayhead(structure.ownerId)
+  const cal = useCalendar(structure.ownerId)
   const curve = curves.get(structure.id)
   const state = curve && stateAt(curve, playhead)
   const update = (patch: StructurePatch) => void execute({ type: 'structure.update', payload: { id: structure.id, patch } })
@@ -57,13 +59,13 @@ export function StructurePanel({ structure }: { structure: Structure }) {
       {state && (
         <div className="field" aria-label="Condition">
           <span className="field-label-row">
-            Condition at {formatTime(playhead, 'year')}
+            Condition at {formatTime(playhead, 'year', cal)}
             <b data-testid="condition">{state.exists ? `${Math.round(state.condition)} · ${STAGES.find((s) => s.stage === state.stage)!.label}` : playhead < structure.builtAt ? 'Not built yet' : 'Gone'}</b>
           </span>
           <div className="condition-bar">
             <div style={{ width: `${state.condition}%`, background: STAGE_COLORS[state.stage] }} />
           </div>
-          {eroded !== undefined && <span className="muted small">Left weathered, it erodes away around {formatTime(eroded, 'year')}.</span>}
+          {eroded !== undefined && <span className="muted small">Left weathered, it erodes away around {formatTime(eroded, 'year', cal)}.</span>}
         </div>
       )}
 
@@ -73,7 +75,7 @@ export function StructurePanel({ structure }: { structure: Structure }) {
           checked={state?.maintained ?? structure.maintained}
           onChange={(e) => void execute({ type: 'maintenance.set', payload: { structureId: structure.id, at: playhead, maintained: e.target.checked } })}
         />
-        Maintained from {formatTime(playhead, 'year')} on
+        Maintained from {formatTime(playhead, 'year', cal)} on
       </label>
       <div className="small">
         <div className="muted">
@@ -83,7 +85,7 @@ export function StructurePanel({ structure }: { structure: Structure }) {
         <ul className="plain-list">
           {history.map((m) => (
             <li key={m.id}>
-              {formatTime(m.at, 'year')}: {m.maintained ? 'maintained again' : 'left to weather'}
+              {formatTime(m.at, 'year', cal)}: {m.maintained ? 'maintained again' : 'left to weather'}
               {m.causeEventId && <> ({eventTitle(m.causeEventId)})</>}{' '}
               <button className="link" aria-label="Remove maintenance change" onClick={() => void execute({ type: 'maintenance.delete', payload: { id: m.id } })}>
                 ✕
@@ -102,7 +104,7 @@ export function StructurePanel({ structure }: { structure: Structure }) {
               return (
                 <li key={i}>
                   <button className="link" onClick={() => event && goToEvent(event)}>
-                    {formatTime(s.at, event?.precision ?? 'year')} · {eventTitle(s.eventId)}
+                    {formatTime(s.at, event?.precision ?? 'year', cal)} · {eventTitle(s.eventId)}
                   </button>{' '}
                   <span className="muted">
                     {STEP_LABELS[s.kind]}

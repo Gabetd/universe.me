@@ -2,7 +2,7 @@ import { AU_KM, type OrbitFields, type SpatialNode } from '@universe/core'
 import { DAY_S, deriveCalendar, luminosityOf, moonsOf, planetOf, worldClimate, type BodyOrbit, type SystemModel } from '@universe/sim'
 import { useUi } from '../store'
 import { useSystem } from '../world/useSky'
-import { NumberInput } from './fields'
+import { NumberInput, TextField } from './fields'
 
 /** Inspector for a star system: its star. Without edits it's Sun-like. */
 export function StarPanel({ system: node }: { system: SpatialNode }) {
@@ -141,5 +141,45 @@ function Num(props: { label: string; value: number; min: number; max: number; on
       <span>{props.label}</span>
       <NumberInput value={props.value} min={props.min} max={props.max} onCommit={props.onCommit} />
     </label>
+  )
+}
+
+/**
+ * A world's calendar: the Earth calendar until its body's orbit is set, then
+ * derived from it, with month names that can be changed.
+ */
+export function CalendarPanel({ world }: { world: SpatialNode }) {
+  const system = useSystem(world.id)
+  const execute = useUi((s) => s.execute)
+  const orbit = world.parentId ? system?.bodies.get(world.parentId) : undefined
+  if (!system || !orbit) return null
+  const derived = deriveCalendar(system, orbit.bodyId)
+  const months = orbit.isDefault ? null : derived.calendar.months
+  const rename = (k: number, name: string) => {
+    const names = months!.map((m, j) => (j === k ? name : m.name))
+    void execute({ type: 'orbit.set', payload: { bodyId: orbit.bodyId, orbit: { ...fieldsOf(orbit), monthNames: names } } })
+  }
+  return (
+    <section className="inspector-section" aria-label="Calendar">
+      <h3>Calendar</h3>
+      {!months ? (
+        <p className="muted small">The Earth calendar, until you set the orbit of the planet this world is on (select it in the tree). Then days, years and months follow it.</p>
+      ) : (
+        <>
+          <p className="muted small">
+            {derived.calendar.months.reduce((n, m) => n + m.days, 0)} days of {derived.dayHours.toFixed(2)} hours
+            {derived.monthDays ? `; months follow the moon (${derived.monthDays.toFixed(1)} days)` : ''}.
+          </p>
+          <ol className="month-list" key={months.map((m) => m.name).join()}>
+            {months.map((m, k) => (
+              <li key={k}>
+                <TextField label={`Month ${k + 1} name`} value={m.name} required onCommit={(name) => rename(k, name)} />
+                <span className="muted small">{m.days} days</span>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+    </section>
   )
 }

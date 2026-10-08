@@ -2,6 +2,7 @@ import { formatTime, type EntityChange, type Region } from '@universe/core'
 import { useState } from 'react'
 import { useUi } from '../store'
 import { usePlayhead } from '../timeline/timelineStore'
+import { useCalendar } from '../world/useSky'
 import { TimeField } from './fields'
 
 /**
@@ -14,6 +15,7 @@ export function RegionHistory({ region }: { region: Region }) {
   const changes = useUi((s) => s.timeline.changes)
   const events = useUi((s) => s.timeline.events)
   const playhead = usePlayhead(region.worldId)
+  const cal = useCalendar(region.worldId)
   const [newName, setNewName] = useState('')
   const own = changes.filter((c) => c.entityId === region.id).sort((a, b) => a.at - b.at)
   const worldEvents = events.filter((e) => e.ownerId === region.worldId)
@@ -66,7 +68,7 @@ export function RegionHistory({ region }: { region: Region }) {
         .map((c) => (
           <div key={c.id} className="field-row small">
             <span>
-              {formatTime(c.at, 'year')}: {c.patch.name ? `renamed “${c.patch.name}”` : ''}
+              {formatTime(c.at, 'year', cal)}: {c.patch.name ? `renamed “${c.patch.name}”` : ''}
               {c.patch.color && <span className="swatch" style={{ background: c.patch.color }} />}
             </span>
             {causeSelect(c)}
@@ -76,7 +78,7 @@ export function RegionHistory({ region }: { region: Region }) {
           </div>
         ))}
       <div className="field-row">
-        <input aria-label="New name at playhead" placeholder={`New name in ${formatTime(playhead, 'year')}`} value={newName} onChange={(e) => setNewName(e.target.value)} />
+        <input aria-label="New name at playhead" placeholder={`New name in ${formatTime(playhead, 'year', cal)}`} value={newName} onChange={(e) => setNewName(e.target.value)} />
         <button
           disabled={!newName.trim()}
           onClick={() => {

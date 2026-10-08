@@ -2,6 +2,7 @@ import { timelineOf, type Region, type TimelineEvent } from '@universe/core'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useUi } from '../store'
 import { eventDates, locationLabel } from '../timeline/labels'
+import { useCalendar } from './useSky'
 import { ArrowMarkers, LINK_STYLE } from '../timeline/linkStyle'
 import { usePlayhead, useTimelineView } from '../timeline/timelineStore'
 import { boxEdge, nodeDepth, project, type NodeDepth } from './canvasDepth'
@@ -50,6 +51,7 @@ interface PlacedNode {
  */
 export function EventCanvas({ worldId, regions }: { worldId: string; regions: Region[] }) {
   const timeline = useUi((s) => s.timeline)
+  const cal = useCalendar(worldId)
   const selection = useUi((s) => s.timelineSelection)
   const { execute, selectTimeline } = useUi.getState()
   const playhead = usePlayhead(worldId)
@@ -261,7 +263,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
                   {ev.canvasHidden ? '👁' : '✕'}
                 </button>
               </div>
-              <div className="muted small">{eventDates(ev)}</div>
+              <div className="muted small">{eventDates(ev, cal)}</div>
               <div className="small event-node-place">{ev.locations.length ? ev.locations.map((l) => locationLabel(l, regions)).join(' · ') : <span className="muted">No place yet</span>}</div>
               <span className="event-node-handle" aria-label={`Link ${ev.title} to…`} title="Drag onto another node to link them" onPointerDown={(e) => onHandlePointerDown(e, node)}>
                 ●
