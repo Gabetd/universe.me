@@ -15,16 +15,20 @@ const undoAi = () => applyReply(window.universe.undoAi())
 /** The API's status, kept up to date, a way to change it that shows the change at once, and one to look again (Tailscale too). */
 function useApiStatus(): [ApiStatus | undefined, (patch: ApiSettingsPatch) => void, () => void] {
   const [status, setStatus] = useState<ApiStatus>()
+  // Changes on their way to the main process: until the last one answers, a status that comes meanwhile was made before it, and would undo what's shown.
+  const changing = useRef(0)
+  const take = (latest: ApiStatus) => changing.current === 0 && setStatus(latest)
   useEffect(() => {
-    void window.universe.apiStatus().then(setStatus)
-    return window.universe.onApi(setStatus)
+    void window.universe.apiStatus().then(take)
+    return window.universe.onApi(take)
   }, [])
   const set = (patch: ApiSettingsPatch) => {
     const { phone, ...rest } = patch
     setStatus((s) => s && { ...s, ...rest, phone: phone === undefined ? s.phone : { ...s.phone, on: phone } })
-    void window.universe.setApi(patch).then(setStatus)
+    changing.current++
+    void window.universe.setApi(patch).then((answer) => --changing.current === 0 && setStatus(answer))
   }
-  const refresh = () => void window.universe.apiStatus().then(setStatus)
+  const refresh = () => void window.universe.apiStatus().then(take)
   return [status, set, refresh]
 }
 
