@@ -19,6 +19,9 @@ interface UiState extends AppState {
   /** A structure on the selected world. Like a region, it's shown in the inspector above the world. */
   selectedStructureId: string | null
   selectStructure(id: string | null): void
+  /** A character on the selected world, shown in the inspector like a structure. */
+  selectedCharacterId: string | null
+  selectCharacter(id: string | null): void
   /** Selected timeline records: several events (for grouping), or one era, group, link… */
   timelineSelection: TimelineSelection | null
   selectTimeline(selection: TimelineSelection | null): void
@@ -42,17 +45,19 @@ export const useUi = create<UiState>((set, get) => ({
   timelineSelection: null,
   selectedRegionId: null,
   selectedStructureId: null,
+  selectedCharacterId: null,
   error: null,
 
   apply(state) {
     set({ ...state, ready: true, ...nextSelection(state, get()) })
   },
 
-  select: (id) => set({ selectedId: id, selectedRegionId: null, selectedStructureId: null, timelineSelection: null }),
-  selectTimeline: (timelineSelection) => set(timelineSelection ? { timelineSelection, selectedRegionId: null, selectedStructureId: null } : { timelineSelection }),
-  // A region, a structure and timeline records are never selected together: whichever was picked last is what the inspector shows.
-  selectRegion: (id) => set(id ? { selectedRegionId: id, selectedStructureId: null, timelineSelection: null } : { selectedRegionId: null }),
-  selectStructure: (id) => set(id ? { selectedStructureId: id, selectedRegionId: null, timelineSelection: null } : { selectedStructureId: null }),
+  select: (id) => set({ selectedId: id, ...NOTHING_ON_WORLD }),
+  selectTimeline: (timelineSelection) => set(timelineSelection ? { ...NOTHING_ON_WORLD, timelineSelection } : { timelineSelection }),
+  // A region, a structure, a character and timeline records are never selected together: whichever was picked last is what the inspector shows.
+  selectRegion: (id) => set(id ? { ...NOTHING_ON_WORLD, selectedRegionId: id } : { selectedRegionId: null }),
+  selectStructure: (id) => set(id ? { ...NOTHING_ON_WORLD, selectedStructureId: id } : { selectedStructureId: null }),
+  selectCharacter: (id) => set(id ? { ...NOTHING_ON_WORLD, selectedCharacterId: id } : { selectedCharacterId: null }),
   dismissError: () => set({ error: null }),
 
   async run(call) {
@@ -72,7 +77,10 @@ export const useUi = create<UiState>((set, get) => ({
   }
 }))
 
-type Selection = Pick<UiState, 'selectedId' | 'selectedRegionId' | 'selectedStructureId' | 'timelineSelection'>
+/** Nothing selected on the world surface or its timeline. */
+const NOTHING_ON_WORLD = { selectedRegionId: null, selectedStructureId: null, selectedCharacterId: null, timelineSelection: null }
+
+type Selection = Pick<UiState, 'selectedId' | 'selectedRegionId' | 'selectedStructureId' | 'selectedCharacterId' | 'timelineSelection'>
 
 /**
  * Selects what the last command targeted (a region or structure selects its
@@ -82,7 +90,7 @@ type Selection = Pick<UiState, 'selectedId' | 'selectedRegionId' | 'selectedStru
 function nextSelection(state: AppState, current: Selection): Selection {
   const { focus } = state
   const timelineSelection = keptTimelineSelection(state, current.timelineSelection)
-  const none = { selectedRegionId: null, selectedStructureId: null, timelineSelection: null }
+  const none = NOTHING_ON_WORLD
   if (focus?.kind === 'region') {
     const region = state.regions.find((r) => r.id === focus.id)
     if (region) return { ...none, selectedId: region.worldId, selectedRegionId: region.id }
@@ -91,12 +99,16 @@ function nextSelection(state: AppState, current: Selection): Selection {
     const structure = state.timeline.structures.find((s) => s.id === focus.id)
     if (structure) return { ...none, selectedId: structure.ownerId, selectedStructureId: structure.id }
   }
+  if (focus?.kind === 'character' && current.selectedCharacterId !== focus.id) {
+    const character = state.timeline.characters.find((c) => c.id === focus.id)
+    if (character) return { ...none, selectedId: character.ownerId, selectedCharacterId: character.id }
+  }
   // Lanes and changes are edited in place, so only records with an inspector panel get selected.
   if (focus && (focus.kind === 'event' || focus.kind === 'era' || focus.kind === 'group' || focus.kind === 'link')) {
     const kind = focus.kind
     if (state.timeline[`${kind}s`].some((r) => r.id === focus.id)) {
       const ids = current.timelineSelection?.kind === kind && current.timelineSelection.ids.includes(focus.id) ? timelineSelection!.ids : [focus.id]
-      return { ...keptNodeSelection(state, current), selectedRegionId: null, selectedStructureId: null, timelineSelection: { kind, ids } }
+      return { ...keptNodeSelection(state, current), selectedRegionId: null, selectedStructureId: null, selectedCharacterId: null, timelineSelection: { kind, ids } }
     }
   }
   const exists = (id: string | null | undefined): id is string => !!id && state.nodes.some((n) => n.id === id)
@@ -106,11 +118,17 @@ function nextSelection(state: AppState, current: Selection): Selection {
   return { ...keptNodeSelection(state, current), timelineSelection }
 }
 
-function keptNodeSelection(state: AppState, current: Selection): Pick<Selection, 'selectedId' | 'selectedRegionId' | 'selectedStructureId'> {
+function keptNodeSelection(state: AppState, current: Selection): Pick<Selection, 'selectedId' | 'selectedRegionId' | 'selectedStructureId' | 'selectedCharacterId'> {
   const selectedId = state.nodes.some((n) => n.id === current.selectedId) ? current.selectedId : (state.project?.rootId ?? null)
   const keepRegion = state.regions.some((r) => r.id === current.selectedRegionId && r.worldId === selectedId)
   const keepStructure = state.timeline.structures.some((x) => x.id === current.selectedStructureId && x.ownerId === selectedId)
-  return { selectedId, selectedRegionId: keepRegion ? current.selectedRegionId : null, selectedStructureId: keepStructure ? current.selectedStructureId : null }
+  const keepCharacter = state.timeline.characters.some((x) => x.id === current.selectedCharacterId && x.ownerId === selectedId)
+  return {
+    selectedId,
+    selectedRegionId: keepRegion ? current.selectedRegionId : null,
+    selectedStructureId: keepStructure ? current.selectedStructureId : null,
+    selectedCharacterId: keepCharacter ? current.selectedCharacterId : null
+  }
 }
 
 /** The timeline selection minus records that no longer exist. */

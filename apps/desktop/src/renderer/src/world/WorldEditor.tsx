@@ -1,13 +1,16 @@
-import type { SpatialNode } from '@universe/core'
+import { characterAt, eventPlace, type LatLon, type SpatialNode } from '@universe/core'
+import { playheadOf } from '../timeline/timelineStore'
 import { BIOMES } from '@universe/procgen'
 import { useUi, useWorld } from '../store'
 import { isBrushTool, useEditor, type EditorTool } from './editorStore'
 import { EventCanvas } from './EventCanvas'
 import { GlobeView } from './GlobeView'
+import { GroundView } from './GroundView'
 import { MapView } from './MapView'
 import { useSurfaceTools } from './useSurfaceTools'
 import { useTerrain, type SurfaceViewProps } from './useTerrain'
 import { useStructuresAt } from './useStructures'
+import { useCharactersAt } from './useCharacters'
 import { useWorldAtTime } from './useWorldAtTime'
 import { BlueprintOptions } from '../components/BlueprintOptions'
 
@@ -22,11 +25,14 @@ const TOOLS: { tool: EditorTool; label: string; icon: string; hint: string }[] =
   { tool: 'region', label: 'Draw region', icon: '⬠', hint: 'Click to add points. Enter or double-click saves, Backspace removes a point, Esc cancels.' },
   { tool: 'place', label: 'Place structure', icon: '🏰', hint: 'Click to place the chosen blueprint, built at the playhead. Esc stops placing.' },
   { tool: 'locate', label: 'Place event', icon: '📍', hint: 'Click where the selected event happens. Esc cancels.' },
-  { tool: 'move', label: 'Move structure', icon: '✥', hint: 'Click the structure’s new spot. Esc cancels.' }
+  { tool: 'move', label: 'Move structure', icon: '✥', hint: 'Click the structure’s new spot. Esc cancels.' },
+  { tool: 'travel', label: 'Send character', icon: '🧭', hint: 'Click where the character goes; they arrive at the playhead. Esc cancels.' }
 ]
 
 /** Tools started from the inspector rather than the toolbar. */
-const PICK_TOOLS: EditorTool[] = ['locate', 'move']
+const PICK_TOOLS: EditorTool[] = ['locate', 'move', 'travel']
+
+const GROUND_HINT = 'Drag to move over the ground, right-drag to look around, scroll to zoom. Scroll all the way out to go back up.'
 
 /** WebGL can be missing (old GPUs, remote desktops); the map still works without it. */
 const hasWebGL = (() => {
@@ -42,11 +48,12 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
   const { regions, pins, highlightRegionIds, focus } = useWorldAtTime(world.id, allRegions)
   const { view, tool, radiusKm, strength, biome, exaggeration, placeBlueprintId, set } = useEditor()
   const structures = useStructuresAt(world.id)
+  const characters = useCharactersAt(world.id)
   const { model, change, error, bump, commit } = useTerrain(world.id, world.seed, info)
   const { pointerDown, pointerMove, finishRegion } = useSurfaceTools(world.id, model, bump, commit)
   const activeView = hasWebGL || view === 'canvas' ? view : 'map'
   const onSurface = activeView !== 'canvas'
-  const hint = onSurface ? TOOLS.find((t) => t.tool === tool)?.hint : undefined
+  const hint = onSurface ? (activeView === 'ground' && tool === 'navigate' ? GROUND_HINT : TOOLS.find((t) => t.tool === tool)?.hint) : undefined
 
   const viewProps: SurfaceViewProps | undefined = model && {
     model,
@@ -58,6 +65,8 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
     onPinClick: (eventId) => useUi.getState().selectTimeline({ kind: 'event', ids: [eventId] }),
     structures,
     onStructureClick: (id) => useUi.getState().selectStructure(id),
+    characters,
+    onCharacterClick: (id) => useUi.getState().selectCharacter(id),
     onPointerDown: pointerDown,
     onPointerMove: pointerMove,
     onDoubleClick: () => void finishRegion()
@@ -77,6 +86,14 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
           </button>
           <button aria-pressed={activeView === 'map'} onClick={() => set({ view: 'map', surfaceView: 'map' })}>
             🗺 Map
+          </button>
+          <button
+            aria-pressed={activeView === 'ground'}
+            disabled={!hasWebGL}
+            onClick={() => useEditor.getState().enterGround(groundTarget(world.id))}
+            title="The ground up close: buildings, trees and people at their real size (or scroll all the way in)"
+          >
+            🔍 Ground
           </button>
           <button aria-pressed={activeView === 'canvas'} onClick={() => set({ view: 'canvas' })} title="This world's events as cards">
             🗂 Canvas
@@ -141,6 +158,8 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
         ) : viewProps ? (
           activeView === 'globe' ? (
             <GlobeView {...viewProps} />
+          ) : activeView === 'ground' ? (
+            <GroundView {...viewProps} seed={world.seed} />
           ) : (
             <MapView {...viewProps} />
           )
@@ -150,6 +169,19 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
       <div className="viewport-overlay bottom muted small">{hint}</div>
     </div>
   )
+}
+
+/** Where the Ground button goes down: the selected character or structure, the selected event's place, or where the globe looks. */
+function groundTarget(worldId: string): LatLon {
+  const { selectedCharacterId, selectedStructureId, timeline, timelineSelection, regions } = useUi.getState()
+  const character = timeline.characters.find((c) => c.id === selectedCharacterId)
+  const at = character && characterAt(character, playheadOf(worldId))
+  if (at) return at
+  const structure = timeline.structures.find((s) => s.id === selectedStructureId)
+  if (structure) return structure
+  const event = timelineSelection?.kind === 'event' ? timeline.events.find((e) => e.id === timelineSelection.ids[0]) : undefined
+  const place = event && eventPlace(event, regions)
+  return place ?? useEditor.getState().lookingAt ?? { lat: 0, lon: 0 }
 }
 
 function Slider(props: { label: string; value: number; min: number; max: number; step: number; unit: string; onChange(v: number): void }) {

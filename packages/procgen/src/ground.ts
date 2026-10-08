@@ -161,7 +161,7 @@ export class GroundDetail {
    */
   elevation(base: BaseSampler, lat: number, lon: number): number {
     const { elevation } = base(lat, lon)
-    const amp = 4 + clamp(Math.abs(elevation) * 0.02, 0, 60)
+    const amp = 9 + clamp(Math.abs(elevation) * 0.04, 0, 110)
     let h = 0
     let a = amp
     let wavelength = 1800
@@ -246,6 +246,9 @@ export interface GroundChunk {
   plants: Partial<Record<Plant, Float32Array>>
 }
 
+/** Bare ground showing through. */
+const EARTH = [122, 102, 74]
+
 /** Vertices along a chunk edge. */
 export const CHUNK_SEGMENTS = 48
 
@@ -265,9 +268,10 @@ export function buildGroundChunk(input: GroundChunkInput): GroundChunk {
     const y = detail.elevation(base, lat, lon)
     positions.push(x, y - drop, z)
     const rgb = y < 0 ? input.seabedColor : y < 1.5 ? (input.biomeColors[BIOME.beach] ?? input.seabedColor) : input.biomeColors[detail.biome(base, lat, lon)]!
-    // A little variation, so a field isn't one flat colour.
-    const v = 0.9 + 0.1 * detail.patch(lat, lon, 3) + (drop ? -0.25 : 0)
-    colors.push((rgb[0]! / 255) * v, (rgb[1]! / 255) * v, (rgb[2]! / 255) * v)
+    // Some variation, so a field isn't one flat colour: lighter and darker patches, and bare earth here and there.
+    const v = 0.86 + 0.12 * detail.patch(lat, lon, 3) + (drop ? -0.25 : 0)
+    const bare = y < 1.5 ? 0 : clamp(detail.patch(lat, lon, 5) * 1.6 - 0.7, 0, 0.45)
+    for (let k = 0; k < 3; k++) colors.push(((rgb[k]! * (1 - bare) + EARTH[k]! * bare) / 255) * v)
     return positions.length / 3 - 1
   }
 

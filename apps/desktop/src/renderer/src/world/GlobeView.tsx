@@ -1,5 +1,5 @@
 import { CUBE_FACES, TERRAIN_RES } from '@universe/core'
-import { faceToDir, latLonToDir, renderFaceTexture, type TerrainModel, type Vec3 } from '@universe/procgen'
+import { dirToLatLon, faceToDir, latLonToDir, renderFaceTexture, type TerrainModel, type Vec3 } from '@universe/procgen'
 import { Line, OrbitControls, Stars } from '@react-three/drei'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
@@ -8,27 +8,25 @@ import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor } from './editorStore'
 import type { SurfaceViewProps } from './useTerrain'
-import { blueprintExtent } from './structureLook'
-import { BlueprintParts } from './StructureMesh'
+import { STAGE_COLORS } from './structureLook'
+import { LabelLayer, LabelProjector, type ViewLabel } from './labels'
+import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
 
-/** Text shown next to a point on the surface. */
-interface SurfaceLabel {
-  key: string
-  lat: number
-  lon: number
-  text: string
-  selected: boolean
-}
-
-/** Labels for active or selected event pins, and for structures that show their name. */
-function surfaceLabels(pins: EventPin[], structures: PlacedStructure[]): SurfaceLabel[] {
+/** Labels for active or selected event pins, structures that show their name, and characters. */
+function surfaceLabels(pins: EventPin[], structures: PlacedStructure[], characters: PlacedCharacter[], model: TerrainModel, scale: number): ViewLabel[] {
+  const at = (lat: number, lon: number) => {
+    const p = new THREE.Vector3(...surfacePoint(model, latLonToDir(lat, lon), scale, 0.006))
+    // Hidden on the far side of the planet.
+    return (camera: THREE.Camera): [number, number, number] | null => (p.dot(camera.position) > p.lengthSq() ? p.toArray() : null)
+  }
   return [
-    ...pins.flatMap((p, i) => (p.selected || p.active ? [{ key: `pin:${p.eventId}:${i}`, lat: p.lat, lon: p.lon, text: p.title, selected: p.selected }] : [])),
+    ...pins.flatMap((p, i) => (p.selected || p.active ? [{ key: `pin:${p.eventId}:${i}`, text: p.title, selected: p.selected, at: at(p.lat, p.lon) }] : [])),
     ...structures.flatMap((s) =>
-      (s.structure.label && s.state.exists) || s.selected ? [{ key: `structure:${s.structure.id}`, lat: s.structure.lat, lon: s.structure.lon, text: s.state.name, selected: s.selected }] : []
-    )
+      (s.structure.label && s.state.exists) || s.selected ? [{ key: `structure:${s.structure.id}`, text: s.state.name, selected: s.selected, at: at(s.structure.lat, s.structure.lon) }] : []
+    ),
+    ...characters.map((c) => ({ key: `character:${c.character.id}`, text: c.character.name, selected: c.selected, at: at(c.place.lat, c.place.lon) }))
   ]
 }
 
@@ -45,8 +43,14 @@ function surfacePoint(model: TerrainModel, dir: Vec3, scale: number, lift: numbe
 
 export function GlobeView(props: SurfaceViewProps) {
   const tool = useEditor((s) => s.tool)
+  const exaggeration = useEditor((s) => s.exaggeration)
   const labels = useMemo(() => new Map<string, HTMLDivElement>(), [])
-  const items = useMemo(() => surfaceLabels(props.pins, props.structures), [props.pins, props.structures])
+  const scale = exaggeration / (props.model.settings.radiusKm * 1000)
+  const items = useMemo(
+    () => surfaceLabels(props.pins, props.structures, props.characters, props.model, scale),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` stands for the terrain heights
+    [props.pins, props.structures, props.characters, props.model, scale, props.change]
+  )
   return (
     <div className="globe-wrap">
       <Canvas camera={{ position: [0, 0.6, 3], fov: 45, near: 0.01, far: 200 }} data-testid="globe" gl={{ preserveDrawingBuffer: true }}>
@@ -54,12 +58,15 @@ export function GlobeView(props: SurfaceViewProps) {
         <ambientLight intensity={0.45} />
         <directionalLight position={[4, 2, 3]} intensity={2.2} />
         <Stars radius={80} depth={40} count={4000} factor={3} fade speed={0} />
-        <Planet {...props} labels={labels} labelItems={items} />
+        <Planet {...props} />
+        <LabelProjector items={items} labels={labels} />
         <FocusOn focus={props.focus} />
+        <StartOver />
+        <ZoomToGround />
         <OrbitControls
           makeDefault
           enablePan={false}
-          minDistance={1.15}
+          minDistance={MIN_DISTANCE}
           maxDistance={8}
           rotateSpeed={0.5}
           zoomSpeed={0.8}
@@ -71,13 +78,7 @@ export function GlobeView(props: SurfaceViewProps) {
           }}
         />
       </Canvas>
-      <div className="pin-labels" aria-hidden>
-        {items.map((l) => (
-          <div key={l.key} ref={(el) => void (el ? labels.set(l.key, el) : labels.delete(l.key))} className={`pin-label${l.selected ? ' selected' : ''}`}>
-            {l.text}
-          </div>
-        ))}
-      </div>
+      <LabelLayer items={items} labels={labels} />
     </div>
   )
 }
@@ -92,11 +93,11 @@ function Planet({
   onPointerDown,
   onPointerMove,
   onDoubleClick,
-  labels,
-  labelItems,
   structures,
-  onStructureClick
-}: SurfaceViewProps & { labels: Map<string, HTMLDivElement>; labelItems: SurfaceLabel[] }) {
+  onStructureClick,
+  characters,
+  onCharacterClick
+}: SurfaceViewProps) {
   const exaggeration = useEditor((s) => s.exaggeration)
   const faces = useMemo(() => ALL_FACES.map(createFace), [])
   const cursor = useRef<THREE.Mesh>(null)
@@ -174,9 +175,26 @@ function Planet({
         <Pin key={`${p.eventId}:${i}`} pin={p} position={surfacePoint(model, latLonToDir(p.lat, p.lon), scale, 0.006)} onClick={onPinClick} />
       ))}
       {structures.map((p) => (
-        <StructureOnGlobe key={p.structure.id} placed={p} model={model} scale={scale} onClick={onStructureClick} />
+        <SurfacePin
+          key={p.structure.id}
+          at={surfacePoint(model, latLonToDir(p.structure.lat, p.structure.lon), scale, 0)}
+          color={STAGE_COLORS[p.state.stage]}
+          faded={!p.state.exists}
+          selected={p.selected}
+          hit={p.hit}
+          onClick={() => onStructureClick(p.structure.id)}
+        />
       ))}
-      <LabelProjector items={labelItems} model={model} scale={scale} labels={labels} />
+      {characters.map((c) => (
+        <SurfacePin
+          key={c.character.id}
+          at={surfacePoint(model, latLonToDir(c.place.lat, c.place.lon), scale, 0)}
+          color={c.character.color}
+          figure
+          selected={c.selected}
+          onClick={() => onCharacterClick(c.character.id)}
+        />
+      ))}
     </group>
   )
 }
@@ -239,69 +257,116 @@ function Pin({ pin, position, onClick }: { pin: EventPin; position: [number, num
   )
 }
 
-/**
- * Moves the HTML labels to where their points are on screen each frame,
- * hiding those on the far side of the planet.
- */
-function LabelProjector({ items, model, scale, labels }: { items: SurfaceLabel[]; model: TerrainModel; scale: number; labels: Map<string, HTMLDivElement> }) {
-  const v = useMemo(() => new THREE.Vector3(), [])
-  useFrame(({ camera, size }) => {
-    for (const l of items) {
-      const el = labels.get(l.key)
-      if (!el) continue
-      v.set(...surfacePoint(model, latLonToDir(l.lat, l.lon), scale, 0.006))
-      const facing = v.dot(camera.position) > v.lengthSq()
-      v.project(camera)
-      el.style.display = facing ? '' : 'none'
-      el.style.transform = `translate(${((v.x + 1) / 2) * size.width + 10}px, ${((1 - v.y) / 2) * size.height - 9}px)`
-    }
-  })
-  return null
-}
-
 const UP = new THREE.Vector3(0, 1, 0)
+const PIN_HEAD = new THREE.SphereGeometry(1, 16, 12).translate(0, 3.2, 0)
+const PIN_STEM = new THREE.ConeGeometry(0.75, 2.6, 12).rotateX(Math.PI).translate(0, 1.3, 0)
+const FIGURE = new THREE.CapsuleGeometry(0.75, 1.6, 4, 12).translate(0, 1.55, 0)
 
 /**
- * A structure standing on the globe. Real buildings would be invisible at
- * planet scale, so it's drawn at a symbolic size that grows slowly with the
- * blueprint's real size (and the structure's own scale) and stays readable
- * as the camera zooms.
+ * A structure or a character on the globe. Buildings are far too small to see
+ * from orbit, so each is a pin (a character a little figure) of a constant
+ * size on screen; zooming all the way in shows the real thing.
  */
-function StructureOnGlobe({ placed, model, scale, onClick }: { placed: PlacedStructure; model: TerrainModel; scale: number; onClick(id: string): void }) {
-  const { structure, state, blueprint, selected, hit } = placed
-  const extent = blueprintExtent(blueprint)
-  const { position, quaternion } = useMemo(() => {
-    const dir = latLonToDir(structure.lat, structure.lon)
-    const q = new THREE.Quaternion().setFromUnitVectors(UP, new THREE.Vector3(...dir))
-    q.multiply(new THREE.Quaternion().setFromAxisAngle(UP, (-structure.rotation * Math.PI) / 180))
-    return { position: surfacePoint(model, dir, scale, 0), quaternion: q }
-  }, [structure.lat, structure.lon, structure.rotation, model, scale])
+function SurfacePin({
+  at,
+  color,
+  faded = false,
+  selected,
+  hit,
+  figure = false,
+  onClick
+}: {
+  at: [number, number, number]
+  color: string
+  faded?: boolean
+  selected: boolean
+  hit?: number
+  figure?: boolean
+  onClick(): void
+}) {
   const group = useRef<THREE.Group>(null)
-  // A constant size on screen until close to the surface, where it shrinks back toward true scale.
+  const quaternion = useMemo(() => new THREE.Quaternion().setFromUnitVectors(UP, new THREE.Vector3(...at).normalize()), [at])
   useFrame(({ camera }) => {
-    const size = (0.006 + 0.004 * Math.log10(extent)) * structure.scale * Math.max(0.15, camera.position.length() - 1) * 3
-    group.current?.scale.setScalar(size / extent)
+    const distance = camera.position.distanceTo(group.current!.position)
+    group.current?.scale.setScalar(distance * (selected ? 0.0042 : 0.0032))
   })
   return (
     <group
       ref={group}
-      position={position}
+      position={at}
       quaternion={quaternion}
       onPointerDown={(e) => {
         if (e.button !== 0 || useEditor.getState().tool !== 'navigate') return
         e.stopPropagation()
-        onClick(structure.id)
+        onClick()
       }}
     >
-      <BlueprintParts blueprint={blueprint} condition={state.condition} ghost={!state.exists} />
+      {figure ? (
+        <mesh geometry={FIGURE}>
+          <meshBasicMaterial color={color} />
+        </mesh>
+      ) : (
+        <>
+          <mesh geometry={PIN_STEM}>
+            <meshBasicMaterial color={selected ? '#ffffff' : '#1a1f2e'} transparent={faded} opacity={faded ? 0.4 : 1} />
+          </mesh>
+          <mesh geometry={PIN_HEAD}>
+            <meshBasicMaterial color={color} transparent={faded} opacity={faded ? 0.4 : 1} />
+          </mesh>
+        </>
+      )}
       {(selected || hit !== undefined) && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, extent * 0.02, 0]} raycast={() => null}>
-          <ringGeometry args={[extent * 0.75, extent * 0.85, 40]} />
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} raycast={() => null}>
+          <ringGeometry args={[1.6, 2.1, 32]} />
           <meshBasicMaterial color={selected ? '#ffffff' : '#ff5a5a'} transparent opacity={selected ? 0.9 : 0.35 + 0.6 * (hit ?? 0)} depthTest={false} />
         </mesh>
       )}
     </group>
   )
+}
+
+/** As close as the globe camera gets (in planet radii from the centre); scrolling in further goes down to the ground. */
+const MIN_DISTANCE = 1.07
+
+/** Opens facing where the view last looked (e.g. coming back up from the ground), and keeps note of it. */
+function StartOver() {
+  const camera = useThree((s) => s.camera)
+  const controls = useThree((s) => s.controls) as (THREE.EventDispatcher<{ end: object }> & { update(): void }) | null
+  useEffect(() => {
+    const { lookingAt, lookDistance } = useEditor.getState()
+    if (lookingAt) camera.position.copy(new THREE.Vector3(...latLonToDir(lookingAt.lat, lookingAt.lon)).multiplyScalar(lookDistance))
+    controls?.update()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the view opens
+  }, [controls])
+  useEffect(() => {
+    if (!controls) return
+    const remember = () => {
+      const { lat, lon } = dirToLatLon(...(camera.position.clone().normalize().toArray() as Vec3))
+      useEditor.getState().set({ lookingAt: { lat, lon }, lookDistance: camera.position.length() })
+    }
+    controls.addEventListener('end', remember)
+    return () => controls.removeEventListener('end', remember)
+  }, [controls, camera])
+  return null
+}
+
+/** Scrolling in past the closest globe view goes down to the ground at the middle of the view. */
+function ZoomToGround() {
+  const camera = useThree((s) => s.camera)
+  const gl = useThree((s) => s.gl)
+  useEffect(() => {
+    let pushes = 0
+    const onWheel = (e: WheelEvent) => {
+      const atClosest = camera.position.length() <= MIN_DISTANCE + 0.003
+      pushes = e.deltaY < 0 && atClosest ? pushes + 1 : 0
+      if (pushes < 3) return
+      const ground = dirToLatLon(...(camera.position.clone().normalize().toArray() as Vec3))
+      useEditor.getState().enterGround(ground)
+    }
+    gl.domElement.addEventListener('wheel', onWheel, { passive: true })
+    return () => gl.domElement.removeEventListener('wheel', onWheel)
+  }, [camera, gl])
+  return null
 }
 
 /** Turns the globe so the selected event's place faces the camera. */

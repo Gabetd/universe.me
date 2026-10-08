@@ -9,6 +9,7 @@ import type { SurfaceViewProps } from './useTerrain'
 
 const W = 1024
 const H = 512
+const MAX_SCALE = 12
 
 interface View {
   scale: number
@@ -38,12 +39,28 @@ function insidePolygon(x: number, y: number, poly: [number, number][]): boolean 
   return inside
 }
 
-export function MapView({ model, change, regions, pins, highlightRegionIds, focus, onPinClick, structures, onStructureClick, onPointerDown, onPointerMove, onDoubleClick }: SurfaceViewProps) {
+export function MapView({
+  model,
+  change,
+  regions,
+  pins,
+  highlightRegionIds,
+  focus,
+  onPinClick,
+  structures,
+  onStructureClick,
+  characters,
+  onCharacterClick,
+  onPointerDown,
+  onPointerMove,
+  onDoubleClick
+}: SurfaceViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const terrain = useRef<{ canvas: HTMLCanvasElement; image: ImageData } | null>(null)
   const view = useRef<View | null>(null)
   const hover = useRef<[number, number] | null>(null)
   const pan = useRef<{ x: number; y: number } | null>(null)
+  const groundPushes = useRef(0)
   const dirty = useRef(true)
   const selectedRegionId = useUi((s) => s.selectedRegionId)
   const draft = useEditor((s) => s.draft)
@@ -65,7 +82,7 @@ export function MapView({ model, change, regions, pins, highlightRegionIds, focu
 
   useEffect(() => {
     dirty.current = true
-  }, [regions, selectedRegionId, draft, pins, highlightRegionIds, structures])
+  }, [regions, selectedRegionId, draft, pins, highlightRegionIds, structures, characters])
 
   // Bring the selected event's place to the middle of the view, on the next frame (the view may not be sized yet).
   const pendingFocus = useRef<LatLon | null>(null)
@@ -171,6 +188,25 @@ export function MapView({ model, change, regions, pins, highlightRegionIds, focu
           c.fillText(state.name, x + shift + r + 4 / scale, y + 4 / scale)
         }
       }
+      for (const { character, place, selected } of characters) {
+        const [x, y] = toMap(place)
+        const r = (selected ? 5.5 : 4.5) / scale
+        // A little figure: a head over shoulders.
+        c.fillStyle = character.color
+        c.strokeStyle = selected ? '#ffffff' : '#05070d'
+        c.lineWidth = 1.5 / scale
+        c.beginPath()
+        c.arc(x + shift, y - r * 0.9, r * 0.55, 0, Math.PI * 2)
+        c.moveTo(x + shift + r, y + r)
+        c.arc(x + shift, y + r, r, 0, Math.PI, true)
+        c.closePath()
+        c.fill()
+        c.stroke()
+        c.font = `${selected ? 700 : 500} ${11 / scale}px system-ui, sans-serif`
+        c.textAlign = 'left'
+        c.fillStyle = '#ffffff'
+        c.fillText(character.name, x + shift + r + 4 / scale, y + 4 / scale)
+      }
       for (const pin of pins) {
         const [x, y] = toMap(pin)
         const r = (pin.selected ? 6 : pin.active ? 5 : 3.5) / scale
@@ -206,7 +242,7 @@ export function MapView({ model, change, regions, pins, highlightRegionIds, focu
 
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [model, regions, pins, highlightRegionIds, structures])
+  }, [model, regions, pins, highlightRegionIds, structures, characters])
 
   /** Pointer position in map pixels (x wrapped to [0, W)), or null outside the map vertically. */
   const mapPoint = (e: React.PointerEvent | React.MouseEvent): [number, number] | null => {
@@ -246,6 +282,8 @@ export function MapView({ model, change, regions, pins, highlightRegionIds, focu
             const [x, y] = toMap(q)
             return [-W, 0, W].some((s) => Math.hypot((x + s - p[0]) * v.scale, (y - p[1]) * v.scale) <= 9)
           }
+          const character = characters.find((ch) => near(ch.place))
+          if (character) return onCharacterClick(character.character.id)
           const structure = structures.find((st) => near(st.structure))
           if (structure) return onStructureClick(structure.structure.id)
           const hit = regions.find((r) => [-W, 0, W].some((s) => insidePolygon(p[0] + s, p[1], polygon(r.points))))
@@ -273,7 +311,11 @@ export function MapView({ model, change, regions, pins, highlightRegionIds, focu
         const rect = canvasRef.current!.getBoundingClientRect()
         const sx = e.clientX - rect.left
         const sy = e.clientY - rect.top
-        const next = Math.max(0.3, Math.min(12, v.scale * Math.exp(-e.deltaY * 0.0015)))
+        // Scrolling in at the closest zoom goes down to the ground under the cursor.
+        groundPushes.current = e.deltaY < 0 && v.scale >= MAX_SCALE ? groundPushes.current + 1 : 0
+        const p = mapPoint(e)
+        if (groundPushes.current >= 3 && p) return useEditor.getState().enterGround(pixelToLatLon(p[0], p[1], W, H))
+        const next = Math.max(0.3, Math.min(MAX_SCALE, v.scale * Math.exp(-e.deltaY * 0.0015)))
         // Zoom around the cursor.
         v.ox = sx - ((sx - v.ox) * next) / v.scale
         v.oy = sy - ((sy - v.oy) * next) / v.scale

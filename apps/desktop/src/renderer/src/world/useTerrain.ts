@@ -1,4 +1,5 @@
 import type { Command, LatLon, Region, WorldInfo } from '@universe/core'
+import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
 import { TerrainModel, shapeKey, type Vec3 } from '@universe/procgen'
@@ -28,6 +29,9 @@ export interface SurfaceViewProps {
   /** Structures at the playhead (and selected or previewed ones that aren't standing). */
   structures: PlacedStructure[]
   onStructureClick(structureId: string): void
+  /** Characters alive at the playhead, where they are then. */
+  characters: PlacedCharacter[]
+  onCharacterClick(characterId: string): void
   onPointerDown(dir: Vec3): boolean
   onPointerMove(dir: Vec3): void
   onDoubleClick(): void

@@ -5,6 +5,7 @@ import { isEditingText } from '../input'
 import { useUi } from '../store'
 import { playheadOf } from '../timeline/timelineStore'
 import { isBrushTool, useEditor } from './editorStore'
+import { sendCharacter } from './sendCharacter'
 
 type Commit = (command: Extract<Command, { type: 'terrain.patch' }>) => Promise<void>
 
@@ -40,7 +41,7 @@ export function useSurfaceTools(worldId: string, model: TerrainModel | undefined
   /** Returns true if the press was used by a tool (so the view shouldn't rotate or pan). */
   const pointerDown = useCallback(
     (dir: Vec3): boolean => {
-      const { tool, radiusKm, strength, biome, draft, locateEventId, placeBlueprintId, moveStructureId, set } = useEditor.getState()
+      const { tool, radiusKm, strength, biome, draft, locateEventId, placeBlueprintId, moveStructureId, travelCharacterId, set } = useEditor.getState()
       const { execute } = useUi.getState()
       if (tool === 'place') {
         // Built at the playhead's moment; the tool stays on for placing more.
@@ -52,8 +53,13 @@ export function useSurfaceTools(worldId: string, model: TerrainModel | undefined
         if (moveStructureId) void execute({ type: 'structure.update', payload: { id: moveStructureId, patch: roundLatLon(dir) } })
         return true
       }
+      if (tool === 'travel') {
+        set({ tool: 'navigate', travelCharacterId: null })
+        if (travelCharacterId) void sendCharacter(travelCharacterId, roundLatLon(dir), playheadOf(worldId))
+        return true
+      }
       if (tool === 'region') {
-        set({ draft: [...draft, roundLatLon(dir)] })
+        set({ draft: [...draft, roundLatLon(dir, 3)] })
         return true
       }
       if (tool === 'locate') {
@@ -95,8 +101,8 @@ export function useSurfaceTools(worldId: string, model: TerrainModel | undefined
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const { tool, draft, set } = useEditor.getState()
-      if ((tool === 'locate' || tool === 'place' || tool === 'move') && e.key === 'Escape') {
-        set({ tool: 'navigate', locateEventId: null, moveStructureId: null })
+      if ((tool === 'locate' || tool === 'place' || tool === 'move' || tool === 'travel') && e.key === 'Escape') {
+        set({ tool: 'navigate', locateEventId: null, moveStructureId: null, travelCharacterId: null })
         e.preventDefault()
         return
       }
@@ -114,8 +120,12 @@ export function useSurfaceTools(worldId: string, model: TerrainModel | undefined
   return { pointerDown, pointerMove, finishRegion }
 }
 
-/** Region points are stored to ~100 m precision; more is noise in the project file. */
-function roundLatLon(dir: Vec3) {
+/**
+ * Points are stored to about a metre (5 decimals), enough to place things
+ * in the ground view; region outlines to about 100 m (3), more is noise.
+ */
+function roundLatLon(dir: Vec3, decimals = 5) {
   const { lat, lon } = dirToLatLon(...dir)
-  return { lat: Math.round(lat * 1000) / 1000, lon: Math.round(lon * 1000) / 1000 }
+  const k = 10 ** decimals
+  return { lat: Math.round(lat * k) / k, lon: Math.round(lon * k) / k }
 }
