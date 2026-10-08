@@ -38,7 +38,7 @@ export const operation = <S extends z.ZodObject>(op: Operation<S>): Operation =>
 
 /** A date in the world's calendar, as clients write it. */
 export const When = z
-  .union([z.string().min(1), z.number()])
+  .union([z.string().min(1).max(100), z.number()])
   .describe('A date in the world’s calendar: "1204", "15 Mar 1204", "c. 1200", "13th century", "4.5 billion years ago", or a year as a number')
 
 /** What a write answers: what it did (or proposed), and the ids it made. */

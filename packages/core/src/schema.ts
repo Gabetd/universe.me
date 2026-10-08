@@ -27,6 +27,9 @@ export const KIND_LABELS: Record<NodeKind, string> = {
 }
 
 export const Id = z.string().min(1)
+
+/** Rich-text notes (HTML). Long enough for any lore; bounded, as every reader of them (search, the bible, the editor) reads them whole. */
+export const Notes = z.string().max(500_000)
 export type Id = z.infer<typeof Id>
 
 /** The name or title of anything a user names. */
@@ -55,7 +58,7 @@ export const SpatialNode = z.object({
   seed: Seed,
   /** Position relative to the parent's frame; units depend on the parent's kind. */
   position: Vec3,
-  notes: z.string(),
+  notes: Notes,
   tags: z.array(z.string()),
   createdAt: z.string(),
   updatedAt: z.string(),

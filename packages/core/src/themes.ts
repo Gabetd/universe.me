@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { Id, RecordMeta } from './schema'
+import { Id, Notes, RecordMeta } from './schema'
 import { Time } from './time'
 import { byId } from './util'
 import { HexColor } from './world'
@@ -38,7 +38,7 @@ export const Theme = z.object({
   style: z.string().max(20_000),
   /** Music or soundscape tags, for whoever scores it. */
   ambience: z.array(z.string().min(1).max(60)).max(20),
-  notes: z.string()
+  notes: Notes
 })
 export type Theme = z.infer<typeof Theme>
 

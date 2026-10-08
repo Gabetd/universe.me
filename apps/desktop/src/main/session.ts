@@ -8,13 +8,15 @@ import type { AppState, ProposalSummary, WorldTerrain } from '../shared/api'
 const MAX_RECENT = 10
 /** Suggestions waiting at most: a client stuck in a loop can't fill memory with them. */
 const MAX_PROPOSALS = 200
+/** And at most this much of them, all together (a suggestion can carry a model, or a thousand commands). */
+const MAX_PROPOSAL_BYTES = 50 * 1024 * 1024
 
 /** Owns the currently open project (one per app instance for now) and the recent-files list. */
 export class Session {
   private project: Project | null = null
   private focus: Target | undefined
   /** AI changes held for the user to accept (review mode). Kept for this session only. */
-  private proposals: (ProposalSummary & { command: Command })[] = []
+  private proposals: (ProposalSummary & { command: Command; size: number })[] = []
 
   constructor(private readonly userDataDir: string) {}
 
@@ -78,8 +80,10 @@ export class Session {
     const parsed = CommandSchema.safeParse(command)
     if (!parsed.success) throw new CommandError(`That isn’t a valid change: ${parsed.error.issues[0]?.message ?? 'unknown'}`)
     if (this.proposals.length >= MAX_PROPOSALS) throw new CommandError(`${MAX_PROPOSALS} suggestions are already waiting for the user`)
+    const size = JSON.stringify(command).length
+    if (this.proposals.reduce((n, p) => n + p.size, size) > MAX_PROPOSAL_BYTES) throw new CommandError('The suggestions waiting for the user are already as big as they can be')
     const id = randomUUID()
-    this.proposals.push({ id, summary, at: new Date().toISOString(), command })
+    this.proposals.push({ id, summary, at: new Date().toISOString(), command, size })
     return id
   }
 

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ALLOWED_CHILDREN, Id, KIND_LABELS, NodeKind, NodePatch, Seed, Vec3, type SpatialNode } from './schema'
+import { ALLOWED_CHILDREN, Id, KIND_LABELS, NodeKind, NodePatch, Notes, Seed, Vec3, type SpatialNode } from './schema'
 import { base64ToBytes, bytesToBase64 } from './encoding'
 import type { Store } from './store'
 import { CommandError, batchOf, liveNode, liveRegion, liveWorld, newNode, patchRow, pickColor, requireRow, softDelete, type CommandContext, type HandlerResult, type Run } from './command-kit'
@@ -39,7 +39,7 @@ export const CreateNodePayload = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   seed: Seed.optional(),
   position: Vec3.optional(),
-  notes: z.string().optional(),
+  notes: Notes.optional(),
   tags: z.array(z.string()).optional()
 })
 
@@ -62,7 +62,7 @@ export const Command = z.discriminatedUnion('type', [
       name: z.string().trim().min(1).max(200).optional(),
       color: HexColor.optional(),
       points: z.array(LatLon).min(3),
-      notes: z.string().optional()
+      notes: Notes.optional()
     })
   }),
   z.object({ type: z.literal('region.update'), payload: z.object({ id: Id, patch: RegionPatch }) }),

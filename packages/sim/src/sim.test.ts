@@ -132,6 +132,8 @@ describe('moons', () => {
     const s = system()
     const moon = s.bodies.get('moon')!
     const events = skyEvents(s, 'earth', 0, 365.25 * DAY_S)
+    // So far out that a step is lost in rounding: nothing, rather than a loop that never ends.
+    expect(skyEvents(s, 'earth', 1e22, 1e22 + 30 * DAY_S)).toEqual([])
     const news = events.filter((e) => e.kind === 'new-moon')
     expect(news.length).toBeGreaterThanOrEqual(12)
     expect(news.length).toBeLessThanOrEqual(13)

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { Id, Name } from './schema'
+import { Id, Name, Notes } from './schema'
 import { stripUndefined } from './util'
 
 /**
@@ -168,7 +168,7 @@ export const Region = z.object({
   name: Name,
   color: HexColor,
   points: z.array(LatLon).min(3),
-  notes: z.string(),
+  notes: Notes,
   createdAt: z.string(),
   updatedAt: z.string(),
   deletedAt: z.string().nullable()

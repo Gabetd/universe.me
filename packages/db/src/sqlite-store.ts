@@ -1,6 +1,6 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite'
 import { deflateSync, inflateSync } from 'node:zlib'
-import { DEFAULT_WORLD_SETTINGS, mergeWorldSettings } from '@universe/core'
+import { DEFAULT_WORLD_SETTINGS, LAYER_BYTES_PER_CELL, TERRAIN_RES, mergeWorldSettings } from '@universe/core'
 import type {
   Asset,
   AssetRepository,
@@ -146,7 +146,12 @@ export class SqliteStore implements Store {
       // Edit layers are mostly zeros, so they compress to a few KB per face.
       getLayer: (id, layer, face) => {
         const row = w.getLayer.get(id, layer, face) as { data: Uint8Array } | undefined
-        return row && new Uint8Array(inflateSync(row.data))
+        if (!row) return undefined
+        // Exactly one face's worth, or the file is damaged (or made to inflate into gigabytes).
+        const size = TERRAIN_RES * TERRAIN_RES * LAYER_BYTES_PER_CELL[layer]
+        const bytes = inflateSync(row.data, { maxOutputLength: size })
+        if (bytes.length !== size) throw new Error(`A ${layer} layer of world ${id} is damaged`)
+        return new Uint8Array(bytes)
       },
       putLayer: (id, layer, face, bytes) => void w.putLayer.run(id, layer, face, deflateSync(bytes, { level: 1 })),
       terrainRevision: (id) => (w.revision.get(id) as { r: number } | undefined)?.r ?? 0,

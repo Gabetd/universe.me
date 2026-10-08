@@ -4,6 +4,12 @@ import { DEFAULT_CALENDAR, formatDuration, formatTime, fromParts, parseTime, sec
 const YEAR = secondsPerYear(DEFAULT_CALENDAR)
 
 describe('calendar math', () => {
+  it('reads no date from text far longer than any date, at once', () => {
+    const start = performance.now()
+    expect(parseTime(`1${' '.repeat(100_000)}x`)).toBeUndefined()
+    expect(performance.now() - start).toBeLessThan(50)
+  })
+
   it('round-trips dates, including before year 0', () => {
     for (const parts of [
       { year: 1204, month: 2, day: 15, hour: 14, minute: 30, second: 5 },

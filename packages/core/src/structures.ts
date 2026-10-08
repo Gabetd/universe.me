@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { Id, Name, RecordMeta } from './schema'
+import { Id, Name, Notes, RecordMeta } from './schema'
 import { Time } from './time'
 import { HexColor, LatLon } from './world'
 
@@ -119,7 +119,7 @@ export const Structure = z.object({
   neverDecays: z.boolean(),
   /** Show its name in the viewport. */
   label: z.boolean(),
-  notes: z.string(),
+  notes: Notes,
   tags: z.array(z.string())
 })
 export type Structure = z.infer<typeof Structure>

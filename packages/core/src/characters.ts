@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { greatCircleKm, slerpLatLon } from './geo'
-import { Id, Name, RecordMeta } from './schema'
+import { Id, Name, Notes, RecordMeta } from './schema'
 import { DEFAULT_CALENDAR, Time, secondsPerYear, type Calendar } from './time'
 import { HexColor, LatLon } from './world'
 
@@ -26,7 +26,7 @@ export const Character = z.object({
   /** null: still alive at the end of the timeline. */
   died: Time.nullable(),
   color: HexColor,
-  notes: z.string(),
+  notes: Notes,
   tags: z.array(z.string()),
   /** In time order; the first is where they're born (or first seen). */
   stops: z.array(CharacterStop)

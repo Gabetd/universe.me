@@ -71,10 +71,14 @@ export function skyEvents(system: SystemModel, planetId: string, t0: number, t1:
       while (e > prev + Math.PI) e -= TAU
       return e
     }
+    // Far enough from 0 a step is smaller than a double can tell apart (t + step === t): nothing to find, and the loop would never end.
+    if (!(t0 + step > t0)) continue
     let t = t0
     let e = elongationAt(system, moon, t)
-    while (t < t1) {
-      const tn = Math.min(t1, t + step)
+    // Counted in steps, so it ends however far out the times are.
+    const steps = Math.ceil((t1 - t0) / step)
+    for (let i = 1; i <= steps; i++) {
+      const tn = i === steps ? t1 : t0 + i * step
       const en = unwrap(tn, e)
       const k = Math.floor(e / Math.PI)
       const kn = Math.floor(en / Math.PI)

@@ -113,6 +113,12 @@ describe('the operations', () => {
     expect(md).toContain('### 1: First light')
     await p.call('create_event', { worldId, title: 'The *star*\nfalls', start: '2' })
     expect(await p.call<string>('export_world_bible', { worldId })).toContain('### 2: The \\*star\\* falls')
+    // The bible goes into wikis and editors that render HTML: what's in a note is text there, never HTML, a link or a heading of its own.
+    await p.call('update_note', { id: worldId, text: '<img src=x onerror=alert(1)> [x](javascript:alert(1))\n\n# Not a heading', mode: 'append' })
+    const safe = await p.call<string>('export_world_bible', { worldId })
+    expect(safe).toContain('\\<img src=x onerror=alert(1)\\> \\[x\\](javascript:alert(1))')
+    expect(safe).toContain('\n\\# Not a heading')
+    expect(safe).not.toMatch(/(^|[^\\])<img/)
     const json = await p.call<{ history: object[] }>('export_world_bible', { worldId, format: 'json' })
     expect(json.history).toHaveLength(2)
   })

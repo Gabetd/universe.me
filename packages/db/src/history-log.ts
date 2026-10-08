@@ -16,7 +16,8 @@ function pack(command: Command): string | Uint8Array {
 }
 
 function unpack(value: string | Uint8Array): Command {
-  return JSON.parse(typeof value === 'string' ? value : inflateSync(value).toString('utf8')) as Command
+  // Never more than was packed: a bigger one is damaged, or made to inflate into gigabytes.
+  return JSON.parse(typeof value === 'string' ? value : inflateSync(value, { maxOutputLength: DEFLATED.max }).toString('utf8')) as Command
 }
 
 interface LogRow {

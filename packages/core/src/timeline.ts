@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { Id, Name, RecordMeta } from './schema'
+import { Id, Name, Notes, RecordMeta } from './schema'
 import { Precision, Time } from './time'
 import { HexColor, LatLon } from './world'
 
@@ -25,7 +25,7 @@ export const TimelineEvent = z.object({
   laneId: Id.nullable(),
   groupId: Id.nullable(),
   color: HexColor,
-  notes: z.string(),
+  notes: Notes,
   tags: z.array(z.string()),
   /** Where it happens: points or regions on the owning world. */
   locations: z.array(EventLocation),
@@ -57,7 +57,7 @@ export const EventGroup = z.object({
   ...RecordMeta,
   title: Name,
   color: HexColor,
-  notes: z.string(),
+  notes: Notes,
   collapsed: z.boolean()
 })
 export type EventGroup = z.infer<typeof EventGroup>
@@ -69,7 +69,7 @@ export const Era = z.object({
   start: Time,
   end: Time,
   color: HexColor,
-  notes: z.string()
+  notes: Notes
 })
 export type Era = z.infer<typeof Era>
 

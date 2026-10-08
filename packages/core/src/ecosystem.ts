@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { Id, Name, RecordMeta } from './schema'
+import { Id, Name, Notes, RecordMeta } from './schema'
 import { HexColor } from './world'
 
 /**
@@ -24,7 +24,7 @@ export const Species = z.object({
   /** Biome ids it lives in. */
   biomes: z.array(z.number().int().min(1).max(255)),
   color: HexColor,
-  notes: z.string(),
+  notes: Notes,
   tags: z.array(z.string())
 })
 export type Species = z.infer<typeof Species>
