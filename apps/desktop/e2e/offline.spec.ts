@@ -1,16 +1,7 @@
 import { existsSync } from 'node:fs'
-import { expect, test } from '@playwright/test'
-import { launch, newProject, type AppHandle } from './helpers'
+import { expect, newProject, test } from './helpers'
 
-let h: AppHandle
-test.beforeEach(async () => {
-  h = await launch()
-})
-test.afterEach(async () => {
-  await h?.close()
-})
-
-test('everything stays on this computer: projects are local files and no request can leave', async () => {
+test('everything stays on this computer: projects are local files and no request can leave', async ({ h }) => {
   const { app, page } = h
   const path = await newProject(h, 'Private')
   expect(existsSync(path)).toBe(true)
@@ -39,12 +30,11 @@ test('everything stays on this computer: projects are local files and no request
     shell.openExternal = async (url: string) => void opened.push(url)
   })
   await page.evaluate(() => void (window.location.href = 'https://example.com/'))
-  await new Promise((resolve) => setTimeout(resolve, 1000))
+  await expect.poll(() => app.evaluate(() => (globalThis as { opened?: string[] }).opened)).toEqual(['https://example.com/'])
   const shown = await app.evaluate(async ({ BrowserWindow }) => {
     const contents = BrowserWindow.getAllWindows()[0]!.webContents
     return { url: contents.getURL(), text: (await contents.executeJavaScript('document.body.innerText')) as string }
   })
   expect(shown.url).toMatch(/^file:/)
-  expect(await app.evaluate(() => (globalThis as { opened?: string[] }).opened)).toEqual(['https://example.com/'])
   expect(shown.text).toContain('Private')
 })

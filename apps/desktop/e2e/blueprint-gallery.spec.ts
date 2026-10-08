@@ -1,29 +1,15 @@
-import { expect, test } from '@playwright/test'
 import { BUILTIN_BLUEPRINTS } from '@universe/core'
-import { addChild, launch, newProject, type AppHandle } from './helpers'
-
-let h: AppHandle
-test.beforeEach(async () => {
-  h = await launch()
-})
-test.afterEach(async () => {
-  await h?.close()
-})
+import { expect, newWorld, test } from './helpers'
 
 // Renders every built-in blueprint in the builder's preview, pristine and as a ruin, into apps/desktop/gallery (kept between runs; Playwright clears test-results).
 // Slow under software rendering, so it only runs when asked: UNIVERSE_GALLERY=1.
 test.skip(!process.env.UNIVERSE_GALLERY, 'Set UNIVERSE_GALLERY=1 to render the blueprint gallery')
-test('every built-in blueprint renders', async () => {
+test('every built-in blueprint renders', async ({ h }) => {
   test.setTimeout(600_000)
   const { page } = h
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
-  await newProject(h, 'Gallery')
-  await addChild(page, '+ Galaxy Cluster', 'Virgo')
-  await addChild(page, '+ Galaxy', 'Milky Way')
-  await addChild(page, '+ Star System', 'Sol')
-  await addChild(page, '+ Planet', 'Terra')
-  await addChild(page, '+ World surface', 'Terra Surface')
+  await newWorld(h, 'Gallery')
   const builder = page.getByRole('dialog', { name: 'Blueprint builder' })
   for (const [i, b] of BUILTIN_BLUEPRINTS.entries()) {
     await page.locator('.blueprint-row').filter({ hasText: new RegExp(`^.{0,3}${b.name.replace(/[()]/g, '\\$&')}`) }).getByRole('button', { name: 'Copy' }).click()

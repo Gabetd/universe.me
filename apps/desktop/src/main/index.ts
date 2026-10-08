@@ -1,5 +1,6 @@
 import { readFile, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
+import { rng } from '@universe/procgen'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session as electronSession, shell, type MenuItemConstructorOptions } from 'electron'
 import { isAllowedRequest } from '../shared/offline'
 import { EVENTS, INVOKE, type AppState, type BuildInfo, type ImportedModel, type InvokeMethod, type MenuAction, type Result, type UniverseApi } from '../shared/api'
@@ -13,6 +14,8 @@ const FILE_FILTERS = [{ name: 'Universe Project', extensions: ['universe'] }]
 
 // Lets tests (and power users) keep app data somewhere other than the default profile.
 if (process.env.UNIVERSE_USER_DATA) app.setPath('userData', process.env.UNIVERSE_USER_DATA)
+// End-to-end tests pick their universe: every random seed drawn here (a new universe's, each new node's) comes from this one.
+if (process.env.UNIVERSE_E2E_SEED) Math.random = rng(Number(process.env.UNIVERSE_E2E_SEED))
 
 let win: BrowserWindow | null = null
 /** Set once the project code has loaded, just after the first window is created. API calls wait for `loaded`. */

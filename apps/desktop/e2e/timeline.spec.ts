@@ -1,36 +1,12 @@
-import { expect, test, type Page } from '@playwright/test'
-import { addChild, closeProject, inspector, launch, newProject, row, type AppHandle } from './helpers'
+import type { Page } from '@playwright/test'
+import { center, clickAt, closeProject, dragPoints, drawRegion, expect, fill, inspector, newWorld, openGlobe, openMap, row, setPlayhead, settledBox, shot, state, test } from './helpers'
 
-let h: AppHandle
-test.beforeEach(async () => {
-  h = await launch()
-})
-test.afterEach(async () => {
-  await h?.close()
-})
-
-const timeline = (page: Page) =>
-  page.evaluate(async () => {
-    const s = await window.universe.getState()
-    return s.timeline
-  })
-
+const timeline = (page: Page) => state(page, 'timeline')
 const eventBar = (page: Page, title: string) => page.locator('.tl-event', { hasText: title })
 
-/** Sets an inspector field by its label and commits it with Enter. */
-async function fill(page: Page, label: string, value: string) {
-  const input = inspector(page).getByLabel(label, { exact: true })
-  await input.fill(value)
-  await input.press('Enter')
-}
-
-test('build a history: events, dates, links, groups, eras and warnings', async () => {
+test('build a history: events, dates, links, groups, eras and warnings', async ({ h }) => {
   const { page } = h
-  await newProject(h, 'Chronicle')
-  await addChild(page, '+ Galaxy Cluster', 'Virgo')
-  await addChild(page, '+ Galaxy', 'Milky Way')
-  await addChild(page, '+ Star System', 'Sol')
-  await addChild(page, '+ Planet', 'Aerth')
+  await newWorld(h, 'Chronicle', { planet: 'Aerth', surface: false })
 
   // An event at the playhead, then given a title and a date.
   await page.getByRole('button', { name: '+ Event' }).click()
@@ -51,12 +27,9 @@ test('build a history: events, dates, links, groups, eras and warnings', async (
 
   // Drag from one event's connector onto the other to link them.
   await eventBar(page, 'Founding of Aster').hover()
-  const from = (await eventBar(page, 'Founding of Aster').locator('.tl-connector').boundingBox())!
+  const from = await settledBox(eventBar(page, 'Founding of Aster').locator('.tl-connector'))
   const to = (await eventBar(page, 'The Long War').boundingBox())!
-  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(to.x + 20, to.y + to.height / 2, { steps: 6 })
-  await page.mouse.up()
+  await dragPoints(page, center(from), { x: to.x + 20, y: to.y + to.height / 2 }, { steps: 6 })
   await expect.poll(async () => (await timeline(page)).links.length).toBe(1)
   await expect(page.locator('.tl-link')).toHaveCount(1)
 
@@ -64,10 +37,7 @@ test('build a history: events, dates, links, groups, eras and warnings', async (
   const startOf = async (title: string) => (await timeline(page)).events.find((e) => e.title === title)!.start
   const before = await startOf('The Long War')
   const bar = (await eventBar(page, 'The Long War').boundingBox())!
-  await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(bar.x + bar.width / 2 + 80, bar.y + bar.height / 2, { steps: 5 })
-  await page.mouse.up()
+  await dragPoints(page, center(bar), { x: center(bar).x + 80, y: center(bar).y }, { steps: 5 })
   await expect.poll(() => startOf('The Long War')).toBeGreaterThan(before)
   await page.getByRole('button', { name: '↶ Undo' }).click()
   await expect.poll(() => startOf('The Long War')).toBe(before)
@@ -115,7 +85,7 @@ test('build a history: events, dates, links, groups, eras and warnings', async (
   await inspector(page).getByLabel('Lane').selectOption({ label: 'New lane' })
   await expect.poll(async () => (await timeline(page)).events.find((e) => e.title === 'Refugees arrive')?.laneId).not.toBeNull()
 
-  await page.screenshot({ path: 'test-results/20-timeline.png' })
+  await shot(page, '20-timeline')
 
   // Delete an event with the keyboard; its link goes too, and both come back with undo.
   await eventBar(page, 'Refugees arrive').click()
@@ -131,24 +101,13 @@ test('build a history: events, dates, links, groups, eras and warnings', async (
   await expect(page.locator('.tl-event')).toHaveCount(3)
 })
 
-test('place events on the world and watch regions come and go with the playhead', async () => {
+test('place events on the world and watch regions come and go with the playhead', async ({ h }) => {
   const { app, page } = h
-  await newProject(h, 'Atlas')
-  await addChild(page, '+ Galaxy Cluster', 'Virgo')
-  await addChild(page, '+ Galaxy', 'Milky Way')
-  await addChild(page, '+ Star System', 'Sol')
-  await addChild(page, '+ Planet', 'Terra')
-  await addChild(page, '+ World surface', 'Terra Surface')
-  await page.getByRole('button', { name: '🗺 Map' }).click()
-  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: 20_000 })
+  await newWorld(h, 'Atlas')
+  await openMap(page)
 
   // A region, founded in 1200 by an event.
-  await page.getByRole('button', { name: 'Draw region' }).click()
-  const map = (await page.getByTestId('map').boundingBox())!
-  for (const [x, y] of [[0.2, 0.3], [0.3, 0.28], [0.32, 0.4], [0.22, 0.42]] as const) {
-    await page.mouse.click(map.x + map.width * x, map.y + map.height * y)
-  }
-  await page.keyboard.press('Enter')
+  await drawRegion(page)
   await fill(page, 'Region name', 'Aster')
   await page.getByRole('button', { name: 'Navigate' }).click()
 
@@ -158,7 +117,7 @@ test('place events on the world and watch regions come and go with the playhead'
   await inspector(page).getByLabel('Add region').selectOption({ label: 'Aster' })
   // Pick a point on the map for it too.
   await inspector(page).getByRole('button', { name: '📍 Pick on map' }).click()
-  await page.mouse.click(map.x + map.width * 0.26, map.y + map.height * 0.35)
+  await clickAt(page, 'map', [0.26, 0.35])
   await expect.poll(async () => (await timeline(page)).events[0]?.locations.map((l) => l.kind)).toEqual(['region', 'point'])
   await expect(inspector(page).getByText(/📍 -?\d/)).toBeVisible()
 
@@ -169,14 +128,11 @@ test('place events on the world and watch regions come and go with the playhead'
 
   // At the playhead's starting point (year 0) Aster doesn't exist yet; in 1250 it does.
   await expect(page.locator('.region-row.absent', { hasText: 'Aster' })).toHaveCount(1)
-  const playhead = page.getByRole('toolbar', { name: 'Timeline' }).getByLabel('Playhead')
-  await playhead.fill('1250')
-  await playhead.press('Enter')
+  await setPlayhead(page, '1250')
   await expect(page.locator('.region-row.absent')).toHaveCount(0)
 
   // Renamed in 1300: the name the map shows follows the playhead.
-  await playhead.fill('1300')
-  await playhead.press('Enter')
+  await setPlayhead(page, '1300')
   await inspector(page).getByLabel('New name at playhead').fill('Greater Aster')
   await inspector(page).getByRole('button', { name: 'Rename then' }).click()
   await expect.poll(async () => (await timeline(page)).changes.length).toBe(2)
@@ -184,11 +140,9 @@ test('place events on the world and watch regions come and go with the playhead'
   // Selecting the event highlights where it happened, and its pin, on the map.
   await page.getByRole('button', { name: 'Fit' }).click()
   await eventBar(page, 'Founding of Aster').click()
-  await page.waitForTimeout(400)
-  await page.screenshot({ path: 'test-results/21-world-at-time.png' })
-  await page.getByRole('button', { name: '🌐 Globe' }).click()
-  await page.waitForTimeout(1500)
-  await page.screenshot({ path: 'test-results/22-globe-at-time.png' })
+  await shot(page, '21-world-at-time', { wait: 400 })
+  await openGlobe(page)
+  await shot(page, '22-globe-at-time')
 
   // The history survives a reopen.
   await closeProject(app)

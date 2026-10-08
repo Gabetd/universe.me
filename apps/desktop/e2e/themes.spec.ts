@@ -1,31 +1,12 @@
-import { expect, test, type Page } from '@playwright/test'
-import { addChild, inspector, launch, newProject, row, type AppHandle } from './helpers'
+import type { Page } from '@playwright/test'
+import { expect, inspector, newWorld, row, setPlayhead, shot, state, test } from './helpers'
 
-let h: AppHandle
-test.beforeEach(async () => {
-  h = await launch()
-})
-test.afterEach(async () => {
-  await h?.close()
-})
+const timeline = (page: Page) => state(page, 'timeline')
 
-const state = (page: Page) => page.evaluate(async () => (await window.universe.getState()).timeline)
-
-async function setPlayhead(page: Page, value: string) {
-  const playhead = page.getByRole('toolbar', { name: 'Timeline' }).getByLabel('Playhead')
-  await playhead.fill(value)
-  await playhead.press('Enter')
-}
-
-test('themes: a library from presets, spans on the timeline that crossfade at the playhead, edited, moved and deleted', async () => {
-  test.setTimeout(120_000)
+test('themes: a library from presets, spans on the timeline that crossfade at the playhead, edited, moved and deleted', async ({ h }) => {
+  test.slow()
   const { page } = h
-  await newProject(h, 'Ages')
-  await addChild(page, '+ Galaxy Cluster', 'Virgo')
-  await addChild(page, '+ Galaxy', 'Milky Way')
-  await addChild(page, '+ Star System', 'Sol')
-  await addChild(page, '+ Planet', 'Terra')
-  await addChild(page, '+ World surface', 'Terra Surface')
+  await newWorld(h, 'Ages')
   const themes = inspector(page).getByRole('region', { name: 'Themes' })
   await expect(themes).toContainText('No theme at the playhead')
 
@@ -35,7 +16,7 @@ test('themes: a library from presets, spans on the timeline that crossfade at th
   await expect(inspector(page).getByRole('region', { name: 'Theme span' })).toBeVisible()
   const band = page.getByLabel('Theme spans')
   await expect(band.getByRole('button', { name: /^Theme span Golden Age/ })).toBeVisible()
-  let tl = await state(page)
+  let tl = await timeline(page)
   expect(tl.themes.map((t) => t.name)).toEqual(['Golden Age'])
   expect(tl.themeSpans).toHaveLength(1)
   const golden = tl.themeSpans[0]!
@@ -47,7 +28,7 @@ test('themes: a library from presets, spans on the timeline that crossfade at th
   await themes.getByLabel('Start a theme from').selectOption('Plague Years')
   await themes.getByRole('button', { name: 'New theme from the playhead' }).click()
   await expect(band.getByRole('button', { name: /^Theme span Plague Years/ })).toBeVisible()
-  tl = await state(page)
+  tl = await timeline(page)
   expect(tl.themeSpans).toHaveLength(2)
 
   // The playhead decides what's in force: one theme, both crossfading, then the other.
@@ -60,7 +41,7 @@ test('themes: a library from presets, spans on the timeline that crossfade at th
   await expect(now).toContainText('Golden Age')
   await expect(now).toContainText('Plague Years')
   await themes.scrollIntoViewIfNeeded()
-  await page.screenshot({ path: 'test-results/110-themes-crossfade.png' })
+  await shot(page, '110-themes-crossfade')
   await setPlayhead(page, '150')
   await expect(now).toContainText('Plague Years')
   await expect(now).not.toContainText('Golden')
@@ -73,9 +54,9 @@ test('themes: a library from presets, spans on the timeline that crossfade at th
   await name.fill('The Long Winter')
   await name.press('Enter')
   await editor.getByLabel('Lighting').selectOption('night')
-  await expect.poll(async () => (await state(page)).themes.find((t) => t.name === 'The Long Winter')?.lighting).toBe('night')
+  await expect.poll(async () => (await timeline(page)).themes.find((t) => t.name === 'The Long Winter')?.lighting).toBe('night')
   await expect(band.getByRole('button', { name: /^Theme span The Long Winter/ })).toBeVisible()
-  await page.screenshot({ path: 'test-results/111-theme-editor.png' })
+  await shot(page, '111-theme-editor')
 
   // Dragging a span along the band moves it in time.
   await page.getByRole('toolbar', { name: 'Timeline' }).getByRole('button', { name: 'Fit' }).click()
@@ -85,13 +66,13 @@ test('themes: a library from presets, spans on the timeline that crossfade at th
   await page.mouse.down()
   await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2, { steps: 5 })
   await page.mouse.up()
-  await expect.poll(async () => (await state(page)).themeSpans.find((s) => s.id === golden.id)!.start).toBeGreaterThan(golden.start)
+  await expect.poll(async () => (await timeline(page)).themeSpans.find((s) => s.id === golden.id)!.start).toBeGreaterThan(golden.start)
 
   // Deleting a theme (opened from the world's library) takes its spans; undo brings them back.
   await row(page, 'Terra Surface').click()
   await themes.getByRole('button', { name: 'The Long Winter', exact: true }).click()
   await editor.getByRole('button', { name: /^Delete theme/ }).click()
-  await expect.poll(async () => (await state(page)).themeSpans.length).toBe(1)
+  await expect.poll(async () => (await timeline(page)).themeSpans.length).toBe(1)
   await page.getByRole('button', { name: /Undo/ }).click()
-  await expect.poll(async () => (await state(page)).themeSpans.length).toBe(2)
+  await expect.poll(async () => (await timeline(page)).themeSpans.length).toBe(2)
 })

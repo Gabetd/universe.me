@@ -1,13 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
-import { addChild, inspector, launch, newProject, row, type AppHandle } from './helpers'
-
-let h: AppHandle
-test.beforeEach(async () => {
-  h = await launch()
-})
-test.afterEach(async () => {
-  await h?.close()
-})
+import type { Page } from '@playwright/test'
+import { addChild, expect, fill, inspector, newWorld, row, shot, SLOW, test } from './helpers'
 
 /** A world's node seed and generation settings, by world name. */
 const world = (page: Page, name: string) =>
@@ -18,43 +10,32 @@ const world = (page: Page, name: string) =>
     return { seed: node.seed, settings }
   }, name)
 
-async function setSeed(page: Page, seed: string) {
-  const input = inspector(page).getByLabel('Seed', { exact: true })
-  await input.fill(seed)
-  await input.press('Enter')
-}
-
-test('a seed decides the whole world and locks its options; a world code recreates it exactly', async () => {
+test('a seed decides the whole world and locks its options; a world code recreates it exactly', async ({ h }) => {
+  test.slow()
   const { page } = h
-  await newProject(h, 'Seeds')
-  await addChild(page, '+ Galaxy Cluster', 'Virgo')
-  await addChild(page, '+ Galaxy', 'Milky Way')
-  await addChild(page, '+ Star System', 'Sol')
-  await addChild(page, '+ Planet', 'First')
-  await addChild(page, '+ World surface', 'First Surface')
-  await expect(page.getByTestId('globe')).toBeVisible({ timeout: 20_000 })
+  await newWorld(h, 'Seeds', { planet: 'First' })
+  await expect(page.getByTestId('globe')).toBeVisible({ timeout: SLOW })
 
   // A custom world: options are editable.
   const water = inspector(page).getByLabel('Water', { exact: true })
   await expect(water).toBeEnabled()
 
   // Typing a seed generates the world from it and locks the options.
-  await setSeed(page, 'Avalon')
+  await fill(page, 'Seed', 'Avalon')
   await expect(inspector(page).getByText('Generated from')).toBeVisible()
   await expect(water).toBeDisabled()
   const seeded = await world(page, 'First Surface')
   expect(seeded.settings.seedText).toBe('Avalon')
   const code = (await page.getByTestId('world-code').textContent())!
   expect(code).toMatch(/^W1-/)
-  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: 20_000 })
-  await page.waitForTimeout(800)
-  await page.screenshot({ path: 'test-results/30-seeded-world.png' })
+  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: SLOW })
+  await shot(page, '30-seeded-world', { wait: 800 })
 
   // The same seed on another planet grows the same world.
   await row(page, 'Sol').click()
   await addChild(page, '+ Planet', 'Second')
   await addChild(page, '+ World surface', 'Second Surface')
-  await setSeed(page, code)
+  await fill(page, 'Seed', code)
   await expect.poll(async () => (await world(page, 'Second Surface')).seed).toBe(seeded.seed)
   expect((await world(page, 'Second Surface')).settings).toEqual({ ...seeded.settings, seedText: code })
   await expect(page.getByTestId('world-code')).toHaveText(code)
@@ -73,6 +54,5 @@ test('a seed decides the whole world and locks its options; a world code recreat
   await expect.poll(async () => (await world(page, 'Second Surface')).settings.terrain.temperature).toBe(-26)
   await inspector(page).getByLabel('Vegetation').fill('#7a3fa0')
   await expect.poll(async () => (await world(page, 'Second Surface')).settings.terrain.vegetationColor).toBe('#7a3fa0')
-  await page.waitForTimeout(800)
-  await page.screenshot({ path: 'test-results/31-custom-world.png' })
+  await shot(page, '31-custom-world', { wait: 800 })
 })

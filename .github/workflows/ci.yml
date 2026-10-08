@@ -1,7 +1,11 @@
 name: CI
 
+# Lint, typecheck, unit tests and the end-to-end tests on the dev build.
+# Pushes to main and claude/** run build.yml instead, which checks the same and
+# runs the end-to-end tests on the packaged apps (Linux, Windows 11 and 10).
 on:
   push:
+    branches-ignore: [main, 'claude/**']
   pull_request:
 
 concurrency:
@@ -12,19 +16,18 @@ jobs:
   check:
     name: Lint, typecheck, test
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup
         with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+          electron: binary
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
-      - name: End-to-end tests (Electron under Xvfb)
-        run: xvfb-run -a pnpm test:e2e
+      # At the Windows runners' 1024×768, so it checks small screens too.
+      - name: End-to-end tests (Electron under Xvfb, 1024×768)
+        run: xvfb-run -a -s "-screen 0 1024x768x24" pnpm test:e2e
       - uses: actions/upload-artifact@v4
         if: always()
         with:

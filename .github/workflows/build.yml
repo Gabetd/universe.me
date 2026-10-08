@@ -1,8 +1,8 @@
 name: Build executables
 
 # Builds installable apps for Windows, macOS and Linux on every push to main or
-# the development branch, then publishes them as the rolling "latest-build"
-# pre-release so the newest build is always one download away.
+# the development branch, tests the packaged apps, then publishes them as the
+# rolling "latest-build" pre-release so the newest build is always one download away.
 on:
   push:
     branches: [main, 'claude/**']
@@ -13,6 +13,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Alongside packaging rather than before it, so it adds nothing to the wait;
+  # nothing is published unless it passes.
+  check:
+    name: Lint, typecheck, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
   package:
     name: Package (${{ matrix.os }})
     strategy:
@@ -20,6 +33,7 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     env:
       # Every build gets a higher version, so installed copies can tell they're out of date.
       VERSION: 0.1.${{ github.run_number }}
@@ -27,38 +41,25 @@ jobs:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup
         with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+          electron: packaging
       - name: Stamp the build version
         working-directory: apps/desktop
         run: npm pkg set version=${{ env.VERSION }}
       - name: Build and package
         run: pnpm dist
-      - name: Smoke-test the packaged Linux app
-        if: runner.os == 'Linux'
-        working-directory: apps/desktop
-        run: UNIVERSE_E2E_EXECUTABLE=$PWD/release/linux-unpacked/universe-desktop xvfb-run -a npx playwright test
-      # windows-latest is Windows Server 2025 (the Windows 11 24H2 base).
-      - name: Smoke-test the packaged Windows app
-        if: runner.os == 'Windows'
-        working-directory: apps/desktop
+      # Tarred, as artifacts don't keep the executable bit.
+      - name: Keep the unpacked app for the tests
+        if: runner.os != 'macOS'
         shell: bash
-        run: UNIVERSE_E2E_EXECUTABLE="$PWD/release/win-unpacked/Universe.exe" npx playwright test
+        run: tar -cf unpacked.tar -C apps/desktop/release ${{ runner.os == 'Windows' && 'win-unpacked' || 'linux-unpacked' }}
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: runner.os != 'macOS'
         with:
-          name: test-results-${{ runner.os }}
-          path: apps/desktop/test-results
-      - name: Keep the unpacked Windows app for the Windows 10 test
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: win-unpacked
-          path: apps/desktop/release/win-unpacked
+          name: unpacked-${{ runner.os }}
+          path: unpacked.tar
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: universe-${{ runner.os }}
@@ -70,38 +71,45 @@ jobs:
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.deb
 
-  # The same packaged app and test suite on Windows Server 2022, which shares
-  # the Windows 10 (21H2) codebase: what's published has to run on Windows 10.
-  windows-10:
-    name: Test on Windows 10 (Server 2022)
+  # The packaged apps' end-to-end tests, all at once. Windows Server 2025 is the
+  # Windows 11 24H2 base; Server 2022 shares the Windows 10 (21H2) codebase, as
+  # what's published has to run on Windows 10 too.
+  test:
+    name: Test on ${{ matrix.name }}
     needs: package
-    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Linux, id: linux, os: ubuntu-latest, platform: Linux, app: linux-unpacked/universe-desktop, display: xvfb-run -a }
+          - { name: Windows 11 (Server 2025), id: windows-11, os: windows-2025, platform: Windows, app: win-unpacked/Universe.exe, display: '' }
+          - { name: Windows 10 (Server 2022), id: windows-10, os: windows-2022, platform: Windows, app: win-unpacked/Universe.exe, display: '' }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
       - uses: actions/download-artifact@v4
         with:
-          name: win-unpacked
-          path: apps/desktop/release/win-unpacked
+          name: unpacked-${{ matrix.platform }}
+      - name: Unpack the app
+        shell: bash
+        run: mkdir -p apps/desktop/release && tar -xf unpacked.tar -C apps/desktop/release
       - name: Run the packaged app's end-to-end tests
         working-directory: apps/desktop
         shell: bash
-        run: UNIVERSE_E2E_EXECUTABLE="$PWD/release/win-unpacked/Universe.exe" npx playwright test
+        run: UNIVERSE_E2E_EXECUTABLE="$PWD/release/${{ matrix.app }}" ${{ matrix.display }} npx playwright test
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: windows-10-test-results
+          name: test-results-${{ matrix.id }}
           path: apps/desktop/test-results
 
   publish:
     name: Publish latest build
-    needs: [package, windows-10]
+    needs: [check, package, test]
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     permissions:
       contents: write
     steps:
@@ -119,6 +127,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           short=$(echo "$GITHUB_SHA" | cut -c1-7)
+          # Fails, before anything is replaced, if an installer is missing or not stamped with this version.
           node scripts/update-manifest.mjs dist "0.1.${{ github.run_number }}" "$short" > update.json
           cat > notes.md <<NOTES
           Automatic build of \`${GITHUB_REF_NAME}\` at ${short}.

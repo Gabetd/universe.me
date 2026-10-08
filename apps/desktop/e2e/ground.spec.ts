@@ -1,19 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
-import { addChild, inspector, launch, newProject, row, type AppHandle } from './helpers'
-
-let h: AppHandle
-test.beforeEach(async () => {
-  h = await launch()
-})
-test.afterEach(async () => {
-  await h?.close()
-})
-
-async function setPlayhead(page: Page, value: string) {
-  const playhead = page.getByRole('toolbar', { name: 'Timeline' }).getByLabel('Playhead')
-  await playhead.fill(value)
-  await playhead.press('Enter')
-}
+import type { Page } from '@playwright/test'
+import { addChild, expect, inspector, newWorld, openGlobe, openMap, row, setPlayhead, shot, SLOW, test, wheel } from './helpers'
 
 /** A spot of green land on the map near its middle, in CSS pixels from the map's corner. */
 function landNear(page: Page): Promise<[number, number]> {
@@ -39,15 +25,11 @@ function landNear(page: Page): Promise<[number, number]> {
   })
 }
 
-test('planets show their surface, structures are pins from afar, and the ground up close', async () => {
+test('planets show their surface, structures are pins from afar, and the ground up close', async ({ h }) => {
   // Thousands of trees and a whole city, drawn in software on CI machines: slow, but it's the point.
-  test.setTimeout(240_000)
+  test.slow()
   const { page } = h
-  await newProject(h, 'Close')
-  await addChild(page, '+ Galaxy Cluster', 'Virgo')
-  await addChild(page, '+ Galaxy', 'Milky Way')
-  await addChild(page, '+ Star System', 'Sol')
-  await addChild(page, '+ Planet', 'Terra')
+  await newWorld(h, 'Close', { surface: false })
   await addChild(page, '+ Moon', 'Luna')
   await addChild(page, '+ World surface', 'Luna Surface')
   await row(page, 'Terra').click()
@@ -55,12 +37,10 @@ test('planets show their surface, structures are pins from afar, and the ground 
 
   // From orbit, Terra and its moon show their real surfaces.
   await row(page, 'Terra').click()
-  await page.waitForTimeout(2500)
-  await page.screenshot({ path: 'test-results/60-orbit-surfaces.png' })
+  await shot(page, '60-orbit-surfaces', { wait: 2500 })
 
   await row(page, 'Terra Surface').click()
-  await page.getByRole('button', { name: '🗺 Map' }).click()
-  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: 20_000 })
+  await openMap(page)
   await setPlayhead(page, '1000')
   await page.getByRole('button', { name: 'Place structure' }).click()
   await page.getByLabel('Blueprint to place').selectOption({ label: 'Walled city (vast)' })
@@ -71,20 +51,15 @@ test('planets show their surface, structures are pins from afar, and the ground 
   await expect(inspector(page).getByLabel('Structure name')).toHaveValue('Walled city (vast)')
 
   // From afar, a pin.
-  await page.getByRole('button', { name: '🌐 Globe' }).click()
-  await page.waitForTimeout(1500)
-  await page.screenshot({ path: 'test-results/61-globe-pins.png' })
+  await openGlobe(page)
+  await shot(page, '61-globe-pins')
 
   // Down to the ground at the city.
   await page.getByRole('button', { name: '🔍 Ground' }).click()
-  await expect(page.locator('[data-chunks="25"]')).toBeVisible({ timeout: 30_000 })
-  await page.waitForTimeout(1000)
-  await page.screenshot({ path: 'test-results/62-ground.png' })
-  const ground = (await page.getByTestId('ground').boundingBox())!
-  await page.mouse.move(ground.x + ground.width / 2, ground.y + ground.height / 2)
-  for (let i = 0; i < 4; i++) await page.mouse.wheel(0, -300)
-  await page.waitForTimeout(1000)
-  await page.screenshot({ path: 'test-results/63-ground-close.png' })
+  await expect(page.locator('[data-chunks="25"]')).toBeVisible({ timeout: SLOW })
+  await shot(page, '62-ground', { wait: 1000 })
+  await wheel(page, page.getByTestId('ground'), -300, 4)
+  await shot(page, '63-ground-close', { wait: 1000 })
 
   // How fast it draws, for the record.
   const fps = await page.evaluate(

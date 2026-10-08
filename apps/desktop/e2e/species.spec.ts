@@ -1,34 +1,18 @@
-import { expect, test, type Page } from '@playwright/test'
-import { addChild, launch, newProject, type AppHandle } from './helpers'
+import { expect, newWorld, shot, SLOW, state, test } from './helpers'
 
-let h: AppHandle
-test.beforeEach(async () => {
-  h = await launch()
-})
-test.afterEach(async () => {
-  await h?.close()
-})
-
-const species = (page: Page) => page.evaluate(async () => (await window.universe.getState()).timeline)
-
-test('species: suggested from the world’s biomes, a food web, links and warnings', async () => {
+test('species: suggested from the world’s biomes, a food web, links and warnings', async ({ h }) => {
   const { page } = h
-  await newProject(h, 'Fauna')
-  await addChild(page, '+ Galaxy Cluster', 'Virgo')
-  await addChild(page, '+ Galaxy', 'Milky Way')
-  await addChild(page, '+ Star System', 'Sol')
-  await addChild(page, '+ Planet', 'Terra')
-  await addChild(page, '+ World surface', 'Terra Surface')
+  await newWorld(h, 'Fauna')
   await page.getByRole('button', { name: '🦌 Species' }).click()
-  await expect(page.getByText(/Biomes here:/)).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText(/Biomes here:/)).toBeVisible({ timeout: SLOW })
 
   // Suggestions for the biomes it has, already linked into a food web.
   await page.getByRole('button', { name: 'Suggest for this world' }).click()
-  await expect.poll(async () => (await species(page)).lifeforms.length).toBeGreaterThan(5)
-  const { lifeforms, ecolinks } = await species(page)
+  await expect.poll(async () => (await state(page, 'timeline')).lifeforms.length).toBeGreaterThan(5)
+  const { lifeforms, ecolinks } = await state(page, 'timeline')
   expect(ecolinks.length).toBeGreaterThan(3)
   expect(lifeforms.some((s) => s.diet === 'producer')).toBe(true)
-  await page.screenshot({ path: 'test-results/90-food-web.png' })
+  await shot(page, '90-food-web')
 
   // A new predator with nothing to eat gets a warning, until it eats something.
   await page.getByRole('button', { name: '+ Species' }).click()
@@ -41,11 +25,11 @@ test('species: suggested from the world’s biomes, a food web, links and warnin
   await page.getByLabel('Link to').selectOption({ label: prey.name })
   await expect(page.getByText('Dragon eats nothing')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Dragon' })).toBeVisible()
-  await page.screenshot({ path: 'test-results/91-species-editor.png' })
+  await shot(page, '91-species-editor')
 
   // Deleting it takes its links; undo brings both back.
   await page.getByRole('button', { name: 'Delete species' }).click()
-  await expect.poll(async () => (await species(page)).lifeforms.some((s) => s.name === 'Dragon')).toBe(false)
+  await expect.poll(async () => (await state(page, 'timeline')).lifeforms.some((s) => s.name === 'Dragon')).toBe(false)
   await page.getByRole('button', { name: /Undo/ }).click()
-  await expect.poll(async () => (await species(page)).ecolinks.length).toBe(ecolinks.length + 1)
+  await expect.poll(async () => (await state(page, 'timeline')).ecolinks.length).toBe(ecolinks.length + 1)
 })

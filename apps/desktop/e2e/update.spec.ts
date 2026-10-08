@@ -4,7 +4,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { launch, menu } from './helpers'
+import { launch, menu, shot, SLOW } from './helpers'
 
 /**
  * How each platform's self-install is exercised: the "new version" served,
@@ -55,8 +55,8 @@ test('offers a newer build, can be dismissed, and upgrades itself with one click
   writeFileSync(installed, 'the old version')
 
   const banner = page.getByRole('status', { name: 'Update' })
-  await expect(banner).toContainText('Universe 99.0.0 is available', { timeout: 15_000 })
-  await page.screenshot({ path: 'test-results/update-banner.png' })
+  await expect(banner).toContainText('Universe 99.0.0 is available', { timeout: SLOW })
+  await shot(page, 'update-banner')
 
   // Dismissed, it stays away until asked for again.
   await banner.getByRole('button', { name: 'Dismiss update' }).click()
@@ -68,9 +68,9 @@ test('offers a newer build, can be dismissed, and upgrades itself with one click
   const closed = app.waitForEvent('close')
   await banner.getByRole('button', { name: 'Upgrade now' }).click()
   await closed
-  await expect.poll(() => readFileSync(installed).equals(body), { timeout: 15_000 }).toBe(true)
+  await expect.poll(() => readFileSync(installed).equals(body), { timeout: SLOW }).toBe(true)
   if (process.platform === 'linux') {
-    await expect.poll(() => existsSync(join(dir, 'started')), { timeout: 15_000 }).toBe(true)
+    await expect.poll(() => existsSync(join(dir, 'started')), { timeout: SLOW }).toBe(true)
     expect(statSync(installed).mode & 0o111).toBeTruthy()
   }
   // The restarted copy may still hold the file for a moment on Windows.
