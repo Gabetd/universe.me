@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { openElementMenu, parseMenuRef, useContextMenu } from '../contextMenu'
+import { fromKeyboard, openElementMenu, parseMenuRef, useContextMenu } from '../contextMenu'
 
 /** Where a right-click keeps the system's own behaviour: text being edited. */
 const EDITING = 'input, textarea, select, [contenteditable="true"]'
@@ -27,7 +27,7 @@ export function ContextMenuHost() {
       if (!marked) return close()
       // From the keyboard (the menu key, Shift+F10) there's no pointer: under the element instead.
       const box = el!.getBoundingClientRect()
-      const keyboard = e.button === 0 && e.clientX === 0 && e.clientY === 0
+      const keyboard = fromKeyboard()
       openElementMenu(marked, keyboard ? box.left + 8 : e.clientX, keyboard ? box.bottom : e.clientY)
     }
     document.addEventListener('contextmenu', onContextMenu)
@@ -47,16 +47,13 @@ export function ContextMenuHost() {
   useEffect(() => {
     if (!menu) return
     const outside = (e: Event) => !ref.current?.contains(e.target as Node) && close()
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close()
     window.addEventListener('pointerdown', outside, true)
     window.addEventListener('wheel', outside, true)
-    window.addEventListener('keydown', onKey)
     window.addEventListener('blur', close)
     window.addEventListener('resize', close)
     return () => {
       window.removeEventListener('pointerdown', outside, true)
       window.removeEventListener('wheel', outside, true)
-      window.removeEventListener('keydown', onKey)
       window.removeEventListener('blur', close)
       window.removeEventListener('resize', close)
     }
@@ -77,8 +74,12 @@ export function ContextMenuHost() {
       aria-label={menu.title ?? 'Options'}
       style={{ left: menu.x, top: menu.y }}
       onKeyDown={(e) => {
+        // Keys pressed in the menu are the menu's: Escape doesn't also zoom out, nor Delete delete what's selected.
+        e.stopPropagation()
         if (e.key === 'ArrowDown') move(e, 1)
         else if (e.key === 'ArrowUp') move(e, -1)
+        else if (e.key === 'Escape') close()
+        else if (e.key === 'Delete' || e.key === 'Backspace') e.preventDefault()
       }}
     >
       {menu.title && <div className="context-menu-title">{menu.title}</div>}

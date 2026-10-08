@@ -8,6 +8,7 @@ import { useCalendar } from '../world/useSky'
 import { useThemeLook, useWorldThemes } from '../world/useThemeLook'
 import { ColorField, CommitSlider, DeleteButton, NotesField, NumberInput, PanelHeader, SelectField, Swatch, SwatchList, TagsField, TextField, TimeField } from './fields'
 import { FONT_STACKS } from './ThemedWorkspace'
+import { menuRef } from '../contextMenu'
 
 /**
  * Themes in the inspector (PLAN.md §4.5): the editor for a theme (its look,
@@ -228,7 +229,7 @@ export function WorldThemes({ world }: { world: SpatialNode }) {
         <div className="theme-library" aria-label="Theme library">
           {themes.map((t) => (
             <span key={t.id} className="theme-chip">
-              <button className="link" onClick={() => select({ kind: 'theme', ids: [t.id] })} title={`Edit ${t.name}`}>
+              <button className="link" onClick={() => select({ kind: 'theme', ids: [t.id] })} title={`Edit ${t.name}`} data-menu={menuRef('theme', t.id)}>
                 <Swatch color={t.palette.accent} />
                 {t.name}
               </button>

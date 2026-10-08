@@ -1,4 +1,4 @@
-import { ALLOWED_CHILDREN, KIND_LABELS, type NodeKind, type SpatialNode } from '@universe/core'
+import { ALLOWED_CHILDREN, KIND_LABELS, type Command, type NodeKind, type SpatialNode } from '@universe/core'
 
 export const KIND_ICONS: Record<NodeKind, string> = {
   universe: '✦',
@@ -27,3 +27,9 @@ export function kindLabel(node: SpatialNode, nodes: SpatialNode[]): string {
   const parent = nodes.find((n) => n.id === node.parentId)
   return parent?.kind === 'body' ? 'Moon' : 'Planet'
 }
+
+/** Adds a new child to a node, named after what it is ("New Planet"): what the inspector's + buttons and the right-click menu's Add items do. */
+export const addChildCommand = (node: SpatialNode, kind: NodeKind, label: string): Command => ({ type: 'node.create', payload: { parentId: node.id, kind, name: `New ${label}` } })
+
+/** Every node but the universe itself can be deleted. */
+export const canDelete = (node: SpatialNode) => node.parentId !== null

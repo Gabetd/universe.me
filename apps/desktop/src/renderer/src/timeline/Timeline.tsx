@@ -162,6 +162,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
   })
 
   const onHandlePointerDown = useStableHandler((e: React.PointerEvent, ev: TimelineEvent, edge: 'start' | 'end') => {
+    if (e.button !== 0) return
     e.stopPropagation()
     selectTimeline({ kind: 'event', ids: [ev.id] })
     trackRef.current!.setPointerCapture(e.pointerId)
@@ -169,6 +170,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
   })
 
   const onConnectorPointerDown = useStableHandler((e: React.PointerEvent, ev: TimelineEvent) => {
+    if (e.button !== 0) return
     e.stopPropagation()
     trackRef.current!.setPointerCapture(e.pointerId)
     setDrag({ kind: 'link', fromId: ev.id, ...point(e) })
@@ -458,6 +460,8 @@ function LaneLabel({ lane, y, height }: { lane: Lane | null; y: number; height: 
       style={{ top: y, height }}
       onDoubleClick={() => setEditing(true)}
       onContextMenu={(e) => {
+        // While its name is being typed, the text box's own right-click.
+        if (editing) return
         e.preventDefault()
         // Renamed in place, so the timeline adds that itself.
         openElementMenu({ kind: 'lane', id: lane.id }, e.clientX, e.clientY, { extra: [{ label: 'Rename…', run: () => setEditing(true) }] })

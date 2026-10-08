@@ -1,7 +1,7 @@
-import { eventPlace, type SpatialNode } from '@universe/core'
+import { eventPlace } from '@universe/core'
 import { create } from 'zustand'
-import { addOptions, kindLabel } from './kinds'
-import { deleteCommand, useUi, type DeleteKind } from './store'
+import { addChildCommand, addOptions, canDelete, kindLabel } from './kinds'
+import { deleteCommand, useUi } from './store'
 import { useTimelineView } from './timeline/timelineStore'
 import { goToEvent } from './world/goToEvent'
 
@@ -30,10 +30,67 @@ export interface Menu {
   items: MenuItem[]
 }
 
-export const useContextMenu = create<{ menu: Menu | null; open(menu: Menu): void; close(): void }>((set) => ({
+/**
+ * The right button, as the menu needs it: a right-drag pans the map and turns
+ * the globe, so a menu asked for during one (Linux and macOS ask on the press)
+ * waits for the release and is dropped if the pointer moved, and one asked for
+ * after one (Windows asks on the release) is dropped too.
+ */
+const right = { down: false, moved: false, x: 0, y: 0, at: 0 }
+const DRAG_PX = 4
+window.addEventListener(
+  'pointerdown',
+  (e) => {
+    if (e.button !== 2) return
+    Object.assign(right, { down: true, moved: false, x: e.clientX, y: e.clientY, at: performance.now() })
+  },
+  true
+)
+window.addEventListener(
+  'pointermove',
+  (e) => {
+    if (!right.down || right.moved || Math.hypot(e.clientX - right.x, e.clientY - right.y) <= DRAG_PX) return
+    right.moved = true
+    useContextMenu.setState({ waiting: null })
+  },
+  true
+)
+window.addEventListener(
+  'pointerup',
+  (e) => {
+    if (e.button !== 2) return
+    right.down = false
+    const { waiting } = useContextMenu.getState()
+    if (waiting) useContextMenu.setState({ waiting: null, menu: right.moved ? null : waiting })
+  },
+  true
+)
+
+/** Whether a menu asked for now comes from the keyboard (the menu key, Shift+F10) rather than a right-click. */
+export const fromKeyboard = () => !right.down && performance.now() - right.at > 1000
+
+interface MenuState {
+  menu: Menu | null
+  /** One asked for while the right button is down, shown once it's let go without dragging. */
+  waiting: Menu | null
+  /** A name field to put the cursor in once it's shown (see `rename`). */
+  focusField: { label: string; at: number } | null
+  open(menu: Menu): void
+  close(): void
+}
+
+export const useContextMenu = create<MenuState>((set) => ({
   menu: null,
-  open: (menu) => set({ menu }),
-  close: () => set({ menu: null })
+  waiting: null,
+  focusField: null,
+  open: (menu) => {
+    if (right.down) return set({ waiting: menu, menu: null })
+    // Asked for at the end of a right-drag: the drag was what was meant.
+    const dragged = right.moved && performance.now() - right.at < 10_000
+    right.moved = false
+    set({ menu: dragged ? null : menu, waiting: null })
+  },
+  close: () => set({ menu: null, waiting: null })
 }))
 
 /** The value of an element's `data-menu` attribute. */
@@ -47,20 +104,23 @@ export function parseMenuRef(value: string | undefined): ElementRef | undefined 
   return KINDS[kind] ? { kind, id: value.slice(at + 1) } : undefined
 }
 
-/** For each kind: what it's called, where its records are, how it's deleted and the inspector field that renames it. */
-const KINDS: Record<ElementKind, { label: string; nameField?: string; deleteAs: DeleteKind }> = {
-  node: { label: 'Node', nameField: 'Name', deleteAs: 'node' },
-  region: { label: 'Region', nameField: 'Region name', deleteAs: 'region' },
-  structure: { label: 'Structure', nameField: 'Structure name', deleteAs: 'structure' },
-  character: { label: 'Character', nameField: 'Character name', deleteAs: 'character' },
-  event: { label: 'Event', nameField: 'Event title', deleteAs: 'event' },
-  era: { label: 'Era', nameField: 'Era name', deleteAs: 'era' },
-  group: { label: 'Group', nameField: 'Group title', deleteAs: 'group' },
-  link: { label: 'Link', deleteAs: 'link' },
-  theme: { label: 'Theme', nameField: 'Theme name', deleteAs: 'theme' },
-  themeSpan: { label: 'Theme span', deleteAs: 'themeSpan' },
-  species: { label: 'Species', nameField: 'Species name', deleteAs: 'species' },
-  lane: { label: 'Lane', deleteAs: 'lane' }
+/**
+ * For each kind (each deleted by its own `<kind>.delete`): what it's called,
+ * the field that renames it, and whether the inspector shows it (`openElement`).
+ */
+const KINDS: Record<ElementKind, { label: string; nameField?: string; inspector: boolean }> = {
+  node: { label: 'Node', nameField: 'Name', inspector: true },
+  region: { label: 'Region', nameField: 'Region name', inspector: true },
+  structure: { label: 'Structure', nameField: 'Structure name', inspector: true },
+  character: { label: 'Character', nameField: 'Character name', inspector: true },
+  event: { label: 'Event', nameField: 'Event title', inspector: true },
+  era: { label: 'Era', nameField: 'Era name', inspector: true },
+  group: { label: 'Group', nameField: 'Group title', inspector: true },
+  link: { label: 'Link', inspector: true },
+  theme: { label: 'Theme', nameField: 'Theme name', inspector: true },
+  themeSpan: { label: 'Theme span', inspector: true },
+  species: { label: 'Species', nameField: 'Species name', inspector: false },
+  lane: { label: 'Lane', inspector: false }
 }
 
 /** An element's name, as the menu's title shows it; undefined if it no longer exists. */
@@ -101,28 +161,31 @@ function nameOf({ kind, id }: ElementRef): string | undefined {
   }
 }
 
-/** Shows an element in the inspector (where it has a panel), as clicking it does. */
+/** Shows an element in the inspector (where `KINDS` says it has a panel), as clicking it does. */
 export function openElement({ kind, id }: ElementRef): void {
   const ui = useUi.getState()
   if (kind === 'node') ui.select(id)
   else if (kind === 'region') ui.selectRegion(id)
   else if (kind === 'structure') ui.selectStructure(id)
   else if (kind === 'character') ui.selectCharacter(id)
-  else if (kind === 'event' || kind === 'era' || kind === 'group' || kind === 'link' || kind === 'theme' || kind === 'themeSpan') ui.selectTimeline({ kind, ids: [id] })
+  else if (kind !== 'species' && kind !== 'lane') ui.selectTimeline({ kind, ids: [id] })
 }
 
-/** Opens an element (`open`) and puts the cursor in its name, once its panel is there. */
+/** How long a request for a name field waits for its panel to appear. */
+const FOCUS_WAIT_MS = 3000
+
+/** Opens an element (`open`) and asks its name field (labelled `field`) to take the cursor once its panel is there. */
 function rename(open: () => void, field: string): void {
   open()
-  const focus = (tries: number) =>
-    requestAnimationFrame(() => {
-      const input = [...document.querySelectorAll<HTMLInputElement>('label.field')].find((l) => l.firstElementChild?.textContent === field)?.querySelector('input')
-      if (input) {
-        input.focus()
-        input.select()
-      } else if (tries > 0) focus(tries - 1)
-    })
-  focus(10)
+  useContextMenu.setState({ focusField: { label: field, at: performance.now() } })
+}
+
+/** For a text field labelled `label`: whether a rename is waiting for it; taking it (only one field does) clears it. */
+export function takeFocusRequest(label: string): boolean {
+  const request = useContextMenu.getState().focusField
+  if (request?.label !== label || performance.now() - request.at > FOCUS_WAIT_MS) return false
+  useContextMenu.setState({ focusField: null })
+  return true
 }
 
 const execute = (command: Parameters<ReturnType<typeof useUi.getState>['execute']>[0] | undefined) => void (command && useUi.getState().execute(command))
@@ -134,10 +197,7 @@ function kindItems({ kind, id }: ElementRef): MenuItem[] {
   if (kind === 'node') {
     const node = s.nodes.find((n) => n.id === id)
     if (!node) return []
-    const adds = addOptions(node, s.nodes).map(({ kind: child, label }) => ({
-      label: `Add ${label.toLowerCase()}`,
-      run: () => execute({ type: 'node.create', payload: { parentId: node.id, kind: child, name: `New ${label}` } })
-    }))
+    const adds = addOptions(node, s.nodes).map(({ kind: child, label }) => ({ label: `Add ${label.toLowerCase()}`, run: () => execute(addChildCommand(node, child, label)) }))
     return adds.length ? ['separator', ...adds] : []
   }
   if (kind === 'event') {
@@ -163,17 +223,11 @@ function kindItems({ kind, id }: ElementRef): MenuItem[] {
   return []
 }
 
-/** Whether a node is the universe itself, which can't be deleted. */
-const isRoot = (node: SpatialNode | undefined) => !!node && node.id === useUi.getState().project?.rootId
-
 /** What only the view an element is shown in can do with it: open it there (a species in the food web), or more (renaming a lane in place). */
 export interface MenuOptions {
   open?: () => void
   extra?: MenuItem[]
 }
-
-/** Kinds shown in the inspector, which `openElement` opens. */
-const IN_INSPECTOR = new Set<ElementKind>(['node', 'region', 'structure', 'character', 'event', 'era', 'group', 'link', 'theme', 'themeSpan'])
 
 /** The menu for an element: open it, rename it, what its kind offers, and delete it (undoable, like every change). */
 export function elementMenu(ref: ElementRef, { open, extra = [] }: MenuOptions = {}): Omit<Menu, 'x' | 'y'> | undefined {
@@ -182,14 +236,14 @@ export function elementMenu(ref: ElementRef, { open, extra = [] }: MenuOptions =
   const spec = KINDS[ref.kind]
   const node = ref.kind === 'node' ? useUi.getState().nodes.find((n) => n.id === ref.id) : undefined
   const label = node ? kindLabel(node, useUi.getState().nodes) : spec.label
-  const show = open ?? (IN_INSPECTOR.has(ref.kind) ? () => openElement(ref) : undefined)
+  const show = open ?? (spec.inspector ? () => openElement(ref) : undefined)
   const items: MenuItem[] = [
     ...(show ? [{ label: open || ref.kind === 'node' ? 'Open' : 'Open in the inspector', run: show }] : []),
     ...(show && spec.nameField ? [{ label: 'Rename…', run: () => rename(show, spec.nameField!) }] : []),
     ...extra,
     ...kindItems(ref)
   ]
-  if (!isRoot(node)) items.push('separator', { label: `Delete ${name}`, danger: true, run: () => execute(deleteCommand(spec.deleteAs, [ref.id])) })
+  if (!node || canDelete(node)) items.push('separator', { label: `Delete ${name}`, danger: true, run: () => execute(deleteCommand(ref.kind, [ref.id])) })
   return { title: `${label} · ${name}`, items }
 }
 

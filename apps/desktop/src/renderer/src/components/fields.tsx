@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { deleteCommand, useTimelineOwner, useUi, type DeleteKind } from '../store'
 import { useCalendar } from '../world/useSky'
 import { NotesEditor } from './NotesEditor'
-import { menuRef, type ElementKind } from '../contextMenu'
+import { menuRef, takeFocusRequest, useContextMenu, type ElementKind } from '../contextMenu'
 
 /**
  * Inputs that save once when editing finishes (blur, Enter, slider release),
@@ -22,6 +22,14 @@ function useDraft(value: string): [string, (text: string) => void] {
 
 export function TextField(props: { label: string; value: string; placeholder?: string; required?: boolean; onCommit(v: string): void }) {
   const [text, setText] = useDraft(props.value)
+  // "Rename…" in a right-click menu asks for this field once its panel is shown.
+  const input = useRef<HTMLInputElement>(null)
+  const focusField = useContextMenu((s) => s.focusField)
+  useEffect(() => {
+    if (!focusField || !input.current || !takeFocusRequest(props.label)) return
+    input.current.focus()
+    input.current.select()
+  }, [focusField, props.label])
   const commit = () => {
     const v = text.trim()
     if (props.required && !v) setText(props.value)
@@ -30,7 +38,7 @@ export function TextField(props: { label: string; value: string; placeholder?: s
   return (
     <label className="field">
       <span>{props.label}</span>
-      <input value={text} placeholder={props.placeholder} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={blurOnEnter} />
+      <input ref={input} value={text} placeholder={props.placeholder} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={blurOnEnter} />
     </label>
   )
 }

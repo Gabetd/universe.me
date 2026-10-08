@@ -1,10 +1,10 @@
 import type { MenuAction } from '../../shared/api'
 import { redo, undo } from './store'
 
-/** True while the user is typing, so app shortcuts leave text editing alone. */
+/** True while the user is typing, or working in a menu, so app shortcuts leave the keys alone. */
 export function isEditingText(): boolean {
   const el = document.activeElement
-  return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el instanceof HTMLElement && el.isContentEditable)
+  return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el instanceof HTMLElement && (el.isContentEditable || !!el.closest('[role="menu"]')))
 }
 
 /**

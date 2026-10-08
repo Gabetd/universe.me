@@ -1,6 +1,6 @@
 import type { SpatialNode } from '@universe/core'
 import { useRef } from 'react'
-import { KIND_ICONS, addOptions, kindLabel } from '../kinds'
+import { KIND_ICONS, addChildCommand, addOptions, canDelete, kindLabel } from '../kinds'
 import { selectNode, updater, useUi } from '../store'
 import { DeleteButton, NotesField, NumberInput, TagsField, TextField, randomSeed } from './fields'
 import { TimelineInspector } from './TimelinePanels'
@@ -71,16 +71,7 @@ function NodeForm({ node }: { node: SpatialNode }) {
             {options.map((o) => (
               <button
                 key={o.kind}
-                onClick={() =>
-                  void execute({
-                    type: 'node.create',
-                    payload: {
-                      parentId: node.id,
-                      kind: o.kind,
-                      name: `New ${o.label}`
-                    }
-                  })
-                }
+                onClick={() => void execute(addChildCommand(node, o.kind, o.label))}
               >
                 + {o.label}
               </button>
@@ -90,7 +81,7 @@ function NodeForm({ node }: { node: SpatialNode }) {
       )}
       {node.kind === 'star_system' && <PlanetsToClaim node={node} />}
 
-      {node.parentId !== null && (
+      {canDelete(node) && (
         <DeleteButton kind="node" ids={[node.id]}>
           Delete {node.name}
         </DeleteButton>

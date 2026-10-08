@@ -18,5 +18,5 @@ export const ROADMAP: Milestone[] = [
   { id: 'M6', title: 'Themes', status: 'done', summary: 'A theme library, theme spans on the timeline per world or region, views that blend as the playhead moves' },
   { id: 'M7', title: 'API & MCP', status: 'done', summary: 'A local REST API and MCP server for Claude Code; AI changes undo in one click or wait for review' },
   { id: 'M8', title: 'Phone access', status: 'done', summary: 'Claude on your phone reaches the universe on your computer, through Tailscale Funnel and OAuth' },
-  { id: 'M9', title: 'Polish & release', status: 'planned', summary: 'Onboarding, performance, signed installers (self-update already ships)' }
+  { id: 'M9', title: 'Polish & release', status: 'active', summary: 'Right-click menus on everything; onboarding, performance, signed installers (self-update already ships)' }
 ]
