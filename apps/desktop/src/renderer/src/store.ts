@@ -57,8 +57,8 @@ export const useUi = create<UiState>((set, get) => ({
   error: null,
 
   apply(reply) {
-    const state = reconcile(get(), reply)
     const before = get()
+    const state = reconcile(before, reply)
     set({ ...state, ready: true, ...nextSelection(state, before, isNew(before, state.focus) || selectionGone(state, before)) })
   },
 

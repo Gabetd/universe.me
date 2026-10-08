@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ApiServer, apiContext, clearDiscovery, worldBible, writeDiscovery, type ApiContext, type ApiHost } from '@universe/api'
+import { ApiServer, apiContext, clearDiscovery, worldBible, writeDiscovery, writePrivate, type ApiContext, type ApiHost } from '@universe/api'
 import type { TerrainParams } from '@universe/core'
 import type { BaseTerrain } from '@universe/procgen'
 import { app } from 'electron'
@@ -181,7 +181,7 @@ export class ApiController {
 
   /** The token is a secret, so the file is the user's alone. */
   private save(settings = this.settings): void {
-    writeFileSync(this.file, JSON.stringify(settings, null, 2), { mode: 0o600 })
+    writePrivate(this.file, JSON.stringify(settings, null, 2))
   }
 }
 

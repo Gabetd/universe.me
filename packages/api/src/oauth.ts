@@ -183,7 +183,8 @@ export class OAuth {
   /** Whether an access token is one this server gave and still good. */
   verify(token: string): boolean {
     const now = this.now()
-    const grant = this.data.grants.find((g) => g.accessHash === hash(token))
+    const key = hash(token)
+    const grant = this.data.grants.find((g) => g.accessHash === key)
     if (!grant || grant.accessExpires <= now) return false
     // Saved at most once a minute: it's only for the list of connections.
     if (now - grant.lastUsed > MINUTE) {

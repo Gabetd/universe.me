@@ -47,10 +47,7 @@ test('a settings panel stays where it is when a setting changes', async ({ h }) 
     async () => (await world()).settings.terrain.landform
   )
 
-  const temperature = ins.getByRole('slider', {
-    name: 'Temperature',
-    exact: true
-  })
+  const temperature = ins.getByRole('slider', { name: 'Temperature', exact: true })
   await stays(page, temperature, nudge(temperature), async () => (await world()).settings.terrain.temperature)
 
   // Near the bottom of the panel, where it used to jump to the top: the whole panel was rebuilt, and was short until its lists filled in again.
