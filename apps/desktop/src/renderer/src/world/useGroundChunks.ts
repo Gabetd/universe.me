@@ -2,6 +2,7 @@ import { chunkBounds, chunkKey, modelSampler, sampleBaseGrid, worldPalette, type
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { workerCalls } from '../workerCalls'
 import GroundWorker from './ground.worker?worker'
+import { failure } from './terrainSource'
 
 const build = workerCalls<GroundChunkInput, GroundChunk>(() => new GroundWorker())
 
@@ -16,10 +17,12 @@ const generationOf = (o: object) => generations.get(o) ?? (generations.set(o, ++
  * The ground chunks wanted around the view, built in a worker as they're
  * needed. Each chunk is built in a frame at its own south-west corner, so it
  * can be placed in any view frame. A new `generation` (the terrain changed)
- * builds them all again.
+ * builds them all again. `error` says why chunks failed to build, until one
+ * builds (a failed one is tried again when it's wanted again).
  */
-export function useGroundChunks(model: TerrainModel, generation: object, seed: number, wanted: ChunkId[]): Map<string, GroundChunk> {
+export function useGroundChunks(model: TerrainModel, generation: object, seed: number, wanted: ChunkId[]): { chunks: Map<string, GroundChunk>; error?: string } {
   const [built, setBuilt] = useState(() => new Map<string, GroundChunk>())
+  const [error, setError] = useState<string>()
   const pending = useRef(new Set<string>())
   const gen = generationOf(generation)
   const wantedKey = wanted.map(chunkKey).join(',')
@@ -41,22 +44,30 @@ export function useGroundChunks(model: TerrainModel, generation: object, seed: n
         grid: sampleBaseGrid(base, bounds),
         biomeColors: palette.biomes,
         seabedColor: palette.shallow.map((c) => c * 0.7)
-      }).then((chunk) => {
-        pending.current.delete(key)
-        setBuilt((prev) => {
-          const next = new Map(prev).set(key, chunk)
-          // Forget the oldest chunks beyond what's kept, never ones in view.
-          for (const old of next.keys()) if (next.size > KEEP && !keep.has(old)) next.delete(old)
-          return next
-        })
-      })
+      }).then(
+        (chunk) => {
+          pending.current.delete(key)
+          setError(undefined)
+          setBuilt((prev) => {
+            const next = new Map(prev).set(key, chunk)
+            // Forget the oldest chunks beyond what's kept, never ones in view.
+            for (const old of next.keys()) if (next.size > KEEP && !keep.has(old)) next.delete(old)
+            return next
+          })
+        },
+        (err: unknown) => {
+          pending.current.delete(key)
+          setError(failure(err))
+        }
+      )
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `wantedKey` stands for `wanted`; `built` is only checked, not followed
   }, [wantedKey, model, gen, seed])
 
-  return useMemo(
+  const chunks = useMemo(
     () => new Map(wanted.flatMap((id) => (built.has(`${gen}:${chunkKey(id)}`) ? [[chunkKey(id), built.get(`${gen}:${chunkKey(id)}`)!] as const] : []))),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `wantedKey` stands for `wanted`
     [built, gen, wantedKey]
   )
+  return { chunks, error }
 }

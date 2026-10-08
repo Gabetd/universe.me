@@ -5,7 +5,7 @@ import type { EventPin } from './useWorldAtTime'
 import { TerrainModel, shapeKey, skyKey, type Vec3 } from '@universe/procgen'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUi } from '../store'
-import { fetchLayers, generateBase } from './terrainSource'
+import { failure, fetchLayers, generateBase } from './terrainSource'
 import { useWorldClimate } from './useSky'
 import { useLoadedTerrain } from './loadedTerrain'
 
@@ -84,7 +84,8 @@ export function useTerrain(worldId: string, seed: number, info: WorldInfo | unde
         setModel(m)
         bump('all')
       })
-      .catch((err: Error) => !cancelled && setError(err.message))
+      // Shown instead of "Generating terrain…", which would otherwise stay up for good.
+      .catch((err: unknown) => !cancelled && setError(failure(err)))
     return () => {
       cancelled = true
     }
@@ -94,8 +95,10 @@ export function useTerrain(worldId: string, seed: number, info: WorldInfo | unde
   useEffect(() => {
     const m = modelRef.current
     if (!m || !settings || m.settings === settings) return
+    // By value: a new copy of the same settings (a reply to an unrelated command) recolors nothing.
+    const same = JSON.stringify(m.settings) === JSON.stringify(settings)
     m.settings = settings
-    bump('all')
+    if (!same) bump('all')
   }, [settings, bump])
 
   useEffect(() => {
@@ -116,7 +119,7 @@ export function useTerrain(worldId: string, seed: number, info: WorldInfo | unde
   useEffect(() => {
     const m = modelRef.current
     if (!m || m.isStroking || saving.current > 0 || terrainRevision === undefined || terrainRevision === revision.current) return
-    void reload()
+    reload().catch((err: unknown) => setError(failure(err)))
   }, [terrainRevision, reload])
 
   /** Saves a finished brush stroke. The model already has it, so it only reloads if saving fails. */
@@ -127,7 +130,7 @@ export function useTerrain(worldId: string, seed: number, info: WorldInfo | unde
         const state = await useUi.getState().execute(command)
         const saved = state?.worlds.find((w) => w.id === worldId)
         if (saved) revision.current = saved.terrainRevision
-        else await reload()
+        else await reload().catch((err: unknown) => setError(failure(err)))
       } finally {
         saving.current--
       }

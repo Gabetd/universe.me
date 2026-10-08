@@ -17,17 +17,19 @@ import {
   type LocalFrame,
   type Plant
 } from '@universe/procgen'
-import { OrbitControls } from '@react-three/drei'
-import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
+import { EdgePush } from '../components/zoom'
 import { useUi } from '../store'
 import { useEditor } from './editorStore'
-import { pickWith } from './pick'
-import { LabelLayer, LabelProjector, type ViewLabel } from './labels'
+import { noRaycast, toolPress, usePick } from './pick'
+import { viewLabels, type ViewLabel } from './labels'
 import { NEAR_ONLY, instanceTint, plantGeometry } from './plants'
 import { blueprintExtent } from './structureLook'
 import { BlueprintParts } from './StructureMesh'
+import { SelectionRing } from './SelectionRing'
+import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
 import { useGroundChunks } from './useGroundChunks'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
@@ -45,6 +47,16 @@ const RAD = Math.PI / 180
 const inView = (x: number, z: number) => Math.hypot(x, z) <= DRAW_M
 const smooth = (t: number) => t * t * (3 - 2 * t)
 const latLonOf = (p: LatLon): [number, number] => [p.lat, p.lon]
+
+const CAMERA = { position: [0, 400, 600] as [number, number, number], fov: 55, near: 0.5, far: 9000 }
+const CONTROLS = { screenSpacePanning: false, minDistance: 3, maxDistance: MAX_DISTANCE, maxPolarAngle: Math.PI * 0.47, zoomSpeed: 0.9 }
+
+/** `value`, or the one before while it's equal by value (as JSON): for lists rebuilt with the same contents. */
+function useByValue<T>(value: T): T {
+  const key = JSON.stringify(value)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` stands for `value`
+  return useMemo(() => value, [key])
+}
 
 /** Heights of the ground anywhere: the globe's terrain plus the seeded detail the chunks have. */
 interface Ground {
@@ -72,24 +84,27 @@ interface Pad {
  * by scrolling all the way in on the globe (or the Ground button); scrolling
  * all the way out goes back up.
  */
-export function GroundView(props: SurfaceViewProps & { seed: number; worldId: string }) {
+export const GroundView = memo(function GroundView(props: SurfaceViewProps & { seed: number; worldId: string }) {
   const start = useEditor((s) => s.ground) ?? { lat: 0, lon: 0 }
-  const tool = useEditor((s) => s.tool)
   const [origin, setOrigin] = useState<LatLon>(start)
   const [center, setCenter] = useState<LatLon>(start)
   const [loaded, setLoaded] = useState(0)
+  const [failed, setFailed] = useState<string>()
   const { model, change, seed } = props
   const radiusKm = model.settings.radiusKm
   // Every structure the world ever has gets level ground, so the ground doesn't change as they come and go.
   const allStructures = useUi((s) => s.timeline.structures)
   const blueprints = useUi((s) => s.timeline.blueprints)
-  const sites = useMemo(
-    () =>
-      allStructures.flatMap((st) => {
-        const blueprint = st.ownerId === props.worldId ? findBlueprint(blueprints, st.blueprintId) : undefined
-        return blueprint ? [{ at: st as LatLon, r: blueprintExtent(blueprint) * st.scale * 0.55 }] : []
-      }),
-    [allStructures, blueprints, props.worldId]
+  // By value: renaming a structure (a new list, the same places) keeps the ground as it is.
+  const sites = useByValue(
+    useMemo(
+      () =>
+        allStructures.flatMap((st) => {
+          const blueprint = st.ownerId === props.worldId ? findBlueprint(blueprints, st.blueprintId) : undefined
+          return blueprint ? [{ at: { lat: st.lat, lon: st.lon }, r: blueprintExtent(blueprint) * st.scale * 0.55 }] : []
+        }),
+      [allStructures, blueprints, props.worldId]
+    )
   )
   const ground = useMemo<Ground>(() => {
     const frame = { origin, radiusKm }
@@ -122,68 +137,54 @@ export function GroundView(props: SurfaceViewProps & { seed: number; worldId: st
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` stands for the terrain heights
   }, [origin, radiusKm, seed, model, change, sites])
 
-  const labels = useMemo(() => new Map<string, HTMLDivElement>(), [])
   const { structures, characters, pins } = props
   const items = useMemo(() => groundLabels(structures, characters, pins, ground), [structures, characters, pins, ground])
 
   return (
-    // How many chunks are in, for tests to wait on.
-    <div className="globe-wrap" data-chunks={loaded}>
-      <Canvas camera={{ position: [0, 400, 600], fov: 55, near: 0.5, far: 9000 }} data-testid="ground" gl={{ preserveDrawingBuffer: true }}>
-        <color attach="background" args={[SKY]} />
-        <fog attach="fog" args={[SKY, 1400, 3400]} />
-        <hemisphereLight args={['#dce9f7', '#4a4536', 0.75]} />
-        <directionalLight position={[700, 650, 250]} intensity={1.6} />
-        <Rig ground={ground} onRebase={setOrigin} onCenter={setCenter} />
-        <Chunks {...props} ground={ground} center={center} onLoaded={setLoaded} />
-        <Water color={model.settings.terrain.waterColor} />
-        {props.structures.map((p) => (
-          <GroundStructure key={p.structure.id} placed={p} ground={ground} onClick={props.onStructureClick} />
-        ))}
-        {props.characters.map((c) => (
-          <Figure key={c.character.id} at={c.place} color={c.character.color} selected={c.selected} ground={ground} onClick={() => props.onCharacterClick(c.character.id)} />
-        ))}
-        {props.pins.map((p, i) => (
-          <Beacon key={`${p.eventId}:${i}`} at={p} color={p.color} lit={p.active || p.selected} ground={ground} onClick={() => props.onPinClick(p.eventId)} />
-        ))}
-        <LabelProjector items={items} labels={labels} />
-        <OrbitControls
-          makeDefault
-          screenSpacePanning={false}
-          minDistance={3}
-          maxDistance={MAX_DISTANCE}
-          maxPolarAngle={Math.PI * 0.47}
-          zoomSpeed={0.9}
-          // Dragging moves over the ground like a map; right-drag looks around. With a tool, left-drag is the tool's.
-          mouseButtons={{
-            LEFT: tool === 'navigate' ? THREE.MOUSE.PAN : (-1 as THREE.MOUSE),
-            MIDDLE: THREE.MOUSE.DOLLY,
-            RIGHT: THREE.MOUSE.ROTATE
-          }}
-        />
-      </Canvas>
-      <LabelLayer items={items} labels={labels} />
-      <GroundReadout ground={ground} />
-    </div>
+    <SurfaceCanvas
+      testId="ground"
+      camera={CAMERA}
+      // Dragging moves over the ground like a map; right-drag looks around.
+      navigate={THREE.MOUSE.PAN}
+      controls={CONTROLS}
+      labels={items}
+      // How many chunks are in, for tests to wait on.
+      wrap={{ 'data-chunks': loaded }}
+      overlay={<GroundReadout ground={ground} error={failed} />}
+    >
+      <color attach="background" args={[SKY]} />
+      <fog attach="fog" args={[SKY, 1400, 3400]} />
+      <hemisphereLight args={['#dce9f7', '#4a4536', 0.75]} />
+      <directionalLight position={[700, 650, 250]} intensity={1.6} />
+      <Rig ground={ground} onRebase={setOrigin} onCenter={setCenter} />
+      <Chunks {...props} ground={ground} center={center} onLoaded={setLoaded} onFailed={setFailed} />
+      <Water color={model.settings.terrain.waterColor} />
+      {props.structures.map((p) => (
+        <GroundStructure key={p.structure.id} placed={p} ground={ground} onClick={props.onStructureClick} />
+      ))}
+      {props.characters.map((c) => (
+        <Figure key={c.character.id} id={c.character.id} at={c.place} color={c.character.color} selected={c.selected} ground={ground} onClick={props.onCharacterClick} />
+      ))}
+      {props.pins.map((p, i) => (
+        <Beacon key={`${p.eventId}:${i}`} id={p.eventId} at={p} color={p.color} lit={p.active || p.selected} ground={ground} onClick={props.onPinClick} />
+      ))}
+    </SurfaceCanvas>
   )
-}
+})
 
-/** Labels for structures that show their name (or are selected), characters, and active or selected events. */
+/** Labels over things on the ground, hidden as far out as things are drawn. */
 function groundLabels(structures: PlacedStructure[], characters: PlacedCharacter[], pins: EventPin[], ground: Ground): ViewLabel[] {
   const at = (p: LatLon, lift: number) => {
     const [x, z] = toLocal(ground.frame, p)
     const point: [number, number, number] = [x, ground.standAt(x, z) + lift, z]
-    return (camera: THREE.Camera) => (camera.position.distanceTo(new THREE.Vector3(...point)) < DRAW_M ? point : null)
+    const v = new THREE.Vector3(...point)
+    return (camera: THREE.Camera) => (camera.position.distanceTo(v) < DRAW_M ? point : null)
   }
-  return [
-    ...structures.flatMap((s) =>
-      (s.structure.label && s.state.exists) || s.selected
-        ? [{ key: `structure:${s.structure.id}`, text: s.state.name, selected: s.selected, at: at(s.structure, blueprintExtent(s.blueprint) * s.structure.scale * 0.6 + 4) }]
-        : []
-    ),
-    ...characters.map((c) => ({ key: `character:${c.character.id}`, text: c.character.name, selected: c.selected, at: at(c.place, 2.4) })),
-    ...pins.flatMap((p, i) => (p.active || p.selected ? [{ key: `pin:${p.eventId}:${i}`, text: p.title, selected: p.selected, at: at(p, 46) }] : []))
-  ]
+  return viewLabels(structures, characters, pins, {
+    structure: (s) => at(s.structure, blueprintExtent(s.blueprint) * s.structure.scale * 0.6 + 4),
+    character: (c) => at(c.place, 2.4),
+    pin: (p) => at(p, 46)
+  })
 }
 
 /**
@@ -194,6 +195,7 @@ function groundLabels(structures: PlacedStructure[], characters: PlacedCharacter
 function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: LatLon): void; onCenter(center: LatLon): void }) {
   // Through `get`, so the camera and controls are the scene's to move, not values held by this component.
   const get = useThree((s) => s.get)
+  const invalidate = useThree((s) => s.invalidate)
   const hasControls = useThree((s) => !!s.controls)
   const lastChunk = useRef('')
   const rig = () => {
@@ -210,6 +212,7 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
     controls.target.set(0, y, 0)
     camera.position.set(0, y + d * 0.6, d * 0.8)
     controls.update()
+    invalidate()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the controls exist
   }, [hasControls])
 
@@ -238,12 +241,13 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
 
   useEffect(() => {
     const { gl } = rig()
-    let pushes = 0
+    const edge = new EdgePush()
     const onWheel = (e: WheelEvent) => {
       const { camera, controls } = rig()
       if (!controls) return
-      pushes = e.deltaY > 0 && camera.position.distanceTo(controls.target) >= MAX_DISTANCE - 1 ? pushes + 1 : 0
-      if (pushes >= 3) useEditor.getState().leaveGround(fromLocal(ground.frame, controls.target.x, controls.target.z))
+      if (edge.push(e.deltaY > 0 && camera.position.distanceTo(controls.target) >= MAX_DISTANCE - 1 ? 1 : 0)) {
+        useEditor.getState().leaveGround(fromLocal(ground.frame, controls.target.x, controls.target.z))
+      }
     }
     gl.domElement.addEventListener('wheel', onWheel, { passive: true })
     return () => gl.domElement.removeEventListener('wheel', onWheel)
@@ -260,7 +264,7 @@ function Water({ color }: { color: string }) {
     if (mesh.current && controls) mesh.current.position.set(controls.target.x, 0, controls.target.z)
   })
   return (
-    <mesh ref={mesh} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
+    <mesh ref={mesh} rotation={[-Math.PI / 2, 0, 0]} raycast={noRaycast}>
       <planeGeometry args={[DRAW_M * 3, DRAW_M * 3]} />
       <meshStandardMaterial color={color} transparent opacity={0.82} roughness={0.15} metalness={0.1} depthWrite={false} />
     </mesh>
@@ -274,23 +278,30 @@ interface Footprint {
   r: number
 }
 
-function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; onLoaded(count: number): void }) {
-  const { model, change, seed, ground, center, structures, onLoaded } = props
+function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; onLoaded(count: number): void; onFailed(error: string | undefined): void }) {
+  const { model, change, seed, ground, center, structures, onLoaded, onFailed } = props
   const radiusKm = model.settings.radiusKm
   const wanted = useMemo(() => chunksAround(center, radiusKm, RING), [center, radiusKm])
-  const chunks = useGroundChunks(model, change, seed, wanted)
+  const { chunks, error } = useGroundChunks(model, change, seed, wanted)
   useEffect(() => onLoaded(chunks.size), [chunks.size, onLoaded])
+  useEffect(() => onFailed(error), [error, onFailed])
+  useReadyWhenDrawn(chunks.size === wanted.length)
   const middle = chunkOf(center, radiusKm)
-  const foliage = useMemo(() => new THREE.Color(model.settings.terrain.vegetationColor), [model.settings.terrain.vegetationColor])
-  const footprints = useMemo<Footprint[]>(
-    () =>
-      structures.flatMap(({ structure, state, blueprint }) => {
-        // Ruins are overgrown; standing buildings keep their ground clear.
-        if (!state.exists || state.condition < 20) return []
-        const [x, z] = toLocal(ground.frame, structure)
-        return [{ x, z, r: blueprintExtent(blueprint) * structure.scale * 0.55 }]
-      }),
-    [structures, ground.frame]
+  const vegetationColor = model.settings.terrain.vegetationColor
+  const plants = useMemo(() => new PlantGeometries(new THREE.Color(vegetationColor)), [vegetationColor])
+  useEffect(() => () => plants.dispose(), [plants])
+  // By value, so plants are laid out again only when a footprint changes, not whenever the structures do (renamed, or the playhead moved).
+  const footprints = useByValue(
+    useMemo<Footprint[]>(
+      () =>
+        structures.flatMap(({ structure, state, blueprint }) => {
+          // Ruins are overgrown; standing buildings keep their ground clear.
+          if (!state.exists || state.condition < 20) return []
+          const [x, z] = toLocal(ground.frame, structure)
+          return [{ x, z, r: blueprintExtent(blueprint) * structure.scale * 0.55 }]
+        }),
+      [structures, ground.frame]
+    )
   )
   return (
     <>
@@ -304,7 +315,7 @@ function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center
             chunk={chunk}
             ring={ring}
             ground={ground}
-            foliage={foliage}
+            plants={plants}
             footprints={footprints}
             onPointerDown={props.onPointerDown}
             onPointerMove={props.onPointerMove}
@@ -316,11 +327,11 @@ function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center
 }
 
 /** One chunk, placed in the view's frame from its own (it was built around its south-west corner). */
-function ChunkView({
+const ChunkView = memo(function ChunkView({
   chunk,
   ring,
   ground,
-  foliage,
+  plants,
   footprints,
   onPointerDown,
   onPointerMove
@@ -328,7 +339,7 @@ function ChunkView({
   chunk: GroundChunk
   ring: number
   ground: Ground
-  foliage: THREE.Color
+  plants: PlantGeometries
   footprints: Footprint[]
   onPointerDown: SurfaceViewProps['onPointerDown']
   onPointerMove: SurfaceViewProps['onPointerMove']
@@ -361,39 +372,49 @@ function ChunkView({
   }, [chunk, level])
   useEffect(() => () => geometry.dispose(), [geometry])
   const local = useMemo(() => footprints.map((f) => ({ x: (f.x - x) / stretch, z: f.z - z, r: f.r })).filter((f) => f.x > -f.r && f.x < CHUNK_M * 1.5 + f.r && f.z < f.r && f.z > -CHUNK_M * 1.5 - f.r), [footprints, x, z, stretch])
-  const dir = (e: ThreeEvent<PointerEvent | MouseEvent>) => {
-    const p = fromLocal(ground.frame, e.point.x, e.point.z)
-    return latLonToDir(p.lat, p.lon)
-  }
+  const { frame } = ground
+  const handlers = useMemo(() => {
+    const dir = (e: ThreeEvent<PointerEvent | MouseEvent>) => {
+      const p = fromLocal(frame, e.point.x, e.point.z)
+      return latLonToDir(p.lat, p.lon)
+    }
+    return { down: toolPress(dir, onPointerDown), move: (e: ThreeEvent<PointerEvent>) => onPointerMove(dir(e)) }
+  }, [frame, onPointerDown, onPointerMove])
   return (
     <group position={[x, 0, z]} scale={[stretch, 1, 1]}>
       <mesh
         geometry={geometry}
-        onPointerDown={(e) => {
-          if (e.button === 0 && onPointerDown(dir(e))) e.stopPropagation()
-        }}
-        onPointerMove={(e) => onPointerMove(dir(e))}
+        onPointerDown={handlers.down}
+        onPointerMove={handlers.move}
       >
         <meshStandardMaterial vertexColors roughness={1} metalness={0} />
       </mesh>
       {Object.entries(chunk.plants).map(([plant, list]) =>
         ring > 0 && NEAR_ONLY.includes(plant as Plant) ? null : (
-          <PlantInstances key={plant} plant={plant as Plant} list={list} share={RING_SHARE[ring] ?? 0} foliage={foliage} footprints={local} level={level} />
+          <PlantInstances key={plant} plant={plant as Plant} list={list} share={RING_SHARE[ring] ?? 0} plants={plants} footprints={local} level={level} />
         )
       )}
     </group>
   )
-}
+})
 
 /** How much of a chunk's plants are drawn, by its distance in chunks from the middle of the view: the far ones are thinned. */
 const RING_SHARE = [1, 0.55, 0.25]
 
-const geometries = new Map<string, THREE.BufferGeometry>()
-function sharedPlantGeometry(plant: Plant, foliage: THREE.Color): THREE.BufferGeometry {
-  const key = `${plant}:${foliage.getHexString()}`
-  let g = geometries.get(key)
-  if (!g) geometries.set(key, (g = plantGeometry(plant, foliage)))
-  return g
+/** The plants' shapes in the world's foliage colour, made as they're first needed and let go with the colour or the view. */
+class PlantGeometries {
+  private made = new Map<Plant, THREE.BufferGeometry>()
+  constructor(private foliage: THREE.Color) {}
+
+  get(plant: Plant): THREE.BufferGeometry {
+    let g = this.made.get(plant)
+    if (!g) this.made.set(plant, (g = plantGeometry(plant, this.foliage)))
+    return g
+  }
+
+  dispose() {
+    for (const g of this.made.values()) g.dispose()
+  }
 }
 
 /** All of one kind of plant on a chunk, as one instanced mesh; `share` draws only that fraction of them (farther chunks). */
@@ -401,18 +422,19 @@ function PlantInstances({
   plant,
   list,
   share,
-  foliage,
+  plants,
   footprints,
   level
 }: {
   plant: Plant
   list: Float32Array
   share: number
-  foliage: THREE.Color
+  plants: PlantGeometries
   footprints: Footprint[]
   level(x: number, z: number, y: number): number
 }) {
   const mesh = useRef<THREE.InstancedMesh>(null)
+  const invalidate = useThree((s) => s.invalidate)
   const kept = useMemo(() => {
     const out: number[] = []
     const total = Math.floor((list.length / INSTANCE_STRIDE) * share)
@@ -430,22 +452,25 @@ function PlantInstances({
     const matrix = new THREE.Matrix4()
     const q = new THREE.Quaternion()
     const up = new THREE.Vector3(0, 1, 0)
+    const position = new THREE.Vector3()
+    const scale = new THREE.Vector3()
     const color = new THREE.Color()
     kept.forEach((o, i) => {
       const s = list[o + 3]!
       q.setFromAxisAngle(up, list[o + 4]!)
       // Rocks sink into the ground a little.
       const y = level(list[o]!, list[o + 2]!, list[o + 1]!)
-      m.setMatrixAt(i, matrix.compose(new THREE.Vector3(list[o]!, y - (plant === 'rock' ? s * 0.1 : 0.05), list[o + 2]!), q, new THREE.Vector3(s, s, s)))
+      m.setMatrixAt(i, matrix.compose(position.set(list[o]!, y - (plant === 'rock' ? s * 0.1 : 0.05), list[o + 2]!), q, scale.setScalar(s)))
       m.setColorAt(i, instanceTint(plant, list[o + 5]!, color))
     })
     m.instanceMatrix.needsUpdate = true
     if (m.instanceColor) m.instanceColor.needsUpdate = true
     m.computeBoundingSphere()
-  }, [kept, list, plant, level])
+    invalidate()
+  }, [kept, list, plant, level, invalidate])
   if (!kept.length) return null
   return (
-    <instancedMesh key={kept.length} ref={mesh} args={[sharedPlantGeometry(plant, foliage), undefined, kept.length]} raycast={() => null}>
+    <instancedMesh key={kept.length} ref={mesh} args={[plants.get(plant), undefined, kept.length]} raycast={noRaycast}>
       <meshStandardMaterial vertexColors roughness={0.95} metalness={0} flatShading />
     </instancedMesh>
   )
@@ -458,21 +483,17 @@ function GroundStructure({ placed, ground, onClick }: { placed: PlacedStructure;
   const [x, z] = toLocal(ground.frame, structure)
   // On its levelled pad.
   const y = useMemo(() => ground.standAt(x, z), [ground, x, z])
+  const pick = usePick(onClick, structure.id)
   if (!inView(x, z)) return null
   return (
     <group
       position={[x, y, z]}
       rotation={[0, (-structure.rotation * Math.PI) / 180, 0]}
       scale={structure.scale}
-      onPointerDown={pickWith(() => onClick(structure.id))}
+      onPointerDown={pick}
     >
       <BlueprintParts blueprint={blueprint} condition={state.condition} materials={state.materials} ghost={!state.exists} />
-      {(selected || hit !== undefined) && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.3, 0]} raycast={() => null}>
-          <ringGeometry args={[(extent / structure.scale) * 0.6, (extent / structure.scale) * 0.6 + Math.max(1, extent * 0.01), 64]} />
-          <meshBasicMaterial color={selected ? '#ffffff' : '#ff5a5a'} transparent opacity={selected ? 0.9 : 0.35 + 0.6 * (hit ?? 0)} depthTest={false} />
-        </mesh>
-      )}
+      <SelectionRing inner={(extent / structure.scale) * 0.6} outer={(extent / structure.scale) * 0.6 + Math.max(1, extent * 0.01)} segments={64} lift={0.3} selected={selected} hit={hit} />
     </group>
   )
 }
@@ -481,53 +502,46 @@ const BODY = new THREE.CapsuleGeometry(0.24, 0.9, 4, 10).translate(0, 0.72, 0)
 const HEAD = new THREE.SphereGeometry(0.17, 12, 10).translate(0, 1.6, 0)
 
 /** A character, life-size: a little over 1.7 m tall. */
-function Figure({ at, color, selected, ground, onClick }: { at: LatLon; color: string; selected: boolean; ground: Ground; onClick(): void }) {
+function Figure({ id, at, color, selected, ground, onClick }: { id: string; at: LatLon; color: string; selected: boolean; ground: Ground; onClick(id: string): void }) {
+  const pick = usePick(onClick, id)
   const [x, z] = toLocal(ground.frame, at)
   if (!inView(x, z)) return null
   return (
-    <group
-      position={[x, ground.standAt(x, z), z]}
-      onPointerDown={pickWith(onClick)}
-    >
+    <group position={[x, ground.standAt(x, z), z]} onPointerDown={pick}>
       <mesh geometry={BODY}>
         <meshStandardMaterial color={color} roughness={0.7} />
       </mesh>
       <mesh geometry={HEAD}>
         <meshStandardMaterial color="#e2b48f" roughness={0.8} />
       </mesh>
-      {selected && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} raycast={() => null}>
-          <ringGeometry args={[0.6, 0.75, 32]} />
-          <meshBasicMaterial color="#ffffff" depthTest={false} />
-        </mesh>
-      )}
+      <SelectionRing inner={0.6} outer={0.75} lift={0.05} selected={selected} solid />
     </group>
   )
 }
 
+const POST = new THREE.CylinderGeometry(0.8, 0.8, 40, 8)
+
 /** Where an event happened: a tall coloured post, seen from afar. */
-function Beacon({ at, color, lit, ground, onClick }: { at: LatLon; color: string; lit: boolean; ground: Ground; onClick(): void }) {
+function Beacon({ id, at, color, lit, ground, onClick }: { id: string; at: LatLon; color: string; lit: boolean; ground: Ground; onClick(id: string): void }) {
+  const pick = usePick(onClick, id)
   const [x, z] = toLocal(ground.frame, at)
   if (!inView(x, z)) return null
   return (
-    <mesh
-      position={[x, ground.standAt(x, z) + 20, z]}
-      onPointerDown={pickWith(onClick)}
-    >
-      <cylinderGeometry args={[0.8, 0.8, 40, 8]} />
+    <mesh position={[x, ground.standAt(x, z) + 20, z]} geometry={POST} onPointerDown={pick}>
       <meshBasicMaterial color={color} transparent opacity={lit ? 0.95 : 0.5} />
     </mesh>
   )
 }
 
-/** Where the middle of the view is, and how to get back up. */
-function GroundReadout({ ground }: { ground: Ground }) {
+/** Where the middle of the view is, how to get back up, and why some of the ground is missing if it is. */
+function GroundReadout({ ground, error }: { ground: Ground; error?: string }) {
   const { lat, lon } = ground.frame.origin
   return (
     <div className="ground-readout small" data-testid="ground-readout">
       <span>
         {Math.abs(lat).toFixed(4)}°{lat >= 0 ? 'N' : 'S'} {Math.abs(lon).toFixed(4)}°{lon >= 0 ? 'E' : 'W'}
       </span>
+      {error && <span role="alert">Couldn’t build the ground here: {error}</span>}
       <button className="link" onClick={() => useEditor.getState().leaveGround(ground.frame.origin)}>
         ⬆ Back up
       </button>

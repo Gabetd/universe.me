@@ -18,8 +18,13 @@ export function generateBase(seed: number, params: TerrainParams): Promise<BaseT
   const promise = generate({ seed, params })
   baseCache.set(key, promise)
   if (baseCache.size > CACHE_SIZE) baseCache.delete(baseCache.keys().next().value!)
+  // A failure isn't kept: the next ask tries again.
+  promise.catch(() => baseCache.get(key) === promise && baseCache.delete(key))
   return promise
 }
+
+/** What went wrong, from whatever a failed call rejected with (an Error, a worker's error event, a string). */
+export const failure = (err: unknown): string => String((err as { message?: unknown } | null | undefined)?.message ?? err)
 
 export async function fetchLayers(worldId: string) {
   const result = await window.universe.getTerrain(worldId)

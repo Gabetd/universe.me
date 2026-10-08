@@ -1,35 +1,30 @@
-import { CUBE_FACES, TERRAIN_RES } from '@universe/core'
+import { CUBE_FACES, TERRAIN_RES, type LatLon } from '@universe/core'
 import { dirToLatLon, faceToDir, latLonToDir, renderFaceTexture, type TerrainModel, type Vec3 } from '@universe/procgen'
-import { Line, OrbitControls, Stars } from '@react-three/drei'
-import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { useEffect, useMemo, useRef } from 'react'
+import { Line, Stars } from '@react-three/drei'
+import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
-import { isBrushTool, useEditor } from './editorStore'
-import { pickWith } from './pick'
-import type { SurfaceViewProps } from './useTerrain'
+import { isBrushTool, useEditor, type EditorTool } from './editorStore'
+import { noRaycast, toolPress, usePick } from './pick'
+import type { SurfaceViewProps, TerrainChange } from './useTerrain'
 import { STAGE_COLORS } from './structureLook'
 import { EdgePush, zoomOut } from '../components/zoom'
-import { LabelLayer, LabelProjector, type ViewLabel } from './labels'
+import { viewLabels, type ViewLabel } from './labels'
+import { SelectionRing } from './SelectionRing'
+import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
 
-/** Labels for active or selected event pins, structures that show their name, and characters. */
+/** Labels just above the surface, hidden on the far side of the planet. */
 function surfaceLabels(pins: EventPin[], structures: PlacedStructure[], characters: PlacedCharacter[], model: TerrainModel, scale: number): ViewLabel[] {
-  const at = (lat: number, lon: number) => {
-    const p = new THREE.Vector3(...surfacePoint(model, latLonToDir(lat, lon), scale, 0.006))
-    // Hidden on the far side of the planet.
+  const at = (place: LatLon) => {
+    const p = new THREE.Vector3(...surfacePoint(model, latLonToDir(place.lat, place.lon), scale, 0.006))
     return (camera: THREE.Camera): [number, number, number] | null => (p.dot(camera.position) > p.lengthSq() ? p.toArray() : null)
   }
-  return [
-    ...pins.flatMap((p, i) => (p.selected || p.active ? [{ key: `pin:${p.eventId}:${i}`, text: p.title, selected: p.selected, at: at(p.lat, p.lon) }] : [])),
-    ...structures.flatMap((s) =>
-      (s.structure.label && s.state.exists) || s.selected ? [{ key: `structure:${s.structure.id}`, text: s.state.name, selected: s.selected, at: at(s.structure.lat, s.structure.lon) }] : []
-    ),
-    ...characters.map((c) => ({ key: `character:${c.character.id}`, text: c.character.name, selected: c.selected, at: at(c.place.lat, c.place.lon) }))
-  ]
+  return viewLabels(structures, characters, pins, { structure: (s) => at(s.structure), character: (c) => at(c.place), pin: at })
 }
 
 /** Vertices per face edge. Heights are sampled from the 256² grid, so 128 keeps the mesh light. */
@@ -37,16 +32,22 @@ const SEGMENTS = 128
 
 const ALL_FACES = Array.from({ length: CUBE_FACES }, (_, f) => f)
 
+/** As close as the globe camera gets (in planet radii from the centre); scrolling in further goes down to the ground. */
+const MIN_DISTANCE = 1.07
+const MAX_DISTANCE = 8
+
 /** Position just above the surface (or the sea) in direction `dir`, in globe units. */
 function surfacePoint(model: TerrainModel, dir: Vec3, scale: number, lift: number): [number, number, number] {
   const r = 1 + Math.max(model.sampleHeight(...dir), model.settings.seaLevel) * scale + lift
   return [dir[0] * r, dir[1] * r, dir[2] * r]
 }
 
-export function GlobeView(props: SurfaceViewProps) {
-  const tool = useEditor((s) => s.tool)
+const CAMERA = { position: [0, 0.6, 3] as [number, number, number], fov: 45, near: 0.01, far: 200 }
+const CONTROLS = { enablePan: false, minDistance: MIN_DISTANCE, maxDistance: MAX_DISTANCE, rotateSpeed: 0.5, zoomSpeed: 0.8 }
+
+/** The planet from orbit. Memoized, like the other views: the world editor re-renders for things they don't show. */
+export const GlobeView = memo(function GlobeView(props: SurfaceViewProps) {
   const exaggeration = useEditor((s) => s.exaggeration)
-  const labels = useMemo(() => new Map<string, HTMLDivElement>(), [])
   const scale = exaggeration / (props.model.settings.radiusKm * 1000)
   const items = useMemo(
     () => surfaceLabels(props.pins, props.structures, props.characters, props.model, scale),
@@ -54,36 +55,18 @@ export function GlobeView(props: SurfaceViewProps) {
     [props.pins, props.structures, props.characters, props.model, scale, props.change]
   )
   return (
-    <div className="globe-wrap">
-      <Canvas camera={{ position: [0, 0.6, 3], fov: 45, near: 0.01, far: 200 }} data-testid="globe" gl={{ preserveDrawingBuffer: true }}>
-        <color attach="background" args={[SPACE_BG]} />
-        <ambientLight intensity={0.45} />
-        <directionalLight position={[4, 2, 3]} intensity={2.2} />
-        <Stars radius={80} depth={40} count={4000} factor={3} fade speed={0} />
-        <Planet {...props} />
-        <LabelProjector items={items} labels={labels} />
-        <FocusOn focus={props.focus} />
-        <StartOver />
-        <ZoomToGround />
-        <OrbitControls
-          makeDefault
-          enablePan={false}
-          minDistance={MIN_DISTANCE}
-          maxDistance={MAX_DISTANCE}
-          rotateSpeed={0.5}
-          zoomSpeed={0.8}
-          // With a tool selected, left-drag edits and right-drag rotates.
-          mouseButtons={{
-            LEFT: tool === 'navigate' ? THREE.MOUSE.ROTATE : (-1 as THREE.MOUSE),
-            MIDDLE: THREE.MOUSE.DOLLY,
-            RIGHT: THREE.MOUSE.ROTATE
-          }}
-        />
-      </Canvas>
-      <LabelLayer items={items} labels={labels} />
-    </div>
+    <SurfaceCanvas testId="globe" camera={CAMERA} navigate={THREE.MOUSE.ROTATE} controls={CONTROLS} labels={items}>
+      <color attach="background" args={[SPACE_BG]} />
+      <ambientLight intensity={0.45} />
+      <directionalLight position={[4, 2, 3]} intensity={2.2} />
+      <Stars radius={80} depth={40} count={4000} factor={3} fade speed={0} />
+      <Planet {...props} />
+      <FocusOn focus={props.focus} />
+      <StartOver />
+      <ZoomToGround />
+    </SurfaceCanvas>
   )
-}
+})
 
 function Planet({
   model,
@@ -101,34 +84,62 @@ function Planet({
   onCharacterClick
 }: SurfaceViewProps) {
   const exaggeration = useEditor((s) => s.exaggeration)
-  const faces = useMemo(() => ALL_FACES.map(createFace), [])
+  const invalidate = useThree((s) => s.invalidate)
+  const { faces } = surfaceOf(model)
+  /** The change this view last brought the faces up to. */
+  const seen = useRef<{ colored?: TerrainChange; shaped?: TerrainChange }>({})
   const cursor = useRef<THREE.Mesh>(null)
   const hover = useRef<Vec3 | null>(null)
   const radiusM = model.settings.radiusKm * 1000
   const scale = exaggeration / radiusM
   const seaRadius = 1 + model.settings.seaLevel * scale
+  // Where each thing stands, worked out again only when they move or the terrain does.
+  const placed = useMemo(() => {
+    const at = (p: LatLon, lift: number) => surfacePoint(model, latLonToDir(p.lat, p.lon), scale, lift)
+    return { pins: pins.map((p) => at(p, 0.006)), structures: structures.map((p) => at(p.structure, 0)), characters: characters.map((c) => at(c.place, 0)) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` stands for the terrain heights
+  }, [pins, structures, characters, model, scale, change])
 
-  // Recolor only the faces that changed.
   useEffect(() => {
-    for (const f of change.faces === 'all' ? ALL_FACES : change.faces) updateTexture(faces[f]!, model)
-  }, [change, faces, model])
+    if (colorFaces(model, change, seen.current.colored)) invalidate()
+    seen.current.colored = change
+  }, [change, model, invalidate])
 
-  // Reshape the changed faces, or all of them when the relief scale changed (colors don't depend on it).
-  const shapedScale = useRef<number>(undefined)
   useEffect(() => {
-    const list = scale !== shapedScale.current || change.faces === 'all' ? ALL_FACES : change.faces
-    shapedScale.current = scale
-    for (const f of list) updateGeometry(faces[f]!, model, scale)
-  }, [change, faces, model, scale])
+    if (shapeFaces(model, change, scale, seen.current.shaped)) invalidate()
+    seen.current.shaped = change
+  }, [change, model, scale, invalidate])
 
   useEffect(() => () => faces.forEach((f) => (f.geometry.dispose(), f.texture.dispose())), [faces])
+  // The terrain is in once the effects above have run.
+  useReadyWhenDrawn(true)
+
+  // The brush cursor follows the pointer, the tool and the brush size.
+  useEffect(() => useEditor.subscribe((s, prev) => (s.tool !== prev.tool || s.radiusKm !== prev.radiusKm) && invalidate()), [invalidate])
+  const moveCursor = useCallback(
+    (dir: Vec3 | null) => {
+      hover.current = dir
+      if (showsCursor(useEditor.getState().tool)) invalidate()
+    },
+    [invalidate]
+  )
+  const press = useMemo(() => toolPress(pointDir, onPointerDown), [onPointerDown])
+  const move = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      const dir = pointDir(e)
+      moveCursor(dir)
+      onPointerMove(dir)
+    },
+    [moveCursor, onPointerMove]
+  )
+  const out = useCallback(() => moveCursor(null), [moveCursor])
 
   useFrame(() => {
     const c = cursor.current
     if (!c) return
     const { tool, radiusKm } = useEditor.getState()
     const dir = hover.current
-    c.visible = !!dir && (isBrushTool(tool) || tool === 'region')
+    c.visible = !!dir && showsCursor(tool)
     if (!dir) return
     c.position.set(...surfacePoint(model, dir, scale, 0.002))
     c.lookAt(c.position.x * 2, c.position.y * 2, c.position.z * 2)
@@ -136,70 +147,63 @@ function Planet({
     c.scale.setScalar(size)
   })
 
-  const toDir = (e: ThreeEvent<PointerEvent | MouseEvent>): Vec3 => {
-    const p = e.point.clone().normalize()
-    return [p.x, p.y, p.z]
-  }
-
   return (
     <group>
       {faces.map((f) => (
         <mesh
           key={f.index}
           geometry={f.geometry}
-          onPointerDown={(e) => {
-            if (e.button === 0 && onPointerDown(toDir(e))) e.stopPropagation()
-          }}
-          onPointerMove={(e) => {
-            hover.current = toDir(e)
-            onPointerMove(hover.current)
-          }}
-          onPointerOut={() => (hover.current = null)}
+          onPointerDown={press}
+          onPointerMove={move}
+          onPointerOut={out}
           onDoubleClick={onDoubleClick}
         >
           <meshStandardMaterial map={f.texture} roughness={0.95} metalness={0} />
         </mesh>
       ))}
-      <mesh scale={seaRadius} raycast={() => null}>
+      <mesh scale={seaRadius} raycast={noRaycast}>
         <sphereGeometry args={[1, 96, 64]} />
         <meshStandardMaterial color={model.settings.terrain.waterColor} transparent opacity={0.35} roughness={0.25} metalness={0.1} depthWrite={false} />
       </mesh>
-      <mesh scale={1.06} raycast={() => null}>
+      <mesh scale={1.06} raycast={noRaycast}>
         <sphereGeometry args={[1, 64, 32]} />
         <meshBasicMaterial color="#4f8cff" transparent opacity={0.16} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
-      <mesh ref={cursor} visible={false} raycast={() => null}>
+      <mesh ref={cursor} visible={false} raycast={noRaycast}>
         <ringGeometry args={[0.92, 1, 48]} />
         <meshBasicMaterial color="#ffffff" transparent opacity={0.85} depthTest={false} />
       </mesh>
       <RegionLines model={model} change={change} regions={regions} highlight={highlightRegionIds} scale={scale} />
       {pins.map((p, i) => (
-        <Pin key={`${p.eventId}:${i}`} pin={p} position={surfacePoint(model, latLonToDir(p.lat, p.lon), scale, 0.006)} onClick={onPinClick} />
+        <Pin key={`${p.eventId}:${i}`} pin={p} position={placed.pins[i]!} onClick={onPinClick} />
       ))}
-      {structures.map((p) => (
+      {structures.map((p, i) => (
         <SurfacePin
           key={p.structure.id}
-          at={surfacePoint(model, latLonToDir(p.structure.lat, p.structure.lon), scale, 0)}
+          id={p.structure.id}
+          at={placed.structures[i]!}
           color={STAGE_COLORS[p.state.stage]}
           faded={!p.state.exists}
           selected={p.selected}
           hit={p.hit}
-          onClick={() => onStructureClick(p.structure.id)}
+          onClick={onStructureClick}
         />
       ))}
-      {characters.map((c) => (
-        <SurfacePin
-          key={c.character.id}
-          at={surfacePoint(model, latLonToDir(c.place.lat, c.place.lon), scale, 0)}
-          color={c.character.color}
-          figure
-          selected={c.selected}
-          onClick={() => onCharacterClick(c.character.id)}
-        />
+      {characters.map((c, i) => (
+        <SurfacePin key={c.character.id} id={c.character.id} at={placed.characters[i]!} color={c.character.color} figure selected={c.selected} onClick={onCharacterClick} />
       ))}
     </group>
   )
 }
+
+/** The direction from the planet's centre to the point under the pointer. */
+function pointDir(e: ThreeEvent<PointerEvent | MouseEvent>): Vec3 {
+  const p = e.point.clone().normalize()
+  return [p.x, p.y, p.z]
+}
+
+/** Brushes and region drawing show where they'd land under the pointer. */
+const showsCursor = (tool: EditorTool) => isBrushTool(tool) || tool === 'region'
 
 function RegionLines({
   model,
@@ -213,6 +217,9 @@ function RegionLines({
 }) {
   const selectedId = useUi((s) => s.selectedRegionId)
   const draft = useEditor((s) => s.draft)
+  const invalidate = useThree((s) => s.invalidate)
+  // The draft line goes away on its own (saved or cancelled), not as the view renders: draw it gone.
+  useLayoutEffect(() => invalidate(), [draft, invalidate])
   // Outlines follow the terrain once a stroke is done, not on every dab of it.
   const settled = model.isStroking ? 'stroking' : change
   const outlines = useMemo(
@@ -241,15 +248,15 @@ function RegionLines({
   )
 }
 
+/** A unit sphere, scaled to each pin's size. */
+const DOT = new THREE.SphereGeometry(1, 16, 12)
+
 /** An event's location: a dot, brighter while the event is happening at the playhead. */
 function Pin({ pin, position, onClick }: { pin: EventPin; position: [number, number, number]; onClick(eventId: string): void }) {
   const size = pin.selected ? 0.014 : pin.active ? 0.01 : 0.007
+  const pick = usePick(onClick, pin.eventId)
   return (
-    <mesh
-      position={position}
-      onPointerDown={pickWith(() => onClick(pin.eventId))}
-    >
-      <sphereGeometry args={[size, 16, 12]} />
+    <mesh position={position} scale={size} geometry={DOT} onPointerDown={pick}>
       <meshBasicMaterial color={pin.color} transparent opacity={pin.active || pin.selected ? 1 : 0.5} />
     </mesh>
   )
@@ -266,6 +273,7 @@ const FIGURE = new THREE.CapsuleGeometry(0.75, 1.6, 4, 12).translate(0, 1.55, 0)
  * size on screen; zooming all the way in shows the real thing.
  */
 function SurfacePin({
+  id,
   at,
   color,
   faded = false,
@@ -274,16 +282,19 @@ function SurfacePin({
   figure = false,
   onClick
 }: {
+  id: string
   at: [number, number, number]
   color: string
   faded?: boolean
   selected: boolean
   hit?: number
   figure?: boolean
-  onClick(): void
+  onClick(id: string): void
 }) {
   const group = useRef<THREE.Group>(null)
-  const quaternion = useMemo(() => new THREE.Quaternion().setFromUnitVectors(UP, new THREE.Vector3(...at).normalize()), [at])
+  const pick = usePick(onClick, id)
+  const [x, y, z] = at
+  const quaternion = useMemo(() => new THREE.Quaternion().setFromUnitVectors(UP, new THREE.Vector3(x, y, z).normalize()), [x, y, z])
   useFrame(({ camera }) => {
     const distance = camera.position.distanceTo(group.current!.position)
     group.current?.scale.setScalar(distance * (selected ? 0.0042 : 0.0032))
@@ -293,7 +304,7 @@ function SurfacePin({
       ref={group}
       position={at}
       quaternion={quaternion}
-      onPointerDown={pickWith(onClick)}
+      onPointerDown={pick}
     >
       {figure ? (
         <mesh geometry={FIGURE}>
@@ -309,28 +320,21 @@ function SurfacePin({
           </mesh>
         </>
       )}
-      {(selected || hit !== undefined) && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} raycast={() => null}>
-          <ringGeometry args={[1.6, 2.1, 32]} />
-          <meshBasicMaterial color={selected ? '#ffffff' : '#ff5a5a'} transparent opacity={selected ? 0.9 : 0.35 + 0.6 * (hit ?? 0)} depthTest={false} />
-        </mesh>
-      )}
+      <SelectionRing inner={1.6} outer={2.1} lift={0.05} selected={selected} hit={hit} />
     </group>
   )
 }
-
-/** As close as the globe camera gets (in planet radii from the centre); scrolling in further goes down to the ground. */
-const MIN_DISTANCE = 1.07
-const MAX_DISTANCE = 8
 
 /** Opens facing where the view last looked (e.g. coming back up from the ground), and keeps note of it. */
 function StartOver() {
   const camera = useThree((s) => s.camera)
   const controls = useThree((s) => s.controls) as (THREE.EventDispatcher<{ end: object }> & { update(): void }) | null
+  const invalidate = useThree((s) => s.invalidate)
   useEffect(() => {
     const { lookingAt, lookDistance } = useEditor.getState()
     if (lookingAt) camera.position.copy(new THREE.Vector3(...latLonToDir(lookingAt.lat, lookingAt.lon)).multiplyScalar(lookDistance))
     controls?.update()
+    invalidate()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the view opens
   }, [controls])
   useEffect(() => {
@@ -373,20 +377,25 @@ function ZoomToGround() {
 function FocusOn({ focus }: { focus: SurfaceViewProps['focus'] }) {
   const camera = useThree((s) => s.camera)
   const controls = useThree((s) => s.controls) as { update(): void } | null
+  const invalidate = useThree((s) => s.invalidate)
   const target = useRef<THREE.Vector3 | null>(null)
+  const next = useMemo(() => new THREE.Vector3(), [])
   const key = focus?.key
   useEffect(() => {
     target.current = focus ? new THREE.Vector3(...latLonToDir(focus.lat, focus.lon)) : null
+    invalidate()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new focus point should move the camera
   }, [key])
   useFrame(() => {
     const goal = target.current
     if (!goal) return
     const distance = camera.position.length()
-    const next = camera.position.clone().normalize().lerp(goal, 0.15).normalize()
-    camera.position.copy(next.multiplyScalar(distance))
+    next.copy(camera.position).normalize().lerp(goal, 0.15).normalize()
+    camera.position.copy(next).multiplyScalar(distance)
     controls?.update()
     if (next.angleTo(goal) < 0.01) target.current = null
+    // Another frame: to keep turning, or once there, to draw everything where the camera stopped.
+    invalidate()
   })
   return null
 }
@@ -417,47 +426,118 @@ function slerp(a: THREE.Vector3, b: THREE.Vector3, t: number): Vec3 {
   return v.toArray()
 }
 
+/** The faces' vertex grid: `SEGMENTS` + 1 vertices along each edge, few enough for 16-bit indices. */
+const GRID = SEGMENTS + 1
+
+/** What every planet's faces share: each face's unit vertex directions, the texture coordinates and the triangles. */
+let grids: { dirs: Float32Array[]; index: THREE.BufferAttribute[]; uv: THREE.BufferAttribute } | undefined
+
+function faceGrids() {
+  if (grids) return grids
+  const uvs = new Float32Array(GRID * GRID * 2)
+  for (let b = 0; b < GRID; b++) {
+    for (let a = 0; a < GRID; a++) {
+      uvs[(b * GRID + a) * 2] = a / SEGMENTS
+      uvs[(b * GRID + a) * 2 + 1] = b / SEGMENTS
+    }
+  }
+  // Wound to face outward on faces whose axes run one way, or the other: every face uses one of the two.
+  const triangles = (outward: boolean) => {
+    const indices = new Uint16Array(SEGMENTS * SEGMENTS * 6)
+    let i = 0
+    for (let b = 0; b < SEGMENTS; b++) {
+      for (let a = 0; a < SEGMENTS; a++) {
+        const v00 = b * GRID + a
+        const v10 = v00 + 1
+        const v01 = v00 + GRID
+        const v11 = v01 + 1
+        indices.set(outward ? [v00, v10, v11, v00, v11, v01] : [v00, v11, v10, v00, v01, v11], i)
+        i += 6
+      }
+    }
+    return new THREE.BufferAttribute(indices, 1)
+  }
+  const windings = [triangles(false), triangles(true)]
+  const dirs = ALL_FACES.map((f) => {
+    const out = new Float32Array(GRID * GRID * 3)
+    const dir: Vec3 = [0, 0, 0]
+    for (let b = 0; b < GRID; b++) {
+      for (let a = 0; a < GRID; a++) {
+        faceToDir(f, (a / SEGMENTS) * 2 - 1, (b / SEGMENTS) * 2 - 1, dir)
+        out.set(dir, (b * GRID + a) * 3)
+      }
+    }
+    return out
+  })
+  const index = dirs.map((d) => {
+    const p = (a: number, b: number) => new THREE.Vector3().fromArray(d, (b * GRID + a) * 3)
+    return windings[new THREE.Vector3().crossVectors(p(1, 0).sub(p(0, 0)), p(0, 1).sub(p(0, 0))).dot(p(0, 0)) > 0 ? 1 : 0]!
+  })
+  return (grids = { dirs, index, uv: new THREE.BufferAttribute(uvs, 2) })
+}
+
 interface Face {
   index: number
   geometry: THREE.BufferGeometry
   texture: THREE.DataTexture
   pixels: Uint8Array
-  /** Unit direction of each vertex, computed once. */
+  /** Unit direction of each vertex. */
   dirs: Float32Array
 }
 
+/**
+ * A planet's faces as last drawn, kept while the planet is (so going back to
+ * the globe redraws nothing unless the terrain changed): the change their
+ * colors and their shapes (at relief `scale`) were last brought up to.
+ */
+interface Surface {
+  faces: Face[]
+  colored?: TerrainChange
+  shaped?: TerrainChange
+  scale?: number
+}
+
+const surfaces = new WeakMap<TerrainModel, Surface>()
+
+function surfaceOf(model: TerrainModel): Surface {
+  let surface = surfaces.get(model)
+  if (!surface) surfaces.set(model, (surface = { faces: ALL_FACES.map(createFace) }))
+  return surface
+}
+
+const changedFaces = (change: TerrainChange) => (change.faces === 'all' ? ALL_FACES : change.faces)
+
+/**
+ * Recolors a planet's faces up to `change`: just the ones it touched if they
+ * show `seen` (the change before it, as the view saw it), else all of them.
+ * Returns whether any were redone.
+ */
+function colorFaces(model: TerrainModel, change: TerrainChange, seen: TerrainChange | undefined): boolean {
+  const surface = surfaceOf(model)
+  if (surface.colored === change) return false
+  for (const f of surface.colored && surface.colored === seen ? changedFaces(change) : ALL_FACES) updateTexture(surface.faces[f]!, model)
+  surface.colored = change
+  return true
+}
+
+/** Reshapes them likewise, or all of them when the relief scale changed (colors don't depend on it). */
+function shapeFaces(model: TerrainModel, change: TerrainChange, scale: number, seen: TerrainChange | undefined): boolean {
+  const surface = surfaceOf(model)
+  if (surface.shaped === change && surface.scale === scale) return false
+  const some = surface.shaped && surface.shaped === seen && surface.scale === scale
+  for (const f of some ? changedFaces(change) : ALL_FACES) updateGeometry(surface.faces[f]!, model, scale)
+  surface.shaped = change
+  surface.scale = scale
+  return true
+}
+
 function createFace(index: number): Face {
-  const n = SEGMENTS + 1
-  const dirs = new Float32Array(n * n * 3)
-  const uvs = new Float32Array(n * n * 2)
-  const dir: Vec3 = [0, 0, 0]
-  for (let b = 0; b < n; b++) {
-    for (let a = 0; a < n; a++) {
-      const k = b * n + a
-      faceToDir(index, (a / SEGMENTS) * 2 - 1, (b / SEGMENTS) * 2 - 1, dir)
-      dirs.set(dir, k * 3)
-      uvs[k * 2] = a / SEGMENTS
-      uvs[k * 2 + 1] = b / SEGMENTS
-    }
-  }
-  // Wind triangles so they face outward, whichever way this face's axes run.
-  const p = (a: number, b: number) => new THREE.Vector3(...dirs.subarray((b * n + a) * 3, (b * n + a) * 3 + 3))
-  const outward = new THREE.Vector3().crossVectors(p(1, 0).sub(p(0, 0)), p(0, 1).sub(p(0, 0))).dot(p(0, 0)) > 0
-  const indices: number[] = []
-  for (let b = 0; b < SEGMENTS; b++) {
-    for (let a = 0; a < SEGMENTS; a++) {
-      const v00 = b * n + a
-      const v10 = v00 + 1
-      const v01 = v00 + n
-      const v11 = v01 + 1
-      if (outward) indices.push(v00, v10, v11, v00, v11, v01)
-      else indices.push(v00, v11, v10, v00, v01, v11)
-    }
-  }
+  const grid = faceGrids()
+  const dirs = grid.dirs[index]!
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(dirs.slice(), 3))
-  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
-  geometry.setIndex(indices)
+  geometry.setAttribute('uv', grid.uv)
+  geometry.setIndex(grid.index[index]!)
   const pixels = new Uint8Array(TERRAIN_RES * TERRAIN_RES * 4)
   const texture = new THREE.DataTexture(pixels, TERRAIN_RES, TERRAIN_RES, THREE.RGBAFormat)
   texture.colorSpace = THREE.SRGBColorSpace

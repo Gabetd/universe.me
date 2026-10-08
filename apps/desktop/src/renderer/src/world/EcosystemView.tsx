@@ -38,7 +38,7 @@ function biomeShares(model: TerrainModel | undefined): Map<number, number> {
   return new Map([...counts].map(([b, n]) => [b, n / Math.max(1, land)]))
 }
 
-export function EcosystemView({ worldId, model, change }: { worldId: string; model: TerrainModel | undefined; change: unknown }) {
+export function EcosystemView({ worldId, model, change, error }: { worldId: string; model: TerrainModel | undefined; change: unknown; error?: string }) {
   const all = useUi((s) => s.timeline.lifeforms)
   const allLinks = useUi((s) => s.timeline.ecolinks)
   const execute = useUi((s) => s.execute)
@@ -71,7 +71,11 @@ export function EcosystemView({ worldId, model, change }: { worldId: string; mod
           </button>
         </div>
         <p className="muted small">
-          {presentBiomes.length ? `Biomes here: ${presentBiomes.map(([b, share]) => `${biomeName(b)} ${Math.round(share * 100)}%`).join(', ')}.` : 'Measuring biomes…'}
+          {presentBiomes.length
+            ? `Biomes here: ${presentBiomes.map(([b, share]) => `${biomeName(b)} ${Math.round(share * 100)}%`).join(', ')}.`
+            : !model && error
+              ? `Couldn’t measure biomes: ${error}`
+              : 'Measuring biomes…'}
         </p>
         {warnings.length > 0 && (
           <ul className="warning-list" aria-label="Food web warnings">

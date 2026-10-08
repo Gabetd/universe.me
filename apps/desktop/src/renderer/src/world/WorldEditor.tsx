@@ -2,8 +2,10 @@ import { characterAt, eventPlace, findBlueprint, type LatLon, type SpatialNode }
 import { viewingDistance } from './structureLook'
 import { playheadOf } from '../timeline/timelineStore'
 import { BIOMES } from '@universe/procgen'
+import { useCallback, useMemo } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useUi, useWorld } from '../store'
-import { isBrushTool, showsSurface, useEditor, type EditorTool } from './editorStore'
+import { isBrushTool, showsSurface, useEditor, type EditorTool, type EditorView } from './editorStore'
 import { EcosystemView } from './EcosystemView'
 import { EventCanvas } from './EventCanvas'
 import { GlobeView } from './GlobeView'
@@ -14,6 +16,7 @@ import { useTerrain, type SurfaceViewProps } from './useTerrain'
 import { useStructuresAt } from './useStructures'
 import { useCharactersAt } from './useCharacters'
 import { useWorldAtTime } from './useWorldAtTime'
+import { WEBGL } from './webgl'
 import { BlueprintOptions } from '../components/BlueprintOptions'
 
 const TOOLS: { tool: EditorTool; label: string; icon: string; hint: string }[] = [
@@ -37,18 +40,18 @@ const PICK_TOOLS: EditorTool[] = ['locate', 'move', 'travel']
 const GROUND_HINT = 'Drag to move over the ground, right-drag to look around, scroll to zoom. Scroll all the way out to go back up.'
 
 /** WebGL can be missing (old GPUs, remote desktops); the map still works without it. */
-const hasWebGL = (() => {
-  try {
-    return !!document.createElement('canvas').getContext('webgl2')
-  } catch {
-    return false
-  }
-})()
+const hasWebGL = WEBGL.available
+
+/** Picking something in a view selects it. */
+const selectEvent = (eventId: string) => useUi.getState().selectTimeline({ kind: 'event', ids: [eventId] })
+const selectStructure = (id: string) => useUi.getState().selectStructure(id)
+const selectCharacter = (id: string) => useUi.getState().selectCharacter(id)
 
 export function WorldEditor({ world }: { world: SpatialNode }) {
   const { info, regions: allRegions } = useWorld(world.id)
   const { regions, pins, highlightRegionIds, focus } = useWorldAtTime(world.id, allRegions)
-  const { view, tool, radiusKm, strength, biome, exaggeration, placeBlueprintId, ground, set } = useEditor()
+  // Just what's drawn here: the views and the tool options follow the rest of the editor themselves.
+  const { view, tool, ground, set } = useEditor(useShallow((s) => ({ view: s.view, tool: s.tool, ground: s.ground, set: s.set })))
   const structures = useStructuresAt(world.id)
   const characters = useCharactersAt(world.id)
   const { model, change, error, bump, commit } = useTerrain(world.id, world.seed, info)
@@ -58,22 +61,28 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
   const onSurface = showsSurface(activeView)
   const hint = onSurface ? (activeView === 'ground' && tool === 'navigate' ? GROUND_HINT : TOOLS.find((t) => t.tool === tool)?.hint) : undefined
 
-  const viewProps: SurfaceViewProps | undefined = model && {
-    model,
-    change,
-    regions,
-    pins,
-    highlightRegionIds,
-    focus,
-    onPinClick: (eventId) => useUi.getState().selectTimeline({ kind: 'event', ids: [eventId] }),
-    structures,
-    onStructureClick: (id) => useUi.getState().selectStructure(id),
-    characters,
-    onCharacterClick: (id) => useUi.getState().selectCharacter(id),
-    onPointerDown: pointerDown,
-    onPointerMove: pointerMove,
-    onDoubleClick: () => void finishRegion()
-  }
+  const onDoubleClick = useCallback(() => void finishRegion(), [finishRegion])
+  // The same object until something in it changes, so the views don't redraw for nothing.
+  const viewProps = useMemo<SurfaceViewProps | undefined>(
+    () =>
+      model && {
+        model,
+        change,
+        regions,
+        pins,
+        highlightRegionIds,
+        focus,
+        onPinClick: selectEvent,
+        structures,
+        onStructureClick: selectStructure,
+        characters,
+        onCharacterClick: selectCharacter,
+        onPointerDown: pointerDown,
+        onPointerMove: pointerMove,
+        onDoubleClick
+      },
+    [model, change, regions, pins, highlightRegionIds, focus, structures, characters, pointerDown, pointerMove, onDoubleClick]
+  )
 
   return (
     <div className="world-editor">
@@ -117,50 +126,9 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
       </div>
 
       <div className="world-canvas">
-        {(onSurface && (tool === 'place' || isBrushTool(tool))) || activeView === 'globe' ? (
-          // Over the view rather than in the toolbar, so picking a tool never moves the map.
-          <aside className="tool-options" aria-label="Tool options">
-            {onSurface && tool === 'place' && (
-              <select aria-label="Blueprint to place" value={placeBlueprintId} onChange={(e) => set({ placeBlueprintId: e.target.value })}>
-                <BlueprintOptions />
-              </select>
-            )}
-            {onSurface && isBrushTool(tool) && (
-              <>
-                <Slider label="Size" value={radiusKm} min={30} max={2500} step={10} unit="km" onChange={(v) => set({ radiusKm: v })} />
-                {tool !== 'paint' && tool !== 'erase' && (
-                  <Slider
-                    label="Strength"
-                    value={Math.round(strength * 100)}
-                    min={5}
-                    max={100}
-                    step={5}
-                    unit="%"
-                    onChange={(v) => set({ strength: v / 100 })}
-                  />
-                )}
-              </>
-            )}
-            {activeView === 'globe' && (
-              <Slider label="Relief" value={exaggeration} min={1} max={80} step={1} unit="×" onChange={(v) => set({ exaggeration: v })} />
-            )}
-            {onSurface && tool === 'paint' && (
-            <span className="small muted">{BIOMES.find((b) => b.id === biome)?.name}</span>
-          )}
-          {onSurface && tool === 'paint' && (
-              <div className="biome-palette" role="radiogroup" aria-label="Biome">
-                {BIOMES.slice(1).map((b) => (
-                  // Swatches only, named on hover, so the palette stays one slim row over the view.
-                  <button key={b.id} role="radio" aria-checked={biome === b.id} aria-label={b.name} title={b.name} onClick={() => set({ biome: b.id })}>
-                    <span className="swatch" style={{ background: b.color }} />
-                  </button>
-                ))}
-              </div>
-            )}
-          </aside>
-        ) : null}
+        <ToolOptions view={activeView} />
         {activeView === 'species' ? (
-          <EcosystemView worldId={world.id} model={model} change={change} />
+          <EcosystemView worldId={world.id} model={model} change={change} error={error} />
         ) : activeView === 'canvas' ? (
           <EventCanvas worldId={world.id} regions={allRegions} />
         ) : viewProps ? (
@@ -195,6 +163,44 @@ function groundTarget(worldId: string): [LatLon, number?] {
   const event = timelineSelection?.kind === 'event' ? timeline.events.find((e) => e.id === timelineSelection.ids[0]) : undefined
   const place = event && eventPlace(event, regions)
   return [place ?? useEditor.getState().lookingAt ?? { lat: 0, lon: 0 }]
+}
+
+/** Over the view rather than in the toolbar, so picking a tool never moves the map. */
+function ToolOptions({ view }: { view: EditorView }) {
+  const { tool, radiusKm, strength, biome, exaggeration, placeBlueprintId, set } = useEditor(
+    useShallow((s) => ({ tool: s.tool, radiusKm: s.radiusKm, strength: s.strength, biome: s.biome, exaggeration: s.exaggeration, placeBlueprintId: s.placeBlueprintId, set: s.set }))
+  )
+  const onSurface = showsSurface(view)
+  if (!((onSurface && (tool === 'place' || isBrushTool(tool))) || view === 'globe')) return null
+  return (
+    <aside className="tool-options" aria-label="Tool options">
+      {onSurface && tool === 'place' && (
+        <select aria-label="Blueprint to place" value={placeBlueprintId} onChange={(e) => set({ placeBlueprintId: e.target.value })}>
+          <BlueprintOptions />
+        </select>
+      )}
+      {onSurface && isBrushTool(tool) && (
+        <>
+          <Slider label="Size" value={radiusKm} min={30} max={2500} step={10} unit="km" onChange={(v) => set({ radiusKm: v })} />
+          {tool !== 'paint' && tool !== 'erase' && (
+            <Slider label="Strength" value={Math.round(strength * 100)} min={5} max={100} step={5} unit="%" onChange={(v) => set({ strength: v / 100 })} />
+          )}
+        </>
+      )}
+      {view === 'globe' && <Slider label="Relief" value={exaggeration} min={1} max={80} step={1} unit="×" onChange={(v) => set({ exaggeration: v })} />}
+      {onSurface && tool === 'paint' && <span className="small muted">{BIOMES.find((b) => b.id === biome)?.name}</span>}
+      {onSurface && tool === 'paint' && (
+        <div className="biome-palette" role="radiogroup" aria-label="Biome">
+          {BIOMES.slice(1).map((b) => (
+            // Swatches only, named on hover, so the palette stays one slim row over the view.
+            <button key={b.id} role="radio" aria-checked={biome === b.id} aria-label={b.name} title={b.name} onClick={() => set({ biome: b.id })}>
+              <span className="swatch" style={{ background: b.color }} />
+            </button>
+          ))}
+        </div>
+      )}
+    </aside>
+  )
 }
 
 function Slider(props: { label: string; value: number; min: number; max: number; step: number; unit: string; onChange(v: number): void }) {
