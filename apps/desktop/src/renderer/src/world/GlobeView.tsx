@@ -2,12 +2,12 @@ import { CUBE_FACES, TERRAIN_RES, type LatLon } from '@universe/core'
 import { dirToLatLon, faceToDir, latLonToDir, renderFaceTexture, type TerrainModel, type Vec3 } from '@universe/procgen'
 import { Line, Stars } from '@react-three/drei'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { memo, useEffect, useMemo, useRef } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor, type EditorTool } from './editorStore'
-import { pickWith, toolPress } from './pick'
+import { noRaycast, toolPress, usePick } from './pick'
 import type { SurfaceViewProps, TerrainChange } from './useTerrain'
 import { STAGE_COLORS } from './structureLook'
 import { EdgePush, zoomOut } from '../components/zoom'
@@ -116,10 +116,23 @@ function Planet({
 
   // The brush cursor follows the pointer, the tool and the brush size.
   useEffect(() => useEditor.subscribe((s, prev) => (s.tool !== prev.tool || s.radiusKm !== prev.radiusKm) && invalidate()), [invalidate])
-  const moveCursor = (dir: Vec3 | null) => {
-    hover.current = dir
-    if (showsCursor(useEditor.getState().tool)) invalidate()
-  }
+  const moveCursor = useCallback(
+    (dir: Vec3 | null) => {
+      hover.current = dir
+      if (showsCursor(useEditor.getState().tool)) invalidate()
+    },
+    [invalidate]
+  )
+  const press = useMemo(() => toolPress(pointDir, onPointerDown), [onPointerDown])
+  const move = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      const dir = pointDir(e)
+      moveCursor(dir)
+      onPointerMove(dir)
+    },
+    [moveCursor, onPointerMove]
+  )
+  const out = useCallback(() => moveCursor(null), [moveCursor])
 
   useFrame(() => {
     const c = cursor.current
@@ -134,38 +147,29 @@ function Planet({
     c.scale.setScalar(size)
   })
 
-  const toDir = (e: ThreeEvent<PointerEvent | MouseEvent>): Vec3 => {
-    const p = e.point.clone().normalize()
-    return [p.x, p.y, p.z]
-  }
-
   return (
     <group>
       {faces.map((f) => (
         <mesh
           key={f.index}
           geometry={f.geometry}
-          onPointerDown={toolPress(toDir, onPointerDown)}
-          onPointerMove={(e) => {
-            const dir = toDir(e)
-            moveCursor(dir)
-            onPointerMove(dir)
-          }}
-          onPointerOut={() => moveCursor(null)}
+          onPointerDown={press}
+          onPointerMove={move}
+          onPointerOut={out}
           onDoubleClick={onDoubleClick}
         >
           <meshStandardMaterial map={f.texture} roughness={0.95} metalness={0} />
         </mesh>
       ))}
-      <mesh scale={seaRadius} raycast={() => null}>
+      <mesh scale={seaRadius} raycast={noRaycast}>
         <sphereGeometry args={[1, 96, 64]} />
         <meshStandardMaterial color={model.settings.terrain.waterColor} transparent opacity={0.35} roughness={0.25} metalness={0.1} depthWrite={false} />
       </mesh>
-      <mesh scale={1.06} raycast={() => null}>
+      <mesh scale={1.06} raycast={noRaycast}>
         <sphereGeometry args={[1, 64, 32]} />
         <meshBasicMaterial color="#4f8cff" transparent opacity={0.16} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
-      <mesh ref={cursor} visible={false} raycast={() => null}>
+      <mesh ref={cursor} visible={false} raycast={noRaycast}>
         <ringGeometry args={[0.92, 1, 48]} />
         <meshBasicMaterial color="#ffffff" transparent opacity={0.85} depthTest={false} />
       </mesh>
@@ -190,6 +194,12 @@ function Planet({
       ))}
     </group>
   )
+}
+
+/** The direction from the planet's centre to the point under the pointer. */
+function pointDir(e: ThreeEvent<PointerEvent | MouseEvent>): Vec3 {
+  const p = e.point.clone().normalize()
+  return [p.x, p.y, p.z]
 }
 
 /** Brushes and region drawing show where they'd land under the pointer. */
@@ -241,8 +251,9 @@ const DOT = new THREE.SphereGeometry(1, 16, 12)
 /** An event's location: a dot, brighter while the event is happening at the playhead. */
 function Pin({ pin, position, onClick }: { pin: EventPin; position: [number, number, number]; onClick(eventId: string): void }) {
   const size = pin.selected ? 0.014 : pin.active ? 0.01 : 0.007
+  const pick = usePick(onClick, pin.eventId)
   return (
-    <mesh position={position} scale={size} geometry={DOT} onPointerDown={pickWith(() => onClick(pin.eventId))}>
+    <mesh position={position} scale={size} geometry={DOT} onPointerDown={pick}>
       <meshBasicMaterial color={pin.color} transparent opacity={pin.active || pin.selected ? 1 : 0.5} />
     </mesh>
   )
@@ -278,6 +289,7 @@ function SurfacePin({
   onClick(id: string): void
 }) {
   const group = useRef<THREE.Group>(null)
+  const pick = usePick(onClick, id)
   const [x, y, z] = at
   const quaternion = useMemo(() => new THREE.Quaternion().setFromUnitVectors(UP, new THREE.Vector3(x, y, z).normalize()), [x, y, z])
   useFrame(({ camera }) => {
@@ -289,7 +301,7 @@ function SurfacePin({
       ref={group}
       position={at}
       quaternion={quaternion}
-      onPointerDown={pickWith(() => onClick(id))}
+      onPointerDown={pick}
     >
       {figure ? (
         <mesh geometry={FIGURE}>

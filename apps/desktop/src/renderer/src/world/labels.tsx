@@ -1,5 +1,5 @@
 import { useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
@@ -49,22 +49,26 @@ export function LabelLayer({ items, labels }: { items: ViewLabel[]; labels: Map<
   )
 }
 
-/** Moves each HTML label to its point on screen every frame, and draws a frame when the labels change. */
+/** Moves each HTML label to its point on screen: every frame, and when the labels change (which needs no frame). */
 export function LabelProjector({ items, labels }: { items: ViewLabel[]; labels: Map<string, HTMLDivElement> }) {
   const v = useMemo(() => new THREE.Vector3(), [])
-  const invalidate = useThree((s) => s.invalidate)
-  useEffect(() => invalidate(), [items, invalidate])
-  useFrame(({ camera, size }) => {
-    for (const l of items) {
-      const el = labels.get(l.key)
-      if (!el) continue
-      const at = l.at(camera)
-      if (at) v.set(...at).project(camera)
-      // Behind the camera counts as hidden too.
-      const shown = !!at && v.z < 1
-      el.style.display = shown ? '' : 'none'
-      if (shown) el.style.transform = `translate(${((v.x + 1) / 2) * size.width + 10}px, ${((1 - v.y) / 2) * size.height - 9}px)`
-    }
-  })
+  const get = useThree((s) => s.get)
+  const project = useCallback(
+    ({ camera, size }: { camera: THREE.Camera; size: { width: number; height: number } }) => {
+      for (const l of items) {
+        const el = labels.get(l.key)
+        if (!el) continue
+        const at = l.at(camera)
+        if (at) v.set(...at).project(camera)
+        // Behind the camera counts as hidden too.
+        const shown = !!at && v.z < 1
+        el.style.display = shown ? '' : 'none'
+        if (shown) el.style.transform = `translate(${((v.x + 1) / 2) * size.width + 10}px, ${((1 - v.y) / 2) * size.height - 9}px)`
+      }
+    },
+    [items, labels, v]
+  )
+  useEffect(() => project(get()), [project, get])
+  useFrame(project)
   return null
 }

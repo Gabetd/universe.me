@@ -23,7 +23,7 @@ import * as THREE from 'three'
 import { EdgePush } from '../components/zoom'
 import { useUi } from '../store'
 import { useEditor } from './editorStore'
-import { pickWith, toolPress } from './pick'
+import { noRaycast, toolPress, usePick } from './pick'
 import { viewLabels, type ViewLabel } from './labels'
 import { NEAR_ONLY, instanceTint, plantGeometry } from './plants'
 import { blueprintExtent } from './structureLook'
@@ -162,10 +162,10 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
         <GroundStructure key={p.structure.id} placed={p} ground={ground} onClick={props.onStructureClick} />
       ))}
       {props.characters.map((c) => (
-        <Figure key={c.character.id} at={c.place} color={c.character.color} selected={c.selected} ground={ground} onClick={() => props.onCharacterClick(c.character.id)} />
+        <Figure key={c.character.id} id={c.character.id} at={c.place} color={c.character.color} selected={c.selected} ground={ground} onClick={props.onCharacterClick} />
       ))}
       {props.pins.map((p, i) => (
-        <Beacon key={`${p.eventId}:${i}`} at={p} color={p.color} lit={p.active || p.selected} ground={ground} onClick={() => props.onPinClick(p.eventId)} />
+        <Beacon key={`${p.eventId}:${i}`} id={p.eventId} at={p} color={p.color} lit={p.active || p.selected} ground={ground} onClick={props.onPinClick} />
       ))}
     </SurfaceCanvas>
   )
@@ -263,7 +263,7 @@ function Water({ color }: { color: string }) {
     if (mesh.current && controls) mesh.current.position.set(controls.target.x, 0, controls.target.z)
   })
   return (
-    <mesh ref={mesh} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
+    <mesh ref={mesh} rotation={[-Math.PI / 2, 0, 0]} raycast={noRaycast}>
       <planeGeometry args={[DRAW_M * 3, DRAW_M * 3]} />
       <meshStandardMaterial color={color} transparent opacity={0.82} roughness={0.15} metalness={0.1} depthWrite={false} />
     </mesh>
@@ -325,7 +325,7 @@ function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center
 }
 
 /** One chunk, placed in the view's frame from its own (it was built around its south-west corner). */
-function ChunkView({
+const ChunkView = memo(function ChunkView({
   chunk,
   ring,
   ground,
@@ -370,16 +370,20 @@ function ChunkView({
   }, [chunk, level])
   useEffect(() => () => geometry.dispose(), [geometry])
   const local = useMemo(() => footprints.map((f) => ({ x: (f.x - x) / stretch, z: f.z - z, r: f.r })).filter((f) => f.x > -f.r && f.x < CHUNK_M * 1.5 + f.r && f.z < f.r && f.z > -CHUNK_M * 1.5 - f.r), [footprints, x, z, stretch])
-  const dir = (e: ThreeEvent<PointerEvent | MouseEvent>) => {
-    const p = fromLocal(ground.frame, e.point.x, e.point.z)
-    return latLonToDir(p.lat, p.lon)
-  }
+  const { frame } = ground
+  const handlers = useMemo(() => {
+    const dir = (e: ThreeEvent<PointerEvent | MouseEvent>) => {
+      const p = fromLocal(frame, e.point.x, e.point.z)
+      return latLonToDir(p.lat, p.lon)
+    }
+    return { down: toolPress(dir, onPointerDown), move: (e: ThreeEvent<PointerEvent>) => onPointerMove(dir(e)) }
+  }, [frame, onPointerDown, onPointerMove])
   return (
     <group position={[x, 0, z]} scale={[stretch, 1, 1]}>
       <mesh
         geometry={geometry}
-        onPointerDown={toolPress(dir, onPointerDown)}
-        onPointerMove={(e) => onPointerMove(dir(e))}
+        onPointerDown={handlers.down}
+        onPointerMove={handlers.move}
       >
         <meshStandardMaterial vertexColors roughness={1} metalness={0} />
       </mesh>
@@ -390,7 +394,7 @@ function ChunkView({
       )}
     </group>
   )
-}
+})
 
 /** How much of a chunk's plants are drawn, by its distance in chunks from the middle of the view: the far ones are thinned. */
 const RING_SHARE = [1, 0.55, 0.25]
@@ -464,7 +468,7 @@ function PlantInstances({
   }, [kept, list, plant, level, invalidate])
   if (!kept.length) return null
   return (
-    <instancedMesh key={kept.length} ref={mesh} args={[plants.get(plant), undefined, kept.length]} raycast={() => null}>
+    <instancedMesh key={kept.length} ref={mesh} args={[plants.get(plant), undefined, kept.length]} raycast={noRaycast}>
       <meshStandardMaterial vertexColors roughness={0.95} metalness={0} flatShading />
     </instancedMesh>
   )
@@ -477,13 +481,14 @@ function GroundStructure({ placed, ground, onClick }: { placed: PlacedStructure;
   const [x, z] = toLocal(ground.frame, structure)
   // On its levelled pad.
   const y = useMemo(() => ground.standAt(x, z), [ground, x, z])
+  const pick = usePick(onClick, structure.id)
   if (!inView(x, z)) return null
   return (
     <group
       position={[x, y, z]}
       rotation={[0, (-structure.rotation * Math.PI) / 180, 0]}
       scale={structure.scale}
-      onPointerDown={pickWith(() => onClick(structure.id))}
+      onPointerDown={pick}
     >
       <BlueprintParts blueprint={blueprint} condition={state.condition} materials={state.materials} ghost={!state.exists} />
       <SelectionRing inner={(extent / structure.scale) * 0.6} outer={(extent / structure.scale) * 0.6 + Math.max(1, extent * 0.01)} segments={64} lift={0.3} selected={selected} hit={hit} />
@@ -495,14 +500,12 @@ const BODY = new THREE.CapsuleGeometry(0.24, 0.9, 4, 10).translate(0, 0.72, 0)
 const HEAD = new THREE.SphereGeometry(0.17, 12, 10).translate(0, 1.6, 0)
 
 /** A character, life-size: a little over 1.7 m tall. */
-function Figure({ at, color, selected, ground, onClick }: { at: LatLon; color: string; selected: boolean; ground: Ground; onClick(): void }) {
+function Figure({ id, at, color, selected, ground, onClick }: { id: string; at: LatLon; color: string; selected: boolean; ground: Ground; onClick(id: string): void }) {
+  const pick = usePick(onClick, id)
   const [x, z] = toLocal(ground.frame, at)
   if (!inView(x, z)) return null
   return (
-    <group
-      position={[x, ground.standAt(x, z), z]}
-      onPointerDown={pickWith(onClick)}
-    >
+    <group position={[x, ground.standAt(x, z), z]} onPointerDown={pick}>
       <mesh geometry={BODY}>
         <meshStandardMaterial color={color} roughness={0.7} />
       </mesh>
@@ -517,11 +520,12 @@ function Figure({ at, color, selected, ground, onClick }: { at: LatLon; color: s
 const POST = new THREE.CylinderGeometry(0.8, 0.8, 40, 8)
 
 /** Where an event happened: a tall coloured post, seen from afar. */
-function Beacon({ at, color, lit, ground, onClick }: { at: LatLon; color: string; lit: boolean; ground: Ground; onClick(): void }) {
+function Beacon({ id, at, color, lit, ground, onClick }: { id: string; at: LatLon; color: string; lit: boolean; ground: Ground; onClick(id: string): void }) {
+  const pick = usePick(onClick, id)
   const [x, z] = toLocal(ground.frame, at)
   if (!inView(x, z)) return null
   return (
-    <mesh position={[x, ground.standAt(x, z) + 20, z]} geometry={POST} onPointerDown={pickWith(onClick)}>
+    <mesh position={[x, ground.standAt(x, z) + 20, z]} geometry={POST} onPointerDown={pick}>
       <meshBasicMaterial color={color} transparent opacity={lit ? 0.95 : 0.5} />
     </mesh>
   )

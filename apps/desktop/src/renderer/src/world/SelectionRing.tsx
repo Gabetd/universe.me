@@ -1,7 +1,7 @@
+import { noRaycast } from './pick'
+
 /** How strongly a thing the selected event would hit is ringed: fainter for a glancing blow (`hit` 0–1). */
 export const hitOpacity = (hit = 0) => 0.35 + 0.6 * hit
-
-const noRaycast = () => null
 
 /**
  * The ring under a selected thing (white), or under one the selected event
