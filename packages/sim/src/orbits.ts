@@ -80,15 +80,11 @@ export function systemIdOf(nodes: SpatialNode[], nodeId: string): string | undef
   return node?.id
 }
 
-/** Defaults for a body without a stored orbit. */
-function defaultOrbit(body: SpatialNode, index: number, isMoon: boolean, withWorld: boolean): OrbitFields {
-  const r = rng(subSeed(body.seed, 0x0b17))
-  const phaseDeg = r() * 360
-  if (isMoon) return { ...MOON_ORBIT, semiMajorAxisKm: MOON_ORBIT.semiMajorAxisKm * 1.6 ** index, phaseDeg }
-  if (withWorld) return { ...EARTH_ORBIT, semiMajorAxisKm: AU_KM * (1 + 0.12 * index), phaseDeg }
-  // Roughly where planets sit (0.4, 0.7, 1.0, 1.6, 2.8, 5.2… AU): small rocky ones inside, giants outside.
-  const au = index === 0 ? 0.4 : 0.4 + 0.3 * 2 ** (index - 1)
-  const giant = au > 2.5
+/** Where the frost line is, AU: rocky planets form inside it, giants outside. */
+const frostAu = (star: StarInfo) => 2.5 * Math.sqrt(star.luminositySun)
+
+/** A bare planet `au` from its star: small and rocky inside the frost line, a giant outside. */
+function planetAt(r: () => number, au: number, giant: boolean, phaseDeg: number): OrbitFields {
   const massEarth = giant ? 15 + r() * 300 : 0.06 + r() * 1.8
   return {
     semiMajorAxisKm: au * AU_KM,
@@ -100,6 +96,31 @@ function defaultOrbit(body: SpatialNode, index: number, isMoon: boolean, withWor
     massEarth,
     radiusKm: giant ? 6371 * massEarth ** 0.5 * 1.9 : 6371 * massEarth ** 0.28,
     monthNames: null
+  }
+}
+
+/** Defaults for a body without a stored orbit. */
+function defaultOrbit(body: SpatialNode, index: number, isMoon: boolean, withWorld: boolean): OrbitFields {
+  const r = rng(subSeed(body.seed, 0x0b17))
+  const phaseDeg = r() * 360
+  if (isMoon) return { ...MOON_ORBIT, semiMajorAxisKm: MOON_ORBIT.semiMajorAxisKm * 1.6 ** index, phaseDeg }
+  if (withWorld) return { ...EARTH_ORBIT, semiMajorAxisKm: AU_KM * (1 + 0.12 * index), phaseDeg }
+  // Roughly where planets sit (0.4, 0.7, 1.0, 1.6, 2.8, 5.2… AU).
+  const au = index === 0 ? 0.4 : 0.4 + 0.3 * 2 ** (index - 1)
+  return planetAt(r, au, au > 2.5, phaseDeg)
+}
+
+/** A body's orbit around the star (`parent` null) or a planet. */
+function bodyOrbit(fields: OrbitFields, bodyId: string, parent: BodyOrbit | null, star: StarInfo, isDefault: boolean): BodyOrbit {
+  // Two bodies go round their common centre: the period depends on both masses.
+  const centralGM = parent ? GM_EARTH * (parent.massEarth + fields.massEarth) : GM_SUN * star.massSun + GM_EARTH * fields.massEarth
+  return {
+    ...orbitFields(fields),
+    bodyId,
+    parentBodyId: parent?.bodyId ?? null,
+    centralGM,
+    periodS: 2 * Math.PI * Math.sqrt(fields.semiMajorAxisKm ** 3 / centralGM),
+    isDefault
   }
 }
 
@@ -121,25 +142,49 @@ export function systemModel(nodes: SpatialNode[], records: Records, systemId: st
       const withWorld = hasWorld(nodes, body.id)
       const index = parentBody ? children.indexOf(body) : withWorld ? worlds.indexOf(body) : bare.indexOf(body)
       const fields = stored ?? defaultOrbit(body, index, !!parentBody, withWorld)
-      // Two bodies go round their common centre: the period depends on both masses.
-      const centralGM = parentBody ? GM_EARTH * (parentBody.massEarth + fields.massEarth) : GM_SUN * star.massSun + GM_EARTH * fields.massEarth
       const world = nodes.find((n) => n.parentId === body.id && n.kind === 'world')
-      const radiusKm = (world && worldRadiusKm?.get(world.id)) || fields.radiusKm
-      const orbit: BodyOrbit = {
-        ...orbitFields(fields),
-        radiusKm,
-        bodyId: body.id,
-        parentBodyId: parentBody?.bodyId ?? null,
-        centralGM,
-        periodS: 2 * Math.PI * Math.sqrt(fields.semiMajorAxisKm ** 3 / centralGM),
-        isDefault: !stored
-      }
+      const orbit = { ...bodyOrbit(fields, body.id, parentBody, star, !stored), radiusKm: (world && worldRadiusKm?.get(world.id)) || fields.radiusKm }
       bodies.set(body.id, orbit)
       visit(body.id, orbit)
     })
   }
   visit(systemId, null)
   return { systemId, star, bodies }
+}
+
+/** A planet a star system's seed generates, there to be claimed (as a body with the same seed). */
+export interface GeneratedPlanet {
+  seed: number
+  /** "Nyxtes b", "Nyxtes c"…, the way planets of other stars are named. */
+  name: string
+  orbit: BodyOrbit
+}
+
+/**
+ * The planets a star system's seed generates (PLAN.md §5.2): two to eight,
+ * each farther out by about half again, starting closer in round dimmer
+ * stars; rocky inside the frost line, giants outside.
+ */
+export function generatedPlanets(system: SpatialNode, star: StarInfo): GeneratedPlanet[] {
+  const r = rng(subSeed(system.seed, 0x91a7))
+  const count = 2 + Math.floor(r() * 7)
+  // As warm as the Sun's planets are, but never inside the star.
+  const scale = Math.max(0.08, Math.sqrt(star.luminositySun))
+  let au = (0.25 + r() * 0.3) * scale
+  return Array.from({ length: count }, (_, i) => {
+    const seed = subSeed(system.seed, 0x700 + i)
+    const p = rng(subSeed(seed, 0x0b17))
+    const fields = planetAt(p, au, au > frostAu(star), p() * 360)
+    au *= 1.45 + r() * 0.5
+    return { seed, name: `${system.name} ${'bcdefghi'[i]}`, orbit: bodyOrbit(fields, `proc:${seed}`, null, star, true) }
+  })
+}
+
+/** The generated planets nobody has claimed, leaving out any where a planet of the system already goes round. */
+export function unclaimedPlanets(system: SystemModel, systemNode: SpatialNode, nodes: SpatialNode[]): GeneratedPlanet[] {
+  const claimed = new Set(childBodies(nodes, systemNode.id).map((n) => n.seed))
+  const taken = [...system.bodies.values()].filter((o) => !o.parentBodyId).map((o) => o.semiMajorAxisKm)
+  return generatedPlanets(systemNode, system.star).filter((g) => !claimed.has(g.seed) && taken.every((a) => Math.abs(g.orbit.semiMajorAxisKm / a - 1) > 0.2))
 }
 
 /** Just the stored fields of an orbit (what `orbit.set` takes). */

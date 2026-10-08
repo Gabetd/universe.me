@@ -1,6 +1,6 @@
 import { AU_KM, DEFAULT_CALENDAR, orbitId, type Orbit, type SpatialNode } from '@universe/core'
 import { describe, expect, it } from 'vitest'
-import { DAY_S, EARTH_ORBIT, MOON_ORBIT, deriveCalendar, luminosityOf, moonPhase, orbitPosition, skyEvents, starInfo, systemModel, worldCalendar, worldClimate } from './index'
+import { DAY_S, EARTH_ORBIT, MOON_ORBIT, deriveCalendar, generatedPlanets, luminosityOf, moonPhase, orbitPosition, skyEvents, starInfo, systemModel, unclaimedPlanets, worldCalendar, worldClimate } from './index'
 
 const node = (id: string, parentId: string | null, kind: SpatialNode['kind']): SpatialNode => ({
   id, parentId, kind, name: id, seed: 7, position: { x: 0, y: 0, z: 0 }, notes: '', tags: [], createdAt: '', updatedAt: '', deletedAt: null
@@ -38,6 +38,34 @@ describe('orbits', () => {
     const far = Math.hypot(...orbitPosition(o, o.periodS / 2))
     expect(near).toBeCloseTo(o.semiMajorAxisKm * 0.8, -2)
     expect(far).toBeCloseTo(o.semiMajorAxisKm * 1.2, -2)
+  })
+
+  it('a system’s seed generates its planets: the same each time, spaced out, closer in round dimmer stars', () => {
+    const sys = nodes[0]!
+    const planets = generatedPlanets(sys, starInfo())
+    expect(generatedPlanets(sys, starInfo())).toEqual(planets)
+    expect(planets.length).toBeGreaterThanOrEqual(2)
+    expect(planets[0]!.name).toBe('sys b')
+    const axes = planets.map((p) => p.orbit.semiMajorAxisKm)
+    axes.slice(1).forEach((a, i) => expect(a / axes[i]!).toBeGreaterThan(1.4))
+    // Giants only beyond the frost line.
+    for (const p of planets) if (p.orbit.massEarth > 10) expect(p.orbit.semiMajorAxisKm / AU_KM).toBeGreaterThan(2.5)
+    const dim = generatedPlanets(sys, starInfo({ massSun: 0.4, luminositySun: null }))
+    expect(dim[0]!.orbit.semiMajorAxisKm).toBeLessThan(axes[0]!)
+    // A year goes with the distance (Kepler's third law): 1 AU round the Sun is about 365 days.
+    const p = planets[0]!.orbit
+    expect(p.periodS / DAY_S).toBeCloseTo(365.25 * (p.semiMajorAxisKm / AU_KM) ** 1.5, -1)
+  })
+
+  it('claimed planets, and orbits a planet already takes, leave the generated ones', () => {
+    const s = system()
+    const sys = nodes[0]!
+    const all = generatedPlanets(sys, s.star)
+    const left = unclaimedPlanets(s, sys, nodes)
+    for (const g of left) for (const o of s.bodies.values()) if (!o.parentBodyId) expect(Math.abs(g.orbit.semiMajorAxisKm / o.semiMajorAxisKm - 1)).toBeGreaterThan(0.2)
+    const claim = { ...node('claimed', 'sys', 'body'), seed: left[0]!.seed }
+    expect(unclaimedPlanets(systemModel([...nodes, claim], { stars: [], orbits: [earthOrbit] }, 'sys'), sys, [...nodes, claim]).map((g) => g.seed)).not.toContain(left[0]!.seed)
+    expect(all.length).toBeGreaterThanOrEqual(left.length)
   })
 })
 
