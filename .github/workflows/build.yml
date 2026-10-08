@@ -8,6 +8,10 @@ on:
     branches: [main, 'claude/**']
   workflow_dispatch:
 
+# Read-only unless a job says otherwise (only publishing writes).
+permissions:
+  contents: read
+
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
@@ -21,6 +25,8 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
       - run: pnpm lint
       - run: pnpm typecheck
@@ -41,6 +47,8 @@ jobs:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
         with:
           electron: packaging
@@ -88,6 +96,8 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
       - uses: actions/download-artifact@v4
         with:
@@ -112,10 +122,15 @@ jobs:
     timeout-minutes: 25
     permissions:
       contents: write
+    # Every branch publishes to the one release: one at a time, so none deletes another's files mid-upload.
+    concurrency:
+      group: publish-latest-build
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:
           sparse-checkout: scripts
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           pattern: universe-*

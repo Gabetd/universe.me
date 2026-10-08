@@ -3,8 +3,20 @@
 # Enable once per clone: git config core.hooksPath .githooks
 # Skip in an emergency: git push --no-verify
 # A commit that already passed a full local run (pnpm ci:local) isn't run again.
-if [[ -e "${XDG_CACHE_HOME:-$HOME/.cache}/universe-ci/passed-$(git rev-parse HEAD)" ]]; then
-  echo "Local pipeline already passed for $(git rev-parse --short HEAD)."
+# Each commit being pushed (git gives them on stdin) is checked, not just HEAD.
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/universe-ci"
+head=$(git rev-parse HEAD)
+run=0
+while read -r _local_ref sha _remote_ref _remote_sha; do
+  [[ $sha =~ ^0+$ || -e "$cache/passed-$sha" ]] && continue # deleted, or already passed
+  if [[ $sha != "$head" ]]; then
+    echo "${sha:0:7} hasn't passed pnpm ci:local, and the run tests HEAD: check it out and push from there." >&2
+    exit 1
+  fi
+  run=1
+done
+if [[ $run == 0 ]]; then
+  echo "Local pipeline already passed for what's being pushed."
   exit 0
 fi
 exec bash "$(git rev-parse --show-toplevel)/scripts/ci-local.sh"

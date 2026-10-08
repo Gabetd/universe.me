@@ -12,10 +12,10 @@ import { launch, menu, shot, SLOW } from './helpers'
  * Linux swaps an AppImage and restarts it (the stand-in leaves a marker);
  * Windows swaps the portable exe from a script once the app has quit.
  */
-const PLATFORMS: Partial<Record<NodeJS.Platform, { kind: string; file: string; body: () => Buffer; env: string }>> = {
-  linux: { kind: 'linux-appimage', file: 'Universe.AppImage', body: () => Buffer.from('#!/bin/sh\necho started > "$UNIVERSE_E2E_MARKER"\n'), env: 'APPIMAGE' },
+const PLATFORMS: Partial<Record<NodeJS.Platform, { kind: string; file: string; served: string; body: () => Buffer; env: string }>> = {
+  linux: { kind: 'linux-appimage', file: 'Universe.AppImage', served: 'Universe-99.0.0-linux-x86_64.AppImage', body: () => Buffer.from('#!/bin/sh\necho started > "$UNIVERSE_E2E_MARKER"\n'), env: 'APPIMAGE' },
   // Any small real program will do as the new exe; it's started after the swap.
-  win32: { kind: 'win-portable', file: 'Universe.exe', body: () => readFileSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'whoami.exe')), env: 'PORTABLE_EXECUTABLE_FILE' }
+  win32: { kind: 'win-portable', file: 'Universe.exe', served: 'Universe-99.0.0-windows-portable.exe', body: () => readFileSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'whoami.exe')), env: 'PORTABLE_EXECUTABLE_FILE' }
 }
 const platform = PLATFORMS[process.platform]
 
@@ -31,11 +31,11 @@ test.beforeAll(async () => {
   const manifest = {
     version: '99.0.0',
     commit: 'e2e',
-    files: { [`${platform.kind}-${process.arch}`]: { name: 'Universe-99.0.0.bin', sha512: createHash('sha512').update(body).digest('base64'), size: body.length } }
+    files: { [`${platform.kind}-${process.arch}`]: { name: platform.served, sha512: createHash('sha512').update(body).digest('base64'), size: body.length } }
   }
   server = createServer((req, res) => {
     if (req.url === '/update.json') res.end(JSON.stringify(manifest))
-    else if (req.url === '/Universe-99.0.0.bin') res.end(body)
+    else if (req.url === `/${platform.served}`) res.end(body)
     else res.writeHead(404).end()
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))

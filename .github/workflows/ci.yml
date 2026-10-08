@@ -8,6 +8,10 @@ on:
     branches-ignore: [main, 'claude/**']
   pull_request:
 
+# Read-only unless a job says otherwise (only publishing writes).
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -19,6 +23,8 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
         with:
           electron: binary

@@ -20,6 +20,8 @@ QUICK=0
 ROOT=$(git rev-parse --show-toplevel)
 CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/universe-ci
 ACTIONLINT_VERSION=1.7.7
+# From the release's actionlint_1.7.7_checksums.txt: the download is checked before it's run.
+ACTIONLINT_SHA256=023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
 VERSION=0.1.9999
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/universe-ci.XXXXXX")
 START=$SECONDS
@@ -69,13 +71,17 @@ fi
 step "Workflow files (actionlint $ACTIONLINT_VERSION)"
 if [[ ! -x "$CACHE/actionlint-$ACTIONLINT_VERSION" ]]; then
   mkdir -p "$CACHE"
-  curl -sSfL "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" | tar -xz -C "$WORK" actionlint
+  curl -sSfL -o "$WORK/actionlint.tar.gz" "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+  echo "$ACTIONLINT_SHA256  $WORK/actionlint.tar.gz" | sha256sum -c --quiet - || fail "actionlint download doesn't match its checksum"
+  tar -xzf "$WORK/actionlint.tar.gz" -C "$WORK" actionlint
   mv "$WORK/actionlint" "$CACHE/actionlint-$ACTIONLINT_VERSION"
 fi
 (cd "$ROOT" && "$CACHE/actionlint-$ACTIONLINT_VERSION" -shellcheck= .github/workflows/*.yml) || fail "workflow files have errors"
 
-step "Clean checkout of $(git -C "$ROOT" rev-parse --short HEAD)"
-git -C "$ROOT" worktree add --detach "$WORK/repo" HEAD >/dev/null
+# The commit tested, fixed now: a commit made while this runs isn't the one that passed.
+TESTED=$(git -C "$ROOT" rev-parse HEAD)
+step "Clean checkout of ${TESTED:0:7}"
+git -C "$ROOT" worktree add --detach "$WORK/repo" "$TESTED" >/dev/null
 cd "$WORK/repo"
 export CI=true
 # GitHub's Ubuntu runners have a desktop browser behind xdg-open; one that a
@@ -110,5 +116,5 @@ if [[ $QUICK == 0 ]]; then
 fi
 
 # Remembered so the pre-push hook doesn't run a full pass again for this commit.
-[[ $QUICK == 0 ]] && touch "$CACHE/passed-$(git -C "$ROOT" rev-parse HEAD)"
+[[ $QUICK == 0 ]] && touch "$CACHE/passed-$TESTED"
 printf '\n\033[1;32m✔ Local pipeline passed in %ss\033[0m\n' $((SECONDS - START))

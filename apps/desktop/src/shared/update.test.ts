@@ -18,4 +18,11 @@ describe('pickUpdate', () => {
     expect(pickUpdate(manifest, '0.1.5', 'mac-zip', 'arm64')).toBeUndefined()
     expect(pickUpdate(manifest, '0.1.4', 'mac-zip', 'x64')).toBeUndefined()
   })
+
+  it('takes only a release installer’s name: never a path, another address or something a script would read', () => {
+    const named = (name: string) => pickUpdate({ ...manifest, files: { 'mac-zip-arm64': { ...file, name } } }, '0.1.4', 'mac-zip', 'arm64')
+    for (const ok of ['Universe-0.1.5-mac-arm64.zip', 'Universe-0.1.5-windows-portable.exe', 'Universe-0.1.5-linux-x86_64.AppImage', 'Universe-0.1.5-linux-amd64.deb']) expect(named(ok)).toBeDefined()
+    for (const bad of ['../../evil.zip', 'https://evil.example/Universe-0.1.5-mac-arm64.zip', 'Universe-0.1.5-x" & calc & ".exe', 'Universe-0.1.5-mac-arm64.zip\\..\\x', 'evil.zip', 'Universe-0.1.5-mac-arm64.sh'])
+      expect(named(bad), bad).toBeUndefined()
+  })
 })

@@ -42,8 +42,17 @@ export function compareVersions(a: string, b: string): number {
   return 0
 }
 
-/** The file this install should update from, if the manifest is newer and has one. */
+/**
+ * What an update file may be called: one of the release's own installers. The
+ * name becomes a download address next to the manifest, a file in a temp
+ * folder and, on Windows, part of a script, so it can't hold a slash, a colon,
+ * quotes or anything a shell reads.
+ */
+const FILE_NAME = /^Universe-\d+\.\d+\.\d+-[A-Za-z0-9_-]+\.(?:exe|zip|AppImage|deb)$/
+
+/** The file this install should update from, if the manifest is newer and has one with a name it can trust. */
 export function pickUpdate(manifest: UpdateManifest, current: string, kind: InstallKind, arch: string): UpdateFile | undefined {
   if (compareVersions(manifest.version, current) <= 0) return undefined
-  return manifest.files[`${kind}-${arch}`]
+  const file = manifest.files[`${kind}-${arch}`]
+  return file && FILE_NAME.test(file.name) ? file : undefined
 }
