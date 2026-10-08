@@ -1,4 +1,4 @@
-import { findBlueprint, type LatLon } from '@universe/core'
+import { findBlueprint, insidePolygon, type LatLon } from '@universe/core'
 import {
   CHUNK_M,
   CHUNK_SEGMENTS,
@@ -30,6 +30,9 @@ import { blueprintExtent } from './structureLook'
 import { BlueprintParts } from './StructureMesh'
 import { SelectionRing } from './SelectionRing'
 import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
+import { LandTint, useThemeName } from './ThemeTint'
+import { useViewTheme } from './useThemeLook'
+import { multiply } from './viewTheme'
 import { useGroundChunks } from './useGroundChunks'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
@@ -37,6 +40,10 @@ import type { EventPin } from './useWorldAtTime'
 import type { SurfaceViewProps } from './useTerrain'
 
 const SKY = '#a9cdea'
+/** Where the fog starts and where it hides everything, in metres, in the usual air. */
+const FOG = [1400, 3400] as const
+/** The light from the sky and from the ground under it. */
+const HEMISPHERE = ['#dce9f7', '#4a4536'] as const
 /** Chunks drawn around the middle of the view in each direction: a 5 × 5 km square. */
 const RING = 2
 /** Farthest the camera pulls back; scrolling out past it returns to the globe. */
@@ -84,7 +91,7 @@ interface Pad {
  * by scrolling all the way in on the globe (or the Ground button); scrolling
  * all the way out goes back up.
  */
-export const GroundView = memo(function GroundView(props: SurfaceViewProps & { seed: number; worldId: string }) {
+export const GroundView = memo(function GroundView(props: SurfaceViewProps & { seed: number }) {
   const start = useEditor((s) => s.ground) ?? { lat: 0, lon: 0 }
   const [origin, setOrigin] = useState<LatLon>(start)
   const [center, setCenter] = useState<LatLon>(start)
@@ -137,8 +144,10 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` stands for the terrain heights
   }, [origin, radiusKm, seed, model, change, sites])
 
-  const { structures, characters, pins } = props
+  const { structures, characters, pins, regions, worldId } = props
   const items = useMemo(() => groundLabels(structures, characters, pins, ground), [structures, characters, pins, ground])
+  // The regions the middle of the view lies in: their own themes show here.
+  const here = useMemo(() => regions.flatMap((r) => (insidePolygon(center, r.points) ? [r.id] : [])), [regions, center])
 
   return (
     <SurfaceCanvas
@@ -152,13 +161,10 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
       wrap={{ 'data-chunks': loaded }}
       overlay={<GroundReadout ground={ground} error={failed} />}
     >
-      <color attach="background" args={[SKY]} />
-      <fog attach="fog" args={[SKY, 1400, 3400]} />
-      <hemisphereLight args={['#dce9f7', '#4a4536', 0.75]} />
-      <directionalLight position={[700, 650, 250]} intensity={1.6} />
+      <GroundLight worldId={worldId} regionIds={here} />
       <Rig ground={ground} onRebase={setOrigin} onCenter={setCenter} />
-      <Chunks {...props} ground={ground} center={center} onLoaded={setLoaded} onFailed={setFailed} />
-      <Water color={model.settings.terrain.waterColor} />
+      <Chunks {...props} ground={ground} center={center} regionIds={here} onLoaded={setLoaded} onFailed={setFailed} />
+      <Water worldId={worldId} regionIds={here} color={model.settings.terrain.waterColor} />
       {props.structures.map((p) => (
         <GroundStructure key={p.structure.id} placed={p} ground={ground} onClick={props.onStructureClick} />
       ))}
@@ -256,8 +262,27 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
   return null
 }
 
-/** The sea: a sheet at sea level that follows the view. */
-function Water({ color }: { color: string }) {
+/**
+ * The sky, its haze and the light over the ground, as the theme in force at
+ * the playhead has them where the view is (a region's own themes in it).
+ */
+function GroundLight({ worldId, regionIds }: { worldId: string; regionIds: readonly string[] }) {
+  const theme = useViewTheme(worldId, regionIds)
+  useThemeName(theme.name)
+  const sky = theme.sky(SKY)
+  return (
+    <>
+      <color attach="background" args={[sky]} />
+      <fog attach="fog" args={[sky, FOG[0] / theme.haze, FOG[1] / theme.haze]} />
+      <hemisphereLight args={[multiply(HEMISPHERE[0], theme.ambient), HEMISPHERE[1], 0.75 * theme.ambientScale]} />
+      <directionalLight position={[700, 650, 250]} color={theme.sun} intensity={1.6 * theme.sunScale} />
+    </>
+  )
+}
+
+/** The sea: a sheet at sea level that follows the view, in the world's colour as the theme in force has it. */
+function Water({ worldId, regionIds, color }: { worldId: string; regionIds: readonly string[]; color: string }) {
+  const { water } = useViewTheme(worldId, regionIds)
   const mesh = useRef<THREE.Mesh>(null)
   const controls = useThree((s) => s.controls) as unknown as { target: THREE.Vector3 } | null
   useFrame(() => {
@@ -266,7 +291,7 @@ function Water({ color }: { color: string }) {
   return (
     <mesh ref={mesh} rotation={[-Math.PI / 2, 0, 0]} raycast={noRaycast}>
       <planeGeometry args={[DRAW_M * 3, DRAW_M * 3]} />
-      <meshStandardMaterial color={color} transparent opacity={0.82} roughness={0.15} metalness={0.1} depthWrite={false} />
+      <meshStandardMaterial color={water(color)} transparent opacity={0.82} roughness={0.15} metalness={0.1} depthWrite={false} />
     </mesh>
   )
 }
@@ -278,7 +303,9 @@ interface Footprint {
   r: number
 }
 
-function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; onLoaded(count: number): void; onFailed(error: string | undefined): void }) {
+function Chunks(
+  props: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; regionIds: readonly string[]; onLoaded(count: number): void; onFailed(error: string | undefined): void }
+) {
   const { model, change, seed, ground, center, structures, onLoaded, onFailed } = props
   const radiusKm = model.settings.radiusKm
   const wanted = useMemo(() => chunksAround(center, radiusKm, RING), [center, radiusKm])
@@ -290,6 +317,9 @@ function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center
   const vegetationColor = model.settings.terrain.vegetationColor
   const plants = useMemo(() => new PlantGeometries(new THREE.Color(vegetationColor)), [vegetationColor])
   useEffect(() => () => plants.dispose(), [plants])
+  // One material for every chunk's ground (its colours are the chunk's), tinted by the theme in force.
+  const land = useMemo(() => [new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 })], [])
+  useEffect(() => () => land[0]!.dispose(), [land])
   // By value, so plants are laid out again only when a footprint changes, not whenever the structures do (renamed, or the playhead moved).
   const footprints = useByValue(
     useMemo<Footprint[]>(
@@ -315,6 +345,7 @@ function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center
             chunk={chunk}
             ring={ring}
             ground={ground}
+            material={land[0]!}
             plants={plants}
             footprints={footprints}
             onPointerDown={props.onPointerDown}
@@ -322,6 +353,7 @@ function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center
           />
         )
       })}
+      <LandTint worldId={props.worldId} regionIds={props.regionIds} materials={land} />
     </>
   )
 }
@@ -331,6 +363,7 @@ const ChunkView = memo(function ChunkView({
   chunk,
   ring,
   ground,
+  material,
   plants,
   footprints,
   onPointerDown,
@@ -339,6 +372,7 @@ const ChunkView = memo(function ChunkView({
   chunk: GroundChunk
   ring: number
   ground: Ground
+  material: THREE.Material
   plants: PlantGeometries
   footprints: Footprint[]
   onPointerDown: SurfaceViewProps['onPointerDown']
@@ -382,13 +416,7 @@ const ChunkView = memo(function ChunkView({
   }, [frame, onPointerDown, onPointerMove])
   return (
     <group position={[x, 0, z]} scale={[stretch, 1, 1]}>
-      <mesh
-        geometry={geometry}
-        onPointerDown={handlers.down}
-        onPointerMove={handlers.move}
-      >
-        <meshStandardMaterial vertexColors roughness={1} metalness={0} />
-      </mesh>
+      <mesh geometry={geometry} material={material} onPointerDown={handlers.down} onPointerMove={handlers.move} />
       {Object.entries(chunk.plants).map(([plant, list]) =>
         ring > 0 && NEAR_ONLY.includes(plant as Plant) ? null : (
           <PlantInstances key={plant} plant={plant as Plant} list={list} share={RING_SHARE[ring] ?? 0} plants={plants} footprints={local} level={level} />

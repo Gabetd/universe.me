@@ -2,6 +2,7 @@ import { themeAt, type Theme, type ThemeLook, type ThemeSpan } from '@universe/c
 import { useMemo } from 'react'
 import { useUi } from '../store'
 import { usePlayhead } from '../timeline/timelineStore'
+import { viewTheme, type ViewTheme } from './viewTheme'
 
 const NO_SPANS: ThemeSpan[] = []
 
@@ -25,4 +26,26 @@ export function useThemeLook(worldId: string | undefined, regionIds?: readonly s
   const key = regionIds?.join(',') ?? ''
   // eslint-disable-next-line react-hooks/exhaustive-deps -- regions by value, so a new array with the same ids doesn't recompute
   return useMemo(() => (spans.length ? themeAt(spans, themes, t, regionIds) : undefined), [spans, themes, t, key])
+}
+
+/**
+ * What the theme in force does to a view in each of `regionIds` that has
+ * spans of its own; the others look like the world around them. Re-renders
+ * with the playhead, like `useThemeLook`.
+ */
+export function useRegionViewThemes(worldId: string | undefined, regionIds: readonly string[]): Map<string, ViewTheme> {
+  const { spans, themes } = useWorldThemes(worldId)
+  const t = usePlayhead(worldId)
+  const key = regionIds.join(',')
+  return useMemo(() => {
+    const own = new Set(spans.flatMap((s) => (s.regionId ? [s.regionId] : [])))
+    return new Map(regionIds.filter((id) => own.has(id)).map((id) => [id, viewTheme(themeAt(spans, themes, t, [id]))]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- regions by value, as in useThemeLook
+  }, [spans, themes, t, key])
+}
+
+/** What the theme in force does to a view (see `viewTheme`). Re-renders with the playhead, like `useThemeLook`. */
+export function useViewTheme(worldId: string | undefined, regionIds?: readonly string[]): ViewTheme {
+  const look = useThemeLook(worldId, regionIds)
+  return useMemo(() => viewTheme(look), [look])
 }

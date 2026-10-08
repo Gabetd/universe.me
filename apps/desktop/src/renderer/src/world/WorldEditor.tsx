@@ -66,6 +66,7 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
   const viewProps = useMemo<SurfaceViewProps | undefined>(
     () =>
       model && {
+        worldId: world.id,
         model,
         change,
         regions,
@@ -81,7 +82,7 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
         onPointerMove: pointerMove,
         onDoubleClick
       },
-    [model, change, regions, pins, highlightRegionIds, focus, structures, characters, pointerDown, pointerMove, onDoubleClick]
+    [world.id, model, change, regions, pins, highlightRegionIds, focus, structures, characters, pointerDown, pointerMove, onDoubleClick]
   )
 
   return (
@@ -136,7 +137,7 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
             <GlobeView {...viewProps} />
           ) : activeView === 'ground' ? (
             // A new spot to go down to opens a fresh view there.
-            <GroundView key={ground ? `${ground.lat},${ground.lon}` : ''} {...viewProps} seed={world.seed} worldId={world.id} />
+            <GroundView key={ground ? `${ground.lat},${ground.lon}` : ''} {...viewProps} seed={world.seed} />
           ) : (
             <MapView {...viewProps} />
           )

@@ -14,6 +14,8 @@ import { EdgePush, zoomOut } from '../components/zoom'
 import { viewLabels, type ViewLabel } from './labels'
 import { SelectionRing } from './SelectionRing'
 import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
+import { LandTint, useThemeName } from './ThemeTint'
+import { useViewTheme } from './useThemeLook'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
@@ -57,8 +59,7 @@ export const GlobeView = memo(function GlobeView(props: SurfaceViewProps) {
   return (
     <SurfaceCanvas testId="globe" camera={CAMERA} navigate={THREE.MOUSE.ROTATE} controls={CONTROLS} labels={items}>
       <color attach="background" args={[SPACE_BG]} />
-      <ambientLight intensity={0.45} />
-      <directionalLight position={[4, 2, 3]} intensity={2.2} />
+      <GlobeLight worldId={props.worldId} />
       <Stars radius={80} depth={40} count={4000} factor={3} fade speed={0} />
       <Planet {...props} />
       <FocusOn focus={props.focus} />
@@ -68,7 +69,45 @@ export const GlobeView = memo(function GlobeView(props: SurfaceViewProps) {
   )
 })
 
+/** The colour of the planet's air, seen around its edge, before any theme. */
+const HALO = '#4f8cff'
+
+/** The sunlight on the globe and the glow of its air, as the theme in force at the playhead has them. */
+function GlobeLight({ worldId }: { worldId: string }) {
+  const theme = useViewTheme(worldId)
+  useThemeName(theme.name)
+  return (
+    <>
+      <ambientLight color={theme.ambient} intensity={0.45 * theme.ambientScale} />
+      <directionalLight position={[4, 2, 3]} color={theme.sun} intensity={2.2 * theme.sunScale} />
+      <mesh scale={1.06} raycast={noRaycast}>
+        <sphereGeometry args={[1, 64, 32]} />
+        <meshBasicMaterial
+          color={theme.sky(HALO)}
+          transparent
+          opacity={Math.min(0.4, 0.16 * theme.haze)}
+          side={THREE.BackSide}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+    </>
+  )
+}
+
+/** The sea, in the world's colour as the theme in force has it. */
+function Sea({ worldId, radius, color }: { worldId: string; radius: number; color: string }) {
+  const { water } = useViewTheme(worldId)
+  return (
+    <mesh scale={radius} raycast={noRaycast}>
+      <sphereGeometry args={[1, 96, 64]} />
+      <meshStandardMaterial color={water(color)} transparent opacity={0.35} roughness={0.25} metalness={0.1} depthWrite={false} />
+    </mesh>
+  )
+}
+
 function Planet({
+  worldId,
   model,
   change,
   regions,
@@ -110,7 +149,10 @@ function Planet({
     seen.current.shaped = change
   }, [change, model, scale, invalidate])
 
+  // One material a face, tinted together by the theme in force.
+  const land = useMemo(() => faces.map((f) => new THREE.MeshStandardMaterial({ map: f.texture, roughness: 0.95, metalness: 0 })), [faces])
   useEffect(() => () => faces.forEach((f) => (f.geometry.dispose(), f.texture.dispose())), [faces])
+  useEffect(() => () => land.forEach((m) => m.dispose()), [land])
   // The terrain is in once the effects above have run.
   useReadyWhenDrawn(true)
 
@@ -149,26 +191,19 @@ function Planet({
 
   return (
     <group>
-      {faces.map((f) => (
+      {faces.map((f, i) => (
         <mesh
           key={f.index}
           geometry={f.geometry}
+          material={land[i]}
           onPointerDown={press}
           onPointerMove={move}
           onPointerOut={out}
           onDoubleClick={onDoubleClick}
-        >
-          <meshStandardMaterial map={f.texture} roughness={0.95} metalness={0} />
-        </mesh>
+        />
       ))}
-      <mesh scale={seaRadius} raycast={noRaycast}>
-        <sphereGeometry args={[1, 96, 64]} />
-        <meshStandardMaterial color={model.settings.terrain.waterColor} transparent opacity={0.35} roughness={0.25} metalness={0.1} depthWrite={false} />
-      </mesh>
-      <mesh scale={1.06} raycast={noRaycast}>
-        <sphereGeometry args={[1, 64, 32]} />
-        <meshBasicMaterial color="#4f8cff" transparent opacity={0.16} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} />
-      </mesh>
+      <LandTint worldId={worldId} materials={land} />
+      <Sea worldId={worldId} radius={seaRadius} color={model.settings.terrain.waterColor} />
       <mesh ref={cursor} visible={false} raycast={noRaycast}>
         <ringGeometry args={[0.92, 1, 48]} />
         <meshBasicMaterial color="#ffffff" transparent opacity={0.85} depthTest={false} />

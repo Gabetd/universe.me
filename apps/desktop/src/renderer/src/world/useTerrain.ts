@@ -18,6 +18,7 @@ export interface TerrainChange {
 
 /** What the globe and the map views get from the world editor. */
 export interface SurfaceViewProps {
+  worldId: string
   model: TerrainModel
   change: TerrainChange
   /** Regions as of the playhead. */

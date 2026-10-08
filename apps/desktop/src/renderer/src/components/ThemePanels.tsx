@@ -179,7 +179,7 @@ export function ThemeSpanPanel({ span }: { span: ThemeSpan }) {
       </div>
       <label className="field">
         <span>Where</span>
-        <select value={span.regionId ?? ''} onChange={(e) => update({ regionId: e.target.value || null })}>
+        <select aria-label="Where" value={span.regionId ?? ''} onChange={(e) => update({ regionId: e.target.value || null })}>
           <option value="">The whole world</option>
           {regions
             .filter((r) => r.worldId === span.ownerId)

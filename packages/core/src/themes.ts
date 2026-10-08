@@ -169,7 +169,7 @@ export interface ThemeLook {
 }
 
 export const hexToRgb01 = (hex: string): Rgb => [parseInt(hex.slice(1, 3), 16) / 255, parseInt(hex.slice(3, 5), 16) / 255, parseInt(hex.slice(5, 7), 16) / 255]
-export const rgb01ToHex = (c: Rgb): string => `#${c.map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('')}`
+export const rgb01ToHex = (c: Readonly<Rgb>): string => `#${c.map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('')}`
 
 /**
  * The themes in force on a world at `t` (its spans, the theme library), in

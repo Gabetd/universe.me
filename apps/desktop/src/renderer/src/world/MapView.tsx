@@ -8,6 +8,7 @@ import { isBrushTool, useEditor } from './editorStore'
 import { showsLabel } from './labels'
 import { hitOpacity } from './SelectionRing'
 import { STAGE_COLORS } from './structureLook'
+import { useRegionViewThemes, useViewTheme } from './useThemeLook'
 import type { SurfaceViewProps, TerrainChange } from './useTerrain'
 
 const W = 1024
@@ -80,7 +81,22 @@ function drawMapImage(model: TerrainModel, change: TerrainChange, seen: TerrainC
   map.drawn = change
 }
 
+/** Multiplies the map image at `shift` by `colour`: the theme's light and land. */
+function shadeMap(c: CanvasRenderingContext2D, shift: number, colour: string): void {
+  c.globalCompositeOperation = 'multiply'
+  c.fillStyle = colour
+  c.fillRect(shift, 0, W, H)
+  c.globalCompositeOperation = 'source-over'
+}
+
+/** How the map is shaded by the themes in force: all over, and inside the regions with themes of their own. */
+interface MapShades {
+  world: string | undefined
+  regions: Map<string, string | undefined>
+}
+
 export const MapView = memo(function MapView({
+  worldId,
   model,
   change,
   regions,
@@ -108,6 +124,16 @@ export const MapView = memo(function MapView({
   const [ready, setReady] = useState(false)
   const selectedRegionId = useUi((s) => s.selectedRegionId)
   const draft = useEditor((s) => s.draft)
+  const theme = useViewTheme(worldId)
+  const regionIds = useMemo(() => regions.map((r) => r.id), [regions])
+  const regionThemes = useRegionViewThemes(worldId, regionIds)
+  const shades = useRef<MapShades>({ world: undefined, regions: new Map() })
+  const shadeKey = [theme.shade, ...[...regionThemes].map(([id, t]) => `${id}:${t.shade}`)].join(',')
+  useEffect(() => {
+    shades.current = { world: theme.shade, regions: new Map([...regionThemes].map(([id, t]) => [id, t.shade])) }
+    dirty.current = true
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `shadeKey` stands for the shades
+  }, [shadeKey])
 
   useEffect(() => {
     drawMapImage(model, change, seen.current)
@@ -164,9 +190,27 @@ export const MapView = memo(function MapView({
       // Draw the map and its neighbors so panning sideways wraps around the planet.
       for (const shift of [-W, 0, W]) {
         ctx.drawImage(terrain, shift, 0)
+        drawShades(ctx, shift)
         drawOverlays(ctx, shift, v.scale)
       }
       if (!drawn) setReady((drawn = true))
+    }
+
+    /** The themes in force over the map, then inside each region whose own themes differ: its land drawn again, shaded its way. */
+    const drawShades = (c: CanvasRenderingContext2D, shift: number) => {
+      const { world, regions: own } = shades.current
+      if (world) shadeMap(c, shift, world)
+      for (const region of regions) {
+        const shade = own.get(region.id)
+        if (!own.has(region.id) || shade === world) continue
+        c.save()
+        tracePath(c, polygon(region.points), shift)
+        c.closePath()
+        c.clip()
+        c.drawImage(terrain, shift, 0)
+        if (shade) shadeMap(c, shift, shade)
+        c.restore()
+      }
     }
 
     const drawOverlays = (c: CanvasRenderingContext2D, shift: number, scale: number) => {
@@ -305,6 +349,7 @@ export const MapView = memo(function MapView({
       className="map-canvas"
       data-testid="map"
       data-ready={ready}
+      data-theme={theme.name}
       onContextMenu={(e) => e.preventDefault()}
       onPointerDown={(e) => {
         const p = mapPoint(e)
