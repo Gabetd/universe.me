@@ -94,8 +94,10 @@ export function useTerrain(worldId: string, seed: number, info: WorldInfo | unde
   useEffect(() => {
     const m = modelRef.current
     if (!m || !settings || m.settings === settings) return
+    // By value: a new copy of the same settings (a reply to an unrelated command) recolors nothing.
+    const same = JSON.stringify(m.settings) === JSON.stringify(settings)
     m.settings = settings
-    bump('all')
+    if (!same) bump('all')
   }, [settings, bump])
 
   useEffect(() => {

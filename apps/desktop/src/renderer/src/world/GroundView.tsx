@@ -51,6 +51,13 @@ const latLonOf = (p: LatLon): [number, number] => [p.lat, p.lon]
 const CAMERA = { position: [0, 400, 600] as [number, number, number], fov: 55, near: 0.5, far: 9000 }
 const CONTROLS = { screenSpacePanning: false, minDistance: 3, maxDistance: MAX_DISTANCE, maxPolarAngle: Math.PI * 0.47, zoomSpeed: 0.9 }
 
+/** `value`, or the one before while it's equal by value (as JSON): for lists rebuilt with the same contents. */
+function useByValue<T>(value: T): T {
+  const key = JSON.stringify(value)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` stands for `value`
+  return useMemo(() => value, [key])
+}
+
 /** Heights of the ground anywhere: the globe's terrain plus the seeded detail the chunks have. */
 interface Ground {
   frame: LocalFrame
@@ -87,13 +94,16 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
   // Every structure the world ever has gets level ground, so the ground doesn't change as they come and go.
   const allStructures = useUi((s) => s.timeline.structures)
   const blueprints = useUi((s) => s.timeline.blueprints)
-  const sites = useMemo(
-    () =>
-      allStructures.flatMap((st) => {
-        const blueprint = st.ownerId === props.worldId ? findBlueprint(blueprints, st.blueprintId) : undefined
-        return blueprint ? [{ at: st as LatLon, r: blueprintExtent(blueprint) * st.scale * 0.55 }] : []
-      }),
-    [allStructures, blueprints, props.worldId]
+  // By value: renaming a structure (a new list, the same places) keeps the ground as it is.
+  const sites = useByValue(
+    useMemo(
+      () =>
+        allStructures.flatMap((st) => {
+          const blueprint = st.ownerId === props.worldId ? findBlueprint(blueprints, st.blueprintId) : undefined
+          return blueprint ? [{ at: { lat: st.lat, lon: st.lon }, r: blueprintExtent(blueprint) * st.scale * 0.55 }] : []
+        }),
+      [allStructures, blueprints, props.worldId]
+    )
   )
   const ground = useMemo<Ground>(() => {
     const frame = { origin, radiusKm }
@@ -278,15 +288,18 @@ function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center
   const vegetationColor = model.settings.terrain.vegetationColor
   const plants = useMemo(() => new PlantGeometries(new THREE.Color(vegetationColor)), [vegetationColor])
   useEffect(() => () => plants.dispose(), [plants])
-  const footprints = useMemo<Footprint[]>(
-    () =>
-      structures.flatMap(({ structure, state, blueprint }) => {
-        // Ruins are overgrown; standing buildings keep their ground clear.
-        if (!state.exists || state.condition < 20) return []
-        const [x, z] = toLocal(ground.frame, structure)
-        return [{ x, z, r: blueprintExtent(blueprint) * structure.scale * 0.55 }]
-      }),
-    [structures, ground.frame]
+  // By value, so plants are laid out again only when a footprint changes, not whenever the structures do (renamed, or the playhead moved).
+  const footprints = useByValue(
+    useMemo<Footprint[]>(
+      () =>
+        structures.flatMap(({ structure, state, blueprint }) => {
+          // Ruins are overgrown; standing buildings keep their ground clear.
+          if (!state.exists || state.condition < 20) return []
+          const [x, z] = toLocal(ground.frame, structure)
+          return [{ x, z, r: blueprintExtent(blueprint) * structure.scale * 0.55 }]
+        }),
+      [structures, ground.frame]
+    )
   )
   return (
     <>
