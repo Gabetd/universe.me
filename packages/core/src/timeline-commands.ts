@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { batchOf, edgeTable, ownerOf, pickColor, previousValues } from './command-kit'
 import type { Command, HandlerMap } from './commands'
 import { NewId, Ref, clearRefs, create, deleteWith, live, recordCrud, refsWhere, setDeleted, upsert, validate } from './record-kit'
-import { Id } from './schema'
+import { Id, Name } from './schema'
 import { Time } from './time'
 import { EntityChange, Era, EventGroup, EventLink, Lane, LinkType, TimelineEvent } from './timeline'
 
@@ -35,7 +35,7 @@ export const TIMELINE_COMMANDS = [
 
   z.object({
     type: z.literal('group.create'),
-    payload: z.object({ ...NewId, ownerId: Id, title: z.string().min(1).max(200).optional(), color: EventGroup.shape.color.optional(), eventIds: z.array(Id).min(1) })
+    payload: z.object({ ...NewId, ownerId: Id, title: Name.optional(), color: EventGroup.shape.color.optional(), eventIds: z.array(Id).min(1) })
   }),
   ...groups.commands,
 

@@ -50,16 +50,28 @@ export function polygonTester(polygon: LatLon[]): (p: LatLon) => boolean {
   }
 }
 
+type Vector = [number, number, number]
+
+/** A point as a unit vector: x towards lat 0, lon 0, and z towards the north pole. */
+export function toUnitVector(p: LatLon): Vector {
+  const lat = (p.lat * Math.PI) / 180
+  const lon = (p.lon * Math.PI) / 180
+  return [Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat)]
+}
+
+/** The point a vector (of any length) points to. */
+export function fromVector([x, y, z]: Vector): LatLon {
+  return { lat: (Math.atan2(z, Math.hypot(x, y)) * 180) / Math.PI, lon: (Math.atan2(y, x) * 180) / Math.PI }
+}
+
 /** The point a fraction `f` of the way along the great circle from `a` to `b`. */
 export function slerpLatLon(a: LatLon, b: LatLon, f: number): LatLon {
-  const v = (p: LatLon) => [Math.cos(p.lat * RAD) * Math.cos(p.lon * RAD), Math.cos(p.lat * RAD) * Math.sin(p.lon * RAD), Math.sin(p.lat * RAD)]
-  const [p, q] = [v(a), v(b)]
-  const dot = Math.min(1, Math.max(-1, p[0]! * q[0]! + p[1]! * q[1]! + p[2]! * q[2]!))
+  const [p, q] = [toUnitVector(a), toUnitVector(b)]
+  const dot = Math.min(1, Math.max(-1, p[0] * q[0] + p[1] * q[1] + p[2] * q[2]))
   const angle = Math.acos(dot)
   if (angle < 1e-9) return { lat: a.lat, lon: a.lon }
   const s = Math.sin(angle)
   const wa = Math.sin((1 - f) * angle) / s
   const wb = Math.sin(f * angle) / s
-  const [x, y, z] = [0, 1, 2].map((k) => p[k]! * wa + q[k]! * wb) as [number, number, number]
-  return { lat: Math.atan2(z, Math.hypot(x, y)) / RAD, lon: Math.atan2(y, x) / RAD }
+  return fromVector([p[0] * wa + q[0] * wb, p[1] * wa + q[1] * wb, p[2] * wa + q[2] * wb])
 }

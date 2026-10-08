@@ -1,8 +1,8 @@
 import { z } from 'zod'
 import { greatCircleKm, slerpLatLon } from './geo'
-import { Id, RecordMeta } from './schema'
+import { Id, Name, RecordMeta } from './schema'
 import { DEFAULT_CALENDAR, Time, secondsPerYear, type Calendar } from './time'
-import { HexColor, type LatLon } from './world'
+import { HexColor, LatLon } from './world'
 
 /**
  * Characters on a world: a lifespan and a journey. Each stop is where they
@@ -11,8 +11,7 @@ import { HexColor, type LatLon } from './world'
  */
 export const CharacterStop = z.object({
   at: Time,
-  lat: z.number().min(-90).max(90),
-  lon: z.number().min(-180).max(180),
+  ...LatLon.shape,
   /** Seconds on the road before arriving (0: they're simply there from `at`). */
   travel: z.number().min(0),
   /** The event this stop takes them to, if any. */
@@ -22,7 +21,7 @@ export type CharacterStop = z.infer<typeof CharacterStop>
 
 export const Character = z.object({
   ...RecordMeta,
-  name: z.string().min(1).max(200),
+  name: Name,
   born: Time,
   /** null: still alive at the end of the timeline. */
   died: Time.nullable(),

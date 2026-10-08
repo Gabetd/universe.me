@@ -1,3 +1,4 @@
+import { fromVector, toUnitVector } from './geo'
 import type { SpatialNode } from './schema'
 import type { Time } from './time'
 import type { TimelineData } from './records'
@@ -262,15 +263,12 @@ export function eventPlace(event: TimelineEvent, regions: Region[]): LatLon | un
 }
 
 function sphericalMean(points: LatLon[]): LatLon {
-  let x = 0
-  let y = 0
-  let z = 0
+  const sum: [number, number, number] = [0, 0, 0]
   for (const p of points) {
-    const lat = (p.lat * Math.PI) / 180
-    const lon = (p.lon * Math.PI) / 180
-    x += Math.cos(lat) * Math.cos(lon)
-    y += Math.cos(lat) * Math.sin(lon)
-    z += Math.sin(lat)
+    const [x, y, z] = toUnitVector(p)
+    sum[0] += x
+    sum[1] += y
+    sum[2] += z
   }
-  return { lat: (Math.atan2(z, Math.hypot(x, y)) * 180) / Math.PI, lon: (Math.atan2(y, x) * 180) / Math.PI }
+  return fromVector(sum)
 }

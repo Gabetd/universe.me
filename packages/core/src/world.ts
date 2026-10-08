@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { Id } from './schema'
+import { Id, Name } from './schema'
 import { stripUndefined } from './util'
 
 /**
@@ -165,7 +165,7 @@ export const PALETTE = ['#e8a33d', '#5fb3d9', '#d9605f', '#8bc34a', '#b37fe0', '
 export const Region = z.object({
   id: Id,
   worldId: Id,
-  name: z.string().min(1).max(200),
+  name: Name,
   color: HexColor,
   points: z.array(LatLon).min(3),
   notes: z.string(),
