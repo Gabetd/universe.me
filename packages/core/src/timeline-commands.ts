@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { batchOf, edgeTable, ownerOf, pickColor, previousValues } from './command-kit'
 import type { Command, HandlerMap } from './commands'
-import { NewId, Ref, create, deleteWith, live, setDeleted, update, validate } from './record-kit'
+import { NewId, Ref, clearRefs, create, deleteWith, live, refsWhere, setDeleted, update, validate } from './record-kit'
 import { Id } from './schema'
 import { Time } from './time'
 import { EntityChange, Era, EventGroup, EventLink, Lane, LinkType, TimelineEvent } from './timeline'
@@ -80,20 +80,17 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
     }),
   'event.update': (store, { id, patch }, ctx) => update(store, 'event', ctx, id, patch),
   // Its links and structure effects can't outlive it, so they go (and come back) with it; maintenance changes it caused stay, uncaused.
+  // Those all share its owner; a character's stops aren't checked, so every character is looked at.
   'event.delete': (store, { id }, ctx, run) =>
-    deleteWith(
-      store, ctx, run, { kind: 'event', id },
-      [
-        ...live(store, 'maintenance').filter((m) => m.causeEventId === id).map((m): Command => ({ type: 'maintenance.update', payload: { id: m.id, patch: { causeEventId: null } } })),
+    deleteWith(store, ctx, run, { kind: 'event', id }, ({ ownerId }) => ({
+      detach: [
+        ...clearRefs(store, 'maintenance', ownerId, 'causeEventId', id),
         ...live(store, 'character')
           .filter((c) => c.stops.some((s) => s.eventId === id))
           .map((c): Command => ({ type: 'character.update', payload: { id: c.id, patch: { stops: c.stops.map((s) => (s.eventId === id ? { ...s, eventId: null } : s)) } } }))
       ],
-      [
-        ...live(store, 'link').filter((l) => l.fromId === id || l.toId === id).map((l) => ({ kind: 'link' as const, id: l.id })),
-        ...live(store, 'effect').filter((e) => e.eventId === id).map((e) => ({ kind: 'effect' as const, id: e.id }))
-      ]
-    ),
+      remove: [...refsWhere(store, 'link', ownerId, (l) => l.fromId === id || l.toId === id), ...refsWhere(store, 'effect', ownerId, (e) => e.eventId === id)]
+    })),
 
   'link.create': (store, { id, fromId, ...p }, ctx) =>
     create(store, 'link', ctx, ownerOf(store, 'event', fromId), id, { fromId, toId: p.toId, type: p.type ?? 'causes', note: p.note ?? '' }, [fromId]),
@@ -108,11 +105,7 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
   },
   'group.update': (store, { id, patch }, ctx) => update(store, 'group', ctx, id, patch),
   // Deleting a group keeps its events, just ungrouped.
-  'group.delete': (store, { id }, ctx, run) =>
-    deleteWith(
-      store, ctx, run, { kind: 'group', id },
-      live(store, 'event').filter((e) => e.groupId === id).map((e) => ({ type: 'event.update', payload: { id: e.id, patch: { groupId: null } } }))
-    ),
+  'group.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'group', id }, ({ ownerId }) => ({ detach: clearRefs(store, 'event', ownerId, 'groupId', id) })),
 
   'era.create': (store, { id, ownerId, ...p }, ctx) =>
     create(store, 'era', ctx, ownerId, id, { name: p.name ?? 'New era', start: p.start, end: p.end, color: p.color ?? pickColor(ctx), notes: p.notes ?? '' }),
@@ -120,16 +113,12 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
   'era.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'era', id }),
 
   'lane.create': (store, { id, ownerId, name, order }, ctx) => {
-    const last = Math.max(0, ...live(store, 'lane').filter((l) => l.ownerId === ownerId).map((l) => l.order))
+    const last = Math.max(0, ...store.records('lane').byOwner(ownerId).map((l) => l.order))
     return create(store, 'lane', ctx, ownerId, id, { name: name ?? 'New lane', order: order ?? last + 1 })
   },
   'lane.update': (store, { id, patch }, ctx) => update(store, 'lane', ctx, id, patch),
   // Events in a deleted lane move to the default lane.
-  'lane.delete': (store, { id }, ctx, run) =>
-    deleteWith(
-      store, ctx, run, { kind: 'lane', id },
-      live(store, 'event').filter((e) => e.laneId === id).map((e) => ({ type: 'event.update', payload: { id: e.id, patch: { laneId: null } } }))
-    ),
+  'lane.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'lane', id }, ({ ownerId }) => ({ detach: clearRefs(store, 'event', ownerId, 'laneId', id) })),
 
   'change.create': (store, { id, ownerId, ...p }, ctx) =>
     create(store, 'change', ctx, ownerId, id, {

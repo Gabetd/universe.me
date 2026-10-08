@@ -3,7 +3,7 @@ import { Orbit, Star } from './astro'
 import { batchOf, ownerOf, previousValues, type CommandContext, type HandlerResult } from './command-kit'
 import type { Command, HandlerMap } from './commands'
 import { EcoLink, Species } from './ecosystem'
-import { NewId, create, deleteWith, live, update, type Fields } from './record-kit'
+import { NewId, create, deleteWith, refsWhere, update, type Fields } from './record-kit'
 import type { RecordKind } from './records'
 import { Id } from './schema'
 import type { Store } from './store'
@@ -70,9 +70,9 @@ export const worldSimHandlers: HandlerMap<WorldSimCommand> = {
       tags: p.tags ?? []
     }),
   'species.update': (store, { id, patch }, ctx) => update(store, 'lifeform', ctx, id, patch),
-  // Its links in the food web go with it.
+  // Its links in the food web (which share its owner) go with it.
   'species.delete': (store, { id }, ctx, run) =>
-    deleteWith(store, ctx, run, { kind: 'lifeform', id }, [], live(store, 'ecolink').filter((l) => l.fromId === id || l.toId === id).map((l) => ({ kind: 'ecolink' as const, id: l.id }))),
+    deleteWith(store, ctx, run, { kind: 'lifeform', id }, ({ ownerId }) => ({ remove: refsWhere(store, 'ecolink', ownerId, (l) => l.fromId === id || l.toId === id) })),
   'ecolink.create': (store, { id, fromId, toId, type }, ctx) => create(store, 'ecolink', ctx, ownerOf(store, 'lifeform', fromId), id, { fromId, toId, type: type ?? 'eats' }, [fromId]),
   'ecolink.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'ecolink', id })
 }

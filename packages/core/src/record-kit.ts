@@ -130,14 +130,30 @@ export function setDeleted(store: Store, refs: Ref[], deletedAt: string | null, 
   return owner
 }
 
-/** Deletes a record after running `detach` (commands that unhook dependents), all undone together. */
-export function deleteWith(store: Store, ctx: CommandContext, run: Run, ref: Ref, detach: Command[] = [], alsoRemove: Ref[] = []): HandlerResult {
+/** What goes with a deleted record: commands that unhook its dependents, and records deleted with it. */
+export interface Dependents {
+  detach?: Command[]
+  remove?: Ref[]
+}
+
+/** Deletes a live record and its dependents (worked out from the record), all undone together. */
+export function deleteWith<K extends RecordKind>(store: Store, ctx: CommandContext, run: Run, ref: { kind: K; id: string }, dependents: (record: RecordOf<K>) => Dependents = () => ({})): HandlerResult {
   const record = liveRecord(store, ref.kind, ref.id)
+  const { detach = [], remove = [] } = dependents(record)
   const undo = detach.map((c) => run(c).inverse)
-  const refs = [ref, ...alsoRemove]
+  const refs = [ref, ...remove]
   setDeleted(store, refs, ctx.now(), ctx.now())
   return { inverse: batchOf([{ type: 'record.restore', payload: { refs } }, ...undo.reverse()]), owner: record.ownerId }
 }
 
 export const live = <K extends RecordKind>(store: Store, kind: K) => store.records(kind).all()
+
+/** Refs to an owner's live records of one kind that pass `keep`. */
+export const refsWhere = <K extends RecordKind>(store: Store, kind: K, ownerId: string, keep: (record: RecordOf<K>) => boolean): Ref[] =>
+  store.records(kind).byOwner(ownerId).flatMap((r) => (keep(r) ? [{ kind, id: r.id }] : []))
+
+/** Updates that set `field` to null on an owner's records where it is `id` (a lane, a group or a cause that's going). */
+export function clearRefs<K extends 'event' | 'maintenance'>(store: Store, kind: K, ownerId: string, field: keyof Fields<K> & string, id: string): Command[] {
+  return store.records(kind).byOwner(ownerId).flatMap((r) => ((r as Record<string, unknown>)[field] === id ? [{ type: `${kind}.update`, payload: { id: r.id, patch: { [field]: null } } } as Command] : []))
+}
 

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { CommandError, liveRecord, liveWorld, ownerOf } from './command-kit'
 import type { Command, HandlerMap } from './commands'
-import { NewId, blueprintOf, create, deleteWith, live, update } from './record-kit'
+import { NewId, blueprintOf, create, deleteWith, live, refsWhere, update } from './record-kit'
 import { base64ToBytes, bytesToBase64 } from './encoding'
 import { Id } from './schema'
 import { Blueprint, EventEffect, MaintenanceChange, Structure } from './structures'
@@ -82,18 +82,18 @@ export const structureHandlers: HandlerMap<StructureCommand> = {
     }, [ownerId, blueprintId])
   },
   'structure.update': (store, { id, patch }, ctx) => update(store, 'structure', ctx, id, patch),
-  // Its maintenance history goes with it; effects that named it stop naming it.
-  'structure.delete'(store, { id }, ctx, run) {
-    const detach: Command[] = live(store, 'effect')
-      .filter((e) => e.target.kind === 'structures' && e.target.ids.includes(id))
-      .map((e) => ({ type: 'effect.update', payload: { id: e.id, patch: { target: { kind: 'structures', ids: (e.target as { ids: string[] }).ids.filter((x) => x !== id) } } } }))
-    const history = live(store, 'maintenance').filter((m) => m.structureId === id).map((m) => ({ kind: 'maintenance' as const, id: m.id }))
-    return deleteWith(store, ctx, run, { kind: 'structure', id }, detach, history)
-  },
+  // Its maintenance history (which shares its owner) goes with it; effects that named it stop naming it. Targets aren't checked, so every effect is looked at.
+  'structure.delete': (store, { id }, ctx, run) =>
+    deleteWith(store, ctx, run, { kind: 'structure', id }, ({ ownerId }) => ({
+      detach: live(store, 'effect')
+        .filter((e) => e.target.kind === 'structures' && e.target.ids.includes(id))
+        .map((e): Command => ({ type: 'effect.update', payload: { id: e.id, patch: { target: { kind: 'structures', ids: (e.target as { ids: string[] }).ids.filter((x) => x !== id) } } } })),
+      remove: refsWhere(store, 'maintenance', ownerId, (m) => m.structureId === id)
+    })),
 
   'maintenance.set'(store, { structureId, at, maintained, causeEventId }, ctx) {
     const structure = liveRecord(store, 'structure', structureId)
-    const existing = live(store, 'maintenance').find((m) => m.structureId === structureId && m.at === at)
+    const existing = store.records('maintenance').byOwner(structure.ownerId).find((m) => m.structureId === structureId && m.at === at)
     if (existing) return update(store, 'maintenance', ctx, existing.id, { maintained, ...(causeEventId !== undefined ? { causeEventId } : {}) })
     return create(store, 'maintenance', ctx, structure.ownerId, undefined, { structureId, at, maintained, causeEventId: causeEventId ?? null }, [structureId])
   },
