@@ -8,6 +8,7 @@ import { Inspector } from './Inspector'
 import { Outline } from './Outline'
 import { Viewport } from './Viewport'
 import { ZoomStage } from './ZoomOverlay'
+import { ThemeAccent } from './ThemePanels'
 import { zoomOut, zoomTo } from './zoom'
 import { Timeline } from '../timeline/Timeline'
 import { useTimelineView } from '../timeline/timelineStore'
@@ -82,6 +83,7 @@ export function Workspace() {
       </aside>
       <main className="viewport-panel">
         <ZoomStage>{selected?.kind === 'world' ? <WorldEditor key={selected.id} world={selected} /> : <Viewport />}</ZoomStage>
+        <ThemeAccent />
       </main>
       <aside className="panel inspector-panel">
         <Inspector />

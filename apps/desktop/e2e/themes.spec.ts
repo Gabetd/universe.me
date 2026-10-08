@@ -34,9 +34,14 @@ test('themes: a library from presets, spans on the timeline that crossfade at th
   // The playhead decides what's in force: one theme, both crossfading, then the other.
   await row(page, 'Terra Surface').click()
   const now = themes.locator('.theme-now')
+  const accent = () => page.evaluate(() => document.documentElement.style.getPropertyValue('--accent'))
+  await setPlayhead(page, '-50')
+  await expect.poll(accent).toBe('')
   await setPlayhead(page, '50')
   await expect(now).toContainText('Golden Age')
   await expect(now).not.toContainText('Plague')
+  // The interface takes on the theme's accent.
+  await expect.poll(accent).toBe('#e0a526')
   await setPlayhead(page, '85')
   await expect(now).toContainText('Golden Age')
   await expect(now).toContainText('Plague Years')

@@ -13,8 +13,8 @@ import {
   type ThemeSpan,
   type Typography
 } from '@universe/core'
-import { useMemo, useState } from 'react'
-import { updater, useUi } from '../store'
+import { useEffect, useMemo, useState } from 'react'
+import { updater, useTimelineOwner, useUi } from '../store'
 import { usePlayhead } from '../timeline/timelineStore'
 import { useCalendar } from '../world/useSky'
 import { useThemeLook, useWorldThemes } from '../world/useThemeLook'
@@ -302,4 +302,36 @@ export function RegionTheme({ worldId, regionId }: { worldId: string; regionId: 
       {here.dominant.mood.length > 0 && <span className="muted"> · {here.dominant.mood.join(' · ')}</span>}
     </p>
   )
+}
+
+/** The interface's own accent, before any theme tints it. */
+let baseAccent: string | undefined
+
+/**
+ * The interface takes on the theme in force on the world in view (PLAN.md
+ * §4.5's UI accent and typography): its accent, as much as the theme shows,
+ * and its type for titles over the views.
+ */
+export function ThemeAccent() {
+  const owner = useTimelineOwner()
+  const look = useThemeLook(owner?.kind === 'world' ? owner.id : undefined)
+  const accent = look && rgb01ToHex(look.accent)
+  const strength = look?.strength ?? 0
+  const font = look && look.strength > 0.5 ? FONT_STACKS[look.dominant.typography] : undefined
+  useEffect(() => {
+    const root = document.documentElement.style
+    if (accent) {
+      baseAccent ??= getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
+      root.setProperty('--accent', mixHex(baseAccent, accent, strength))
+    } else root.removeProperty('--accent')
+    if (font) root.setProperty('--theme-font', font)
+    else root.removeProperty('--theme-font')
+  }, [accent, strength, font])
+  return null
+}
+
+/** `a` mixed toward `b` by `k` (0–1). */
+function mixHex(a: string, b: string, k: number): string {
+  const [x, y] = [a, b].map((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255))
+  return rgb01ToHex([0, 1, 2].map((i) => x![i]! + (y![i]! - x![i]!) * k) as [number, number, number])
 }
