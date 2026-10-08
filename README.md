@@ -5,7 +5,8 @@ worlds, give them histories on a timeline, and (soon) let Claude Code help
 through an API. See [PLAN.md](PLAN.md) for the full design and roadmap.
 
 **Status:** M0 (Foundations), M1 (Worlds & globe), M2 (Timeline), M3
-(Structures) and M4 (Star systems & simulation) are done. You can create `.universe` project files and build the universe tree
+(Structures), M4 (Star systems & simulation) and M5 (Scale navigation) are
+done. You can create `.universe` project files and build the universe tree
 (cluster → galaxy → star system → planet → moon / world surface). Each world
 surface is generated from a seed: type any word and you get a whole planet
 (land type, water, islands, mountains, climate, colors), the same planet every
@@ -39,8 +40,16 @@ calendar follows from its day, year and moon; the timeline shows the moon's
 phases and the eclipses; and the star and distance set the world's climate,
 which its biomes follow. Each world has a species library and food web.
 Structures now weather material by material in the local climate: the
-thatched roof goes long before the stone walls. Everything can be undone,
-and everything stays on your computer.
+thatched roof goes long before the stone walls.
+
+The whole universe is one continuous zoom. Each universe's seed strings
+galaxy clusters along a cosmic web; each cluster holds its galaxies (spiral,
+barred, elliptical or irregular), each galaxy its stars, generated a patch at a time as
+you get close, and each star its planets. Scroll in on anything to go there
+and out to come back up (or use the breadcrumb or Esc). Claim whatever you
+find, a cluster, a galaxy, a star, a planet as a world, and it becomes yours,
+keeping its seed and place; or right-click to put something of your own
+anywhere. Everything can be undone, and everything stays on your computer.
 
 ## Download and run
 

@@ -397,10 +397,11 @@ Each milestone ends with something you can launch and demo.
 - [x] **Climate-driven erosion**: every material of a structure decays on its own (condition is their average by volume), at its half-life sped up or slowed by the weather where it stands (moisture, freeze–thaw, heat, sea salt, plant growth, from the terrain and climate): a thatched roof is gone while the stone chimney stands; wood rots in a rainforest and lasts in a desert; iron rusts by the sea. Parts fall by their own material's condition; moss and grime come with age in the shader. Derived "falls into ruin" and "erodes away" milestones on the timeline (click one to make it an event); a condition chart over the structure's life with its projection.
 - Deferred: climate changing over time (sea level and temperature are fixed per world), atmospheres and greenhouse strength, eclipses seen from a particular place, the moon's nodes precessing.
 
-### M5 — Scale navigation (2–3 weeks)
-- Galaxy (procedural spiral/elliptical), cluster, and universe levels with seeded generation.
-- Seamless zoom transitions, floating origin, breadcrumb.
-- Create/claim systems and worlds at any level.
+### M5 — Scale navigation (2–3 weeks) — *done*
+- [x] **Seeded levels** (`packages/procgen` cosmos.ts): a universe's seed strings 48 galaxy clusters along a cosmic web; a cluster holds 36 galaxies, crowded toward its middle; a galaxy is spiral, barred, elliptical or irregular (arms, bulge, size and tint from its seed), its stars generated in 600 ly cells as you get close (same cell, same stars: mostly red dwarfs, a few giants), with bright landmark stars from afar; a star system's seed makes two to eight planets, rocky inside the frost line, giants outside, closer in round dimmer stars (`packages/sim`).
+- [x] **Seamless zoom**: the universe, clusters and galaxies are maps to pan and zoom, each in its own units (Mly for the universe and clusters, ly in a galaxy), so positions stay precise at every level (the floating origin). Scrolling all the way in on something goes into it and all the way out goes up; the old view freezes and flies past (or falls away) while the next arrives from the same point. Each level keeps its camera, and coming up opens on the child you left. The breadcrumb and Esc zoom out the same way; the wheel waits for one zoom to finish before the next.
+- [x] **Create/claim at any level**: anything generated can be claimed (a cluster, a galaxy, a star with its mass, a planet with its orbit and, for rocky ones, a world surface its size), keeping its seed and place, so claiming changes nothing you saw; claimed things are ringed and named. Right-click to claim, open, or put a new one of your own anywhere.
+- Deferred: generated moons for claimed planets, nebulae and dust lanes, a 3D galaxy (it's a top-down map), and a keyboard way through the generated items on the maps.
 
 ### M6 — Themes (1–2 weeks)
 - Theme editor (palette, lighting, atmosphere, mood, prose style guide).
