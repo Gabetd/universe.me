@@ -1,7 +1,7 @@
-import type { NodePatch, SpatialNode } from '@universe/core'
+import type { SpatialNode } from '@universe/core'
 import { useEffect, useRef } from 'react'
 import { KIND_ICONS, addOptions, kindLabel } from '../kinds'
-import { selectNode, useUi } from '../store'
+import { selectNode, updater, useUi } from '../store'
 import { NumberInput, TagsField, TextField } from './fields'
 import { NotesEditor } from './NotesEditor'
 import { TimelineInspector } from './TimelinePanels'
@@ -32,7 +32,7 @@ export function Inspector() {
 function NodeForm({ node }: { node: SpatialNode }) {
   const nodes = useUi((s) => s.nodes)
   const execute = useUi((s) => s.execute)
-  const update = (patch: NodePatch) => void execute({ type: 'node.update', payload: { id: node.id, patch } })
+  const update = updater('node', node.id)
   const options = addOptions(node, nodes)
 
   return (

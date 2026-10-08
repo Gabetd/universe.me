@@ -14,7 +14,7 @@ import {
 } from '@universe/core'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { TimeField } from '../components/fields'
-import { useTimelineOwner, useUi } from '../store'
+import { asCommand, useTimelineOwner, useUi } from '../store'
 import { ROW_H, laneAt, layoutTimeline, type PlacedItem, type TimelineLayout } from './layout'
 import { TimeScale, fitRange, panRange, snap, zoomRange, type TimeRange } from './scale'
 import { EFFECT_LABELS } from '../components/EventEffects'
@@ -111,7 +111,8 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
   }
 
   const run = (commands: Command[]) => {
-    if (commands.length) void execute(commands.length === 1 ? commands[0]! : { type: 'batch', payload: { commands } })
+    const command = asCommand(commands)
+    if (command) void execute(command)
   }
 
   const onTrackPointerDown = (e: React.PointerEvent) => {

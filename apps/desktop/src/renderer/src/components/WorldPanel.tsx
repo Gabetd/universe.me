@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import { regionAt, type Region, type RegionPatch, type SpatialNode, type WorldSettingsPatch } from '@universe/core'
-import { useUi, useWorld } from '../store'
+import { regionAt, type Region, type SpatialNode } from '@universe/core'
+import { updater, useUi, useWorld } from '../store'
 import { ColorField, CommitSlider, TextField } from './fields'
 import { NotesEditor } from './NotesEditor'
 import { RegionHistory } from './RegionHistory'
@@ -27,7 +27,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
   const playhead = usePlayhead(world.id)
   if (!info) return null
   const { settings } = info
-  const update = (patch: WorldSettingsPatch) => void execute({ type: 'world.update', payload: { id: world.id, patch } })
+  const update = updater('world', world.id)
 
   return (
     <>
@@ -81,7 +81,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
 function RegionForm({ region }: { region: Region }) {
   const execute = useUi((s) => s.execute)
   const selectRegion = useUi((s) => s.selectRegion)
-  const update = (patch: RegionPatch) => void execute({ type: 'region.update', payload: { id: region.id, patch } })
+  const update = updater('region', region.id)
 
   return (
     <section className="inspector-section region-form" aria-label="Region">

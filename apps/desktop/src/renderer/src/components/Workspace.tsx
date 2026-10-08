@@ -1,8 +1,8 @@
-import { ancestry, type Command } from '@universe/core'
+import { ancestry } from '@universe/core'
 import { useEffect } from 'react'
 import { KIND_ICONS } from '../kinds'
 import { isEditingText } from '../input'
-import { redo, selectNode, undo, useUi } from '../store'
+import { deleteCommand, redo, selectNode, undo, useUi } from '../store'
 import { ErrorBanner } from './ErrorBanner'
 import { Inspector } from './Inspector'
 import { Outline } from './Outline'
@@ -29,20 +29,17 @@ export function Workspace() {
       const { selectedId, selectedRegionId, selectedStructureId, selectedCharacterId, timelineSelection: tl, project: p, execute } = useUi.getState()
       if (e.key === 'Delete' || e.key === 'Backspace') {
         // Most specific first: timeline records, then a region, structure or character, then the node it's all on.
-        const deletes: Command[] = tl ? tl.ids.map((id) => ({ type: `${tl.kind}.delete`, payload: { id } }) as Command) : []
-        const command = deletes.length
-          ? deletes.length === 1
-            ? deletes[0]
-            : ({ type: 'batch', payload: { commands: deletes } } as const)
-          : selectedRegionId
-          ? ({ type: 'region.delete', payload: { id: selectedRegionId } } as const)
-          : selectedStructureId
-          ? ({ type: 'structure.delete', payload: { id: selectedStructureId } } as const)
-          : selectedCharacterId
-          ? ({ type: 'character.delete', payload: { id: selectedCharacterId } } as const)
-          : selectedId && selectedId !== p?.rootId
-            ? ({ type: 'node.delete', payload: { id: selectedId } } as const)
-            : undefined
+        const command =
+          (tl ? deleteCommand(tl.kind, tl.ids) : undefined) ??
+          (selectedRegionId
+            ? deleteCommand('region', [selectedRegionId])
+            : selectedStructureId
+              ? deleteCommand('structure', [selectedStructureId])
+              : selectedCharacterId
+                ? deleteCommand('character', [selectedCharacterId])
+                : selectedId && selectedId !== p?.rootId
+                  ? deleteCommand('node', [selectedId])
+                  : undefined)
         if (command) {
           e.preventDefault()
           void execute(command)

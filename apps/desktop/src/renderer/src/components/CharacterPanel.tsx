@@ -1,6 +1,6 @@
-import { ageAt, characterAt, eventPlace, formatDuration, formatTime, isAlive, type Character, type CharacterPatch } from '@universe/core'
+import { ageAt, characterAt, eventPlace, formatDuration, formatTime, isAlive, type Character } from '@universe/core'
 import { useMemo } from 'react'
-import { useUi } from '../store'
+import { updater, useUi } from '../store'
 import { usePlayhead, useTimelineView } from '../timeline/timelineStore'
 import { useEditor } from '../world/editorStore'
 import { useCalendar } from '../world/useSky'
@@ -17,7 +17,7 @@ export function CharacterPanel({ character }: { character: Character }) {
   const regions = useUi((s) => s.regions)
   const playhead = usePlayhead(character.ownerId)
   const cal = useCalendar(character.ownerId)
-  const update = (patch: CharacterPatch) => void execute({ type: 'character.update', payload: { id: character.id, patch } })
+  const update = updater('character', character.id)
   const place = characterAt(character, playhead)
   const alive = isAlive(character, playhead)
   // Events with a place on this world: somewhere to send them.

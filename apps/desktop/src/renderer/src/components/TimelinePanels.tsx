@@ -1,5 +1,5 @@
-import { LINK_TYPES, PRECISIONS, type Command, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type TimelineEvent } from '@universe/core'
-import { useUi, type TimelineSelection } from '../store'
+import { LINK_TYPES, PRECISIONS, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type TimelineEvent } from '@universe/core'
+import { updater, useUi, type TimelineSelection } from '../store'
 import { locationLabel } from '../timeline/labels'
 import { useEditor } from '../world/editorStore'
 import { ColorField, TagsField, TextField, TimeField } from './fields'
@@ -54,7 +54,7 @@ function EventPanel({ event }: { event: TimelineEvent }) {
   const timeline = useUi((s) => s.timeline)
   const regions = useUi((s) => s.regions)
   const owner = useUi((s) => s.nodes.find((n) => n.id === event.ownerId))
-  const update = (patch: Extract<Command, { type: 'event.update' }>['payload']['patch']) => void execute({ type: 'event.update', payload: { id: event.id, patch } })
+  const update = updater('event', event.id)
   const lanes = timeline.lanes.filter((l) => l.ownerId === event.ownerId).sort((a, b) => a.order - b.order)
   const others = timeline.events.filter((e) => e.ownerId === event.ownerId && e.id !== event.id)
   const title = (id: string) => timeline.events.find((e) => e.id === id)?.title ?? '?'
@@ -234,7 +234,7 @@ function MultiEventPanel({ ids }: { ids: string[] }) {
 
 function EraPanel({ era }: { era: Era }) {
   const { execute } = useUi.getState()
-  const update = (patch: Extract<Command, { type: 'era.update' }>['payload']['patch']) => void execute({ type: 'era.update', payload: { id: era.id, patch } })
+  const update = updater('era', era.id)
   return (
     <section className="inspector-section" aria-label="Era">
       <PanelHeader icon="▭" label="Era" />
@@ -265,7 +265,7 @@ function GroupPanel({ group }: { group: EventGroup }) {
   const { execute, selectTimeline } = useUi.getState()
   const events = useUi((s) => s.timeline.events)
   const members = events.filter((e) => e.groupId === group.id)
-  const update = (patch: Extract<Command, { type: 'group.update' }>['payload']['patch']) => void execute({ type: 'group.update', payload: { id: group.id, patch } })
+  const update = updater('group', group.id)
   return (
     <section className="inspector-section" aria-label="Group">
       <PanelHeader icon="▤" label="Group" />

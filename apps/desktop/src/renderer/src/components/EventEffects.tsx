@@ -4,14 +4,13 @@ import {
   MATERIAL_INFO,
   effectHits,
   eventPlace,
-  type EffectPatch,
   type EffectTarget,
   type EffectType,
   type EventEffect,
   type TimelineEvent
 } from '@universe/core'
 import { useMemo } from 'react'
-import { useUi } from '../store'
+import { updater, useUi } from '../store'
 import { useStructureWorld } from '../world/useStructures'
 import { BlueprintOptions } from './BlueprintOptions'
 import { CommitSlider, NumberInput, TagsField, TextField } from './fields'
@@ -60,7 +59,7 @@ function EffectEditor({ effect, event }: { effect: EventEffect; event: TimelineE
   const world = useStructureWorld(effect.ownerId)
   const regions = world.regions
   const structures = world.data.structures
-  const update = (patch: EffectPatch) => void execute({ type: 'effect.update', payload: { id: effect.id, patch } })
+  const update = updater('effect', effect.id)
   const hits = useMemo(() => effectHits(effect, world), [effect, world])
   const name = (id: string) => structures.find((s) => s.id === id)?.name ?? '?'
   const t = effect.target

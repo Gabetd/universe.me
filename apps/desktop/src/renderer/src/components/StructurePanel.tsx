@@ -1,6 +1,6 @@
-import { erodesAt, findBlueprint, formatTime, stateAt, STAGES, type Step, type Structure, type StructurePatch } from '@universe/core'
+import { erodesAt, findBlueprint, formatTime, stateAt, STAGES, type Step, type Structure } from '@universe/core'
 import { usePlayhead } from '../timeline/timelineStore'
-import { useUi } from '../store'
+import { updater, useUi } from '../store'
 import { STAGE_COLORS, viewingDistance } from '../world/structureLook'
 import { useConditionCurves } from '../world/useStructures'
 import { useEditor } from '../world/editorStore'
@@ -30,7 +30,7 @@ export function StructurePanel({ structure }: { structure: Structure }) {
   const cal = useCalendar(structure.ownerId)
   const curve = curves.get(structure.id)
   const state = curve && stateAt(curve, playhead)
-  const update = (patch: StructurePatch) => void execute({ type: 'structure.update', payload: { id: structure.id, patch } })
+  const update = updater('structure', structure.id)
   const history = maintenances.filter((m) => m.structureId === structure.id).sort((a, b) => a.at - b.at)
   const eroded = curve && erodesAt(curve, playhead)
   const caused = (curve?.steps ?? []).filter((s) => s.eventId)
