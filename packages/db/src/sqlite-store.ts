@@ -4,8 +4,6 @@ import { DEFAULT_WORLD_SETTINGS, mergeWorldSettings } from '@universe/core'
 import type {
   Asset,
   AssetRepository,
-  HistoryLog,
-  HistoryRecord,
   NodeRepository,
   RecordKind,
   RecordOf,
@@ -213,17 +211,5 @@ export class SqliteStore implements Store {
     } finally {
       this.depth--
     }
-  }
-}
-
-export class SqliteHistoryLog implements HistoryLog {
-  private readonly insert: StatementSync
-
-  constructor(db: DatabaseSync) {
-    this.insert = db.prepare('INSERT INTO command_log (at, action, source, type, command, inverse) VALUES (?, ?, ?, ?, ?, ?)')
-  }
-
-  append(r: HistoryRecord): void {
-    this.insert.run(r.at, r.action, r.source, r.command.type, JSON.stringify(r.command), JSON.stringify(r.inverse))
   }
 }

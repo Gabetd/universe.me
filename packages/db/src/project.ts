@@ -2,9 +2,10 @@ import { existsSync } from 'node:fs'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import { CommandBus, createRootUniverse, findRoot, type CommandBusOptions, type Store } from '@universe/core'
 import { TrackedStore } from './changes'
+import { SqliteHistoryLog } from './history-log'
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations'
 import { SnapshotCache, type Snapshot } from './snapshot'
-import { SqliteHistoryLog, SqliteStore } from './sqlite-store'
+import { SqliteStore } from './sqlite-store'
 
 const FORMAT = 'universe.me'
 
