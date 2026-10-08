@@ -86,6 +86,30 @@ for you to accept or reject them. The same operations are a REST API under
 `/v1` (described at `/v1/openapi.json`), with a change feed at `/v1/changes`.
 Any world exports as a Markdown world bible from its inspector.
 
+## From your phone
+
+Claude on your phone can reach the universe open on your computer. The
+Claude app gets it as a **custom connector**, which claude.ai calls from
+Anthropic's servers, so the computer needs a public HTTPS address. Universe
+uses [Tailscale Funnel](https://tailscale.com/kb/1223/funnel) for that; the
+app itself still listens on 127.0.0.1 only.
+
+1. Install Tailscale on the computer and sign in. Funnel has to be allowed
+   for your tailnet; if it isn't, Universe shows Tailscale's link to allow it.
+2. In Universe, open **Connect AI → From your phone** and turn on
+   **Let Claude on my phone connect**. It turns on Funnel for the API and
+   shows the address, `https://<computer>.<tailnet>.ts.net/mcp`.
+3. On claude.ai (Settings → Connectors → Add custom connector), add that
+   address. claude.ai opens Universe's sign-in page: type the code Universe
+   shows on the computer.
+4. The connector is now in the Claude app on your phone, too.
+
+Changes from the phone show in the app like any AI client's, undo in one
+click, and wait for review with **Review AI changes** on. Each connected
+client is listed under **From your phone**, where **Remove** disconnects it
+at once. From outside, only signed-in clients get in: the app's own token
+works on this computer only. The computer has to be on with Universe running.
+
 ## Download and run
 
 Every push to `main` or the development branch builds the app for every OS.

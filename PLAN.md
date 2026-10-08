@@ -425,10 +425,11 @@ Each milestone ends with something you can launch and demo.
 - Deferred: the token in the OS keychain (it's in a file only the user can read), WebSockets for the change feed (server-sent events do it with less), `universe serve` without the app (the stdio server covers headless use), suggestions kept across restarts, review mode for the stdio server while the app doesn't have the project open (it writes to the file directly then), accepting all suggestions in one step, and a region's notes and changes over time in the bible.
 
 ### M8 — Phone access (1–2 weeks) — *active*
-- [ ] **OAuth for the API** (`packages/api` oauth.ts): metadata, dynamic client registration, a sign-in page that takes a code shown in the app, PKCE, access and refresh tokens, devices removed one at a time.
-- [ ] **Tailscale Funnel in Connect AI**: finds Tailscale, turns Funnel on and off for the API's port, shows the public address and the custom-connector steps for claude.ai; phone access on and off.
-- [ ] **Pairing and devices in the app**: the code to type while a device connects, the list of connected devices and removing one.
-- [ ] Tests: the official MCP client through the whole OAuth flow, in `packages/api` and against the app.
+- [x] **OAuth for the API** (`packages/api` oauth.ts): metadata, dynamic client registration, a sign-in page that takes a code shown in the app, PKCE, access and rotating refresh tokens, revocation, connections removed one at a time. Nothing from the internet can crowd the user out: a full client list drops the oldest never-used registration, a new sign-in the oldest waiting one.
+- [x] **Tailscale Funnel in Connect AI** (`src/main/tailscale.ts`): finds Tailscale (or says what's missing, or what Tailscale wants), turns Funnel on and off for the API's port and follows the port when it changes, shows the address to add on claude.ai; phone access on and off.
+- [x] **Sign-in and connections in the app**: the code to type while a client signs in (shown even with Connect AI closed, and can be turned down), the list of connected clients and removing one.
+- [x] Tests: the official MCP client through the whole OAuth flow (refresh and revocation included) in `packages/api`; `e2e/phone.spec.ts` plays claude.ai against the app through a stand-in Tailscale (`e2e/fake-tailscale.mjs`).
+- Not yet tried against claude.ai itself and a real tailnet (the tests stand in for both).
 
 ### M9 — Polish & release (2 weeks)
 - Onboarding sample universe, keyboard shortcuts, performance pass (LOD, instancing for structures).
