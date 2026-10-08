@@ -27,6 +27,16 @@ describe('Project', () => {
     expect(p.store.nodes.get(info.rootId)?.kind).toBe('universe')
   })
 
+  it('keeps its name and root across a rename and a reopen', () => {
+    const path = join(dir, 'named.universe')
+    const p = Project.create(path, 'First')
+    const { rootId } = p.info()
+    p.setMeta('name', 'Second')
+    expect(p.info()).toMatchObject({ name: 'Second', rootId })
+    p.close()
+    expect(track(Project.open(path)).info()).toMatchObject({ name: 'Second', rootId })
+  })
+
   it('keeps imported files and structures inside the project file, with undo', () => {
     const path = join(dir, 'assets.universe')
     const p = Project.create(path, 'A')

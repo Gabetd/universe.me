@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { DatabaseSync } from 'node:sqlite'
+import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import { CommandBus, createRootUniverse, findRoot, type CommandBusOptions, type Store } from '@universe/core'
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations'
 import { SqliteHistoryLog, SqliteStore } from './sqlite-store'
@@ -25,6 +25,10 @@ export class Project {
   readonly store: Store
   readonly bus: CommandBus
   private closed = false
+  private readonly meta: { get: StatementSync; set: StatementSync }
+  /** Read once: the name only changes through `setMeta` and the root is never deleted. */
+  private name: string | undefined
+  private rootId = ''
 
   private constructor(
     readonly path: string,
@@ -33,6 +37,11 @@ export class Project {
   ) {
     this.store = new SqliteStore(db)
     this.bus = new CommandBus(this.store, { ...busOptions, log: new SqliteHistoryLog(db) })
+    this.meta = {
+      get: db.prepare('SELECT value FROM meta WHERE key = ?'),
+      set: db.prepare('INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+    }
+    this.name = this.getMeta('name')
   }
 
   /** Creates a new project file. Fails if `path` already exists. */
@@ -47,7 +56,7 @@ export class Project {
         project.setMeta('createdAt', new Date().toISOString())
         project.setMeta('name', name)
       })
-      createRootUniverse(project.store, name)
+      project.rootId = createRootUniverse(project.store, name).id
       return project
     } catch (err) {
       db.close()
@@ -64,7 +73,9 @@ export class Project {
       if (format !== FORMAT) throw new ProjectError(`${path} is not a universe.me project`)
       migrate(db)
       const project = new Project(path, db, busOptions)
-      if (!findRoot(project.store)) throw new ProjectError(`${path} has no universe root`)
+      const root = findRoot(project.store)
+      if (!root) throw new ProjectError(`${path} has no universe root`)
+      project.rootId = root.id
       return project
     } catch (err) {
       db?.close()
@@ -76,18 +87,19 @@ export class Project {
   info(): ProjectInfo {
     return {
       path: this.path,
-      name: this.getMeta('name') ?? 'Untitled',
-      rootId: findRoot(this.store)!.id,
+      name: this.name ?? 'Untitled',
+      rootId: this.rootId,
       schemaVersion: SCHEMA_VERSION
     }
   }
 
   getMeta(key: string): string | undefined {
-    return readMeta(this.db, key)
+    return (this.meta.get.get(key) as { value: string } | undefined)?.value
   }
 
   setMeta(key: string, value: string): void {
-    this.db.prepare('INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value)
+    this.meta.set.run(key, value)
+    if (key === 'name') this.name = value
   }
 
   /** Writes a compacted copy to `path`. The current project stays open at its old path. */
