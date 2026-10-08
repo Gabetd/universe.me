@@ -90,8 +90,8 @@
     <p class="lede">What the worldbuilding app can do today, shown in screenshots taken from the real app by its end-to-end tests. Each published build adds an entry at the top.</p>
     <div class="facts">
       <span>Latest build <b id="latest-ver"></b></span>
-      <span>Milestones done <b>M0–M5</b></span>
-      <span>Next <b>M6 · Themes</b></span>
+      <span>Milestones done <b>M0–M6</b></span>
+      <span>Next <b>M7 · API &amp; MCP</b></span>
       <span><a href="https://github.com/Gabetd/universe.me/releases/tag/latest-build">Download the latest build</a></span>
     </div>
   </header>
@@ -114,10 +114,11 @@
 
   <section aria-labelledby="next-title">
     <div class="next">
-      <h2 id="next-title">Next up: M6</h2>
+      <h2 id="next-title">Next up: M7</h2>
       <ul>
-        <li>A theme editor: palette, lighting, atmosphere, mood and a prose style guide</li>
-        <li>Themes over spans of the timeline (and optionally a region), blending as the playhead moves</li>
+        <li>A local REST API with an OpenAPI description, a live change feed and token sign-in</li>
+        <li>An MCP server so Claude Code can read and build your universe, with each AI change tagged and undoable in one click</li>
+        <li>A Markdown world bible exported from your project</li>
       </ul>
     </div>
   </section>
@@ -171,11 +172,26 @@
     galaxy: ['102-galaxy', 'A galaxy from its seed, with its brightest stars'],
     galaxyStars: ['103-galaxy-stars', 'Zoomed in on the galaxy: single stars, ready to claim'],
     systemPlanets: ['104-system-planets', 'A claimed red dwarf and the planets its seed makes, faint until claimed'],
-    claimedPlanet: ['105-claimed-planet', 'A planet claimed as a world']
+    claimedPlanet: ['105-claimed-planet', 'A planet claimed as a world'],
+    themeCrossfade: ['110-themes-crossfade', 'Two themes on the timeline’s band, crossfading at the playhead'],
+    themeEditor: ['111-theme-editor', 'The theme editor: palette, lighting, air, type, mood and style guide'],
+    themeGlobe: ['112-theme-globe', 'The globe under an Age of War: stormy light and hazier air'],
+    themeRegion: ['113-theme-region', 'The map shaded by its theme, and a region with an Ice Age of its own']
   }
 
   // One entry per published build, newest first.
   const LOG = [
+    {
+      ver: '0.1.20', date: '8 Oct 2026', tag: 'M6 done',
+      title: 'Themes: each age its own look and tone',
+      points: [
+        'A theme library: a palette, a lighting preset, how hazy the air is, a typeface, mood words, ambience and a prose style guide, with presets such as Golden Age, Plague Years and Ice Age.',
+        'Themes over spans of the timeline, for the whole world or one region: bars on a band above the lanes that fade in and out, stack by priority, and drag to move or resize.',
+        'As the playhead moves the globe, the map and the ground blend from one theme into the next (light, sky, haze, sea and land), and the app’s accent and title type follow.',
+        'Faster all round after a code audit: the globe and ground draw only when something changes, terrain and maps recolour only what changed, and the timeline and store keep what an edit didn’t touch.'
+      ],
+      shots: ['themeCrossfade', 'themeGlobe', 'themeRegion', 'themeEditor']
+    },
     {
       ver: '0.1.19', date: '8 Oct 2026', tag: 'M5 done',
       title: 'Scale navigation: the whole universe, one zoom',
@@ -239,6 +255,7 @@
     { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom'] },
     { title: 'Star systems and sky', shots: ['starSystem', 'planetMoons', 'moonTrack', 'colder', 'orbit'] },
     { title: 'Ecosystem', shots: ['foodWeb', 'speciesEditor'] },
+    { title: 'Themes', shots: ['themeCrossfade', 'themeEditor', 'themeGlobe', 'themeRegion'] },
     { title: 'Timeline and canvas', shots: ['timeline', 'worldAtTime', 'globeAtTime', 'canvas1', 'canvas2', 'canvas3'] },
     { title: 'Structures', shots: ['structGlobe', 'structPanel', 'weathering', 'effects', 'pins', 'builder', 'builderRuin', 'model', 'blueprints'] },
     { title: 'On the ground', shots: ['ground', 'groundClose', 'charGround'] },
