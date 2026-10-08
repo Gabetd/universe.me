@@ -89,6 +89,7 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
   const [origin, setOrigin] = useState<LatLon>(start)
   const [center, setCenter] = useState<LatLon>(start)
   const [loaded, setLoaded] = useState(0)
+  const [failed, setFailed] = useState<string>()
   const { model, change, seed } = props
   const radiusKm = model.settings.radiusKm
   // Every structure the world ever has gets level ground, so the ground doesn't change as they come and go.
@@ -149,14 +150,14 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
       labels={items}
       // How many chunks are in, for tests to wait on.
       wrap={{ 'data-chunks': loaded }}
-      overlay={<GroundReadout ground={ground} />}
+      overlay={<GroundReadout ground={ground} error={failed} />}
     >
       <color attach="background" args={[SKY]} />
       <fog attach="fog" args={[SKY, 1400, 3400]} />
       <hemisphereLight args={['#dce9f7', '#4a4536', 0.75]} />
       <directionalLight position={[700, 650, 250]} intensity={1.6} />
       <Rig ground={ground} onRebase={setOrigin} onCenter={setCenter} />
-      <Chunks {...props} ground={ground} center={center} onLoaded={setLoaded} />
+      <Chunks {...props} ground={ground} center={center} onLoaded={setLoaded} onFailed={setFailed} />
       <Water color={model.settings.terrain.waterColor} />
       {props.structures.map((p) => (
         <GroundStructure key={p.structure.id} placed={p} ground={ground} onClick={props.onStructureClick} />
@@ -277,12 +278,13 @@ interface Footprint {
   r: number
 }
 
-function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; onLoaded(count: number): void }) {
-  const { model, change, seed, ground, center, structures, onLoaded } = props
+function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; onLoaded(count: number): void; onFailed(error: string | undefined): void }) {
+  const { model, change, seed, ground, center, structures, onLoaded, onFailed } = props
   const radiusKm = model.settings.radiusKm
   const wanted = useMemo(() => chunksAround(center, radiusKm, RING), [center, radiusKm])
-  const chunks = useGroundChunks(model, change, seed, wanted)
+  const { chunks, error } = useGroundChunks(model, change, seed, wanted)
   useEffect(() => onLoaded(chunks.size), [chunks.size, onLoaded])
+  useEffect(() => onFailed(error), [error, onFailed])
   useReadyWhenDrawn(chunks.size === wanted.length)
   const middle = chunkOf(center, radiusKm)
   const vegetationColor = model.settings.terrain.vegetationColor
@@ -531,14 +533,15 @@ function Beacon({ id, at, color, lit, ground, onClick }: { id: string; at: LatLo
   )
 }
 
-/** Where the middle of the view is, and how to get back up. */
-function GroundReadout({ ground }: { ground: Ground }) {
+/** Where the middle of the view is, how to get back up, and why some of the ground is missing if it is. */
+function GroundReadout({ ground, error }: { ground: Ground; error?: string }) {
   const { lat, lon } = ground.frame.origin
   return (
     <div className="ground-readout small" data-testid="ground-readout">
       <span>
         {Math.abs(lat).toFixed(4)}°{lat >= 0 ? 'N' : 'S'} {Math.abs(lon).toFixed(4)}°{lon >= 0 ? 'E' : 'W'}
       </span>
+      {error && <span role="alert">Couldn’t build the ground here: {error}</span>}
       <button className="link" onClick={() => useEditor.getState().leaveGround(ground.frame.origin)}>
         ⬆ Back up
       </button>

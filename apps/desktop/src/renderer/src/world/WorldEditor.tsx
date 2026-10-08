@@ -128,7 +128,7 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
       <div className="world-canvas">
         <ToolOptions view={activeView} />
         {activeView === 'species' ? (
-          <EcosystemView worldId={world.id} model={model} change={change} />
+          <EcosystemView worldId={world.id} model={model} change={change} error={error} />
         ) : activeView === 'canvas' ? (
           <EventCanvas worldId={world.id} regions={allRegions} />
         ) : viewProps ? (
