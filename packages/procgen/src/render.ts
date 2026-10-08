@@ -58,9 +58,10 @@ export function renderEquirect(model: TerrainModel, out: Uint8ClampedArray, widt
   y0 = Math.max(0, y0)
   y1 = Math.min(height, y1)
   const lut = pixelCells(width, height)
-  // A map with as many pixels as a face has cells copies whole faces of colours (cheap per cell, and kept for next time);
-  // a smaller one, like a planet's sprite, colours just the cells it shows.
-  const colors = (y1 - y0) * width >= CELLS ? Array.from({ length: CUBE_FACES }, (_, f) => model.roundedFaceColors(f)) : undefined
+  // A map with as many pixels as a face has cells takes whole faces of colours (cheap per cell, and kept for next time);
+  // a smaller one, like a planet's sprite, has just the cells it shows coloured.
+  const shown = (y1 - y0) * width < CELLS ? cellsByFace(lut.subarray(y0 * width, y1 * width)) : undefined
+  const colors = Array.from({ length: CUBE_FACES }, (_, f) => model.roundedFaceColors(f, shown?.[f]))
   // Heights for the rows plus a one-pixel border, for the shading gradient.
   const top = Math.max(0, y0 - 1)
   const bottom = Math.min(height, y1 + 1)
@@ -87,15 +88,8 @@ export function renderEquirect(model: TerrainModel, out: Uint8ClampedArray, widt
       const o = p * 4
       const fc = lut[p]!
       const face = (fc / CELLS) | 0
-      const cell = fc - face * CELLS
-      // The colour comes from the face's colours, or is written into `out` first.
-      let from: Uint8ClampedArray | undefined = colors?.[face]
-      let c = cell * 4
-      if (!from) {
-        model.color(face, cell, out, o)
-        from = out
-        c = o
-      }
+      const from = colors[face]!
+      const c = (fc - face * CELLS) * 4
       // Light from the north-west: slopes rising to the east or south catch it.
       const gx = (heights[row + (x + 1 < width ? x + 1 : 0)]! - heights[row + (x > 0 ? x - 1 : width - 1)]!) / dx
       const gy = (heights[below + x]! - heights[above + x]!) / dy
@@ -107,6 +101,19 @@ export function renderEquirect(model: TerrainModel, out: Uint8ClampedArray, widt
       out[o + 3] = 255
     }
   }
+}
+
+/** Cells (face * CELLS + cell each) sorted out by face, as each face's own cell numbers. */
+function cellsByFace(cells: Int32Array): Int32Array[] {
+  const counts = new Int32Array(CUBE_FACES)
+  for (const fc of cells) counts[(fc / CELLS) | 0]!++
+  const byFace = Array.from(counts, (n) => new Int32Array(n))
+  counts.fill(0)
+  for (const fc of cells) {
+    const face = (fc / CELLS) | 0
+    byFace[face]![counts[face]!++] = fc - face * CELLS
+  }
+  return byFace
 }
 
 /** Map rows a brush at `dir` with angular radius `radius` (radians) can touch. */

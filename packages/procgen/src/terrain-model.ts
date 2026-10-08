@@ -102,6 +102,10 @@ function latitudeTermsOf(dirs: Float32Array): LatitudeTerms {
   return { polar, band }
 }
 
+/** Every cell of a face, for colouring them all. */
+const ALL_CELLS = Int32Array.from({ length: CELLS }, (_, c) => c)
+const ONE_CELL = new Int32Array(1)
+
 /** A face's display colours (RGBA, unlit): cut to bytes as the globe's texture has them, and rounded as a canvas stores them. */
 interface FaceColors {
   truncated: Uint8Array
@@ -245,11 +249,8 @@ export class TerrainModel {
   /** Writes the cell's display color (no lighting) into `out` at `offset`. Colours just that cell if its face isn't coloured yet. */
   color(face: number, cell: number, out: Uint8Array | Uint8ClampedArray, offset: number): void {
     const colors = this.colorsOf(face)
-    if (!colors.colored[cell]) {
-      const x = cell % TERRAIN_RES
-      const y = (cell - x) / TERRAIN_RES
-      this.paint(colors, face, x, y, x, y)
-    }
+    ONE_CELL[0] = cell
+    this.paint(colors, face, ONE_CELL, false)
     // A canvas's pixels round and other bytes cut down: each gets what writing the colour itself would give.
     const from = out instanceof Uint8ClampedArray ? colors.rounded : colors.truncated
     for (let k = 0; k < 4; k++) out[offset + k] = from[cell * 4 + k]!
@@ -265,15 +266,23 @@ export class TerrainModel {
     return this.wholeFace(face).truncated
   }
 
-  /** faceColors rounded to the nearest byte rather than down, as `color` writes into a canvas's pixels: what the map shows. */
-  roundedFaceColors(face: number): Uint8ClampedArray {
-    return this.wholeFace(face).rounded
+  /**
+   * faceColors rounded to the nearest byte rather than down, as `color`
+   * writes into a canvas's pixels: what the map shows. Given `cells`, only
+   * those are sure to be coloured, which is cheaper when a small map shows
+   * just some of them.
+   */
+  roundedFaceColors(face: number, cells?: Int32Array): Uint8ClampedArray {
+    if (!cells) return this.wholeFace(face).rounded
+    const colors = this.colorsOf(face)
+    if (!colors.whole) this.paint(colors, face, cells, false)
+    return colors.rounded
   }
 
   private wholeFace(face: number): FaceColors {
     const colors = this.colorsOf(face)
     if (!colors.whole) {
-      this.paint(colors, face, 0, 0, TERRAIN_RES - 1, TERRAIN_RES - 1)
+      this.paint(colors, face, ALL_CELLS, false)
       colors.whole = true
     }
     return colors
@@ -297,8 +306,11 @@ export class TerrainModel {
     }
   }
 
-  /** Recolours the cells of a face from (x0, y0) to (x1, y1): water by its depth, land by its biome and a little lighter up high. */
-  private paint({ truncated, rounded, colored }: FaceColors, face: number, x0: number, y0: number, x1: number, y1: number): void {
+  /**
+   * Colours some cells of a face (`again`: even those coloured already):
+   * water by its depth, land by its biome and a little lighter up high.
+   */
+  private paint({ truncated, rounded, colored }: FaceColors, face: number, cells: Int32Array, again: boolean): void {
     // Everything that's the same for every cell, looked up once.
     const { shallow, deep, biomes } = this.colors
     const terms = this.climateState.terms
@@ -308,33 +320,33 @@ export class TerrainModel {
     const edits = this.heightEdits[face]!
     const painted = this.biomeEdits[face]!
     const { polar, band } = latitudeTerms()[face]!
-    for (let y = y0; y <= y1; y++) {
-      for (let c = y * TERRAIN_RES + x0, end = y * TERRAIN_RES + x1; c <= end; c++) {
-        const elevation = height[c]! + edits[c]! - sea
-        let r: number, g: number, b: number
-        if (elevation < 0) {
-          const t = Math.sqrt(Math.min(1, -elevation / 4500))
-          r = shallow[0] + (deep[0] - shallow[0]) * t
-          g = shallow[1] + (deep[1] - shallow[1]) * t
-          b = shallow[2] + (deep[2] - shallow[2]) * t
-        } else {
-          const rgb = biomes[painted[c] || biomeAt(polar[c]!, band[c]!, elevation, moisture[c]!, terms)]!
-          const lift = 0.94 + 0.12 * Math.min(1, elevation / 5000)
-          r = Math.min(255, rgb[0] * lift)
-          g = Math.min(255, rgb[1] * lift)
-          b = Math.min(255, rgb[2] * lift)
-        }
-        const o = c * 4
-        truncated[o] = r
-        truncated[o + 1] = g
-        truncated[o + 2] = b
-        truncated[o + 3] = 255
-        rounded[o] = r
-        rounded[o + 1] = g
-        rounded[o + 2] = b
-        rounded[o + 3] = 255
-        colored[c] = 1
+    for (let k = 0; k < cells.length; k++) {
+      const c = cells[k]!
+      if (colored[c] && !again) continue
+      const elevation = height[c]! + edits[c]! - sea
+      let r: number, g: number, b: number
+      if (elevation < 0) {
+        const t = Math.sqrt(Math.min(1, -elevation / 4500))
+        r = shallow[0] + (deep[0] - shallow[0]) * t
+        g = shallow[1] + (deep[1] - shallow[1]) * t
+        b = shallow[2] + (deep[2] - shallow[2]) * t
+      } else {
+        const rgb = biomes[painted[c] || biomeAt(polar[c]!, band[c]!, elevation, moisture[c]!, terms)]!
+        const lift = 0.94 + 0.12 * Math.min(1, elevation / 5000)
+        r = Math.min(255, rgb[0] * lift)
+        g = Math.min(255, rgb[1] * lift)
+        b = Math.min(255, rgb[2] * lift)
       }
+      const o = c * 4
+      truncated[o] = r
+      truncated[o + 1] = g
+      truncated[o + 2] = b
+      truncated[o + 3] = 255
+      rounded[o] = r
+      rounded[o + 1] = g
+      rounded[o + 2] = b
+      rounded[o + 3] = 255
+      colored[c] = 1
     }
   }
 
@@ -414,7 +426,7 @@ export class TerrainModel {
     this.checkColors()
     for (const rect of touched) {
       const colors = this.faceColorCache[rect.face]
-      if (colors) this.paint(colors, rect.face, rect.x0, rect.y0, rect.x1, rect.y1)
+      if (colors) this.paint(colors, rect.face, cellsIn(rect), true)
     }
     return touched
   }
@@ -459,6 +471,14 @@ const NEIGHBORS = [
 ] as const
 
 const clampInt16 = (v: number) => clamp(Math.round(v), -32768, 32767)
+
+/** The cells of a rectangle. */
+function cellsIn({ x0, y0, x1, y1 }: CellRect): Int32Array {
+  const w = x1 - x0 + 1
+  const cells = new Int32Array(w * (y1 - y0 + 1))
+  for (let k = 0; k < cells.length; k++) cells[k] = (y0 + Math.floor(k / w)) * TERRAIN_RES + x0 + (k % w)
+  return cells
+}
 
 /** Grows a rectangle to take in cell (x, y). */
 function grow(r: CellRect, x: number, y: number): void {
