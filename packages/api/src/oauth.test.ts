@@ -1,0 +1,178 @@
+import { createHash } from 'node:crypto'
+import { request } from 'node:http'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { ApiServer, OAuth, apiContext, memoryStore } from './index'
+import { testProject } from './test-project'
+
+const TOKEN = 'app-token-0123456789'
+const PUBLIC = 'universe.example.ts.net'
+let p: ReturnType<typeof testProject>
+let server: ApiServer
+let oauth: OAuth
+let base: string
+let port: number
+let now: number
+let phoneAccess: boolean
+
+beforeEach(async () => {
+  p = testProject()
+  now = Date.UTC(2026, 0, 1)
+  phoneAccess = true
+  oauth = new OAuth(memoryStore(), undefined, () => now)
+  server = new ApiServer(apiContext(p.host), { token: TOKEN, version: '0.0.0-test', oauth, publicHost: () => (phoneAccess ? PUBLIC : undefined) })
+  port = await server.listen(0)
+  base = `http://127.0.0.1:${port}`
+})
+afterEach(async () => {
+  await server.close()
+  p.close()
+})
+
+/** An MCP client's side of OAuth, as Claude's is: registers, is sent to sign in, keeps its tokens. */
+class Provider implements OAuthClientProvider {
+  readonly redirectUrl = 'https://claude.example/api/mcp/auth_callback'
+  readonly clientMetadata: OAuthClientMetadata = {
+    client_name: 'Claude',
+    redirect_uris: [this.redirectUrl],
+    grant_types: ['authorization_code', 'refresh_token'],
+    response_types: ['code'],
+    token_endpoint_auth_method: 'client_secret_basic'
+  }
+  info: OAuthClientInformationMixed | undefined
+  saved: OAuthTokens | undefined
+  verifier = ''
+  signInAt: URL | undefined
+  clientInformation = () => this.info
+  saveClientInformation = (info: OAuthClientInformationMixed) => void (this.info = info)
+  tokens = () => this.saved
+  saveTokens = (tokens: OAuthTokens) => void (this.saved = tokens)
+  redirectToAuthorization = (url: URL) => void (this.signInAt = url)
+  saveCodeVerifier = (v: string) => void (this.verifier = v)
+  codeVerifier = () => this.verifier
+}
+
+/** The sign-in page's form, sent as a browser sends it (from the page's own origin). */
+const typeCode = (signin: string, code: string, origin = base) =>
+  fetch(`${base}/oauth/authorize`, {
+    method: 'POST',
+    redirect: 'manual',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: origin },
+    body: new URLSearchParams({ signin, code })
+  })
+
+/** A request for the public host, as the tunnel forwards it. */
+function remote(path: string, headers: Record<string, string> = {}): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = request({ host: '127.0.0.1', port, path, headers: { Host: PUBLIC, ...headers } }, (res) => {
+      let body = ''
+      res.on('data', (c: Buffer) => (body += c.toString()))
+      res.on('end', () => resolve({ status: res.statusCode!, body }))
+    })
+    req.on('error', reject)
+    req.end()
+  })
+}
+
+describe('OAuth', () => {
+  it('lets the official MCP client in with the code the app shows, keeps it in with refresh tokens, and lets it be disconnected', async () => {
+    const provider = new Provider()
+    const url = new URL(`${base}/mcp`)
+    await expect(new Client({ name: 'phone', version: '1' }).connect(new StreamableHTTPClientTransport(url, { authProvider: provider }))).rejects.toThrow(/Unauthorized/)
+    // It registered itself and was sent to the sign-in page, which waits for a code shown in the app.
+    expect(provider.info).toMatchObject({ client_id: expect.any(String), client_secret: expect.any(String) })
+    const html = await fetch(provider.signInAt!).then((r) => r.text())
+    expect(html).toContain('<b>Claude</b> wants to read and change the universe')
+    const [signIn] = oauth.pendingSignIns()
+    expect(signIn).toMatchObject({ client: 'Claude', code: expect.stringMatching(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/) })
+    const id = /name="signin" value="([^"]+)"/.exec(html)![1]!
+
+    // From another site, the form is turned away; a wrong code is asked again.
+    expect((await typeCode(id, signIn!.code, 'https://evil.example')).status).toBe(403)
+    const wrong = await typeCode(id, 'AAAA-AAAA')
+    expect(wrong.status).toBe(400)
+    expect(await wrong.text()).toContain('not the code Universe shows')
+    // Typed in small letters without the dash, it's still the code.
+    const right = await typeCode(id, signIn!.code.replace('-', '').toLowerCase())
+    expect(right.status).toBe(302)
+    const back = new URL(right.headers.get('location')!)
+    expect(back.origin + back.pathname).toBe(provider.redirectUrl)
+    expect(back.searchParams.get('state')).toBe(provider.signInAt!.searchParams.get('state'))
+    expect(oauth.pendingSignIns()).toEqual([])
+
+    const transport = new StreamableHTTPClientTransport(url, { authProvider: provider })
+    await transport.finishAuth(back.searchParams.get('code')!)
+    const client = new Client({ name: 'phone', version: '1' })
+    await client.connect(transport)
+    expect((await client.listTools()).tools.length).toBeGreaterThan(30)
+    expect(oauth.connections()).toEqual([expect.objectContaining({ name: 'Claude' })])
+
+    // An hour on, the access token has run out: the client refreshes it by itself.
+    const firstAccess = provider.saved!.access_token
+    now += 2 * 60 * 60_000
+    const created = await client.callTool({ name: 'create_event', arguments: { worldId: p.worldId, title: 'From the phone', start: '12' } })
+    expect(created.isError).toBeFalsy()
+    expect(provider.saved!.access_token).not.toBe(firstAccess)
+    expect(p.project.snapshot().timeline.events.map((e) => e.title)).toEqual(['From the phone'])
+
+    // Disconnected in the app: its tokens stop working at once, refresh token too.
+    oauth.revoke(oauth.connections()[0]!.id)
+    await expect(client.listTools()).rejects.toThrow()
+    await client.close()
+  })
+
+  it('checks the code verifier, uses a code once, and stops a sign-in after five wrong codes', async () => {
+    const registered = await fetch(`${base}/oauth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_name: 'Script', redirect_uris: ['http://localhost:7777/cb'], token_endpoint_auth_method: 'none' })
+    }).then((r) => r.json() as Promise<{ client_id: string; client_secret?: string }>)
+    expect(registered.client_secret).toBeUndefined()
+    const verifier = 'v'.repeat(50)
+    const challenge = createHash('sha256').update(verifier).digest('base64url')
+    const signInPage = (state: string) =>
+      fetch(`${base}/oauth/authorize?${new URLSearchParams({ response_type: 'code', client_id: registered.client_id, redirect_uri: 'http://localhost:7777/cb', code_challenge: challenge, code_challenge_method: 'S256', state })}`).then((r) =>
+        r.text()
+      )
+    const signinOf = (html: string) => /name="signin" value="([^"]+)"/.exec(html)![1]!
+
+    const id = signinOf(await signInPage('a'))
+    const code = new URL((await typeCode(id, oauth.pendingSignIns()[0]!.code)).headers.get('location')!).searchParams.get('code')!
+    const exchange = (code_verifier: string) =>
+      fetch(`${base}/oauth/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ grant_type: 'authorization_code', code, code_verifier, client_id: registered.client_id, redirect_uri: 'http://localhost:7777/cb' })
+      })
+    const stolen = await exchange('x'.repeat(50))
+    expect(stolen.status).toBe(400)
+    expect(await stolen.json()).toMatchObject({ error: 'invalid_grant' })
+    // A wrong verifier spends the code: it can't be tried again.
+    expect((await exchange(verifier)).status).toBe(400)
+
+    const other = signinOf(await signInPage('b'))
+    for (let i = 0; i < 4; i++) expect((await typeCode(other, 'AAAA-AAAA')).status).toBe(400)
+    expect((await typeCode(other, 'AAAA-AAAA')).status).toBe(403)
+    expect(oauth.pendingSignIns()).toEqual([])
+
+    // A sign-in for an address the client didn't register shows an error rather than sending anyone there.
+    const elsewhere = await fetch(`${base}/oauth/authorize?client_id=${registered.client_id}&redirect_uri=https://evil.example/cb&response_type=code`, { redirect: 'manual' })
+    expect(elsewhere.status).toBe(400)
+  })
+
+  it('serves the public host with https addresses and OAuth tokens only, and not at all with phone access off', async () => {
+    const meta = JSON.parse((await remote('/.well-known/oauth-protected-resource/mcp')).body)
+    expect(meta).toMatchObject({ resource: `https://${PUBLIC}/mcp`, authorization_servers: [`https://${PUBLIC}`] })
+    const unauthorized = await remote('/v1/worlds', { Authorization: `Bearer ${TOKEN}` })
+    // The app's own token is for this computer only.
+    expect(unauthorized.status).toBe(401)
+    expect((await remote('/v1/worlds')).status).toBe(401)
+    phoneAccess = false
+    expect((await remote('/.well-known/oauth-protected-resource/mcp')).status).toBe(403)
+    // On this computer the token still works.
+    expect((await fetch(`${base}/v1/worlds`, { headers: { Authorization: `Bearer ${TOKEN}` } })).status).toBe(200)
+  })
+})

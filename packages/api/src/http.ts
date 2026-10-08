@@ -1,10 +1,11 @@
-import { timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { OPERATIONS, pathParams } from './catalog'
 import { errorMessage, errorStatus } from './errors'
+import { readJson, send } from './http-io'
 import { ApiError } from './host'
 import { McpServer } from './mcp'
+import { sameText, type OAuth } from './oauth'
 import { openApi } from './openapi'
 import type { ApiContext, Operation } from './operation'
 
@@ -18,6 +19,21 @@ export interface ChangeEvent {
 
 const MAX_BODY = 8 * 1024 * 1024
 
+export interface ApiServerOptions {
+  token: string
+  version: string
+  /** Sign-in for clients that can't be handed the token (PLAN.md §6.4). */
+  oauth?: OAuth
+  /** The host a tunnel forwards from the internet (as `name.example.ts.net`), while phone access is on. */
+  publicHost?: () => string | undefined
+}
+
+/** Where a request came to: the server's address as its client knows it, and whether that's from elsewhere. */
+interface Reached {
+  base: string
+  remote: boolean
+}
+
 /** One route of an operation: its pattern, and which captures are which input. */
 interface Route {
   op: Operation
@@ -30,29 +46,6 @@ const routes: Route[] = OPERATIONS.map((op) => ({
   params: pathParams(op),
   pattern: new RegExp(`^/v1${op.route.path.replace(/:(\w+)/g, '([^/]+)')}$`)
 }))
-
-function send(res: ServerResponse, status: number, body: unknown, type = 'application/json; charset=utf-8'): void {
-  const text = typeof body === 'string' && !type.startsWith('application/json') ? body : JSON.stringify(body, null, 2)
-  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' })
-  res.end(text)
-}
-
-async function readJson(req: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = []
-  let size = 0
-  for await (const chunk of req) {
-    size += (chunk as Buffer).length
-    if (size > MAX_BODY) throw new ApiError(413, 'The request is too large')
-    chunks.push(chunk as Buffer)
-  }
-  const text = Buffer.concat(chunks).toString('utf8')
-  if (!text.trim()) return {}
-  try {
-    return JSON.parse(text)
-  } catch {
-    throw new ApiError(400, 'The body is not JSON')
-  }
-}
 
 /** A path part as written, its %-escapes decoded; a broken escape is the client's mistake. */
 function decodePart(part: string): string {
@@ -92,7 +85,7 @@ export class ApiServer {
   /** Serves `ctx`'s project (see `apiContext`), which the host may share with its own uses of the API. */
   constructor(
     private readonly ctx: ApiContext,
-    private readonly options: { token: string; version: string }
+    private readonly options: ApiServerOptions
   ) {
     this.mcp = new McpServer(ctx, options.version)
   }
@@ -129,25 +122,40 @@ export class ApiServer {
     for (const feed of this.feeds) feed.write(line)
   }
 
-  private allowed(req: IncomingMessage): string | undefined {
-    if (req.headers.origin) return 'Requests from web pages are not allowed'
+  /**
+   * Where a request came to: this computer (`127.0.0.1` or `localhost` at
+   * the server's port, which a web page can't name by DNS rebinding) or,
+   * while phone access is on, the public host its tunnel forwards (it keeps
+   * the host the client asked for). Anything else is turned away.
+   */
+  private reached(req: IncomingMessage): Reached | undefined {
     const host = req.headers.host ?? ''
-    if (host !== `127.0.0.1:${this.port}` && host !== `localhost:${this.port}`) return 'Wrong host'
-    const given = Buffer.from(/^Bearer (.+)$/i.exec(req.headers.authorization ?? '')?.[1] ?? '')
-    const token = Buffer.from(this.options.token)
-    if (given.length !== token.length || !timingSafeEqual(given, token)) return 'unauthorized'
-    return undefined
+    if (host === `127.0.0.1:${this.port}` || host === `localhost:${this.port}`) return { base: `http://${host}`, remote: false }
+    const publicHost = this.options.publicHost?.()
+    return publicHost && host === publicHost ? { base: `https://${publicHost}`, remote: true } : undefined
+  }
+
+  /** The app's token, from this computer only; or an OAuth access token, from anywhere. */
+  private authorized(req: IncomingMessage, at: Reached): boolean {
+    const given = /^Bearer (.+)$/i.exec(req.headers.authorization ?? '')?.[1]
+    if (!given) return false
+    return (!at.remote && sameText(given, this.options.token)) || !!this.options.oauth?.verify(given)
   }
 
   private async serve(req: IncomingMessage, res: ServerResponse): Promise<void> {
     try {
-      const refused = this.allowed(req)
-      if (refused === 'unauthorized') {
-        res.setHeader('WWW-Authenticate', 'Bearer')
-        return send(res, 401, { error: 'A bearer token is needed: copy it from Connect AI in Universe' })
+      const at = this.reached(req)
+      if (!at) return send(res, 403, { error: 'Wrong host' })
+      const url = new URL(req.url ?? '/', at.base)
+      // Web pages are turned away, but for the sign-in page's own form.
+      const origin = req.headers.origin
+      if (origin && !(origin === at.base && req.method === 'POST' && url.pathname === '/oauth/authorize')) return send(res, 403, { error: 'Requests from web pages are not allowed' })
+      if (await this.options.oauth?.handle(req, res, url, at.base)) return
+      if (!this.authorized(req, at)) {
+        const oauth = this.options.oauth && `, resource_metadata="${at.base}/.well-known/oauth-protected-resource/mcp"`
+        res.setHeader('WWW-Authenticate', `Bearer${oauth ?? ''}`)
+        return send(res, 401, { error: at.remote ? 'Sign in first (OAuth)' : 'A bearer token is needed: copy it from Connect AI in Universe' })
       }
-      if (refused) return send(res, 403, { error: refused })
-      const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
       if (url.pathname === '/mcp') return await this.serveMcp(req, res)
       if (req.method === 'GET' && url.pathname === '/v1/openapi.json') return send(res, 200, (this.spec ??= openApi(OPERATIONS, this.options.version)))
       if (req.method === 'GET' && url.pathname === '/v1/changes') return this.openFeed(res)
@@ -160,7 +168,7 @@ export class ApiServer {
       if (route) {
         const match = route.pattern.exec(url.pathname)!
         const params = Object.fromEntries(route.params.map((p, i) => [p, decodePart(match[i + 1]!)]))
-        const body = req.method === 'GET' ? queryInput(url) : await readJson(req)
+        const body = req.method === 'GET' ? queryInput(url) : await readJson(req, MAX_BODY)
         if (typeof body !== 'object' || body === null || Array.isArray(body)) return send(res, 400, { error: 'The body must be a JSON object' })
         const input = route.op.input.parse({ ...body, ...params })
         const result = await route.op.run(this.ctx, input)
@@ -181,7 +189,7 @@ export class ApiServer {
     }
     let message: unknown
     try {
-      message = await readJson(req)
+      message = await readJson(req, MAX_BODY)
     } catch (err) {
       return send(res, err instanceof ApiError && err.status === 413 ? 413 : 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: errorMessage(err) } })
     }

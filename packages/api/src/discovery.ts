@@ -1,6 +1,7 @@
-import { closeSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
+import { closeSync, openSync, readFileSync, realpathSync, rmSync, statSync, writeSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
+import { ours, writePrivate } from './private-file'
 
 /**
  * How an MCP server started by an AI client finds the running app: the app
@@ -32,13 +33,6 @@ function privateDir(): string {
 
 export const discoveryPath = () => process.env.UNIVERSE_API_DISCOVERY ?? join(privateDir(), 'api.json')
 
-/** Whether a file is this user's and no one else can read or change it (POSIX; Windows' temp folder is the user's own). */
-function ours(path: string): boolean {
-  if (process.platform === 'win32') return true
-  const st = statSync(path)
-  return st.uid === process.getuid!() && (st.mode & 0o077) === 0
-}
-
 /** Whether a process is still running. */
 export function alive(pid: number): boolean {
   try {
@@ -49,12 +43,9 @@ export function alive(pid: number): boolean {
   }
 }
 
-/** Writes the discovery: a new file only this user can read, put in place whole. */
+/** Writes the discovery, for this user alone. */
 export function writeDiscovery(d: Discovery, path = discoveryPath()): void {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-  const temp = `${path}.${process.pid}.tmp`
-  writeFileSync(temp, JSON.stringify(d), { mode: 0o600, flag: 'w' })
-  renameSync(temp, path)
+  writePrivate(path, JSON.stringify(d))
 }
 
 /** The running app's discovery, if it's still running and the file is this user's alone. */
