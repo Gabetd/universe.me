@@ -1,5 +1,6 @@
 import { AU_KM } from '@universe/core'
-import { formatPeriod, moonPhase, moonsOf, orbitPath, orbitPosition, positionFromStar, type BodyOrbit, type SystemModel, type Vec3 } from '@universe/sim'
+import { hueOf } from '@universe/procgen'
+import { formatPeriod, moonPhase, moonsOf, orbitPath, orbitPosition, positionFromStar, type BodyOrbit, type GeneratedPlanet, type SystemModel, type Vec3 } from '@universe/sim'
 import { drawTexturedPlanet, type PlanetTexture } from './planetSprite'
 
 /**
@@ -31,6 +32,8 @@ export interface OrbitDrawing {
   textures: Map<string, PlanetTexture>
   /** What clicking the centre body selects (its world, in the planet view). */
   centerTargetId?: string
+  /** Planets the system's seed generates that nobody has claimed, drawn faintly (system view only). */
+  unclaimed?: GeneratedPlanet[]
   hoverId: string | null
 }
 
@@ -63,7 +66,10 @@ export function drawOrbits(ctx: CanvasRenderingContext2D, w: number, h: number, 
   const size = Math.min(w, h)
   const targets: CanvasTarget[] = []
   const orbiting = centerId ? moonsOf(system, centerId) : [...system.bodies.values()].filter((o) => !o.parentBodyId)
-  const maxKm = Math.max(...orbiting.map((o) => o.semiMajorAxisKm * (1 + o.eccentricity)), centerId ? 400_000 : AU_KM * 1.6) * 1.08
+  const unclaimed = centerId ? [] : (d.unclaimed ?? [])
+  // Room for every orbit, and at least for where planets would be warm (closer in round dimmer stars).
+  const least = centerId ? 400_000 : AU_KM * 1.6 * Math.min(1, Math.max(0.05, Math.sqrt(system.star.luminositySun)))
+  const maxKm = Math.max(...[...orbiting, ...unclaimed.map((g) => g.orbit)].map((o) => o.semiMajorAxisKm * (1 + o.eccentricity)), least) * 1.08
   const maxPx = Math.min(w * 0.46, (h * 0.42) / SLANT)
   const project = projector(cx, cy, maxPx, maxKm)
   const center = centerId ? system.bodies.get(centerId)! : undefined
@@ -90,20 +96,49 @@ export function drawOrbits(ctx: CanvasRenderingContext2D, w: number, h: number, 
   }
 
   for (const o of orbiting) {
-    ctx.beginPath()
-    pathOf(o).forEach((p, i) => {
-      const [x, y] = project(p)
-      if (i) ctx.lineTo(x, y)
-      else ctx.moveTo(x, y)
-    })
+    tracePath(ctx, project, o)
     ctx.strokeStyle = o.bodyId === d.hoverId ? 'rgba(170,190,255,0.55)' : 'rgba(140,160,220,0.2)'
-    ctx.lineWidth = 1
     ctx.stroke()
     const [x, y] = project(orbitPosition(o, t))
     const r = bodyPx(o.radiusKm, size, centerId ? 0.035 : 0.02)
     drawBody(ctx, d, o, x, y, r, lightAt(x, y), targets, true)
   }
+
+  // Generated planets: dashed orbits and faint bodies, named when pointed at.
+  for (const { orbit: o, seed, name } of unclaimed) {
+    const hover = o.bodyId === d.hoverId
+    ctx.setLineDash([3, 5])
+    tracePath(ctx, project, o)
+    ctx.strokeStyle = hover ? 'rgba(170,190,255,0.45)' : 'rgba(140,160,220,0.13)'
+    ctx.stroke()
+    ctx.setLineDash([])
+    const [x, y] = project(orbitPosition(o, t))
+    const r = bodyPx(o.radiusKm, size, 0.02)
+    ctx.globalAlpha = hover ? 0.9 : 0.45
+    plainBody(ctx, x, y, r, hueOf(seed), lightAt(x, y))
+    ctx.globalAlpha = 1
+    targets.push({ id: o.bodyId, x, y, r: r + 4 })
+    if (hover) {
+      ctx.textAlign = 'center'
+      ctx.font = '600 12px system-ui, sans-serif'
+      ctx.fillStyle = '#ffffff'
+      ctx.fillText(name, x, y + r + 15)
+      ctx.font = '500 10px system-ui, sans-serif'
+      ctx.fillStyle = 'rgba(170,182,215,0.75)'
+      ctx.fillText(`${orbitSummary(system, o, t)} · not claimed yet`, x, y + r + 28)
+    }
+  }
   return targets
+}
+
+function tracePath(ctx: CanvasRenderingContext2D, project: (p: Vec3) => [number, number], o: BodyOrbit) {
+  ctx.beginPath()
+  pathOf(o).forEach((p, i) => {
+    const [x, y] = project(p)
+    if (i) ctx.lineTo(x, y)
+    else ctx.moveTo(x, y)
+  })
+  ctx.lineWidth = 1
 }
 
 function drawBody(ctx: CanvasRenderingContext2D, d: OrbitDrawing, o: BodyOrbit, x: number, y: number, r: number, light: number, targets: CanvasTarget[], labelled: boolean) {

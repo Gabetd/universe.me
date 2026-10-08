@@ -10,7 +10,7 @@ import { isBrushTool, useEditor } from './editorStore'
 import { pickWith } from './pick'
 import type { SurfaceViewProps } from './useTerrain'
 import { STAGE_COLORS } from './structureLook'
-import { zoomOut } from '../components/zoom'
+import { zoomOut, zooming } from '../components/zoom'
 import { LabelLayer, LabelProjector, type ViewLabel } from './labels'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
@@ -357,6 +357,7 @@ function ZoomToGround() {
     let pushesIn = 0
     let pushesOut = 0
     const onWheel = (e: WheelEvent) => {
+      if (zooming()) return
       const distance = camera.position.length()
       pushesIn = e.deltaY < 0 && distance <= MIN_DISTANCE + 0.003 ? pushesIn + 1 : 0
       pushesOut = e.deltaY > 0 && distance >= MAX_DISTANCE - 0.01 ? pushesOut + 1 : 0

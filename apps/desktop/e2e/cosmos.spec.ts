@@ -11,6 +11,7 @@ test.afterEach(async () => {
 
 const nodes = (page: Page) => page.evaluate(async () => (await window.universe.getState()).nodes)
 const stars = (page: Page) => page.evaluate(async () => (await window.universe.getState()).timeline.stars)
+const orbits = (page: Page) => page.evaluate(async () => (await window.universe.getState()).timeline.orbits)
 
 /** The viewport's box once any zoom between levels has played out (the arriving view is scaled until then). */
 async function viewportBox(page: Page) {
@@ -82,8 +83,27 @@ test('scale navigation: claim a cluster, a galaxy and a star from what the seeds
   expect(system.position.x !== 0 || system.position.y !== 0).toBe(true)
   expect((await stars(page))[0]?.ownerId).toBe(system.id)
 
-  // Scrolling out goes back up, to the galaxy, centred on the star just left.
+  // The star comes with the planets its seed makes, drawn faintly until claimed: claim one, as a world.
+  await page.waitForTimeout(600)
+  await page.screenshot({ path: 'test-results/104-system-planets.png' })
+  const claimPlanet = inspector(page).getByRole('button', { name: /^Claim / }).first()
+  const planetName = (await claimPlanet.textContent())!.replace(/^Claim /, '')
+  expect(planetName).toBe(`${name} b`)
+  await claimPlanet.click()
+  await expect(page.locator('.viewport-overlay.top')).toContainText(planetName)
+  const all = await nodes(page)
+  const planet = all.find((n) => n.name === planetName)!
+  expect(planet.parentId).toBe(system.id)
+  expect(all.find((n) => n.parentId === planet.id)?.kind).toBe('world')
+  expect((await orbits(page)).some((o) => o.ownerId === planet.id)).toBe(true)
+  await page.waitForTimeout(600)
+  await page.screenshot({ path: 'test-results/105-claimed-planet.png' })
+
+  // Scrolling out goes back up to the system; the breadcrumb straight to the galaxy, centred on the star.
   await scroll(page, 400, 3)
+  await expect(page.locator('.viewport-overlay.top')).toContainText('Star System view')
+  const galaxy = all.find((n) => n.kind === 'galaxy')!
+  await page.getByRole('navigation', { name: 'Location' }).getByRole('button', { name: galaxy.name }).click()
   await expect(page.locator('.viewport-overlay.top')).toContainText('Galaxy view')
   await expect(page.getByText(name, { exact: false }).first()).toBeAttached()
   // Escape goes up again, to the cluster.

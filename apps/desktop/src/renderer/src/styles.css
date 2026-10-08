@@ -1813,6 +1813,18 @@ input[type='color'] {
   pointer-events: auto;
   z-index: 3;
 }
+.claim-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.claim-list li {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+}
 .context-menu {
   position: absolute;
   display: grid;

@@ -1,3 +1,4 @@
+import type { Command } from '@universe/core'
 import { create } from 'zustand'
 import { useUi } from '../store'
 
@@ -28,6 +29,9 @@ export const useZoom = create<{ transition: Transition | null; count: number; se
   set: (transition) => set((s) => ({ transition, count: transition ? s.count + 1 : s.count }))
 }))
 
+/** A zoom is still playing: the wheel keeps turning for a moment, and shouldn't carry on through the next level too. */
+export const zooming = () => useZoom.getState().transition !== null
+
 /** Freezes `canvas` as it is now and starts the zoom toward (x, y). */
 export function startTransition(canvas: HTMLCanvasElement | null, direction: 'in' | 'out', x: number, y: number) {
   if (!canvas) return
@@ -46,13 +50,28 @@ export function zoomInto(canvas: HTMLCanvasElement | null, nodeId: string, x: nu
   useUi.getState().select(nodeId)
 }
 
-/** Goes up to the parent level, zooming out from the middle of the view. */
-export function zoomOut(canvas: HTMLCanvasElement | null) {
+/** Makes something (`commands` create node `id`), then goes into it from where it was on screen. */
+export async function claimInto(canvas: HTMLCanvasElement | null, commands: Command[], id: string, x: number, y: number) {
+  if (await useUi.getState().execute({ type: 'batch', payload: { commands } })) zoomInto(canvas, id, x, y)
+}
+
+/** The view's canvas, to freeze for a zoom (the first one in the view). */
+export const viewCanvas = () => document.querySelector<HTMLCanvasElement>('.zoom-view canvas')
+
+/** Coming up a level: the child it came up through, for the level above to look at first. */
+export const arrival: { fromId: string | null } = { fromId: null }
+
+/** Goes up to the parent level (or further, to the ancestor `toId`), zooming out from the middle of the view. */
+export function zoomOut(canvas: HTMLCanvasElement | null, toId?: string) {
   const { nodes, selectedId, select } = useUi.getState()
-  const parentId = nodes.find((n) => n.id === selectedId)?.parentId
-  if (!parentId) return
+  const byId = (id: string | null) => nodes.find((n) => n.id === id)
+  let from = byId(selectedId)
+  const target = toId ?? from?.parentId
+  if (!target || target === selectedId) return
+  while (from && from.parentId !== target) from = byId(from.parentId)
+  arrival.fromId = from?.id ?? null
   if (canvas) startTransition(canvas, 'out', canvas.clientWidth / 2, canvas.clientHeight / 2)
-  select(parentId)
+  select(target)
 }
 
 /**

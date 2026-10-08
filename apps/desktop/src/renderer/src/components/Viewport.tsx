@@ -1,15 +1,16 @@
 import type { NodeKind, SpatialNode } from '@universe/core'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { hueOf } from '@universe/procgen'
 import { kindLabel } from '../kinds'
 import { selectNode, useTimelineOwner, useUi } from '../store'
 import { playheadOf } from '../timeline/timelineStore'
 import { useSystem } from '../world/useSky'
-import type { SystemModel } from '@universe/sim'
+import type { GeneratedPlanet, SystemModel } from '@universe/sim'
 import { drawOrbits, type CanvasTarget } from './orbitView'
 import { label, starfield } from './canvasDraw'
 import { CosmosView, isCosmos } from './CosmosView'
-import { zoomInto, zoomOut } from './zoom'
+import { zoomInto, zoomOut, zooming } from './zoom'
+import { claimPlanet, describePlanet, isGiant, useUnclaimedPlanets } from './ClaimPlanets'
 import { SkyControls } from './SkyControls'
 import { SPACE_BG } from '../theme'
 import { usePlanetTextures, type PlanetTexture } from './planetSprite'
@@ -55,10 +56,13 @@ function OrbitViewport() {
   const owner = useTimelineOwner()
   // Names and colours of the bodies, worked out once rather than every frame.
   const bodies = useMemo(() => new Map(nodes.filter((n) => n.kind === 'body').map((n) => [n.id, { name: n.name, hue: hueOf(n.seed) }])), [nodes])
-  const skyRef = useRef({ system, ownerId: owner?.id, bodies })
+  // In a star system, the planets its seed generates that nobody has claimed yet.
+  const unclaimed = useUnclaimedPlanets(node)
+  const skyRef = useRef({ system, ownerId: owner?.id, bodies, unclaimed })
   useEffect(() => {
-    skyRef.current = { system, ownerId: owner?.id, bodies }
-  }, [system, owner?.id, bodies])
+    skyRef.current = { system, ownerId: owner?.id, bodies, unclaimed }
+  }, [system, owner?.id, bodies, unclaimed])
+  const [picked, setPicked] = useState<{ planet: GeneratedPlanet; x: number; y: number; withWorld: boolean } | null>(null)
 
   const hover = useRef<string | null>(null)
   const targets = useRef<Target[]>([])
@@ -79,7 +83,7 @@ function OrbitViewport() {
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       const s = skyRef.current
-      const sky = s.system && { system: s.system, t: s.ownerId ? playheadOf(s.ownerId) : 0, bodies: s.bodies }
+      const sky = s.system && { system: s.system, t: s.ownerId ? playheadOf(s.ownerId) : 0, bodies: s.bodies, unclaimed: s.unclaimed }
       targets.current = drawScene(ctx, w, h, scene, texturesRef.current, sky, hover.current, (performance.now() - start) / 1000)
       frame = requestAnimationFrame(render)
     }
@@ -93,17 +97,19 @@ function OrbitViewport() {
     const y = e.clientY - rect.top
     return targets.current.find((t) => Math.hypot(t.x - x, t.y - y) <= Math.max(t.r, 10))
   }
+  const generated = (id: string) => unclaimed.find((g) => g.orbit.bodyId === id)
 
   // A few pushes of the wheel change level: out to the parent, or in to what's under the cursor.
   const wheelAccum = useRef(0)
   const onWheel = (e: React.WheelEvent) => {
+    if (zooming()) return
     wheelAccum.current += e.deltaY
     if (Math.abs(wheelAccum.current) < 240) return
     const out = wheelAccum.current > 0
     wheelAccum.current = 0
     if (out) return zoomOut(canvasRef.current)
     const t = hitTest(e)
-    if (t) zoomInto(canvasRef.current, t.id, t.x, t.y)
+    if (t && !generated(t.id)) zoomInto(canvasRef.current, t.id, t.x, t.y)
   }
 
   if (!scene) return null
@@ -120,7 +126,9 @@ function OrbitViewport() {
         onMouseLeave={() => (hover.current = null)}
         onClick={(e) => {
           const t = hitTest(e)
-          if (t) zoomInto(canvasRef.current, t.id, t.x, t.y)
+          const planet = t && generated(t.id)
+          setPicked(planet ? { planet, x: t.x, y: t.y, withWorld: !isGiant(planet) } : null)
+          if (t && !planet) zoomInto(canvasRef.current, t.id, t.x, t.y)
         }}
         onWheel={onWheel}
       />
@@ -128,9 +136,22 @@ function OrbitViewport() {
         <div className="viewport-title">{scene.node.name}</div>
         <div className="muted small">{scene.label} view</div>
       </div>
+      {picked && (
+        <div className="cosmos-card" style={{ left: picked.x + 14, top: picked.y + 10 }} role="dialog" aria-label={picked.planet.name}>
+          <b>{picked.planet.name}</b>
+          <span className="muted small">{describePlanet(picked.planet)} · not claimed yet</span>
+          <label className="checkbox">
+            <input type="checkbox" checked={picked.withWorld} onChange={(e) => setPicked({ ...picked, withWorld: e.target.checked })} />
+            With a world surface
+          </label>
+          <button className="primary" onClick={() => (setPicked(null), void claimPlanet(node!.id, picked.planet, picked.withWorld, picked))}>
+            Claim and go there
+          </button>
+        </div>
+      )}
       {system && owner && <SkyControls ownerId={owner.id} system={system} centerId={scene.node.kind === 'body' ? scene.node.id : null} />}
       <div className="viewport-overlay bottom muted small">
-        Click to zoom in · Scroll down or Esc to zoom out
+        Click to zoom in{unclaimed.length ? ' or claim a faint planet' : ''} · Scroll down or Esc to zoom out
       </div>
     </div>
   )
@@ -152,6 +173,7 @@ interface Sky {
   /** Timeline time. */
   t: number
   bodies: Map<string, { name: string; hue: number }>
+  unclaimed: GeneratedPlanet[]
 }
 
 function drawScene(
@@ -188,6 +210,7 @@ function drawScene(
           textures,
           // The planet in the middle opens its world.
           centerTargetId: scene.world?.id,
+          unclaimed: sky.unclaimed,
           hoverId
         })
       )
@@ -197,7 +220,7 @@ function drawScene(
     }
   }
 
-  if (children.length === 0) {
+  if (children.length === 0 && !sky?.unclaimed.length) {
     ctx.fillStyle = 'rgba(200,210,240,0.55)'
     ctx.font = '14px system-ui, sans-serif'
     ctx.textAlign = 'center'

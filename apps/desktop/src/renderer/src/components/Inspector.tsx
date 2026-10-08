@@ -7,6 +7,7 @@ import { NotesEditor } from './NotesEditor'
 import { TimelineInspector } from './TimelinePanels'
 import { WorldPanel } from './WorldPanel'
 import { OrbitPanel, StarPanel } from './SkyPanels'
+import { PlanetsToClaim } from './ClaimPlanets'
 
 export function Inspector() {
   const node = useUi(selectNode)
@@ -76,6 +77,7 @@ function NodeForm({ node }: { node: SpatialNode }) {
           </div>
         </div>
       )}
+      {node.kind === 'star_system' && <PlanetsToClaim node={node} />}
 
       {node.parentId !== null && (
         <button className="danger" onClick={() => void execute({ type: 'node.delete', payload: { id: node.id } })}>

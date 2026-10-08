@@ -21,7 +21,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
 import { label, starfield } from './canvasDraw'
-import { cameras, startTransition, zoomInto, zoomOut, type Camera } from './zoom'
+import { arrival, cameras, claimInto, zoomInto, zoomOut, zooming, type Camera } from './zoom'
 
 /**
  * The universe, a galaxy cluster or a galaxy (PLAN.md §5.2): a map you can
@@ -94,9 +94,9 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
 
   useEffect(() => {
     // Coming up from a child: start looking at it, close in.
-    const from = items.find((i) => i.node && i.node.id === cameraHint.fromChildId)
+    const from = items.find((i) => i.node && i.node.id === arrival.fromId)
     if (from) cameras.set(node.id, { x: from.x, y: from.y, upp: MIN_UPP[kind] * 4 })
-    cameraHint.fromChildId = null
+    arrival.fromId = null
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the view opens
   }, [])
 
@@ -156,9 +156,7 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
     const commands: Command[] = [{ type: 'node.create', payload: { id, parentId: node.id, kind: CHILD[kind], name: item.name, seed: item.seed, position: { x: item.x, y: item.y, z: 0 } } }]
     // A claimed star keeps the mass (and so the colour) it had on the map.
     if (item.star) commands.push({ type: 'star.set', payload: { systemId: id, star: { massSun: Number(item.star.massSun.toFixed(3)), luminositySun: null } } })
-    startTransition(canvasRef.current, 'in', hit.sx, hit.sy)
-    const done = await useUi.getState().execute({ type: 'batch', payload: { commands } })
-    if (done) useUi.getState().select(id)
+    await claimInto(canvasRef.current, commands, id, hit.sx, hit.sy)
   }
 
   const createHere = (at: { x: number; y: number }) =>
@@ -174,8 +172,11 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
     const c = cam()
     const fit = (extent * 2.4) / Math.max(1, Math.min(canvas.clientWidth, canvas.clientHeight))
     const next = c.upp * Math.exp(e.deltaY * 0.0015)
-    // Past either end, a few more pushes change level.
-    if (next < MIN_UPP[kind]) {
+    // Past either end, a few more pushes change level (once the last change has played out).
+    if (zooming()) {
+      pushes.current = { in: 0, out: 0 }
+      c.upp = Math.min(fit, Math.max(MIN_UPP[kind], next))
+    } else if (next < MIN_UPP[kind]) {
       pushes.current = { in: pushes.current.in + 1, out: 0 }
       const hit = hitAt(p) ?? hitAt({ x: canvas.clientWidth / 2, y: canvas.clientHeight / 2 })
       if (pushes.current.in >= 3 && hit) {
@@ -185,10 +186,7 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
       c.upp = MIN_UPP[kind]
     } else if (next > fit) {
       pushes.current = { in: 0, out: pushes.current.out + 1 }
-      if (pushes.current.out >= 3 && node.parentId) {
-        cameraHint.fromChildId = node.id
-        zoomOut(canvas)
-      }
+      if (pushes.current.out >= 3) zoomOut(canvas)
       c.upp = fit
     } else {
       pushes.current = { in: 0, out: 0 }
@@ -296,9 +294,6 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
     </div>
   )
 }
-
-/** Going up a level, the parent's camera starts on the child just left. */
-const cameraHint: { fromChildId: string | null } = { fromChildId: null }
 
 function cameraFor(nodeId: string, init: () => Camera): Camera {
   let camera = cameras.get(nodeId)
