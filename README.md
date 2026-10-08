@@ -4,8 +4,8 @@ A desktop worldbuilding app: build universes, galaxies, star systems and
 worlds, give them histories on a timeline, and (soon) let Claude Code help
 through an API. See [PLAN.md](PLAN.md) for the full design and roadmap.
 
-**Status:** M0 (Foundations), M1 (Worlds & globe), M2 (Timeline) and M3
-(Structures) are done. You can create `.universe` project files and build the universe tree
+**Status:** M0 (Foundations), M1 (Worlds & globe), M2 (Timeline), M3
+(Structures) and M4 (Star systems & simulation) are done. You can create `.universe` project files and build the universe tree
 (cluster → galaxy → star system → planet → moon / world surface). Each world
 surface is generated from a seed: type any word and you get a whole planet
 (land type, water, islands, mountains, climate, colors), the same planet every
@@ -31,7 +31,15 @@ Zoom all the way in and you're on the ground: hills, woods, meadows and rocks
 of the local biome in 1 km chunks, buildings at their real size, and your
 characters life-size. Characters have a lifespan and a journey; send them
 from place to place, or to an event, and they walk there over time. From
-orbit, each planet and moon shows its real surface. Everything can be undone,
+orbit, each planet and moon shows its real surface.
+
+Star systems are simulated: give the star a mass and each planet and moon an
+orbit and a spin, and watch them go round as the timeline plays. A world's
+calendar follows from its day, year and moon; the timeline shows the moon's
+phases and the eclipses; and the star and distance set the world's climate,
+which its biomes follow. Each world has a species library and food web.
+Structures now weather material by material in the local climate: the
+thatched roof goes long before the stone walls. Everything can be undone,
 and everything stays on your computer.
 
 ## Download and run
