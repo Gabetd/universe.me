@@ -1,6 +1,6 @@
 import type { LatLon } from '@universe/core'
 import { brushRows, latLonToDir, latLonToPixel, pixelToLatLon, renderEquirect, type Vec3 } from '@universe/procgen'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor } from './editorStore'
@@ -62,6 +62,8 @@ export function MapView({
   const pan = useRef<{ x: number; y: number } | null>(null)
   const groundPushes = useRef(0)
   const dirty = useRef(true)
+  /** For tests: "true" once the map has been drawn. */
+  const [ready, setReady] = useState(false)
   const selectedRegionId = useUi((s) => s.selectedRegionId)
   const draft = useEditor((s) => s.draft)
 
@@ -129,6 +131,7 @@ export function MapView({
         ctx.drawImage(terrain.current.canvas, shift, 0)
         drawOverlays(ctx, shift, v.scale)
       }
+      setReady(true)
     }
 
     const drawOverlays = (c: CanvasRenderingContext2D, shift: number, scale: number) => {
@@ -265,6 +268,7 @@ export function MapView({
       ref={canvasRef}
       className="map-canvas"
       data-testid="map"
+      data-ready={ready}
       onContextMenu={(e) => e.preventDefault()}
       onPointerDown={(e) => {
         const p = mapPoint(e)

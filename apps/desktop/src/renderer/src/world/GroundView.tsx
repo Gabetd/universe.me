@@ -27,7 +27,7 @@ import type { ViewLabel } from './labels'
 import { NEAR_ONLY, instanceTint, plantGeometry } from './plants'
 import { blueprintExtent } from './structureLook'
 import { BlueprintParts } from './StructureMesh'
-import { SurfaceCanvas } from './SurfaceCanvas'
+import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
 import { useGroundChunks } from './useGroundChunks'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
@@ -273,6 +273,7 @@ function Chunks(props: SurfaceViewProps & { seed: number; ground: Ground; center
   const wanted = useMemo(() => chunksAround(center, radiusKm, RING), [center, radiusKm])
   const chunks = useGroundChunks(model, change, seed, wanted)
   useEffect(() => onLoaded(chunks.size), [chunks.size, onLoaded])
+  useReadyWhenDrawn(chunks.size === wanted.length)
   const middle = chunkOf(center, radiusKm)
   const foliage = useMemo(() => new THREE.Color(model.settings.terrain.vegetationColor), [model.settings.terrain.vegetationColor])
   const footprints = useMemo<Footprint[]>(

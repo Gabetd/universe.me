@@ -12,7 +12,7 @@ import type { SurfaceViewProps } from './useTerrain'
 import { STAGE_COLORS } from './structureLook'
 import { EdgePush, zoomOut } from '../components/zoom'
 import type { ViewLabel } from './labels'
-import { SurfaceCanvas } from './SurfaceCanvas'
+import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
@@ -113,6 +113,8 @@ function Planet({
   }, [change, faces, model, scale, invalidate])
 
   useEffect(() => () => faces.forEach((f) => (f.geometry.dispose(), f.texture.dispose())), [faces])
+  // The terrain is in once the effects above have run.
+  useReadyWhenDrawn(true)
 
   // The brush cursor follows the pointer, the tool and the brush size.
   useEffect(() => useEditor.subscribe((s, prev) => (s.tool !== prev.tool || s.radiusKm !== prev.radiusKm) && invalidate()), [invalidate])
