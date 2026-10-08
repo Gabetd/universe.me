@@ -133,6 +133,7 @@ export const MapView = memo(function MapView({
     const ctx = canvas.getContext('2d')!
     const terrain = mapImageOf(model).canvas
     let frame = 0
+    let drawn = false
     const draw = () => {
       frame = requestAnimationFrame(draw)
       const dpr = window.devicePixelRatio || 1
@@ -165,7 +166,7 @@ export const MapView = memo(function MapView({
         ctx.drawImage(terrain, shift, 0)
         drawOverlays(ctx, shift, v.scale)
       }
-      setReady(true)
+      if (!drawn) setReady((drawn = true))
     }
 
     const drawOverlays = (c: CanvasRenderingContext2D, shift: number, scale: number) => {
