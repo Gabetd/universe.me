@@ -7,7 +7,7 @@ const node = (id: string, updatedAt = 't1'): SpatialNode => ({
   id, parentId: null, kind: 'universe', name: id, seed: 1, position: { x: 0, y: 0, z: 0 }, notes: '', tags: [], createdAt: 't0', updatedAt, deletedAt: null
 })
 const state = (nodes: SpatialNode[]): AppState => ({
-  project: { path: '/p', name: 'P', rootId: 'a' }, nodes, worlds: [], regions: [], timeline: EMPTY_TIMELINE, canUndo: true, canRedo: false
+  project: { path: '/p', name: 'P', rootId: 'a' }, nodes, worlds: [], regions: [], timeline: EMPTY_TIMELINE, canUndo: true, canRedo: false, aiChanges: 0, proposals: []
 })
 // What main sends: a structured copy of everything.
 const copy = (s: AppState): AppState => structuredClone(s)

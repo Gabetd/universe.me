@@ -6,7 +6,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Project } from '@universe/db'
-import { ApiServer, lockHolder, projectHost, serveStdio, writeDiscovery } from './index'
+import { ApiServer, apiContext, lockHolder, projectHost, serveStdio, writeDiscovery } from './index'
 import { testProject } from './test-project'
 
 const TOKEN = 'test-token-0123456789'
@@ -20,7 +20,7 @@ const json = (res: Response) => res.json() as Promise<Json>
 
 beforeEach(async () => {
   p = testProject()
-  server = new ApiServer(p.host, { token: TOKEN, version: '0.0.0-test' })
+  server = new ApiServer(apiContext(p.host), { token: TOKEN, version: '0.0.0-test' })
   base = `http://127.0.0.1:${await server.listen(0)}`
 })
 afterEach(async () => {
@@ -124,7 +124,7 @@ describe('the MCP server', () => {
 
     // Now the "app" opens it and serves it: the stdio server goes through the app, where the change can be undone.
     const app = Project.open(path)
-    const appServer = new ApiServer(projectHost(app), { token: TOKEN, version: 'x' })
+    const appServer = new ApiServer(apiContext(projectHost(app)), { token: TOKEN, version: 'x' })
     writeDiscovery({ pid: process.pid, port: await appServer.listen(0), token: TOKEN, project: path, version: 'x' }, discovery)
     send(4, 'tools/call', { name: 'create_event', arguments: { worldId: p.worldId, title: 'Through the app', start: '6' } })
     expect(JSON.parse((await reply(4)).result.content[0]!.text).status).toBe('applied')

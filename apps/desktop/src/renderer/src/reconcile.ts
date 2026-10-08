@@ -17,7 +17,8 @@ export function reconcile(prev: AppState, next: AppState): AppState {
     nodes: keepSame(prev.nodes, next.nodes, sameStamp),
     regions: keepSame(prev.regions, next.regions, sameStamp),
     worlds: keepSame(prev.worlds, next.worlds, sameWorld),
-    timeline: keepTimeline(prev.timeline, next.timeline)
+    timeline: keepTimeline(prev.timeline, next.timeline),
+    proposals: JSON.stringify(prev.proposals) === JSON.stringify(next.proposals) ? prev.proposals : next.proposals
   }
 }
 

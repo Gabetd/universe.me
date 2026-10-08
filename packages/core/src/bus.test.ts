@@ -126,3 +126,21 @@ describe('queries', () => {
     expect(ancestry(store.nodes.all(), galaxy).map((n) => n.kind)).toEqual(['universe', 'galaxy_cluster', 'galaxy'])
   })
 })
+
+describe('changes by source', () => {
+  it('counts the latest changes from one source, one after another', () => {
+    const add = (source: 'user' | 'ai') => bus.execute({ type: 'node.create', payload: { parentId: rootId, kind: 'galaxy_cluster' } }, source)
+    add('ai')
+    add('user')
+    add('ai')
+    add('ai')
+    expect(bus.latestFrom('ai')).toBe(2)
+    expect(bus.latestFrom('user')).toBe(0)
+    bus.undo()
+    expect(bus.latestFrom('ai')).toBe(1)
+    // A redo keeps its source.
+    bus.redo()
+    expect(bus.latestFrom('ai')).toBe(2)
+    expect(log.at(-1)!.source).toBe('ai')
+  })
+})

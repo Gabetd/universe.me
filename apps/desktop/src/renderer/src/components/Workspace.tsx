@@ -8,6 +8,7 @@ import { Inspector } from './Inspector'
 import { Outline } from './Outline'
 import { Viewport } from './Viewport'
 import { ZoomStage } from './ZoomOverlay'
+import { AiNotes, AiSuggestions, ConnectAiButton, UndoAiButton } from './AiPanels'
 import { ThemedWorkspace } from './ThemedWorkspace'
 import { zoomOut, zoomTo } from './zoom'
 import { Timeline } from '../timeline/Timeline'
@@ -68,12 +69,14 @@ export function Workspace() {
       <header className="topbar">
         <Breadcrumb />
         <div className="topbar-actions">
+          <UndoAiButton />
           <button onClick={() => void undo()} disabled={!canUndo} title="Undo (Ctrl/Cmd+Z)">
             ↶ Undo
           </button>
           <button onClick={() => void redo()} disabled={!canRedo} title="Redo (Ctrl+Y / Cmd+Shift+Z)">
             ↷ Redo
           </button>
+          <ConnectAiButton />
         </div>
       </header>
       <ErrorBanner />
@@ -83,6 +86,8 @@ export function Workspace() {
       </aside>
       <main className="viewport-panel">
         <ZoomStage>{selected?.kind === 'world' ? <WorldEditor key={selected.id} world={selected} /> : <Viewport />}</ZoomStage>
+        <AiSuggestions />
+        <AiNotes />
       </main>
       <aside className="panel inspector-panel">
         <Inspector />

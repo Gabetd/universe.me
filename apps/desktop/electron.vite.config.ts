@@ -16,7 +16,7 @@ function commit(): string {
 const buildInfo = JSON.stringify({ version: pkg.version, commit: commit(), builtAt: new Date().toISOString() })
 
 // Workspace packages are TypeScript sources, so they must be bundled, not externalized.
-const workspace = ['@universe/core', '@universe/db', '@universe/procgen', '@universe/sim']
+const workspace = ['@universe/api', '@universe/core', '@universe/db', '@universe/procgen', '@universe/sim']
 
 export default defineConfig({
   main: {

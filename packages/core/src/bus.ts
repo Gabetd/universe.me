@@ -60,6 +60,13 @@ export class CommandBus {
     return this.redoStack.length > 0
   }
 
+  /** How many of the latest changes, one after another, came from `source`: what undoing "the AI's changes" would take back. */
+  latestFrom(source: CommandSource): number {
+    let n = 0
+    while (n < this.undoStack.length && this.undoStack[this.undoStack.length - 1 - n]!.source === source) n++
+    return n
+  }
+
   /** Validates and applies a command. Throws `CommandError` if it is invalid. */
   execute(input: unknown, source: CommandSource = 'user'): ExecuteResult {
     const parsed = Command.safeParse(input)

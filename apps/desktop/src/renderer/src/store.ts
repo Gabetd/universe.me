@@ -44,6 +44,8 @@ export const useUi = create<UiState>((set, get) => ({
   nodes: [],
   canUndo: false,
   canRedo: false,
+  aiChanges: 0,
+  proposals: [],
   worlds: [],
   regions: [],
   timeline: EMPTY_TIMELINE,

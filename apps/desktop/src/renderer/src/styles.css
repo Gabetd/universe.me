@@ -1928,3 +1928,118 @@ input[type='color'] {
 .inspector-section textarea {
   resize: vertical;
 }
+
+/* AI clients (AiPanels): connecting them, their changes, their suggestions */
+.connect-ai {
+  position: relative;
+}
+.connect-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 4px;
+  background: var(--muted);
+  vertical-align: 1px;
+}
+.connect-dot.on {
+  background: #5fbf7a;
+  box-shadow: 0 0 6px #5fbf7a;
+}
+.connect-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  width: 420px;
+  max-height: 70vh;
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.copy-field {
+  font-family: ui-monospace, Consolas, Menlo, monospace;
+  font-size: 11px;
+  resize: none;
+  word-break: break-all;
+}
+.token {
+  font-size: 11px;
+  word-break: break-all;
+}
+.ai-notes {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 30;
+  display: grid;
+  gap: 6px;
+  max-width: 380px;
+}
+.ai-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #18214a;
+  border: 1px solid #2c3a78;
+  border-radius: var(--radius);
+  font-size: 13px;
+  animation: ai-note-in 0.2s ease-out;
+}
+.ai-note > span {
+  flex: 1;
+}
+@keyframes ai-note-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.ai-suggestions {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 30;
+  width: 360px;
+  max-height: 50%;
+  overflow: auto;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.ai-suggestions-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.ai-suggestions ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.ai-suggestions li {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.ai-suggestion-actions {
+  display: flex;
+  gap: 6px;
+}
+button.small {
+  padding: 2px 10px;
+  font-size: 12px;
+}

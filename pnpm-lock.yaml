@@ -65,6 +65,9 @@ importers:
       '@types/three':
         specifier: ^0.186.0
         version: 0.186.0
+      '@universe/api':
+        specifier: workspace:*
+        version: link:../../packages/api
       '@universe/core':
         specifier: workspace:*
         version: link:../../packages/core

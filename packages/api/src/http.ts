@@ -1,9 +1,8 @@
 import { timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { OPERATIONS, apiContext } from './catalog'
+import { OPERATIONS } from './catalog'
 import { errorMessage, errorStatus } from './errors'
-import type { ApiHost } from './host'
 import { McpServer } from './mcp'
 import { openApi } from './openapi'
 import type { ApiContext, Operation } from './operation'
@@ -73,18 +72,17 @@ function queryInput(url: URL): Record<string, string | string[]> {
  */
 export class ApiServer {
   private server: Server | undefined
-  private readonly ctx: ApiContext
   private readonly mcp: McpServer
   private readonly feeds = new Set<ServerResponse>()
   private heartbeat: ReturnType<typeof setInterval> | undefined
   private port = 0
 
+  /** Serves `ctx`'s project (see `apiContext`), which the host may share with its own uses of the API. */
   constructor(
-    host: ApiHost,
+    private readonly ctx: ApiContext,
     private readonly options: { token: string; version: string }
   ) {
-    this.ctx = apiContext(host)
-    this.mcp = new McpServer(this.ctx, options.version)
+    this.mcp = new McpServer(ctx, options.version)
   }
 
   /** Starts listening on 127.0.0.1 (`port` 0 picks a free one); resolves to the port. Fails if the port is taken. */

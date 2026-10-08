@@ -1,4 +1,5 @@
 import { regionAt, type Region, type SpatialNode } from '@universe/core'
+import { useState } from 'react'
 import { updater, useOwnRecords, useUi, useWorld } from '../store'
 import { ColorField, CommitSlider, DeleteButton, NotesField, PanelHeader, Swatch, SwatchList, TextField } from './fields'
 import { RegionHistory } from './RegionHistory'
@@ -52,7 +53,25 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
       <BlueprintLibrary />
 
       <RegionList worldId={world.id} regions={regions} selectedId={selectedRegion?.id} onPick={selectRegion} />
+      <ExportBible worldId={world.id} />
     </>
+  )
+}
+
+/** Writes the whole world up as one Markdown document (a "world bible"), where the user picks. */
+function ExportBible({ worldId }: { worldId: string }) {
+  const [saved, setSaved] = useState<string>()
+  const exportIt = async () => {
+    const path = await useUi.getState().run(window.universe.exportBible(worldId))
+    if (path) setSaved(path)
+  }
+  return (
+    <section className="inspector-section" aria-label="World bible">
+      <h3>World bible</h3>
+      <p className="muted small">The whole world as one document: its calendar, regions, history in order, structures, characters, life and the tone of each age.</p>
+      <button onClick={() => void exportIt()}>Export world bible…</button>
+      {saved && <p className="small muted" aria-label="Exported to">Saved to {saved}</p>}
+    </section>
   )
 }
 
