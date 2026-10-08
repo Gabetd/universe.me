@@ -1,6 +1,6 @@
 import { ageAt, characterAt, eventPlace, formatDuration, formatTime, isAlive, type Character } from '@universe/core'
 import { useMemo } from 'react'
-import { updater, useEventsById, useUi } from '../store'
+import { updater, useEventsById, useOwnRecords, useUi } from '../store'
 import { usePlayhead, useTimelineView } from '../timeline/timelineStore'
 import { useEditor } from '../world/editorStore'
 import { useCalendar } from '../world/useSky'
@@ -12,7 +12,7 @@ const latLon = (p: { lat: number; lon: number }) => `${Math.abs(p.lat).toFixed(3
 /** Inspector for a character: their lifespan, where they are at the playhead, and their journey. */
 export function CharacterPanel({ character }: { character: Character }) {
   const { selectCharacter } = useUi.getState()
-  const allEvents = useUi((s) => s.timeline.events)
+  const worldEvents = useOwnRecords('events', character.ownerId)
   const regions = useUi((s) => s.regions)
   const playhead = usePlayhead(character.ownerId)
   const cal = useCalendar(character.ownerId)
@@ -20,9 +20,16 @@ export function CharacterPanel({ character }: { character: Character }) {
   const place = characterAt(character, playhead)
   const alive = isAlive(character, playhead)
   // Events with a place on this world: somewhere to send them.
-  const events = useMemo(
-    () => allEvents.flatMap((e) => (e.ownerId === character.ownerId ? [{ event: e, place: eventPlace(e, regions) }] : [])).filter((x) => x.place),
-    [allEvents, regions, character.ownerId]
+  const events = useMemo(() => worldEvents.map((e) => ({ event: e, place: eventPlace(e, regions) })).filter((x) => x.place), [worldEvents, regions])
+  // Made once, not for every move of the playhead: a world can have thousands of events.
+  const eventOptions = useMemo(
+    () =>
+      events.map(({ event }) => (
+        <option key={event.id} value={event.id}>
+          {formatTime(event.start, event.precision, cal)} · {event.title}
+        </option>
+      )),
+    [events, cal]
   )
   const eventsById = useEventsById()
   const eventTitle = (id: string) => eventsById.get(id)?.title
@@ -70,11 +77,7 @@ export function CharacterPanel({ character }: { character: Character }) {
           }}
         >
           <option value="">Go to an event…</option>
-          {events.map(({ event }) => (
-            <option key={event.id} value={event.id}>
-              {formatTime(event.start, event.precision, cal)} · {event.title}
-            </option>
-          ))}
+          {eventOptions}
         </select>
       )}
 

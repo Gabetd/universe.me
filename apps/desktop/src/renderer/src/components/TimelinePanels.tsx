@@ -1,5 +1,6 @@
 import { LINK_TYPES, PRECISIONS, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type TimelineEvent } from '@universe/core'
-import { updater, useEventsById, useUi, type TimelineSelection } from '../store'
+import { useMemo } from 'react'
+import { updater, useEventsById, useOwnRecords, useUi, type TimelineSelection } from '../store'
 import { locationLabel } from '../timeline/labels'
 import { useEditor } from '../world/editorStore'
 import { ColorField, DeleteButton, NotesField, PanelHeader, SwatchList, TagsField, TextField, TimeField } from './fields'
@@ -22,7 +23,8 @@ export function TimelineInspector({ selection }: { selection: TimelineSelection 
   const find = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === id)
   const record = find(timeline[`${selection.kind}s`] as { id: string; updatedAt: string }[])
   if (!record) return null
-  const key = `${record.id}:${record.updatedAt}`
+  // A panel per record; its fields show new stored values (undo, an edit elsewhere) themselves.
+  const key = record.id
   switch (selection.kind) {
     case 'event':
       return <EventPanel key={key} event={record as TimelineEvent} />
@@ -41,16 +43,29 @@ const closePanel = () => useUi.getState().selectTimeline(null)
 
 function EventPanel({ event }: { event: TimelineEvent }) {
   const { execute } = useUi.getState()
-  const timeline = useUi((s) => s.timeline)
+  const ownLanes = useOwnRecords('lanes', event.ownerId)
+  const ownEvents = useOwnRecords('events', event.ownerId)
+  const allLinks = useUi((s) => s.timeline.links)
+  const group = useUi((s) => s.timeline.groups.find((g) => g.id === event.groupId))
   const regions = useUi((s) => s.regions)
   const owner = useUi((s) => s.nodes.find((n) => n.id === event.ownerId))
   const update = updater('event', event.id)
-  const lanes = timeline.lanes.filter((l) => l.ownerId === event.ownerId).sort((a, b) => a.order - b.order)
-  const others = timeline.events.filter((e) => e.ownerId === event.ownerId && e.id !== event.id)
+  const lanes = useMemo(() => [...ownLanes].sort((a, b) => a.order - b.order), [ownLanes])
   const eventsById = useEventsById()
   const title = (id: string) => eventsById.get(id)?.title ?? '?'
-  const links = timeline.links.filter((l) => l.fromId === event.id || l.toId === event.id)
-  const group = timeline.groups.find((g) => g.id === event.groupId)
+  const links = useMemo(() => allLinks.filter((l) => l.fromId === event.id || l.toId === event.id), [allLinks, event.id])
+  const hasOthers = ownEvents.some((e) => e.id !== event.id)
+  // The events it could go on to cause, made once (a timeline can have thousands), not linked to it yet.
+  const causeOptions = useMemo(() => {
+    const linked = new Set(links.flatMap((l) => [l.fromId, l.toId]))
+    return ownEvents
+      .filter((o) => o.id !== event.id && !linked.has(o.id))
+      .map((o) => (
+        <option key={o.id} value={o.id}>
+          {o.title}
+        </option>
+      ))
+  }, [ownEvents, links, event.id])
   const worldRegions = regions.filter((r) => r.worldId === event.ownerId)
   const onWorld = owner?.kind === 'world'
 
@@ -168,16 +183,10 @@ function EventPanel({ event }: { event: TimelineEvent }) {
             )
           })}
         </ul>
-        {others.length > 0 && (
+        {hasOthers && (
           <select aria-label="Link to event" value="" onChange={(e) => e.target.value && void execute({ type: 'link.create', payload: { fromId: event.id, toId: e.target.value } })}>
             <option value="">+ Causes…</option>
-            {others
-              .filter((o) => !links.some((l) => l.toId === o.id || l.fromId === o.id))
-              .map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.title}
-                </option>
-              ))}
+            {causeOptions}
           </select>
         )}
       </div>

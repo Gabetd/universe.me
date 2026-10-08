@@ -1,6 +1,5 @@
-import { useMemo } from 'react'
 import { regionAt, type Region, type SpatialNode } from '@universe/core'
-import { updater, useUi, useWorld } from '../store'
+import { updater, useOwnRecords, useUi, useWorld } from '../store'
 import { ColorField, CommitSlider, DeleteButton, NotesField, PanelHeader, Swatch, SwatchList, TextField } from './fields'
 import { RegionHistory } from './RegionHistory'
 import { BlueprintLibrary } from './BlueprintLibrary'
@@ -22,8 +21,6 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
   const selectedStructure = useUi((s) => s.timeline.structures.find((x) => x.id === s.selectedStructureId))
   const selectedCharacter = useUi((s) => s.timeline.characters.find((x) => x.id === s.selectedCharacterId))
   const execute = useUi((s) => s.execute)
-  const changes = useUi((s) => s.timeline.changes)
-  const playhead = usePlayhead(world.id)
   if (!info) return null
   const { settings } = info
   const update = updater('world', world.id)
@@ -52,18 +49,27 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
       <StructureList worldId={world.id} erosionSpeed={settings.erosionSpeed} onErosionSpeed={(erosionSpeed) => update({ erosionSpeed })} />
       <BlueprintLibrary />
 
-      <section className="inspector-section">
-        <h3>Regions</h3>
-        {regions.length === 0 ? (
-          <p className="muted small">None yet. Pick the ⬠ tool and click points on the world to draw one.</p>
-        ) : (
-          <SwatchList
-            rows={regions.map((r) => ({ id: r.id, name: r.name, color: r.color, selected: r.id === selectedRegion?.id, absent: regionAt(r, changes, playhead) ? undefined : 'Doesn’t exist at the playhead' }))}
-            onPick={selectRegion}
-          />
-        )}
-      </section>
+      <RegionList worldId={world.id} regions={regions} selectedId={selectedRegion?.id} onPick={selectRegion} />
     </>
+  )
+}
+
+/** The world's regions, dimmed where they don't exist at the playhead (which only this list follows). */
+function RegionList({ worldId, regions, selectedId, onPick }: { worldId: string; regions: Region[]; selectedId: string | undefined; onPick(id: string): void }) {
+  const changes = useUi((s) => s.timeline.changes)
+  const playhead = usePlayhead(worldId)
+  return (
+    <section className="inspector-section">
+      <h3>Regions</h3>
+      {regions.length === 0 ? (
+        <p className="muted small">None yet. Pick the ⬠ tool and click points on the world to draw one.</p>
+      ) : (
+        <SwatchList
+          rows={regions.map((r) => ({ id: r.id, name: r.name, color: r.color, selected: r.id === selectedId, absent: regionAt(r, changes, playhead) ? undefined : 'Doesn’t exist at the playhead' }))}
+          onPick={onPick}
+        />
+      )}
+    </section>
   )
 }
 
@@ -85,10 +91,9 @@ function RegionForm({ region }: { region: Region }) {
   )
 }
 
-/** The world's structures, coloured by condition at the playhead, and how fast things weather here. */
+/** The world's characters, dimmed when they aren't alive at the playhead. */
 function CharacterList({ worldId }: { worldId: string }) {
-  const all = useUi((s) => s.timeline.characters)
-  const characters = useMemo(() => all.filter((x) => x.ownerId === worldId), [all, worldId])
+  const characters = useOwnRecords('characters', worldId)
   const selectedId = useUi((s) => s.selectedCharacterId)
   const playhead = usePlayhead(worldId)
   const add = async () => {
@@ -113,9 +118,9 @@ function CharacterList({ worldId }: { worldId: string }) {
   )
 }
 
+/** The world's structures, coloured by condition at the playhead, and how fast things weather here. */
 function StructureList({ worldId, erosionSpeed, onErosionSpeed }: { worldId: string; erosionSpeed: number; onErosionSpeed(v: number): void }) {
-  const all = useUi((s) => s.timeline.structures)
-  const structures = useMemo(() => all.filter((x) => x.ownerId === worldId), [all, worldId])
+  const structures = useOwnRecords('structures', worldId)
   const selectedId = useUi((s) => s.selectedStructureId)
   const selectStructure = useUi((s) => s.selectStructure)
   const { curves } = useConditionCurves(worldId)
