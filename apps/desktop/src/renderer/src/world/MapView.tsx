@@ -4,6 +4,7 @@ import { memo, useEffect, useRef, useState } from 'react'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor } from './editorStore'
+import { showsLabel } from './labels'
 import { STAGE_COLORS } from './structureLook'
 import type { SurfaceViewProps, TerrainChange } from './useTerrain'
 
@@ -198,7 +199,8 @@ export const MapView = memo(function MapView({
           c.fillRect(x + shift - 2.5 / scale, y - 2.5 / scale, 5 / scale, 5 / scale)
         }
       }
-      for (const { structure, state, selected, hit } of structures) {
+      for (const placed of structures) {
+        const { structure, state, selected, hit } = placed
         const [x, y] = toMap(structure)
         const r = (selected ? 6 : 5) / scale
         c.globalAlpha = state.exists ? 1 : 0.35
@@ -215,7 +217,7 @@ export const MapView = memo(function MapView({
           c.stroke()
         }
         c.globalAlpha = 1
-        if ((structure.label && state.exists) || selected) {
+        if (showsLabel.structure(placed)) {
           c.font = `${selected ? 700 : 500} ${11 / scale}px system-ui, sans-serif`
           c.textAlign = 'left'
           c.fillStyle = '#ffffff'
@@ -253,7 +255,7 @@ export const MapView = memo(function MapView({
         c.lineWidth = 1.5 / scale
         c.stroke()
         c.globalAlpha = 1
-        if (pin.selected || pin.active) {
+        if (showsLabel.pin(pin)) {
           c.font = `${pin.selected ? 700 : 500} ${12 / scale}px system-ui, sans-serif`
           c.textAlign = 'left'
           c.fillStyle = '#ffffff'

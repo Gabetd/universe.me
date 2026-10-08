@@ -11,26 +11,19 @@ import { pickWith } from './pick'
 import type { SurfaceViewProps, TerrainChange } from './useTerrain'
 import { STAGE_COLORS } from './structureLook'
 import { EdgePush, zoomOut } from '../components/zoom'
-import type { ViewLabel } from './labels'
+import { viewLabels, type ViewLabel } from './labels'
 import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
 
-/** Labels for active or selected event pins, structures that show their name, and characters. */
+/** Labels just above the surface, hidden on the far side of the planet. */
 function surfaceLabels(pins: EventPin[], structures: PlacedStructure[], characters: PlacedCharacter[], model: TerrainModel, scale: number): ViewLabel[] {
-  const at = (lat: number, lon: number) => {
-    const p = new THREE.Vector3(...surfacePoint(model, latLonToDir(lat, lon), scale, 0.006))
-    // Hidden on the far side of the planet.
+  const at = (place: LatLon) => {
+    const p = new THREE.Vector3(...surfacePoint(model, latLonToDir(place.lat, place.lon), scale, 0.006))
     return (camera: THREE.Camera): [number, number, number] | null => (p.dot(camera.position) > p.lengthSq() ? p.toArray() : null)
   }
-  return [
-    ...pins.flatMap((p, i) => (p.selected || p.active ? [{ key: `pin:${p.eventId}:${i}`, text: p.title, selected: p.selected, at: at(p.lat, p.lon) }] : [])),
-    ...structures.flatMap((s) =>
-      (s.structure.label && s.state.exists) || s.selected ? [{ key: `structure:${s.structure.id}`, text: s.state.name, selected: s.selected, at: at(s.structure.lat, s.structure.lon) }] : []
-    ),
-    ...characters.map((c) => ({ key: `character:${c.character.id}`, text: c.character.name, selected: c.selected, at: at(c.place.lat, c.place.lon) }))
-  ]
+  return viewLabels(structures, characters, pins, { structure: (s) => at(s.structure), character: (c) => at(c.place), pin: at })
 }
 
 /** Vertices per face edge. Heights are sampled from the 256² grid, so 128 keeps the mesh light. */

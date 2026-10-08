@@ -23,7 +23,7 @@ import * as THREE from 'three'
 import { useUi } from '../store'
 import { useEditor } from './editorStore'
 import { pickWith } from './pick'
-import type { ViewLabel } from './labels'
+import { viewLabels, type ViewLabel } from './labels'
 import { NEAR_ONLY, instanceTint, plantGeometry } from './plants'
 import { blueprintExtent } from './structureLook'
 import { BlueprintParts } from './StructureMesh'
@@ -159,22 +159,18 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
   )
 })
 
-/** Labels for structures that show their name (or are selected), characters, and active or selected events. */
+/** Labels over things on the ground, hidden as far out as things are drawn. */
 function groundLabels(structures: PlacedStructure[], characters: PlacedCharacter[], pins: EventPin[], ground: Ground): ViewLabel[] {
   const at = (p: LatLon, lift: number) => {
     const [x, z] = toLocal(ground.frame, p)
     const point: [number, number, number] = [x, ground.standAt(x, z) + lift, z]
     return (camera: THREE.Camera) => (camera.position.distanceTo(new THREE.Vector3(...point)) < DRAW_M ? point : null)
   }
-  return [
-    ...structures.flatMap((s) =>
-      (s.structure.label && s.state.exists) || s.selected
-        ? [{ key: `structure:${s.structure.id}`, text: s.state.name, selected: s.selected, at: at(s.structure, blueprintExtent(s.blueprint) * s.structure.scale * 0.6 + 4) }]
-        : []
-    ),
-    ...characters.map((c) => ({ key: `character:${c.character.id}`, text: c.character.name, selected: c.selected, at: at(c.place, 2.4) })),
-    ...pins.flatMap((p, i) => (p.active || p.selected ? [{ key: `pin:${p.eventId}:${i}`, text: p.title, selected: p.selected, at: at(p, 46) }] : []))
-  ]
+  return viewLabels(structures, characters, pins, {
+    structure: (s) => at(s.structure, blueprintExtent(s.blueprint) * s.structure.scale * 0.6 + 4),
+    character: (c) => at(c.place, 2.4),
+    pin: (p) => at(p, 46)
+  })
 }
 
 /**
