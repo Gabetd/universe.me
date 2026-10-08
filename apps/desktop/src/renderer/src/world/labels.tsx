@@ -1,5 +1,5 @@
-import { useFrame } from '@react-three/fiber'
-import { useMemo } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
+import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 
 /** Text shown next to a point in a 3D view. */
@@ -24,9 +24,11 @@ export function LabelLayer({ items, labels }: { items: ViewLabel[]; labels: Map<
   )
 }
 
-/** Moves each HTML label to its point on screen every frame. */
+/** Moves each HTML label to its point on screen every frame, and draws a frame when the labels change. */
 export function LabelProjector({ items, labels }: { items: ViewLabel[]; labels: Map<string, HTMLDivElement> }) {
   const v = useMemo(() => new THREE.Vector3(), [])
+  const invalidate = useThree((s) => s.invalidate)
+  useEffect(() => invalidate(), [items, invalidate])
   useFrame(({ camera, size }) => {
     for (const l of items) {
       const el = labels.get(l.key)

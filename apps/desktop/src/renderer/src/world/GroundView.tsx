@@ -17,17 +17,17 @@ import {
   type LocalFrame,
   type Plant
 } from '@universe/procgen'
-import { OrbitControls } from '@react-three/drei'
-import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
+import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useUi } from '../store'
 import { useEditor } from './editorStore'
 import { pickWith } from './pick'
-import { LabelLayer, LabelProjector, type ViewLabel } from './labels'
+import type { ViewLabel } from './labels'
 import { NEAR_ONLY, instanceTint, plantGeometry } from './plants'
 import { blueprintExtent } from './structureLook'
 import { BlueprintParts } from './StructureMesh'
+import { SurfaceCanvas } from './SurfaceCanvas'
 import { useGroundChunks } from './useGroundChunks'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
@@ -45,6 +45,9 @@ const RAD = Math.PI / 180
 const inView = (x: number, z: number) => Math.hypot(x, z) <= DRAW_M
 const smooth = (t: number) => t * t * (3 - 2 * t)
 const latLonOf = (p: LatLon): [number, number] => [p.lat, p.lon]
+
+const CAMERA = { position: [0, 400, 600] as [number, number, number], fov: 55, near: 0.5, far: 9000 }
+const CONTROLS = { screenSpacePanning: false, minDistance: 3, maxDistance: MAX_DISTANCE, maxPolarAngle: Math.PI * 0.47, zoomSpeed: 0.9 }
 
 /** Heights of the ground anywhere: the globe's terrain plus the seeded detail the chunks have. */
 interface Ground {
@@ -74,7 +77,6 @@ interface Pad {
  */
 export function GroundView(props: SurfaceViewProps & { seed: number; worldId: string }) {
   const start = useEditor((s) => s.ground) ?? { lat: 0, lon: 0 }
-  const tool = useEditor((s) => s.tool)
   const [origin, setOrigin] = useState<LatLon>(start)
   const [center, setCenter] = useState<LatLon>(start)
   const [loaded, setLoaded] = useState(0)
@@ -122,49 +124,38 @@ export function GroundView(props: SurfaceViewProps & { seed: number; worldId: st
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` stands for the terrain heights
   }, [origin, radiusKm, seed, model, change, sites])
 
-  const labels = useMemo(() => new Map<string, HTMLDivElement>(), [])
   const { structures, characters, pins } = props
   const items = useMemo(() => groundLabels(structures, characters, pins, ground), [structures, characters, pins, ground])
 
   return (
-    // How many chunks are in, for tests to wait on.
-    <div className="globe-wrap" data-chunks={loaded}>
-      <Canvas camera={{ position: [0, 400, 600], fov: 55, near: 0.5, far: 9000 }} data-testid="ground" gl={{ preserveDrawingBuffer: true }}>
-        <color attach="background" args={[SKY]} />
-        <fog attach="fog" args={[SKY, 1400, 3400]} />
-        <hemisphereLight args={['#dce9f7', '#4a4536', 0.75]} />
-        <directionalLight position={[700, 650, 250]} intensity={1.6} />
-        <Rig ground={ground} onRebase={setOrigin} onCenter={setCenter} />
-        <Chunks {...props} ground={ground} center={center} onLoaded={setLoaded} />
-        <Water color={model.settings.terrain.waterColor} />
-        {props.structures.map((p) => (
-          <GroundStructure key={p.structure.id} placed={p} ground={ground} onClick={props.onStructureClick} />
-        ))}
-        {props.characters.map((c) => (
-          <Figure key={c.character.id} at={c.place} color={c.character.color} selected={c.selected} ground={ground} onClick={() => props.onCharacterClick(c.character.id)} />
-        ))}
-        {props.pins.map((p, i) => (
-          <Beacon key={`${p.eventId}:${i}`} at={p} color={p.color} lit={p.active || p.selected} ground={ground} onClick={() => props.onPinClick(p.eventId)} />
-        ))}
-        <LabelProjector items={items} labels={labels} />
-        <OrbitControls
-          makeDefault
-          screenSpacePanning={false}
-          minDistance={3}
-          maxDistance={MAX_DISTANCE}
-          maxPolarAngle={Math.PI * 0.47}
-          zoomSpeed={0.9}
-          // Dragging moves over the ground like a map; right-drag looks around. With a tool, left-drag is the tool's.
-          mouseButtons={{
-            LEFT: tool === 'navigate' ? THREE.MOUSE.PAN : (-1 as THREE.MOUSE),
-            MIDDLE: THREE.MOUSE.DOLLY,
-            RIGHT: THREE.MOUSE.ROTATE
-          }}
-        />
-      </Canvas>
-      <LabelLayer items={items} labels={labels} />
-      <GroundReadout ground={ground} />
-    </div>
+    <SurfaceCanvas
+      testId="ground"
+      camera={CAMERA}
+      // Dragging moves over the ground like a map; right-drag looks around.
+      navigate={THREE.MOUSE.PAN}
+      controls={CONTROLS}
+      labels={items}
+      // How many chunks are in, for tests to wait on.
+      wrap={{ 'data-chunks': loaded }}
+      overlay={<GroundReadout ground={ground} />}
+    >
+      <color attach="background" args={[SKY]} />
+      <fog attach="fog" args={[SKY, 1400, 3400]} />
+      <hemisphereLight args={['#dce9f7', '#4a4536', 0.75]} />
+      <directionalLight position={[700, 650, 250]} intensity={1.6} />
+      <Rig ground={ground} onRebase={setOrigin} onCenter={setCenter} />
+      <Chunks {...props} ground={ground} center={center} onLoaded={setLoaded} />
+      <Water color={model.settings.terrain.waterColor} />
+      {props.structures.map((p) => (
+        <GroundStructure key={p.structure.id} placed={p} ground={ground} onClick={props.onStructureClick} />
+      ))}
+      {props.characters.map((c) => (
+        <Figure key={c.character.id} at={c.place} color={c.character.color} selected={c.selected} ground={ground} onClick={() => props.onCharacterClick(c.character.id)} />
+      ))}
+      {props.pins.map((p, i) => (
+        <Beacon key={`${p.eventId}:${i}`} at={p} color={p.color} lit={p.active || p.selected} ground={ground} onClick={() => props.onPinClick(p.eventId)} />
+      ))}
+    </SurfaceCanvas>
   )
 }
 
@@ -194,6 +185,7 @@ function groundLabels(structures: PlacedStructure[], characters: PlacedCharacter
 function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: LatLon): void; onCenter(center: LatLon): void }) {
   // Through `get`, so the camera and controls are the scene's to move, not values held by this component.
   const get = useThree((s) => s.get)
+  const invalidate = useThree((s) => s.invalidate)
   const hasControls = useThree((s) => !!s.controls)
   const lastChunk = useRef('')
   const rig = () => {
@@ -210,6 +202,7 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
     controls.target.set(0, y, 0)
     camera.position.set(0, y + d * 0.6, d * 0.8)
     controls.update()
+    invalidate()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the controls exist
   }, [hasControls])
 
@@ -413,6 +406,7 @@ function PlantInstances({
   level(x: number, z: number, y: number): number
 }) {
   const mesh = useRef<THREE.InstancedMesh>(null)
+  const invalidate = useThree((s) => s.invalidate)
   const kept = useMemo(() => {
     const out: number[] = []
     const total = Math.floor((list.length / INSTANCE_STRIDE) * share)
@@ -442,7 +436,8 @@ function PlantInstances({
     m.instanceMatrix.needsUpdate = true
     if (m.instanceColor) m.instanceColor.needsUpdate = true
     m.computeBoundingSphere()
-  }, [kept, list, plant, level])
+    invalidate()
+  }, [kept, list, plant, level, invalidate])
   if (!kept.length) return null
   return (
     <instancedMesh key={kept.length} ref={mesh} args={[sharedPlantGeometry(plant, foliage), undefined, kept.length]} raycast={() => null}>

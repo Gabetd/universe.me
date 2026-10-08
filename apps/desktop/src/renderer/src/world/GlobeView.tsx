@@ -1,17 +1,18 @@
 import { CUBE_FACES, TERRAIN_RES } from '@universe/core'
 import { dirToLatLon, faceToDir, latLonToDir, renderFaceTexture, type TerrainModel, type Vec3 } from '@universe/procgen'
-import { Line, OrbitControls, Stars } from '@react-three/drei'
-import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
+import { Line, Stars } from '@react-three/drei'
+import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
-import { isBrushTool, useEditor } from './editorStore'
+import { isBrushTool, useEditor, type EditorTool } from './editorStore'
 import { pickWith } from './pick'
 import type { SurfaceViewProps } from './useTerrain'
 import { STAGE_COLORS } from './structureLook'
 import { EdgePush, zoomOut } from '../components/zoom'
-import { LabelLayer, LabelProjector, type ViewLabel } from './labels'
+import type { ViewLabel } from './labels'
+import { SurfaceCanvas } from './SurfaceCanvas'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
@@ -37,16 +38,21 @@ const SEGMENTS = 128
 
 const ALL_FACES = Array.from({ length: CUBE_FACES }, (_, f) => f)
 
+/** As close as the globe camera gets (in planet radii from the centre); scrolling in further goes down to the ground. */
+const MIN_DISTANCE = 1.07
+const MAX_DISTANCE = 8
+
 /** Position just above the surface (or the sea) in direction `dir`, in globe units. */
 function surfacePoint(model: TerrainModel, dir: Vec3, scale: number, lift: number): [number, number, number] {
   const r = 1 + Math.max(model.sampleHeight(...dir), model.settings.seaLevel) * scale + lift
   return [dir[0] * r, dir[1] * r, dir[2] * r]
 }
 
+const CAMERA = { position: [0, 0.6, 3] as [number, number, number], fov: 45, near: 0.01, far: 200 }
+const CONTROLS = { enablePan: false, minDistance: MIN_DISTANCE, maxDistance: MAX_DISTANCE, rotateSpeed: 0.5, zoomSpeed: 0.8 }
+
 export function GlobeView(props: SurfaceViewProps) {
-  const tool = useEditor((s) => s.tool)
   const exaggeration = useEditor((s) => s.exaggeration)
-  const labels = useMemo(() => new Map<string, HTMLDivElement>(), [])
   const scale = exaggeration / (props.model.settings.radiusKm * 1000)
   const items = useMemo(
     () => surfaceLabels(props.pins, props.structures, props.characters, props.model, scale),
@@ -54,34 +60,16 @@ export function GlobeView(props: SurfaceViewProps) {
     [props.pins, props.structures, props.characters, props.model, scale, props.change]
   )
   return (
-    <div className="globe-wrap">
-      <Canvas camera={{ position: [0, 0.6, 3], fov: 45, near: 0.01, far: 200 }} data-testid="globe" gl={{ preserveDrawingBuffer: true }}>
-        <color attach="background" args={[SPACE_BG]} />
-        <ambientLight intensity={0.45} />
-        <directionalLight position={[4, 2, 3]} intensity={2.2} />
-        <Stars radius={80} depth={40} count={4000} factor={3} fade speed={0} />
-        <Planet {...props} />
-        <LabelProjector items={items} labels={labels} />
-        <FocusOn focus={props.focus} />
-        <StartOver />
-        <ZoomToGround />
-        <OrbitControls
-          makeDefault
-          enablePan={false}
-          minDistance={MIN_DISTANCE}
-          maxDistance={MAX_DISTANCE}
-          rotateSpeed={0.5}
-          zoomSpeed={0.8}
-          // With a tool selected, left-drag edits and right-drag rotates.
-          mouseButtons={{
-            LEFT: tool === 'navigate' ? THREE.MOUSE.ROTATE : (-1 as THREE.MOUSE),
-            MIDDLE: THREE.MOUSE.DOLLY,
-            RIGHT: THREE.MOUSE.ROTATE
-          }}
-        />
-      </Canvas>
-      <LabelLayer items={items} labels={labels} />
-    </div>
+    <SurfaceCanvas testId="globe" camera={CAMERA} navigate={THREE.MOUSE.ROTATE} controls={CONTROLS} labels={items}>
+      <color attach="background" args={[SPACE_BG]} />
+      <ambientLight intensity={0.45} />
+      <directionalLight position={[4, 2, 3]} intensity={2.2} />
+      <Stars radius={80} depth={40} count={4000} factor={3} fade speed={0} />
+      <Planet {...props} />
+      <FocusOn focus={props.focus} />
+      <StartOver />
+      <ZoomToGround />
+    </SurfaceCanvas>
   )
 }
 
@@ -101,6 +89,7 @@ function Planet({
   onCharacterClick
 }: SurfaceViewProps) {
   const exaggeration = useEditor((s) => s.exaggeration)
+  const invalidate = useThree((s) => s.invalidate)
   const faces = useMemo(() => ALL_FACES.map(createFace), [])
   const cursor = useRef<THREE.Mesh>(null)
   const hover = useRef<Vec3 | null>(null)
@@ -111,7 +100,8 @@ function Planet({
   // Recolor only the faces that changed.
   useEffect(() => {
     for (const f of change.faces === 'all' ? ALL_FACES : change.faces) updateTexture(faces[f]!, model)
-  }, [change, faces, model])
+    invalidate()
+  }, [change, faces, model, invalidate])
 
   // Reshape the changed faces, or all of them when the relief scale changed (colors don't depend on it).
   const shapedScale = useRef<number>(undefined)
@@ -119,16 +109,24 @@ function Planet({
     const list = scale !== shapedScale.current || change.faces === 'all' ? ALL_FACES : change.faces
     shapedScale.current = scale
     for (const f of list) updateGeometry(faces[f]!, model, scale)
-  }, [change, faces, model, scale])
+    invalidate()
+  }, [change, faces, model, scale, invalidate])
 
   useEffect(() => () => faces.forEach((f) => (f.geometry.dispose(), f.texture.dispose())), [faces])
+
+  // The brush cursor follows the pointer, the tool and the brush size.
+  useEffect(() => useEditor.subscribe((s, prev) => (s.tool !== prev.tool || s.radiusKm !== prev.radiusKm) && invalidate()), [invalidate])
+  const moveCursor = (dir: Vec3 | null) => {
+    hover.current = dir
+    if (showsCursor(useEditor.getState().tool)) invalidate()
+  }
 
   useFrame(() => {
     const c = cursor.current
     if (!c) return
     const { tool, radiusKm } = useEditor.getState()
     const dir = hover.current
-    c.visible = !!dir && (isBrushTool(tool) || tool === 'region')
+    c.visible = !!dir && showsCursor(tool)
     if (!dir) return
     c.position.set(...surfacePoint(model, dir, scale, 0.002))
     c.lookAt(c.position.x * 2, c.position.y * 2, c.position.z * 2)
@@ -151,10 +149,11 @@ function Planet({
             if (e.button === 0 && onPointerDown(toDir(e))) e.stopPropagation()
           }}
           onPointerMove={(e) => {
-            hover.current = toDir(e)
-            onPointerMove(hover.current)
+            const dir = toDir(e)
+            moveCursor(dir)
+            onPointerMove(dir)
           }}
-          onPointerOut={() => (hover.current = null)}
+          onPointerOut={() => moveCursor(null)}
           onDoubleClick={onDoubleClick}
         >
           <meshStandardMaterial map={f.texture} roughness={0.95} metalness={0} />
@@ -200,6 +199,9 @@ function Planet({
     </group>
   )
 }
+
+/** Brushes and region drawing show where they'd land under the pointer. */
+const showsCursor = (tool: EditorTool) => isBrushTool(tool) || tool === 'region'
 
 function RegionLines({
   model,
@@ -319,18 +321,16 @@ function SurfacePin({
   )
 }
 
-/** As close as the globe camera gets (in planet radii from the centre); scrolling in further goes down to the ground. */
-const MIN_DISTANCE = 1.07
-const MAX_DISTANCE = 8
-
 /** Opens facing where the view last looked (e.g. coming back up from the ground), and keeps note of it. */
 function StartOver() {
   const camera = useThree((s) => s.camera)
   const controls = useThree((s) => s.controls) as (THREE.EventDispatcher<{ end: object }> & { update(): void }) | null
+  const invalidate = useThree((s) => s.invalidate)
   useEffect(() => {
     const { lookingAt, lookDistance } = useEditor.getState()
     if (lookingAt) camera.position.copy(new THREE.Vector3(...latLonToDir(lookingAt.lat, lookingAt.lon)).multiplyScalar(lookDistance))
     controls?.update()
+    invalidate()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the view opens
   }, [controls])
   useEffect(() => {
@@ -373,10 +373,12 @@ function ZoomToGround() {
 function FocusOn({ focus }: { focus: SurfaceViewProps['focus'] }) {
   const camera = useThree((s) => s.camera)
   const controls = useThree((s) => s.controls) as { update(): void } | null
+  const invalidate = useThree((s) => s.invalidate)
   const target = useRef<THREE.Vector3 | null>(null)
   const key = focus?.key
   useEffect(() => {
     target.current = focus ? new THREE.Vector3(...latLonToDir(focus.lat, focus.lon)) : null
+    invalidate()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new focus point should move the camera
   }, [key])
   useFrame(() => {
@@ -387,6 +389,8 @@ function FocusOn({ focus }: { focus: SurfaceViewProps['focus'] }) {
     camera.position.copy(next.multiplyScalar(distance))
     controls?.update()
     if (next.angleTo(goal) < 0.01) target.current = null
+    // Another frame: to keep turning, or once there, to draw everything where the camera stopped.
+    invalidate()
   })
   return null
 }

@@ -1,4 +1,5 @@
 import type { Blueprint, BlueprintModel, BlueprintPart, Material, Shape } from '@universe/core'
+import { useThree } from '@react-three/fiber'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useModel } from './models'
 import * as THREE from 'three'
@@ -111,11 +112,13 @@ function setAge(material: THREE.Material | THREE.Material[], age: number) {
 
 function PartInstances({ parts, age, ghost }: { parts: BlueprintPart[]; age: number; ghost: boolean }) {
   const mesh = useRef<THREE.InstancedMesh>(null)
+  const invalidate = useThree((s) => s.invalidate)
   const { shape, color } = parts[0]!
   const tinted = useMemo(() => new THREE.Color(color).lerp(WEATHERED, age), [color, age])
   useEffect(() => {
     if (mesh.current) setAge(mesh.current.material, age)
-  }, [age, ghost])
+    invalidate()
+  }, [age, ghost, invalidate])
   useLayoutEffect(() => {
     const m = mesh.current
     if (!m) return
@@ -128,7 +131,8 @@ function PartInstances({ parts, age, ghost }: { parts: BlueprintPart[]; age: num
     m.instanceMatrix.needsUpdate = true
     // Clicks and culling use the bounds of all instances.
     m.computeBoundingSphere()
-  }, [parts])
+    invalidate()
+  }, [parts, invalidate])
   return (
     <instancedMesh ref={mesh} args={[GEOMETRIES[shape], undefined, parts.length]}>
       <meshStandardMaterial
@@ -147,6 +151,7 @@ function PartInstances({ parts, age, ghost }: { parts: BlueprintPart[]; age: num
 /** An imported model at its real height, tinted toward grime as it ages and slumping as a ruin. */
 function ModelMesh({ model, condition, ghost }: { model: BlueprintModel; condition: number; ghost: boolean }) {
   const object = useModel(model.assetId)
+  const invalidate = useThree((s) => s.invalidate)
   const age = ghost ? 0 : Math.min(0.65, (1 - condition / 100) * 0.8)
   useEffect(() => {
     object?.traverse((o) => {
@@ -159,7 +164,8 @@ function ModelMesh({ model, condition, ghost }: { model: BlueprintModel; conditi
         m.opacity = ghost ? 0.25 : 1
       }
     })
-  }, [object, age, ghost])
+    invalidate()
+  }, [object, age, ghost, invalidate])
   const slump = condition < 20 && !ghost ? 0.45 + 0.55 * (condition / 20) : 1
   if (!object) {
     // A placeholder block until the model loads.

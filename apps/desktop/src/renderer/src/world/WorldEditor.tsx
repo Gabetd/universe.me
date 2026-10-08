@@ -14,6 +14,7 @@ import { useTerrain, type SurfaceViewProps } from './useTerrain'
 import { useStructuresAt } from './useStructures'
 import { useCharactersAt } from './useCharacters'
 import { useWorldAtTime } from './useWorldAtTime'
+import { WEBGL } from './webgl'
 import { BlueprintOptions } from '../components/BlueprintOptions'
 
 const TOOLS: { tool: EditorTool; label: string; icon: string; hint: string }[] = [
@@ -37,13 +38,7 @@ const PICK_TOOLS: EditorTool[] = ['locate', 'move', 'travel']
 const GROUND_HINT = 'Drag to move over the ground, right-drag to look around, scroll to zoom. Scroll all the way out to go back up.'
 
 /** WebGL can be missing (old GPUs, remote desktops); the map still works without it. */
-const hasWebGL = (() => {
-  try {
-    return !!document.createElement('canvas').getContext('webgl2')
-  } catch {
-    return false
-  }
-})()
+const hasWebGL = WEBGL.available
 
 export function WorldEditor({ world }: { world: SpatialNode }) {
   const { info, regions: allRegions } = useWorld(world.id)
