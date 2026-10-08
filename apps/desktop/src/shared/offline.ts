@@ -10,11 +10,13 @@ const LOCAL = ['data:', 'blob:', 'devtools:', 'chrome:', 'chrome-extension:']
 /** Where the self-updater may download from (GitHub redirects release files to its CDN). */
 export const UPDATE_HOSTS = ['https://github.com/Gabetd/universe.me/releases/download/', 'https://objects.githubusercontent.com/', 'https://release-assets.githubusercontent.com/']
 
+/** The app's folder (a file URL ending in /) as `isAllowedRequest` compares paths: decoded, and in one case (Windows' drive letters and folders come in either). */
+export const appFolder = (fileUrl: string) => decodeURIComponent(new URL(fileUrl).pathname).toLowerCase()
+
 /**
  * Whether a file: URL is one of the app's own files: on this computer (a
  * file://host/ address is another computer's, which on Windows is a network
- * share) and, given `files` (the app's folder as a file URL ending in /),
- * inside it.
+ * share) and, given `files` (the app's folder, from `appFolder`), inside it.
  */
 function isAppFile(url: string, files?: string): boolean {
   let path: string
@@ -26,13 +28,12 @@ function isAppFile(url: string, files?: string): boolean {
     return false
   }
   if (path.includes('/../') || path.includes('\\')) return false
-  // Drive letters and folders may come in either case on Windows.
-  return !files || path.toLowerCase().startsWith(decodeURIComponent(new URL(files).pathname).toLowerCase())
+  return !files || path.toLowerCase().startsWith(files)
 }
 
 /**
  * Whether a request may go out. Pages (`fromPage`) only load the app itself
- * (`files`: its folder); the main process may also reach the update hosts.
+ * (`files`: its folder, from `appFolder`); the main process may also reach the update hosts.
  * `extra` adds origins for development (the Vite dev server) and tests (a
  * local update server).
  */

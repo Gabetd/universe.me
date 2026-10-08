@@ -3,7 +3,7 @@ import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { rng } from '@universe/procgen'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session as electronSession, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type WebFrameMain } from 'electron'
-import { isAllowedRequest } from '../shared/offline'
+import { appFolder, isAllowedRequest } from '../shared/offline'
 import { EVENTS, INVOKE, type AppState, type BuildInfo, type ImportedModel, type InvokeMethod, type MenuAction, type Result, type UniverseApi } from '../shared/api'
 import type { ApiController } from './api'
 import type { Session } from './session'
@@ -43,8 +43,10 @@ let pendingOpen: string | undefined = process.argv.find((a) => a.endsWith('.univ
 
 /** The dev server, in development only (a packaged app never loads anything but its own files). */
 const devServer = !app.isPackaged && process.env.ELECTRON_RENDERER_URL ? new URL(process.env.ELECTRON_RENDERER_URL) : undefined
+/** The app's renderer: its page and the files that page loads. */
+const RENDERER_DIR = join(__dirname, '../renderer')
 /** The app's own page: the only one its window shows, and the only one the main process answers. */
-const appPage = devServer ?? pathToFileURL(join(__dirname, '../renderer/index.html'))
+const appPage = devServer ?? pathToFileURL(join(RENDERER_DIR, 'index.html'))
 /** Whether a URL is the app's page (its hash and query aside). */
 const isAppPage = (url: string) => {
   try {
@@ -91,8 +93,7 @@ function createWindow(): void {
   // WebRTC can send packets that no request filter sees: none that bypass a proxy, and the app has none.
   win.webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')
 
-  if (devServer) void win.loadURL(devServer.href)
-  else void win.loadFile(join(__dirname, '../renderer/index.html'))
+  void win.loadURL(appPage.href)
 
   if (pendingOpen) {
     const path = pendingOpen
@@ -376,7 +377,7 @@ function keepOffline(): void {
   // Dev server hot reload uses a websocket on the same host.
   if (devServer) extra.push(`ws://${devServer.host}/`)
   // The app's files: its renderer folder (inside its archive when packaged), and nothing else on disk or another computer.
-  const files = pathToFileURL(join(__dirname, '../renderer')).href + '/'
+  const files = appFolder(pathToFileURL(RENDERER_DIR).href + '/')
   const defaults = electronSession.defaultSession
   defaults.webRequest.onBeforeRequest((details, callback) => {
     const allowed = isAllowedRequest(details.url, details.webContentsId !== undefined, extra, files)

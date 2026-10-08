@@ -31,12 +31,15 @@ const Place = z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-
 const Tags = z.array(z.string().min(1).max(60))
 const Notes = z.string().describe('Plain text: paragraphs separated by a blank line, "- " for list items')
 
-/** Applies (or proposes) commands as one undoable step, and says what was done. */
-/** The types of commands, batches opened up. */
-function commandTypes(commands: readonly Command[]): string[] {
-  return commands.flatMap((c) => (c.type === 'batch' ? commandTypes((c.payload as { commands?: Command[] }).commands ?? []) : [String(c.type)]))
+/** The types of commands, batches opened up (before they're checked: a malformed one is the bus's to turn down). */
+function commandTypes(commands: readonly unknown[]): string[] {
+  return commands.flatMap((c) => {
+    const { type, payload } = (c ?? {}) as { type?: unknown; payload?: { commands?: unknown } }
+    return type === 'batch' && Array.isArray(payload?.commands) ? commandTypes(payload.commands) : [String(type)]
+  })
 }
 
+/** Applies (or proposes) commands as one undoable step, and says what was done. */
 function write(ctx: ApiContext, commands: Command[], summary: string, ids: Record<string, string> = {}) {
   const command: Command = commands.length === 1 ? commands[0]! : { type: 'batch', payload: { commands } }
   const outcome = ctx.host.write(command, summary)
@@ -539,9 +542,10 @@ export const WRITES = [
     run: (ctx, p) => {
       // What the commands are, not only what the client says they do: in review mode this is what the user decides on.
       // Batches inside are counted through, so one can't hide what it holds behind "batch".
-      const types = commandTypes(p.commands as unknown as Command[])
-      const counts = [...new Set(types)].map((t) => (types.filter((x) => x === t).length > 1 ? `${t} ×${types.filter((x) => x === t).length}` : t))
-      return write(ctx, p.commands as unknown as Command[], `${p.summary} [${counts.join(', ')}]`)
+      const counts = new Map<string, number>()
+      for (const type of commandTypes(p.commands)) counts.set(type, (counts.get(type) ?? 0) + 1)
+      const listed = [...counts].map(([type, n]) => (n > 1 ? `${type} ×${n}` : type))
+      return write(ctx, p.commands as unknown as Command[], `${p.summary} [${listed.join(', ')}]`)
     }
   })
 ]

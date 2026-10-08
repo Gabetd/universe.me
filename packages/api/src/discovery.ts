@@ -33,23 +33,13 @@ function privateDir(): string {
 
 export const discoveryPath = () => process.env.UNIVERSE_API_DISCOVERY ?? join(privateDir(), 'api.json')
 
-/** Whether a process is still running. */
-export function alive(pid: number): boolean {
+/** Whether a process is still running: this user's (`own`), or anyone's (another user's can't be signalled, EPERM). */
+export function alive(pid: number, own = false): boolean {
   try {
     process.kill(pid, 0)
     return true
   } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'EPERM'
-  }
-}
-
-/** Whether a process is running and this user's. */
-function ownProcess(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
+    return !own && (err as NodeJS.ErrnoException).code === 'EPERM'
   }
 }
 
@@ -64,7 +54,7 @@ export function readDiscovery(path = discoveryPath()): Discovery | undefined {
     if (!ours(path)) return undefined
     const d = JSON.parse(readFileSync(path, 'utf8')) as Discovery
     // Ours, so the app ran as this user: a process of that number that's someone else's (EPERM) is a new one, not the app.
-    return typeof d.pid === 'number' && ownProcess(d.pid) ? d : undefined
+    return typeof d.pid === 'number' && alive(d.pid, true) ? d : undefined
   } catch {
     return undefined
   }

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { isAllowedRequest } from './offline'
+import { appFolder, isAllowedRequest } from './offline'
 
 describe('isAllowedRequest', () => {
   it('lets the app load itself, and no other file', () => {
-    const files = 'file:///opt/Universe/resources/app.asar/out/renderer/'
+    const files = appFolder('file:///opt/Universe/resources/app.asar/out/renderer/')
     expect(isAllowedRequest('file:///opt/Universe/resources/app.asar/out/renderer/index.html', true, [], files)).toBe(true)
     expect(isAllowedRequest('file:///opt/Universe/resources/app.asar/out/renderer/assets/a%20b.js', true, [], files)).toBe(true)
     expect(isAllowedRequest('blob:file:///1234', true, [], files)).toBe(true)
@@ -13,7 +13,7 @@ describe('isAllowedRequest', () => {
     expect(isAllowedRequest('file://attacker.example/share/x.png', true, [], files)).toBe(false)
     expect(isAllowedRequest('file://attacker.example/share/x.png', true)).toBe(false)
     // Windows: either case.
-    expect(isAllowedRequest('file:///c:/Program%20Files/Universe/resources/app.asar/out/renderer/index.html', true, [], 'file:///C:/Program%20Files/Universe/resources/app.asar/out/renderer/')).toBe(true)
+    expect(isAllowedRequest('file:///c:/Program%20Files/Universe/resources/app.asar/out/renderer/index.html', true, [], appFolder('file:///C:/Program%20Files/Universe/resources/app.asar/out/renderer/'))).toBe(true)
   })
 
   it('blocks the pages from reaching the internet, even the update hosts', () => {

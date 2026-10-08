@@ -71,7 +71,7 @@ export function skyEvents(system: SystemModel, planetId: string, t0: number, t1:
       while (e > prev + Math.PI) e -= TAU
       return e
     }
-    // Far enough from 0 a step is smaller than a double can tell apart (t + step === t): nothing to find, and the loop would never end.
+    // Far enough from 0 a step is smaller than a double can tell apart (t + step === t): nothing to find there.
     if (!(t0 + step > t0)) continue
     let t = t0
     let e = elongationAt(system, moon, t)

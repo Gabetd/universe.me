@@ -59,8 +59,11 @@ async function bibleData({ models: m }: ApiContext, worldId: string) {
   }
 }
 
+/** Characters Markdown reads as formatting, HTML or links. */
+const SPECIAL = /[\\`*_~[\]<>|]/g
+
 /** A name, title or date as Markdown text: on one line, its formatting characters taken literally. */
-const md = (text: string) => text.replace(/\s*\n\s*/g, ' ').replace(/[\\`*_[\]#<>|]/g, '\\$&')
+const md = (text: string) => text.replace(/\s*\n\s*/g, ' ').replace(SPECIAL, '\\$&').replace(/#/g, '\\#')
 
 /**
  * Notes as Markdown text: their paragraphs, line breaks and "- " lists kept,
@@ -70,7 +73,8 @@ const md = (text: string) => text.replace(/\s*\n\s*/g, ' ').replace(/[\\`*_[\]#<
 const mdText = (text: string) =>
   text
     .split('\n')
-    .map((line) => line.replace(/[\\`*_[\]<>|]/g, '\\$&').replace(/^(\s*)(#|>|=|\d+[.)])/, '$1\\$2'))
+    // A line of dashes would make the one above a heading (or draw a rule).
+    .map((line) => line.replace(SPECIAL, '\\$&').replace(/^(\s*)(#|>|=|\d+[.)]|-{2,}\s*$)/, '$1\\$2'))
     .join('\n')
 
 function markdown(b: BibleData): string {

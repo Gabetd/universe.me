@@ -27,10 +27,10 @@ export const KIND_LABELS: Record<NodeKind, string> = {
 }
 
 export const Id = z.string().min(1)
+export type Id = z.infer<typeof Id>
 
 /** Rich-text notes (HTML). Long enough for any lore; bounded, as every reader of them (search, the bible, the editor) reads them whole. */
 export const Notes = z.string().max(500_000)
-export type Id = z.infer<typeof Id>
 
 /** The name or title of anything a user names. */
 export const Name = z.string().min(1).max(200)

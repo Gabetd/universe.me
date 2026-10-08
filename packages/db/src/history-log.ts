@@ -12,7 +12,9 @@ const DEFLATED = { min: 1024, max: 4 * 1024 * 1024 }
 /** JSON, deflated (level 1, like terrain layers) when that's worth it. */
 function pack(command: Command): string | Uint8Array {
   const json = JSON.stringify(command)
-  return json.length < DEFLATED.min || json.length > DEFLATED.max ? json : deflateSync(json, { level: 1 })
+  // In bytes, as inflating counts them (text beyond ASCII takes up to three each).
+  const bytes = Buffer.byteLength(json)
+  return bytes < DEFLATED.min || bytes > DEFLATED.max ? json : deflateSync(json, { level: 1 })
 }
 
 function unpack(value: string | Uint8Array): Command {

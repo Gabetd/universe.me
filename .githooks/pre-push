@@ -3,7 +3,7 @@
 # Enable once per clone: git config core.hooksPath .githooks
 # Skip in an emergency: git push --no-verify
 # A commit that already passed a full local run (pnpm ci:local) isn't run again.
-# Each commit being pushed (git gives them on stdin) is checked, not just HEAD.
+# Each ref being pushed is checked (git gives each one's tip on stdin), not just HEAD.
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/universe-ci"
 head=$(git rev-parse HEAD)
 run=0

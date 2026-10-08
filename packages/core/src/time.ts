@@ -127,15 +127,15 @@ export function formatDuration(seconds: number, cal: Calendar = DEFAULT_CALENDAR
 
 const SCALE_WORDS: Record<string, number> = { k: 1e3, thousand: 1e3, m: 1e6, million: 1e6, b: 1e9, billion: 1e9 }
 
+/** The longest date text read. */
+export const MAX_DATE_TEXT = 100
+
 /**
  * Reads a date the way people type one, including everything formatTime
  * writes: "1204", "-3000", "1204-03-15", "1204-03-15 14:30", "15 Mar 1204",
  * "15 Mar 1204, 14:30", "Mar 1204", "c. 1200" or "~1200" (approximate),
  * "12th century", "4.5 billion", "-2.5k". Returns undefined if it isn't a date.
  */
-/** The longest date text read. */
-export const MAX_DATE_TEXT = 100
-
 export function parseTime(input: string, cal: Calendar = DEFAULT_CALENDAR): { t: Time; precision: Precision } | undefined {
   // No date is this long; the patterns below needn't see one that is.
   if (input.length > MAX_DATE_TEXT) return undefined

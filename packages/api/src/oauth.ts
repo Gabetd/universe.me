@@ -228,8 +228,12 @@ export class OAuth {
 
   /** Sign-ins waiting for their code, oldest first. */
   pendingSignIns(): SignIn[] {
+    return this.waiting().map(({ id, client, code, to, expires }) => ({ id, client, code, to, expires }))
+  }
+
+  private waiting(): PendingSignIn[] {
     const now = this.now()
-    return [...this.signIns.values()].filter((s) => s.expires > now).map(({ id, client, code, to, expires }) => ({ id, client, code, to, expires }))
+    return [...this.signIns.values()].filter((s) => s.expires > now)
   }
 
   connections(): Connection[] {
@@ -359,12 +363,12 @@ export class OAuth {
     const resource = q.get('resource')
     if (resource && ![base, `${base}/`, `${base}/mcp`].includes(resource)) return fail('invalid_target', `This server is ${base}/mcp`)
     const busy = () => page(res, 429, 'Too many sign-ins', '<p>Too many sign-ins have been started. Try again in a few minutes.</p>')
-    if (!this.signInsBySender.take(from.source)) return busy()
+    if (!this.signInsBySender.take(from.source) || !this.signInsOverall.take('all')) return busy()
     // A sender's newest sign-in replaces its oldest, so one sending many can't crowd out anyone else's.
-    const waiting = this.pendingSignIns().map((s) => this.signIns.get(s.id)!)
+    const waiting = this.waiting()
     const own = waiting.filter((s) => s.source === from.source)
     if (own.length >= WAITING_PER_SENDER) this.deny(own[0]!.id)
-    else if (waiting.length >= WAITING_OVERALL || !this.signInsOverall.take('all')) return busy()
+    else if (waiting.length >= WAITING_OVERALL) return busy()
     const signIn: PendingSignIn = {
       id: secret(),
       client: client.name,

@@ -8,7 +8,7 @@ import { app } from 'electron'
 import createTerrainWorker from './terrain.worker?nodeWorker'
 import type { AiChange, ApiSettingsPatch, ApiStatus, AppState, PhoneStatus, TailscaleState } from '../shared/api'
 import type { Session } from './session'
-import { setFunnel, tailscaleState } from './tailscale'
+import { funnelOffNow, setFunnel, tailscaleState } from './tailscale'
 
 /** Where the API listens unless that's taken (then the next few ports are tried). */
 const DEFAULT_PORT = 47615
@@ -44,6 +44,9 @@ export class ApiController {
   private tailscale: TailscaleState = { kind: 'missing' }
   private phoneError: string | undefined
   private syncing = Promise.resolve()
+  private next: Promise<void> | undefined
+  /** Where the app pointed Funnel, while it does. */
+  private funnelTo: number | undefined
   private readonly oauth: OAuth
   readonly ctx: ApiContext
 
@@ -82,8 +85,8 @@ export class ApiController {
       if (this.server) this.error = undefined
     }
     this.announce()
-    // Funnel follows the port, which can change from one start to the next.
-    if (this.settings.phone) void this.syncPhone()
+    // Funnel follows the port, which can change from one start to the next (and goes when nothing listens).
+    if (this.settings.phone || this.funnelTo !== undefined) void this.syncPhone()
   }
 
   async stop(): Promise<void> {
@@ -95,6 +98,8 @@ export class ApiController {
   /** At quit: no `--mcp` server is pointed here any more (at once: the process may end before anything async finishes), and nothing is left listening. */
   close(): void {
     clearDiscovery()
+    // Nor anything left on the internet: a Funnel to a port nothing listens on, which another program could take.
+    if (this.funnelTo !== undefined) funnelOffNow()
     void this.stop()
   }
 
@@ -127,21 +132,29 @@ export class ApiController {
    * API's port (or, with it off, turns off a Funnel that points here).
    */
   syncPhone(): Promise<void> {
-    // One at a time: each runs Tailscale's command, and the last one's answer is what shows.
-    this.syncing = this.syncing.then(() => this.lookAtTailscale())
-    return this.syncing
+    // One at a time (each runs Tailscale's command), and one waiting is enough however many are asked for meanwhile.
+    this.next ??= this.syncing
+      .catch(() => {})
+      .then(() => {
+        this.next = undefined
+        return this.lookAtTailscale()
+      })
+    this.syncing = this.next
+    return this.next
   }
 
   private async lookAtTailscale(): Promise<void> {
     this.phoneError = undefined
     this.tailscale = await tailscaleState()
     const ts = this.tailscale
-    if (ts.kind === 'ready' && this.port !== null) {
-      const wanted = this.settings.phone ? this.port : null
-      const ours = ts.funnelPort === this.port
-      if ((wanted !== null && !ours) || (wanted === null && ours)) {
+    if (ts.kind === 'ready') {
+      const wanted = this.settings.phone && this.port !== null ? this.port : null
+      // One pointing here, or where the app last pointed it (where nothing may listen now), is the app's to change.
+      const ours = ts.funnelPort !== null && (ts.funnelPort === this.port || ts.funnelPort === this.funnelTo)
+      if (wanted !== null ? ts.funnelPort !== wanted : ours) {
         try {
           await setFunnel(wanted)
+          this.funnelTo = wanted ?? undefined
           this.tailscale = await tailscaleState()
         } catch (err) {
           this.phoneError = (err as Error).message

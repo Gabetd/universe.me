@@ -12,8 +12,8 @@ import { CopyButton } from './fields'
 
 const undoAi = () => applyReply(window.universe.undoAi())
 
-/** The API's status, kept up to date, and a way to change it that shows the change at once. */
-function useApiStatus(): [ApiStatus | undefined, (patch: ApiSettingsPatch) => void] {
+/** The API's status, kept up to date, a way to change it that shows the change at once, and one to look again (Tailscale too). */
+function useApiStatus(): [ApiStatus | undefined, (patch: ApiSettingsPatch) => void, () => void] {
   const [status, setStatus] = useState<ApiStatus>()
   useEffect(() => {
     void window.universe.apiStatus().then(setStatus)
@@ -24,7 +24,8 @@ function useApiStatus(): [ApiStatus | undefined, (patch: ApiSettingsPatch) => vo
     setStatus((s) => s && { ...s, ...rest, phone: phone === undefined ? s.phone : { ...s.phone, on: phone } })
     void window.universe.setApi(patch).then(setStatus)
   }
-  return [status, set]
+  const refresh = () => void window.universe.apiStatus().then(setStatus)
+  return [status, set, refresh]
 }
 
 /** A command to copy, in a box that selects it all. */
@@ -42,12 +43,18 @@ function CopyField({ label, value }: { label: string; value: string }) {
 
 /** The topbar button that opens the Connect AI panel, lit while AI clients can connect. */
 export function ConnectAiButton() {
-  const [status, set] = useApiStatus()
+  const [status, set, refresh] = useApiStatus()
   const [open, setOpen] = useState(false)
   const on = !!status?.enabled && status.port !== null
   return (
     <div className="connect-ai">
-      <button aria-expanded={open} onClick={() => setOpen(!open)} title={on ? `AI clients can connect on 127.0.0.1:${status!.port}` : 'Connect Claude or another AI client'}>
+      {/* Opening looks again: Tailscale may have been installed or signed in to since. */}
+      <button
+        aria-expanded={open}
+        onClick={() => {
+          if (!open) refresh()
+          setOpen(!open)
+        }} title={on ? `AI clients can connect on 127.0.0.1:${status!.port}` : 'Connect Claude or another AI client'}>
         <span className={`connect-dot${on ? ' on' : ''}`} aria-hidden /> Connect AI
       </button>
       {open && status && <ConnectPanel status={status} set={set} onClose={() => setOpen(false)} />}
