@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -20,6 +20,20 @@ afterEach(() => {
 })
 
 describe('Project', () => {
+  it('leaves a file that isn’t a project as it was, and won’t open one with triggers or views', () => {
+    const other = join(dir, 'other.db')
+    new DatabaseSync(other).exec('CREATE TABLE t (x)')
+    const before = readFileSync(other)
+    expect(() => Project.open(other)).toThrow(/is not a universe\.me project/)
+    // Not switched to WAL, or touched at all.
+    expect(readFileSync(other).equals(before)).toBe(true)
+
+    const path = join(dir, 'trap.universe')
+    Project.create(path, 'Trap').close()
+    new DatabaseSync(path).exec("CREATE TRIGGER t AFTER INSERT ON nodes BEGIN UPDATE nodes SET name = 'owned'; END")
+    expect(() => Project.open(path)).toThrow(/triggers or views/)
+  })
+
   it('creates a project with a root universe', () => {
     const p = track(Project.create(join(dir, 'a.universe'), 'Aerth Saga'))
     const info = p.info()

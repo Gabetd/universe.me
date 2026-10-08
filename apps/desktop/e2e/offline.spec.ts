@@ -37,4 +37,23 @@ test('everything stays on this computer: projects are local files and no request
   })
   expect(shown.url).toMatch(/^file:/)
   expect(shown.text).toContain('Private')
+
+  // Nor into another file (a link in a shared project, a dropped file), which would get the app's bridge; and the app's page
+  // can't read files beyond its own, or another computer's (on Windows, a network share).
+  const page0 = shown.url
+  await page.evaluate(() => void (window.location.href = 'file:///etc/hostname'))
+  await page.evaluate(() => void (window.location.href = 'file://attacker.example/share/evil.html'))
+  await page.waitForTimeout(300)
+  expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.getURL())).toBe(page0)
+  const reads = await page.evaluate(() =>
+    Promise.all(
+      ['file:///etc/hostname', 'file://attacker.example/share/x.png'].map((url) =>
+        fetch(url).then(
+          () => 'read',
+          () => 'blocked'
+        )
+      )
+    )
+  )
+  expect(reads).toEqual(['blocked', 'blocked'])
 })

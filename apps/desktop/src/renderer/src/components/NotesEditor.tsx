@@ -27,7 +27,8 @@ const FORMATS: { label: string; mark: string; run(chain: Chain): Chain; icon: Re
 export function NotesEditor({ value, onCommit, placeholder = 'Lore, ideas, anything…', label }: Props) {
   const root = useRef<HTMLDivElement>(null)
   const editor = useEditor({
-    extensions: [StarterKit, Placeholder.configure({ placeholder })],
+    // Links are web addresses only, and never open in the app's window: a click in a note doesn't follow them.
+    extensions: [StarterKit.configure({ link: { openOnClick: false, isAllowedUri: (url) => /^(https?:\/\/|mailto:)/i.test(url), HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer nofollow' } } }), Placeholder.configure({ placeholder })],
     content: value,
     editorProps: { attributes: { class: 'notes-editor', 'aria-label': label, role: 'textbox', 'aria-multiline': 'true' } },
     onBlur: ({ editor: e }) => {

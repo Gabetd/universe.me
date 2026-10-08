@@ -17,7 +17,10 @@ function load(assetId: string): Promise<THREE.Object3D> {
       if (!result.ok) throw new Error(result.error)
       const { data } = result.value
       const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
-      const gltf = await new GLTFLoader().parseAsync(buffer, '')
+      // Everything a model needs is in it: a buffer or image it names elsewhere (another file, another computer) isn't loaded.
+      const manager = new THREE.LoadingManager()
+      manager.setURLModifier((url) => (/^(data|blob):/.test(url) ? url : 'data:,'))
+      const gltf = await new GLTFLoader(manager).parseAsync(buffer, '')
       // Some exporters leave out normals; without them everything renders black.
       gltf.scene.traverse((o) => {
         const mesh = o as THREE.Mesh

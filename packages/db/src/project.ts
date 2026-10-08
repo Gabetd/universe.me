@@ -79,9 +79,8 @@ export class Project {
     if (!existsSync(path)) throw new ProjectError(`No project found at ${path}`)
     let db: DatabaseSync | undefined
     try {
+      checkProjectFile(path)
       db = openDb(path)
-      const format = readMeta(db, 'format')
-      if (format !== FORMAT) throw new ProjectError(`${path} is not a universe.me project`)
       migrate(db)
       const project = new Project(path, db, busOptions)
       const root = findRoot(project.store)
@@ -145,8 +144,27 @@ export class Project {
   }
 }
 
+/**
+ * Looks at a file before anything is written to it (opening read-write turns
+ * any SQLite file into WAL mode): it has to be a project, and without
+ * triggers or views, which projects never have and which a file made to look
+ * like one could use to act on the app's own writes.
+ */
+function checkProjectFile(path: string): void {
+  const db = new DatabaseSync(path, { readOnly: true })
+  try {
+    if (readMeta(db, 'format') !== FORMAT) throw new ProjectError(`${path} is not a universe.me project`)
+    const { n } = db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type IN ('trigger', 'view')").get() as { n: number }
+    if (n > 0) throw new ProjectError(`${path} has triggers or views, which universe.me projects never have`)
+  } finally {
+    db.close()
+  }
+}
+
 function openDb(path: string): DatabaseSync {
   const db = new DatabaseSync(path)
+  // Nothing stored in the file (a function in a view, a trigger) is trusted to run.
+  db.exec('PRAGMA trusted_schema = OFF')
   // NORMAL skips the sync on every commit (WAL syncs at checkpoints instead): a commit still survives the
   // app crashing, and only an OS crash or power cut can lose the last few. FULL made each command ~2.5x slower.
   db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 2000;')

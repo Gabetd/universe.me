@@ -98,7 +98,10 @@ export class ApiController {
     void this.stop()
   }
 
-  async set(patch: ApiSettingsPatch): Promise<ApiStatus> {
+  async set(given: ApiSettingsPatch): Promise<ApiStatus> {
+    // Only these, and only as true or false: nothing else in the settings (the token) is the window's to set.
+    const patch: ApiSettingsPatch = {}
+    for (const key of ['enabled', 'review', 'phone'] as const) if (typeof given[key] === 'boolean') patch[key] = given[key]
     const restart = patch.enabled !== undefined && patch.enabled !== this.settings.enabled
     const phone = patch.phone !== undefined && patch.phone !== this.settings.phone
     this.settings = { ...this.settings, ...patch }

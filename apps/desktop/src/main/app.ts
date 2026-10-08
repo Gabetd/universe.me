@@ -1,7 +1,8 @@
 import { readFile, stat, writeFile } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { basename, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { rng } from '@universe/procgen'
-import { BrowserWindow, Menu, app, dialog, ipcMain, session as electronSession, shell, type MenuItemConstructorOptions } from 'electron'
+import { BrowserWindow, Menu, app, dialog, ipcMain, session as electronSession, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type WebFrameMain } from 'electron'
 import { isAllowedRequest } from '../shared/offline'
 import { EVENTS, INVOKE, type AppState, type BuildInfo, type ImportedModel, type InvokeMethod, type MenuAction, type Result, type UniverseApi } from '../shared/api'
 import type { ApiController } from './api'
@@ -19,11 +20,12 @@ if (process.env.UNIVERSE_USER_DATA) app.setPath('userData', process.env.UNIVERSE
 // One app per profile: a second one (a .universe file double-clicked) hands its file to this one and quits, so two never serve or write the same project.
 const primary = app.requestSingleInstanceLock()
 if (!primary) app.quit()
-app.on('second-instance', (_event, argv) => {
+app.on('second-instance', (_event, argv, workingDirectory) => {
   if (win?.isMinimized()) win.restore()
   win?.focus()
+  // A path relative to where the second one was started, not this one.
   const file = argv.find((a) => a.endsWith('.universe'))
-  if (file) void opened(file)
+  if (file) void opened(resolve(workingDirectory, file))
 })
 // End-to-end tests pick their universe: every random seed drawn here (a new universe's, each new node's) comes from this one.
 if (process.env.UNIVERSE_E2E_SEED) Math.random = rng(Number(process.env.UNIVERSE_E2E_SEED))
@@ -38,6 +40,20 @@ const loaded = new Promise<void>((resolve) => (markLoaded = resolve))
 const updater = new Updater((status) => win?.webContents.send(EVENTS.update, status))
 /** A .universe file passed on the command line or via Finder before the window was ready. */
 let pendingOpen: string | undefined = process.argv.find((a) => a.endsWith('.universe'))
+
+/** The dev server, in development only (a packaged app never loads anything but its own files). */
+const devServer = !app.isPackaged && process.env.ELECTRON_RENDERER_URL ? new URL(process.env.ELECTRON_RENDERER_URL) : undefined
+/** The app's own page: the only one its window shows, and the only one the main process answers. */
+const appPage = devServer ?? pathToFileURL(join(__dirname, '../renderer/index.html'))
+/** Whether a URL is the app's page (its hash and query aside). */
+const isAppPage = (url: string) => {
+  try {
+    const u = new URL(url)
+    return u.origin === appPage.origin && (devServer ? true : u.pathname === appPage.pathname)
+  } catch {
+    return false
+  }
+}
 
 function createWindow(): void {
   win = new BrowserWindow({
@@ -64,14 +80,18 @@ function createWindow(): void {
     if (url.startsWith('https://')) void shell.openExternal(url)
     return { action: 'deny' }
   })
-  // A link in a note must never turn the app window into a web page.
-  win.webContents.on('will-navigate', (event, url) => {
-    if (url.startsWith('file:') || (process.env.ELECTRON_RENDERER_URL && url.startsWith(process.env.ELECTRON_RENDERER_URL))) return
+  // Nothing (a link in a note, a file dropped on the window, a frame) turns the window into another page, which would get the app's bridge.
+  const stay = (event: { preventDefault(): void }, url: string) => {
+    if (isAppPage(url)) return
     event.preventDefault()
     if (url.startsWith('https://')) void shell.openExternal(url)
-  })
+  }
+  win.webContents.on('will-navigate', stay)
+  win.webContents.on('will-frame-navigate', (event) => stay(event, event.url))
+  // WebRTC can send packets that no request filter sees: none that bypass a proxy, and the app has none.
+  win.webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')
 
-  if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
+  if (devServer) void win.loadURL(devServer.href)
   else void win.loadFile(join(__dirname, '../renderer/index.html'))
 
   if (pendingOpen) {
@@ -293,9 +313,13 @@ function buildMenu(): void {
 /** How the main process answers an API method: with its reply, or a promise of it. */
 type Answer<M extends InvokeMethod> = (...args: Parameters<UniverseApi[M]>) => ReturnType<UniverseApi[M]> | Awaited<ReturnType<UniverseApi[M]>>
 
+/** Whether a call comes from the app's own page in its own window (not a frame, or a page it was navigated to). */
+const fromApp = (frame: WebFrameMain | null) => !!frame && frame === win?.webContents.mainFrame && isAppPage(frame.url)
+
 /** Answers one API method; its arguments and reply are checked against `UniverseApi`. */
 function handle<M extends InvokeMethod>(method: M, answer: Answer<M>): void {
-  ipcMain.handle(INVOKE[method], async (_e, ...args) => {
+  ipcMain.handle(INVOKE[method], async (e: IpcMainInvokeEvent, ...args) => {
+    if (!fromApp(e.senderFrame)) throw new Error('Only the app’s own page can ask this')
     await loaded
     return answer(...(args as Parameters<UniverseApi[M]>))
   })
@@ -305,7 +329,13 @@ function registerIpc(): void {
   handle('getState', () => session.state())
   handle('recentProjects', () => session.recent())
   handle('newProject', () => wrap(newProject))
-  handle('openProject', (path) => wrap(() => openProject(path)))
+  // A path from the window is one from the recent list (anything else is chosen in the system's own dialog).
+  handle('openProject', (path) =>
+    wrap(() => {
+      if (path !== undefined && !session.recent().includes(path)) throw new Error('Open it with Open… first')
+      return openProject(path)
+    })
+  )
   handle('getTerrain', (worldId) => wrap(() => session.terrain(worldId)))
   handle('importModel', () => wrap(importModel))
   handle('getAsset', (id) => wrap(() => session.asset(id)))
@@ -340,16 +370,24 @@ app.on('open-file', (event, path) => {
 
 /** Nothing leaves this computer: every request but the app's own files (and the update download) is cancelled. */
 function keepOffline(): void {
-  const extra = [process.env.ELECTRON_RENDERER_URL, process.env.UNIVERSE_UPDATE_URL]
+  const extra = [devServer?.href, process.env.UNIVERSE_UPDATE_URL]
     .filter((u): u is string => !!u && u !== 'off')
     .map((u) => new URL(u).origin + '/')
   // Dev server hot reload uses a websocket on the same host.
-  if (process.env.ELECTRON_RENDERER_URL) extra.push(process.env.ELECTRON_RENDERER_URL.replace(/^http/, 'ws'))
-  electronSession.defaultSession.webRequest.onBeforeRequest((details, callback) => {
-    const allowed = isAllowedRequest(details.url, details.webContentsId !== undefined, extra)
+  if (devServer) extra.push(`ws://${devServer.host}/`)
+  // The app's files: its renderer folder (inside its archive when packaged), and nothing else on disk or another computer.
+  const files = pathToFileURL(join(__dirname, '../renderer')).href + '/'
+  const defaults = electronSession.defaultSession
+  defaults.webRequest.onBeforeRequest((details, callback) => {
+    const allowed = isAllowedRequest(details.url, details.webContentsId !== undefined, extra, files)
     if (!allowed) console.warn(`Blocked a network request to ${details.url}`)
     callback({ cancel: !allowed })
   })
+  // No camera, microphone, location, notifications or devices: nothing the app uses. Only writing to the clipboard (Copy buttons).
+  const allowedPermission = (permission: string) => permission === 'clipboard-sanitized-write'
+  defaults.setPermissionRequestHandler((_wc, permission, callback) => callback(allowedPermission(permission)))
+  defaults.setPermissionCheckHandler((_wc, permission) => allowedPermission(permission))
+  defaults.setDevicePermissionHandler(() => false)
 }
 
 app.whenReady().then(async () => {
