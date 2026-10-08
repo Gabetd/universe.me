@@ -99,9 +99,15 @@ export function systemModel(nodes: SpatialNode[], records: Records, systemId: st
   const star = starInfo(records.stars.find((s) => s.id === starId(systemId) && !s.deletedAt))
   const bodies = new Map<string, BodyOrbit>()
   const visit = (parentId: string, parentBody: BodyOrbit | null) => {
-    childBodies(nodes, parentId).forEach((body, index) => {
+    const children = childBodies(nodes, parentId)
+    // Worlds count among themselves: the first world's planet is Earth-like wherever it sits in the list.
+    const worlds = children.filter((b) => hasWorld(nodes, b.id))
+    const bare = children.filter((b) => !hasWorld(nodes, b.id))
+    children.forEach((body) => {
       const stored = records.orbits.find((o) => o.id === orbitId(body.id) && !o.deletedAt)
-      const fields = stored ?? defaultOrbit(body, index, !!parentBody, hasWorld(nodes, body.id))
+      const withWorld = hasWorld(nodes, body.id)
+      const index = parentBody ? children.indexOf(body) : withWorld ? worlds.indexOf(body) : bare.indexOf(body)
+      const fields = stored ?? defaultOrbit(body, index, !!parentBody, withWorld)
       // Two bodies go round their common centre: the period depends on both masses.
       const centralGM = parentBody ? GM_EARTH * (parentBody.massEarth + fields.massEarth) : GM_SUN * star.massSun + GM_EARTH * fields.massEarth
       const orbit: BodyOrbit = {

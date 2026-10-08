@@ -2,15 +2,21 @@ import type { NodeKind, SpatialNode } from '@universe/core'
 import { useEffect, useMemo, useRef } from 'react'
 import { hueOf, rng } from '@universe/procgen'
 import { kindLabel } from '../kinds'
-import { selectNode, useUi } from '../store'
+import { selectNode, useTimelineOwner, useUi } from '../store'
+import { playheadOf } from '../timeline/timelineStore'
+import { useSystem } from '../world/useSky'
+import type { SystemModel } from '@universe/sim'
+import { drawOrbits } from './orbitView'
+import { SkyControls } from './SkyControls'
 import { SPACE_BG } from '../theme'
-import { drawTexturedPlanet, usePlanetTextures, type PlanetTexture } from './planetSprite'
+import { usePlanetTextures, type PlanetTexture } from './planetSprite'
 
 /**
- * Placeholder viewport for every level above a world surface: a 2D canvas
- * sketch of the selected level and its children, all derived from seeds.
- * Click a child to zoom in; scroll down or press Escape to zoom out. Replaced
- * by three.js scenes in M4/M5. World surfaces open the WorldEditor instead.
+ * The viewport for every level above a world surface: a 2D canvas of the
+ * selected level and its children. Star systems and planets are simulated
+ * (orbits at the timeline's playhead); galaxies and above are sketched from
+ * seeds until M5. Click a child to zoom in; scroll down or press Escape to
+ * zoom out. World surfaces open the WorldEditor instead.
  */
 export function Viewport() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -35,6 +41,14 @@ export function Viewport() {
     texturesRef.current = textures
   }, [textures])
 
+  const system = useSystem(node?.kind === 'star_system' || node?.kind === 'body' ? node.id : undefined)
+  const owner = useTimelineOwner()
+  const worlds = useUi((s) => s.worlds)
+  const skyRef = useRef({ system, ownerId: owner?.id, nodes, radiusKm: new Map<string, number>() })
+  useEffect(() => {
+    skyRef.current = { system, ownerId: owner?.id, nodes, radiusKm: new Map(worlds.map((w) => [w.id, w.settings.radiusKm])) }
+  }, [system, owner?.id, nodes, worlds])
+
   const hover = useRef<string | null>(null)
   const targets = useRef<Target[]>([])
 
@@ -53,7 +67,9 @@ export function Viewport() {
         canvas.height = Math.round(h * dpr)
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      targets.current = drawScene(ctx, w, h, scene, texturesRef.current, hover.current, (performance.now() - start) / 1000)
+      const s = skyRef.current
+      const sky = s.system && { system: s.system, t: s.ownerId ? playheadOf(s.ownerId) : 0, nodes: s.nodes, radiusKm: s.radiusKm }
+      targets.current = drawScene(ctx, w, h, scene, texturesRef.current, sky, hover.current, (performance.now() - start) / 1000)
       frame = requestAnimationFrame(render)
     }
     frame = requestAnimationFrame(render)
@@ -102,6 +118,7 @@ export function Viewport() {
         <div className="viewport-title">{scene.node.name}</div>
         <div className="muted small">{scene.label} view</div>
       </div>
+      {system && owner && <SkyControls ownerId={owner.id} system={system} centerId={scene.node.kind === 'body' ? scene.node.id : null} />}
       <div className="viewport-overlay bottom muted small">
         Click to zoom in · Scroll down or Esc to zoom out
       </div>
@@ -124,20 +141,27 @@ interface Scene {
   worlds: Map<string, SpatialNode>
 }
 
+/** What the star-system and planet views need: the simulated system at the playhead. */
+interface Sky {
+  system: SystemModel
+  /** Timeline time. */
+  t: number
+  nodes: SpatialNode[]
+  /** World id → its radius. */
+  radiusKm: Map<string, number>
+}
+
 function drawScene(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
   scene: Scene,
   textures: Map<string, PlanetTexture>,
+  sky: Sky | undefined,
   hoverId: string | null,
   t: number
 ): Target[] {
   const { node, children } = scene
-  const surfaceOf = (body: SpatialNode) => {
-    const world = scene.worlds.get(body.id)
-    return world && textures.get(world.id)
-  }
   ctx.fillStyle = SPACE_BG
   ctx.fillRect(0, 0, w, h)
   starfield(ctx, w, h, node.seed, node.kind)
@@ -183,31 +207,37 @@ function drawScene(
     }
     case 'star_system':
     case 'body': {
+      if (!sky) break
       const isSystem = node.kind === 'star_system'
-      const centerR = size * (isSystem ? 0.05 : 0.12)
-      if (isSystem) star(ctx, cx, cy, centerR, node.seed)
-      else planet(ctx, cx, cy, centerR, node.seed, !!scene.world, surfaceOf(node), t)
-      const orbiting = children.filter((c) => c.kind === 'body')
-      orbiting.forEach((child, i) => {
-        const r = rng(child.seed)
-        const orbit = centerR + size * 0.06 + i * size * (0.32 / Math.max(orbiting.length, 3))
-        const speed = 0.6 / Math.pow(orbit / 60, 1.5)
-        const angle = r() * Math.PI * 2 + t * speed
-        ctx.strokeStyle = 'rgba(140,160,220,0.18)'
-        ctx.lineWidth = 1
-        ctx.beginPath()
-        ctx.ellipse(cx, cy, orbit, orbit * 0.42, 0, 0, Math.PI * 2)
-        ctx.stroke()
-        const x = cx + Math.cos(angle) * orbit
-        const y = cy + Math.sin(angle) * orbit * 0.42
-        const pr = size * (isSystem ? 0.012 : 0.02) * (0.7 + r() * 0.8)
-        planet(ctx, x, y, pr, child.seed, false, surfaceOf(child), t)
-        targets.push({ id: child.id, x, y, r: pr + 4 })
-        label(ctx, child.name, x, y + pr + 14, child.id === hoverId)
-      })
+      const bodyNodes = new Map(sky.nodes.map((n) => [n.id, n]))
+      const worldOf = (bodyId: string) => sky.nodes.find((n) => n.parentId === bodyId && n.kind === 'world')
+      targets.push(
+        ...drawOrbits(ctx, w, h, {
+          system: sky.system,
+          centerId: isSystem ? null : node.id,
+          t: sky.t,
+          spin: t,
+          names: new Map(sky.nodes.map((n) => [n.id, n.name])),
+          radiusOf: (o) => {
+            const world = worldOf(o.bodyId)
+            return (world && sky.radiusKm.get(world.id)) ?? o.radiusKm
+          },
+          textureOf: (bodyId) => {
+            const world = worldOf(bodyId)
+            return world && textures.get(world.id)
+          },
+          hasWorld: (bodyId) => !!worldOf(bodyId),
+          hueOf: (bodyId) => hueOf(bodyNodes.get(bodyId)?.seed ?? 0),
+          hoverId
+        })
+      )
       if (!isSystem && scene.world) {
-        targets.push({ id: scene.world.id, x: cx, y: cy, r: centerR })
-        label(ctx, `World: ${scene.world.name}`, cx, cy + centerR + 18, scene.world.id === hoverId)
+        // The planet in the middle opens its world.
+        const middle = targets.find((x) => x.id === node.id)
+        if (middle) {
+          middle.id = scene.world.id
+          label(ctx, `World: ${scene.world.name}`, middle.x, middle.y + middle.r + 14, scene.world.id === hoverId)
+        }
       }
       break
     }
@@ -316,60 +346,3 @@ function spiralGalaxy(ctx: CanvasRenderingContext2D, cx: number, cy: number, rad
   }
 }
 
-function star(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, seed: number) {
-  const hue = 20 + (hueOf(seed) % 40)
-  const g = ctx.createRadialGradient(x, y, radius * 0.2, x, y, radius * 3)
-  g.addColorStop(0, '#fffbe8')
-  g.addColorStop(0.3, `hsl(${hue} 100% 65% / 0.9)`)
-  g.addColorStop(1, 'transparent')
-  ctx.fillStyle = g
-  ctx.beginPath()
-  ctx.arc(x, y, radius * 3, 0, Math.PI * 2)
-  ctx.fill()
-}
-
-/**
- * A planet or moon. One with a world shows that world's surface, turning
- * slowly; others get a seeded colour (with made-up continents when there is a
- * world whose terrain hasn't loaded yet).
- */
-function planet(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, seed: number, hasWorld: boolean, surface: PlanetTexture | undefined, t: number) {
-  if (surface) {
-    drawTexturedPlanet(ctx, x, y, radius, surface, t / 90 + (seed % 1000) / 1000)
-    if (hasWorld) worldRing(ctx, x, y, radius)
-    return
-  }
-  const hue = hueOf(seed)
-  const g = ctx.createRadialGradient(x - radius * 0.4, y - radius * 0.4, radius * 0.1, x, y, radius)
-  g.addColorStop(0, `hsl(${hue} 55% 70%)`)
-  g.addColorStop(1, `hsl(${hue} 45% 22%)`)
-  ctx.fillStyle = g
-  ctx.beginPath()
-  ctx.arc(x, y, radius, 0, Math.PI * 2)
-  ctx.fill()
-  if (hasWorld) {
-    // Continents hint that this body has an editable surface.
-    const r = rng(seed ^ 0xabc)
-    ctx.save()
-    ctx.beginPath()
-    ctx.arc(x, y, radius, 0, Math.PI * 2)
-    ctx.clip()
-    for (let i = 0; i < 9; i++) {
-      ctx.fillStyle = `hsl(${100 + r() * 40} 35% ${30 + r() * 15}% / 0.85)`
-      ctx.beginPath()
-      ctx.ellipse(x + (r() - 0.5) * radius * 1.4, y + (r() - 0.5) * radius * 1.4, radius * (0.15 + r() * 0.3), radius * (0.1 + r() * 0.2), r() * Math.PI, 0, Math.PI * 2)
-      ctx.fill()
-    }
-    ctx.restore()
-    worldRing(ctx, x, y, radius)
-  }
-}
-
-/** Marks the body whose world the viewport opens on click. */
-function worldRing(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number) {
-  ctx.strokeStyle = 'rgba(140,200,255,0.5)'
-  ctx.lineWidth = 3
-  ctx.beginPath()
-  ctx.arc(x, y, radius + 2, 0, Math.PI * 2)
-  ctx.stroke()
-}

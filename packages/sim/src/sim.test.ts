@@ -29,7 +29,7 @@ describe('orbits', () => {
     expect(s.bodies.get('moon')!.periodS / DAY_S).toBeCloseTo(27.3, 0)
     // Unedited bodies have defaults: the moon Moon-like, the bare planet farther out.
     expect(s.bodies.get('moon')!.isDefault).toBe(true)
-    expect(s.bodies.get('mars')!.semiMajorAxisKm / AU_KM).toBeCloseTo(0.7, 5)
+    expect(s.bodies.get('mars')!.semiMajorAxisKm / AU_KM).toBeCloseTo(0.4, 5)
   })
 
   it('follow Kepler: perihelion is closest, aphelion farthest', () => {

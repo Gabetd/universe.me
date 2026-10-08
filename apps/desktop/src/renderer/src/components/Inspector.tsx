@@ -6,6 +6,7 @@ import { NumberInput, TagsField, TextField } from './fields'
 import { NotesEditor } from './NotesEditor'
 import { TimelineInspector } from './TimelinePanels'
 import { WorldPanel } from './WorldPanel'
+import { OrbitPanel, StarPanel } from './SkyPanels'
 
 export function Inspector() {
   const node = useUi(selectNode)
@@ -36,6 +37,8 @@ function NodeForm({ node }: { node: SpatialNode }) {
   return (
     <>
       {node.kind === 'world' && <WorldPanel world={node} />}
+      {node.kind === 'star_system' && <StarPanel system={node} />}
+      {node.kind === 'body' && <OrbitPanel body={node} />}
 
       <section className="inspector-section">
         <div className="inspector-kind">

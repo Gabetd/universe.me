@@ -68,11 +68,16 @@ interface SphereLut {
 const luts = new Map<string, SphereLut>()
 /** The camera looks down on the equator from this far above it. */
 const TILT = 0.38
-const LIGHT = normalize([-0.55, 0.45, 0.7])
+/** Light from the upper left, a little in front. */
+const DEFAULT_LIGHT = Math.atan2(0.45, -0.55)
+const LIGHT_STEPS = 48
 
-/** Works out, once per size, which point of the sphere each pixel of the disc shows. */
-function sphereLut(size: number, texH: number): SphereLut {
-  const key = `${size}:${texH}`
+/** Light coming from `angle` on screen (radians, counter-clockwise from the right), slightly from in front so the near side never goes fully dark. */
+const lightFrom = (angle: number) => normalize([Math.cos(angle) * 0.8, Math.sin(angle) * 0.8, 0.45])
+
+/** Works out, once per size and light direction, which point of the sphere each pixel of the disc shows and how lit it is. */
+function sphereLut(size: number, texH: number, lightStep: number): SphereLut {
+  const key = `${size}:${texH}:${lightStep}`
   const cached = luts.get(key)
   if (cached) return cached
   const canvas = document.createElement('canvas')
@@ -84,6 +89,7 @@ function sphereLut(size: number, texH: number): SphereLut {
   const shade: number[] = []
   const r = size / 2
   const [c, s] = [Math.cos(TILT), Math.sin(TILT)]
+  const LIGHT = lightFrom((lightStep / LIGHT_STEPS) * Math.PI * 2)
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
       const nx = (px + 0.5 - r) / r
@@ -102,14 +108,17 @@ function sphereLut(size: number, texH: number): SphereLut {
     }
   }
   const lut = { canvas, image, dst: Int32Array.from(dst), row: Int32Array.from(row), lon: Float32Array.from(lon), shade: Float32Array.from(shade) }
+  // Many sizes and directions come and go as planets move; keep the cache bounded.
+  if (luts.size > 400) luts.delete(luts.keys().next().value!)
   luts.set(key, lut)
   return lut
 }
 
-/** Draws a lit, slowly turning globe with a world's real surface. `spin` is in turns. */
-export function drawTexturedPlanet(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, tex: PlanetTexture, spin: number): void {
+/** Draws a globe with a world's real surface, turning (`spin` in turns) and lit from `lightAngle` (radians on screen, toward its star). */
+export function drawTexturedPlanet(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, tex: PlanetTexture, spin: number, lightAngle = DEFAULT_LIGHT): void {
   const size = Math.max(4, Math.round(radius * 2))
-  const lut = sphereLut(size, tex.height)
+  const step = ((Math.round((lightAngle / (Math.PI * 2)) * LIGHT_STEPS) % LIGHT_STEPS) + LIGHT_STEPS) % LIGHT_STEPS
+  const lut = sphereLut(size, tex.height, step)
   const out = lut.image.data
   const { pixels, width } = tex
   const offset = spin - Math.floor(spin)
