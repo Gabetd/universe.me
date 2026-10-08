@@ -90,8 +90,8 @@
     <p class="lede">What the worldbuilding app can do today, shown in screenshots taken from the real app by its end-to-end tests. Each published build adds an entry at the top.</p>
     <div class="facts">
       <span>Latest build <b id="latest-ver"></b></span>
-      <span>Milestones done <b>M0–M7</b></span>
-      <span>Next <b>M8 · Polish &amp; release</b></span>
+      <span>Milestones done <b>M0–M8</b></span>
+      <span>Next <b>M9 · Polish &amp; release</b></span>
       <span><a href="https://github.com/Gabetd/universe.me/releases/tag/latest-build">Download the latest build</a></span>
     </div>
   </header>
@@ -114,7 +114,7 @@
 
   <section aria-labelledby="next-title">
     <div class="next">
-      <h2 id="next-title">Next up: M8</h2>
+      <h2 id="next-title">Next up: M9</h2>
       <ul>
         <li>A sample universe to start from, and keyboard shortcuts</li>
         <li>A performance pass: detail by distance and instanced structures</li>
@@ -179,11 +179,24 @@
     themeRegion: ['113-theme-region', 'The map shaded by its theme, and a region with an Ice Age of its own'],
     connectAi: ['120-connect-ai', 'Connect AI: the commands that add Universe to Claude Code'],
     aiChange: ['121-ai-change', 'Events an AI client added, each with a note, and Undo AI'],
-    aiSuggestions: ['122-ai-suggestions', 'Review mode: AI changes wait to be accepted or rejected']
+    aiSuggestions: ['122-ai-suggestions', 'Review mode: AI changes wait to be accepted or rejected'],
+    phoneSignIn: ['130-phone-sign-in', 'Claude on a phone signing in: the code to type, shown on the computer'],
+    phoneConnected: ['131-phone-connected', 'From your phone: Tailscale Funnel on, and the connected client to remove']
   }
 
   // One entry per published build, newest first.
   const LOG = [
+    {
+      ver: '0.1.25', date: '8 Oct 2026', tag: 'M8 done',
+      title: 'Claude on your phone, and a security audit',
+      points: [
+        'Claude on your phone (or claude.ai anywhere) reaches the universe open on your computer: Connect AI turns on Tailscale Funnel for it and gives the address to add as a custom connector on claude.ai.',
+        'A client signs in with a code the app shows on the computer, so only someone who can see your screen can connect one; each connected client is listed, and Remove disconnects it at once. Its changes show, undo and wait for review like any AI client’s.',
+        'A full security audit, every finding checked and the real ones fixed: from the internet only signed-in clients get in, a link in a shared project can no longer take over the window, nothing in a note, a date or a crafted project can stall the app, and the build and update pipeline is tightened.',
+        'Settings panels stay exactly where you are while you change things in them; and the MCP stdio server now works on Windows.'
+      ],
+      shots: ['phoneSignIn', 'phoneConnected']
+    },
     {
       ver: '0.1.21', date: '8 Oct 2026', tag: 'M7 done',
       title: 'Claude Code can help: a local API and MCP server',
@@ -269,7 +282,7 @@
     { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom'] },
     { title: 'Star systems and sky', shots: ['starSystem', 'planetMoons', 'moonTrack', 'colder', 'orbit'] },
     { title: 'Ecosystem', shots: ['foodWeb', 'speciesEditor'] },
-    { title: 'AI and the API', shots: ['connectAi', 'aiChange', 'aiSuggestions'] },
+    { title: 'AI and the API', shots: ['connectAi', 'aiChange', 'aiSuggestions', 'phoneSignIn', 'phoneConnected'] },
     { title: 'Themes', shots: ['themeCrossfade', 'themeEditor', 'themeGlobe', 'themeRegion'] },
     { title: 'Timeline and canvas', shots: ['timeline', 'worldAtTime', 'globeAtTime', 'canvas1', 'canvas2', 'canvas3'] },
     { title: 'Structures', shots: ['structGlobe', 'structPanel', 'weathering', 'effects', 'pins', 'builder', 'builderRuin', 'model', 'blueprints'] },
