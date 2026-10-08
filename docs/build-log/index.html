@@ -90,8 +90,8 @@
     <p class="lede">What the worldbuilding app can do today, shown in screenshots taken from the real app by its end-to-end tests. Each published build adds an entry at the top.</p>
     <div class="facts">
       <span>Latest build <b id="latest-ver"></b></span>
-      <span>Milestones done <b>M0–M6</b></span>
-      <span>Next <b>M7 · API &amp; MCP</b></span>
+      <span>Milestones done <b>M0–M7</b></span>
+      <span>Next <b>M8 · Polish &amp; release</b></span>
       <span><a href="https://github.com/Gabetd/universe.me/releases/tag/latest-build">Download the latest build</a></span>
     </div>
   </header>
@@ -114,11 +114,11 @@
 
   <section aria-labelledby="next-title">
     <div class="next">
-      <h2 id="next-title">Next up: M7</h2>
+      <h2 id="next-title">Next up: M8</h2>
       <ul>
-        <li>A local REST API with an OpenAPI description, a live change feed and token sign-in</li>
-        <li>An MCP server so Claude Code can read and build your universe, with each AI change tagged and undoable in one click</li>
-        <li>A Markdown world bible exported from your project</li>
+        <li>A sample universe to start from, and keyboard shortcuts</li>
+        <li>A performance pass: detail by distance and instanced structures</li>
+        <li>Signed installers for Windows, macOS and Linux, and signature-checked updates</li>
       </ul>
     </div>
   </section>
@@ -176,11 +176,25 @@
     themeCrossfade: ['110-themes-crossfade', 'Two themes on the timeline’s band, crossfading at the playhead'],
     themeEditor: ['111-theme-editor', 'The theme editor: palette, lighting, air, type, mood and style guide'],
     themeGlobe: ['112-theme-globe', 'The globe under an Age of War: stormy light and hazier air'],
-    themeRegion: ['113-theme-region', 'The map shaded by its theme, and a region with an Ice Age of its own']
+    themeRegion: ['113-theme-region', 'The map shaded by its theme, and a region with an Ice Age of its own'],
+    connectAi: ['120-connect-ai', 'Connect AI: the commands that add Universe to Claude Code'],
+    aiChange: ['121-ai-change', 'Events an AI client added, each with a note, and Undo AI'],
+    aiSuggestions: ['122-ai-suggestions', 'Review mode: AI changes wait to be accepted or rejected']
   }
 
   // One entry per published build, newest first.
   const LOG = [
+    {
+      ver: '0.1.21', date: '8 Oct 2026', tag: 'M7 done',
+      title: 'Claude Code can help: a local API and MCP server',
+      points: [
+        'Connect AI gives the command that adds Universe to Claude Code (or any MCP client), over HTTP to the app or as a stdio server that also works while the app is closed.',
+        'An AI can read a world at any moment, its history and causes, structures’ condition and why, the tone and style of an age, the sky and the food web, and add events, links, structures, characters, species, themes, regions and notes, or check a world for mistakes.',
+        'Every change it makes shows at once with a note, and Undo AI takes its latest changes back in one click; with review mode on, changes wait for you to accept or reject them.',
+        'The same operations as a REST API on this computer only, behind a token, with an OpenAPI description and a change feed; and any world exports as a Markdown world bible.'
+      ],
+      shots: ['connectAi', 'aiChange', 'aiSuggestions']
+    },
     {
       ver: '0.1.20', date: '8 Oct 2026', tag: 'M6 done',
       title: 'Themes: each age its own look and tone',
@@ -255,6 +269,7 @@
     { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom'] },
     { title: 'Star systems and sky', shots: ['starSystem', 'planetMoons', 'moonTrack', 'colder', 'orbit'] },
     { title: 'Ecosystem', shots: ['foodWeb', 'speciesEditor'] },
+    { title: 'AI and the API', shots: ['connectAi', 'aiChange', 'aiSuggestions'] },
     { title: 'Themes', shots: ['themeCrossfade', 'themeEditor', 'themeGlobe', 'themeRegion'] },
     { title: 'Timeline and canvas', shots: ['timeline', 'worldAtTime', 'globeAtTime', 'canvas1', 'canvas2', 'canvas3'] },
     { title: 'Structures', shots: ['structGlobe', 'structPanel', 'weathering', 'effects', 'pins', 'builder', 'builderRuin', 'model', 'blueprints'] },
