@@ -82,6 +82,9 @@ export const MIGRATIONS: readonly string[] = [
     mime TEXT NOT NULL,
     data BLOB NOT NULL
   );
+  `,
+  /* 5: live records in insertion order, so reading a kind needs no sort */ `
+  CREATE INDEX records_live ON records(kind) WHERE deleted_at IS NULL;
   `
 ]
 
