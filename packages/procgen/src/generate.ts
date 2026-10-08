@@ -1,27 +1,13 @@
 import { CUBE_FACES, TERRAIN_RES, type TerrainParams } from '@universe/core'
-import { createNoise3D, type NoiseFunction3D } from 'simplex-noise'
 import { cellDirections, latLonToDir } from './cubesphere'
 import { rng, subSeed } from './random'
 import { DEG, smoothstep } from './math'
+import { fbm, seededNoise } from './noise'
 
 /** The generated (unedited) terrain for a world: meters of height and 0–1 moisture per cell. */
 export interface BaseTerrain {
   height: Float32Array[]
   moisture: Float32Array[]
-}
-
-function fbm(noise: NoiseFunction3D, x: number, y: number, z: number, octaves: number, gain = 0.5): number {
-  let sum = 0
-  let amp = 1
-  let freq = 1
-  let norm = 0
-  for (let o = 0; o < octaves; o++) {
-    sum += amp * noise(x * freq, y * freq, z * freq)
-    norm += amp
-    amp *= gain
-    freq *= 2.03
-  }
-  return sum / norm
 }
 
 /** The options that change the generated shape; the rest (climate, colors) only recolor it. */
@@ -37,12 +23,12 @@ export const shapeKey = (seed: number, p: TerrainParams) => `${seed}:${SHAPE_KEY
  * under it.
  */
 export function generateBase(seed: number, params: TerrainParams): BaseTerrain {
-  const continents = createNoise3D(rng(subSeed(seed, 1)))
-  const warp = createNoise3D(rng(subSeed(seed, 2)))
-  const detail = createNoise3D(rng(subSeed(seed, 3)))
-  const ridges = createNoise3D(rng(subSeed(seed, 4)))
-  const wetness = createNoise3D(rng(subSeed(seed, 5)))
-  const islandNoise = createNoise3D(rng(subSeed(seed, 6)))
+  const continents = seededNoise(seed, 1)
+  const warp = seededNoise(seed, 2)
+  const detail = seededNoise(seed, 3)
+  const ridges = seededNoise(seed, 4)
+  const wetness = seededNoise(seed, 5)
+  const islandNoise = seededNoise(seed, 6)
   const centerRng = rng(subSeed(seed, 7))
   const archipelago = params.landform === 'archipelago'
   const f = params.continentScale * (archipelago ? 2.2 : params.landform === 'supercontinent' ? 0.75 : 1)

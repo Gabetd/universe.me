@@ -1,8 +1,9 @@
 import type { LatLon } from '@universe/core'
-import { createNoise3D, type NoiseFunction3D } from 'simplex-noise'
+import type { NoiseFunction3D } from 'simplex-noise'
 import { BIOME } from './biomes'
-import { latLonToDir } from './cubesphere'
+import { latLonToDir, type Vec3 } from './cubesphere'
 import { RAD, TAU, clamp, clamp01, wrapLon } from './math'
+import { octaves, seededNoise } from './noise'
 import { cellSeed, rng, subSeed } from './random'
 import type { TerrainModel } from './terrain-model'
 
@@ -139,19 +140,36 @@ export function gridSampler(grid: BaseGrid): BaseSampler {
 export class GroundDetail {
   private hills: NoiseFunction3D
   private patches: NoiseFunction3D
+  /** The hills' octaves, as multiples of a direction: wavelengths from 1800 m down, each 3.2 times shorter. */
+  private hillFreqs: number[] = []
+  /** Patches vary over about 380 m. */
+  private patchFreq: number
+  /** How far biome edges are pushed about, in degrees. */
+  private jitter: number
+  /** The last point asked about and its direction: a vertex asks for its height, biome and patches at the same spot. */
+  private dir: Vec3 = [0, 0, 0]
+  private dirLat = NaN
+  private dirLon = NaN
 
   constructor(
     seed: number,
     readonly radiusKm: number
   ) {
-    this.hills = createNoise3D(rng(subSeed(seed, 0x6a0d)))
-    this.patches = createNoise3D(rng(subSeed(seed, 0x9a7c)))
+    this.hills = seededNoise(seed, 0x6a0d)
+    this.patches = seededNoise(seed, 0x9a7c)
+    const metres = radiusKm * 1000
+    for (let o = 0, wavelength = 1800; o < 4; o++, wavelength /= 3.2) this.hillFreqs.push(metres / wavelength)
+    this.patchFreq = metres / 380
+    this.jitter = (CHUNK_M / metresPerDegLat(radiusKm)) * 0.6
   }
 
-  private point(lat: number, lon: number, wavelength: number): [number, number, number] {
-    const d = latLonToDir(lat, lon)
-    const k = (this.radiusKm * 1000) / wavelength
-    return [d[0] * k, d[1] * k, d[2] * k]
+  private dirAt(lat: number, lon: number): Vec3 {
+    if (lat !== this.dirLat || lon !== this.dirLon) {
+      latLonToDir(lat, lon, this.dir)
+      this.dirLat = lat
+      this.dirLon = lon
+    }
+    return this.dir
   }
 
   /**
@@ -160,28 +178,20 @@ export class GroundDetail {
    */
   elevation(base: BaseSampler, lat: number, lon: number): number {
     const { elevation } = base(lat, lon)
-    const amp = 9 + clamp(Math.abs(elevation) * 0.04, 0, 110)
-    let h = 0
-    let a = amp
-    let wavelength = 1800
-    for (let o = 0; o < 4; o++) {
-      h += a * this.hills(...this.point(lat, lon, wavelength))
-      a *= 0.4
-      wavelength /= 3.2
-    }
-    return elevation + h
+    const d = this.dirAt(lat, lon)
+    return elevation + octaves(this.hills, d[0], d[1], d[2], this.hillFreqs, 9 + clamp(Math.abs(elevation) * 0.04, 0, 110), 0.4)
   }
 
   /** −1 to 1, varying over a few hundred metres: woods and clearings, patches of flowers. */
   patch(lat: number, lon: number, salt: number): number {
-    const [x, y, z] = this.point(lat, lon, 380)
-    return this.patches(x + salt * 17.3, y, z)
+    const d = this.dirAt(lat, lon)
+    const k = this.patchFreq
+    return this.patches(d[0] * k + salt * 17.3, d[1] * k, d[2] * k)
   }
 
   /** The biome at a point, with edges made ragged so they don't follow the globe's grid. */
   biome(base: BaseSampler, lat: number, lon: number): number {
-    const jitter = (CHUNK_M / (this.radiusKm * 1000 * RAD)) * 0.6
-    return base(lat + this.patch(lat, lon, 1) * jitter, lon + this.patch(lat, lon, 2) * jitter).biome
+    return base(lat + this.patch(lat, lon, 1) * this.jitter, lon + this.patch(lat, lon, 2) * this.jitter).biome
   }
 }
 
