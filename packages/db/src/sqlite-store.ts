@@ -112,26 +112,26 @@ export class SqliteStore implements Store {
   readonly assets: AssetRepository
   private depth = 0
   private readonly recordRepos = new Map<RecordKind, RecordRepository<unknown>>()
-  private readonly recordStmts: Record<'get' | 'all' | 'insert' | 'update', StatementSync>
+  private readonly recordStmts: Record<'get' | 'all' | 'byOwner' | 'insert' | 'update', StatementSync>
 
   constructor(private readonly db: DatabaseSync) {
     const n = {
       get: db.prepare('SELECT * FROM nodes WHERE id = ?'),
       children: db.prepare('SELECT * FROM nodes WHERE parent_id = ? AND deleted_at IS NULL ORDER BY created_at, id'),
       all: db.prepare('SELECT * FROM nodes WHERE deleted_at IS NULL ORDER BY created_at, id'),
+      root: db.prepare('SELECT * FROM nodes WHERE parent_id IS NULL AND deleted_at IS NULL ORDER BY created_at, id LIMIT 1'),
       insert: db.prepare(`INSERT INTO nodes (id, parent_id, kind, name, seed, pos_x, pos_y, pos_z, notes, tags, created_at, updated_at, deleted_at)
         VALUES (:id, :parent_id, :kind, :name, :seed, :pos_x, :pos_y, :pos_z, :notes, :tags, :created_at, :updated_at, :deleted_at)`),
       update: db.prepare(`UPDATE nodes SET parent_id = :parent_id, kind = :kind, name = :name, seed = :seed,
         pos_x = :pos_x, pos_y = :pos_y, pos_z = :pos_z, notes = :notes, tags = :tags,
         created_at = :created_at, updated_at = :updated_at, deleted_at = :deleted_at WHERE id = :id`)
     }
+    const node = (row: unknown) => (row ? toNode(row as NodeRow) : undefined)
     this.nodes = {
-      get: (id) => {
-        const row = n.get.get(id) as NodeRow | undefined
-        return row && toNode(row)
-      },
+      get: (id) => node(n.get.get(id)),
       children: (parentId) => (n.children.all(parentId) as unknown as NodeRow[]).map(toNode),
       all: () => (n.all.all() as unknown as NodeRow[]).map(toNode),
+      root: () => node(n.root.get()),
       insert: (node) => void n.insert.run(nodeParams(node)),
       update: (node) => updateExisting(n.update, nodeParams(node), 'Node')
     }
@@ -203,6 +203,7 @@ export class SqliteStore implements Store {
     this.recordStmts = {
       get: db.prepare('SELECT data FROM records WHERE kind = ? AND id = ?'),
       all: db.prepare('SELECT data FROM records WHERE kind = ? AND deleted_at IS NULL ORDER BY rowid'),
+      byOwner: db.prepare('SELECT data FROM records WHERE kind = ? AND owner_id = ? AND deleted_at IS NULL ORDER BY rowid'),
       insert: db.prepare('INSERT INTO records (kind, id, owner_id, data, deleted_at) VALUES (:kind, :id, :owner_id, :data, :deleted_at)'),
       update: db.prepare('UPDATE records SET owner_id = :owner_id, data = :data, deleted_at = :deleted_at WHERE kind = :kind AND id = :id')
     }
@@ -214,9 +215,11 @@ export class SqliteStore implements Store {
       const s = this.recordStmts
       const params = (r: RecordOf<K>) => ({ kind, id: r.id, owner_id: r.ownerId, data: JSON.stringify(r), deleted_at: r.deletedAt })
       const parse = (row: { data: string } | undefined) => row && (JSON.parse(row.data) as RecordOf<K>)
+      const parseAll = (rows: unknown[]) => (rows as { data: string }[]).map((row) => parse(row)!)
       const typed: RecordRepository<RecordOf<K>> = {
         get: (id) => parse(s.get.get(kind, id) as { data: string } | undefined),
-        all: () => (s.all.all(kind) as unknown as { data: string }[]).map((row) => parse(row)!),
+        all: () => parseAll(s.all.all(kind)),
+        byOwner: (ownerId) => parseAll(s.byOwner.all(kind, ownerId)),
         insert: (record) => void s.insert.run(params(record)),
         update: (record) => updateExisting(s.update, params(record), kind)
       }

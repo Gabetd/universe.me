@@ -27,7 +27,7 @@ export function ancestry(nodes: SpatialNode[], id: Id): SpatialNode[] {
 }
 
 export function findRoot(store: Store): SpatialNode | undefined {
-  return store.nodes.all().find((n) => n.parentId === null)
+  return store.nodes.root()
 }
 
 /** Seeds a new project with its root Universe node. Not undoable: a project always has a root. */
