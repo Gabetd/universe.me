@@ -64,16 +64,17 @@ const typeCode = (signin: string, code: string, origin = base) =>
     body: new URLSearchParams({ signin, code })
   })
 
-/** A request for the public host, as the tunnel forwards it. */
-function remote(path: string, headers: Record<string, string> = {}): Promise<{ status: number; body: string }> {
+/** A request from the internet, as Funnel forwards it: the client's Host, and Funnel's own headers (which a client can't set). */
+const FUNNEL = { 'X-Forwarded-For': '203.0.113.7', 'X-Forwarded-Proto': 'https', 'Tailscale-Funnel-Request': '?1' }
+function remote(path: string, headers: Record<string, string> = {}, method = 'GET', body?: string): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = request({ host: '127.0.0.1', port, path, headers: { Host: PUBLIC, ...headers } }, (res) => {
+    const req = request({ host: '127.0.0.1', port, path, method, headers: { Host: PUBLIC, ...FUNNEL, ...headers } }, (res) => {
       let body = ''
       res.on('data', (c: Buffer) => (body += c.toString()))
       res.on('end', () => resolve({ status: res.statusCode!, body }))
     })
     req.on('error', reject)
-    req.end()
+    req.end(body)
   })
 }
 
@@ -85,7 +86,7 @@ describe('OAuth', () => {
     // It registered itself and was sent to the sign-in page, which waits for a code shown in the app.
     expect(provider.info).toMatchObject({ client_id: expect.any(String), client_secret: expect.any(String) })
     const html = await fetch(provider.signInAt!).then((r) => r.text())
-    expect(html).toContain('<b>Claude</b> wants to read and change the universe')
+    expect(html).toContain('<b>Claude</b> (at <b>claude.example</b>) wants to read and change the universe')
     const [signIn] = oauth.pendingSignIns()
     expect(signIn).toMatchObject({ client: 'Claude', code: expect.stringMatching(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/) })
     const id = /name="signin" value="([^"]+)"/.exec(html)![1]!
@@ -118,8 +119,12 @@ describe('OAuth', () => {
     expect(provider.saved!.access_token).not.toBe(firstAccess)
     expect(p.project.snapshot().timeline.events.map((e) => e.title)).toEqual(['From the phone'])
 
-    // Disconnected in the app: its tokens stop working at once, refresh token too.
+    // Disconnected in the app: its tokens stop working at once, refresh token too, and a change feed it has open closes.
+    const feed = (await fetch(`${base}/v1/changes`, { headers: { Authorization: `Bearer ${provider.saved!.access_token}` } })).body!.getReader()
+    await feed.read()
     oauth.revoke(oauth.connections()[0]!.id)
+    server.changed({ summary: 'Something private', source: 'user', at: '2026-01-01T00:00:00Z' })
+    expect((await feed.read()).done).toBe(true)
     await expect(client.listTools()).rejects.toThrow()
     await client.close()
   })
@@ -163,20 +168,58 @@ describe('OAuth', () => {
     expect(elsewhere.status).toBe(400)
   })
 
-  it('can’t be crowded out: registrations and sign-ins someone else starts make room for the newest', async () => {
-    const register = () =>
-      fetch(`${base}/oauth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ redirect_uris: ['https://claude.example/cb'], token_endpoint_auth_method: 'none' }) })
-    for (let i = 0; i < 100; i++) await register()
-    const mine = (await register().then((r) => r.json())) as { client_id: string }
+  it('ends a connection whose old refresh token is used again: two copies exist, and one isn’t the client’s', async () => {
+    const { client_id } = (await fetch(`${base}/oauth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ redirect_uris: ['http://localhost:7777/cb'], token_endpoint_auth_method: 'none' })
+    }).then((r) => r.json())) as { client_id: string }
+    const verifier = 'w'.repeat(50)
+    const html = await fetch(
+      `${base}/oauth/authorize?${new URLSearchParams({ response_type: 'code', client_id, redirect_uri: 'http://localhost:7777/cb', code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256' })}`
+    ).then((r) => r.text())
+    const signin = /name="signin" value="([^"]+)"/.exec(html)![1]!
+    const code = new URL((await typeCode(signin, oauth.pendingSignIns()[0]!.code)).headers.get('location')!).searchParams.get('code')!
+    const token = (params: Record<string, string>) =>
+      fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id, ...params }) }).then(
+        async (r) => ({ status: r.status, body: (await r.json()) as { refresh_token: string; access_token: string } })
+      )
+    const first = await token({ grant_type: 'authorization_code', code, code_verifier: verifier, redirect_uri: 'http://localhost:7777/cb' })
+    const second = await token({ grant_type: 'refresh_token', refresh_token: first.body.refresh_token })
+    expect(second.status).toBe(200)
+    expect((await token({ grant_type: 'refresh_token', refresh_token: first.body.refresh_token })).status).toBe(400)
+    // The newer one stops too: there's no telling which copy is the client's.
+    expect((await token({ grant_type: 'refresh_token', refresh_token: second.body.refresh_token })).status).toBe(400)
+    expect(oauth.connections()).toEqual([])
+  })
+
+  it('can’t be crowded out: limits per sender, new registrations kept, and one sender’s sign-ins never replacing another’s', async () => {
+    const body = JSON.stringify({ redirect_uris: ['https://claude.ai/api/mcp/auth_callback'], token_endpoint_auth_method: 'none' })
+    const registerFrom = (ip: string) => remote('/oauth/register', { 'Content-Type': 'application/json', 'X-Forwarded-For': ip }, 'POST', body)
+    // One sender: 20 an hour.
+    for (let i = 0; i < 20; i++) expect((await registerFrom('198.51.100.1')).status).toBe(201)
+    expect((await registerFrom('198.51.100.1')).status).toBe(429)
+    // Many senders fill the list; the newest registrations aren't dropped (the client may be signing in), until they're ten minutes old.
+    for (let i = 0; i < 80; i++) expect((await registerFrom(`198.51.100.${2 + Math.floor(i / 20)}`)).status).toBe(201)
+    expect((await registerFrom('198.51.100.9')).status).toBe(429)
+    now += 11 * 60_000
+    const mine = JSON.parse((await registerFrom('198.51.100.9')).body) as { client_id: string }
     expect(mine.client_id).toEqual(expect.any(String))
-    const signIn = () =>
-      fetch(`${base}/oauth/authorize?${new URLSearchParams({ response_type: 'code', client_id: mine.client_id, redirect_uri: 'https://claude.example/cb', code_challenge: 'c', code_challenge_method: 'S256' })}`)
-    for (let i = 0; i < 5; i++) expect((await signIn()).status).toBe(200)
-    const before = oauth.pendingSignIns().map((s) => s.id)
-    expect((await signIn()).status).toBe(200)
-    const after = oauth.pendingSignIns().map((s) => s.id)
-    expect(after).toHaveLength(5)
-    expect(after).not.toContain(before[0])
+
+    const signInFrom = (ip: string) =>
+      remote(
+        `/oauth/authorize?${new URLSearchParams({ response_type: 'code', client_id: mine.client_id, redirect_uri: 'https://claude.ai/api/mcp/auth_callback', code_challenge: 'c', code_challenge_method: 'S256' })}`,
+        { 'X-Forwarded-For': ip }
+      )
+    expect((await signInFrom('203.0.113.50')).status).toBe(200)
+    const users = oauth.pendingSignIns()[0]!.id
+    // Another sender starting many keeps only its own two newest, and the first sender's stays.
+    for (let i = 0; i < 6; i++) expect((await signInFrom('203.0.113.66')).status).toBe(200)
+    expect(oauth.pendingSignIns()).toHaveLength(3)
+    expect(oauth.pendingSignIns().map((x) => x.id)).toContain(users)
+    // And it can't start more than ten in ten minutes.
+    for (let i = 0; i < 4; i++) await signInFrom('203.0.113.66')
+    expect((await signInFrom('203.0.113.66')).status).toBe(429)
   })
 
   it('serves the public host with https addresses and OAuth tokens only, and not at all with phone access off', async () => {
@@ -186,8 +229,17 @@ describe('OAuth', () => {
     // The app's own token is for this computer only.
     expect(unauthorized.status).toBe(401)
     expect((await remote('/v1/worlds')).status).toBe(401)
+    // Through Funnel, naming this computer's own address to pass for a local request: still from the internet.
+    expect((await remote('/v1/worlds', { Host: `127.0.0.1:${port}`, Authorization: `Bearer ${TOKEN}` })).status).toBe(403)
+    expect((await remote('/v1/worlds', { Host: `localhost:${port}`, Authorization: `Bearer ${TOKEN}` })).status).toBe(403)
+    // From the internet, a client may only be sent back to Claude (or its own computer).
+    const register = (uri: string) => remote('/oauth/register', { 'Content-Type': 'application/json' }, 'POST', JSON.stringify({ client_name: 'Claude', redirect_uris: [uri] }))
+    expect((await register('https://evil.example/cb')).status).toBe(400)
+    expect((await register('https://claude.ai@evil.example/cb')).status).toBe(400)
+    expect((await register('https://claude.ai/api/mcp/auth_callback')).status).toBe(201)
     phoneAccess = false
     expect((await remote('/.well-known/oauth-protected-resource/mcp')).status).toBe(403)
+    expect((await remote('/.well-known/oauth-protected-resource/mcp', { Host: `127.0.0.1:${port}` })).status).toBe(403)
     // On this computer the token still works.
     expect((await fetch(`${base}/v1/worlds`, { headers: { Authorization: `Bearer ${TOKEN}` } })).status).toBe(200)
   })

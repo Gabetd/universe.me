@@ -37,6 +37,8 @@ class RpcError extends Error {
   }
 }
 
+const MAX_BATCH = 20
+
 /** The tool list, made once: its schemas don't change. */
 let tools: object[] | undefined
 const toolList = () =>
@@ -45,7 +47,7 @@ const toolList = () =>
     title: op.title,
     description: op.description,
     inputSchema: z.toJSONSchema(op.input, { io: 'input', unrepresentable: 'any' }),
-    annotations: { title: op.title, readOnlyHint: !op.write, destructiveHint: false, openWorldHint: false }
+    annotations: { title: op.title, readOnlyHint: !op.write, destructiveHint: !!op.destructive, openWorldHint: false }
   })))
 
 const text = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value, null, 2))
@@ -85,6 +87,8 @@ export class McpServer {
   async handle(message: unknown): Promise<JsonRpcMessage | JsonRpcMessage[] | undefined> {
     if (Array.isArray(message)) {
       if (!message.length) return { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'An empty batch' } }
+      // Each runs in the app; MCP itself no longer has batches (2025-06-18), so a few is plenty.
+      if (message.length > MAX_BATCH) return { jsonrpc: '2.0', id: null, error: { code: -32600, message: `A batch of at most ${MAX_BATCH}` } }
       const answers = (await Promise.all(message.map((m) => this.handleOne(m)))).filter((a): a is JsonRpcMessage => !!a)
       return answers.length ? answers : undefined
     }

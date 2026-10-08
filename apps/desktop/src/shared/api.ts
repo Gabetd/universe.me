@@ -70,7 +70,7 @@ export interface PhoneStatus {
   /** What's in the way, if it should work. */
   error?: string
   /** Clients signing in now, each with the code to type on its sign-in page. */
-  signIns: { id: string; client: string; code: string; expires: number }[]
+  signIns: { id: string; client: string; code: string; to: string; expires: number }[]
   /** Clients that have signed in. */
   connections: { id: string; name: string; created: number; lastUsed: number }[]
 }

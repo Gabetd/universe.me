@@ -32,6 +32,11 @@ const Tags = z.array(z.string().min(1).max(60))
 const Notes = z.string().describe('Plain text: paragraphs separated by a blank line, "- " for list items')
 
 /** Applies (or proposes) commands as one undoable step, and says what was done. */
+/** The types of commands, batches opened up. */
+function commandTypes(commands: readonly Command[]): string[] {
+  return commands.flatMap((c) => (c.type === 'batch' ? commandTypes((c.payload as { commands?: Command[] }).commands ?? []) : [String(c.type)]))
+}
+
 function write(ctx: ApiContext, commands: Command[], summary: string, ids: Record<string, string> = {}) {
   const command: Command = commands.length === 1 ? commands[0]! : { type: 'batch', payload: { commands } }
   const outcome = ctx.host.write(command, summary)
@@ -527,12 +532,14 @@ export const WRITES = [
     title: 'Run commands',
     description:
       'Runs any of the app’s commands (describe_commands lists them and gives each one’s schema) as one undoable step: for what the other tools don’t cover, such as renaming, moving, editing or deleting things. Times are seconds on the world’s timeline; notes are HTML.',
-    input: z.object({ commands: z.array(z.record(z.string(), z.unknown())).min(1), summary: z.string().min(1).max(300).describe('What these do, in a few words, for the user') }),
+    input: z.object({ commands: z.array(z.record(z.string(), z.unknown())).min(1).max(500), summary: z.string().min(1).max(300).describe('What these do, in a few words, for the user') }),
     route: { method: 'POST', path: '/commands' },
     write: true,
+    destructive: true,
     run: (ctx, p) => {
       // What the commands are, not only what the client says they do: in review mode this is what the user decides on.
-      const types = p.commands.map((c) => String(c.type))
+      // Batches inside are counted through, so one can't hide what it holds behind "batch".
+      const types = commandTypes(p.commands as unknown as Command[])
       const counts = [...new Set(types)].map((t) => (types.filter((x) => x === t).length > 1 ? `${t} ×${types.filter((x) => x === t).length}` : t))
       return write(ctx, p.commands as unknown as Command[], `${p.summary} [${counts.join(', ')}]`)
     }

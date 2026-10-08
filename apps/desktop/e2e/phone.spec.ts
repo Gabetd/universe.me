@@ -17,7 +17,8 @@ interface Answer {
 /** A request as Funnel forwards it from the internet: to 127.0.0.1, for the public host. */
 function viaFunnel(h: AppHandle, method: string, path: string, { headers = {}, body }: { headers?: Record<string, string>; body?: string } = {}): Promise<Answer> {
   return new Promise((resolve, reject) => {
-    const req = request({ host: '127.0.0.1', port: port(h), method, path, headers: { Host: HOST, ...headers } }, (res) => {
+    // With the headers Funnel adds (and a client can't set).
+    const req = request({ host: '127.0.0.1', port: port(h), method, path, headers: { Host: HOST, 'X-Forwarded-For': '203.0.113.7', 'X-Forwarded-Proto': 'https', 'Tailscale-Funnel-Request': '?1', ...headers } }, (res) => {
       let text = ''
       res.on('data', (c: Buffer) => (text += c.toString()))
       res.on('end', () => resolve({ status: res.statusCode!, headers: res.headers, body: text }))
@@ -62,7 +63,7 @@ test('Claude on a phone: phone access through Tailscale Funnel, a sign-in with t
   const challenge = createHash('sha256').update(verifier).digest('base64url')
   const query = new URLSearchParams({ response_type: 'code', client_id: client.client_id, redirect_uri: callback, code_challenge: challenge, code_challenge_method: 'S256', state: 'xyz' })
   const signInPage = await viaFunnel(h, 'GET', `/oauth/authorize?${query}`)
-  expect(signInPage.body).toContain('<b>Claude</b> wants to read and change the universe')
+  expect(signInPage.body).toContain('<b>Claude</b> (at <b>claude.ai</b>) wants to read and change the universe')
   const signin = /name="signin" value="([^"]+)"/.exec(signInPage.body)![1]!
 
   // The app shows the code to type, even with Connect AI closed.

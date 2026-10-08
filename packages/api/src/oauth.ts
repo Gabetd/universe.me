@@ -21,14 +21,25 @@ const SIGN_IN_TTL = 10 * MINUTE
 const CODE_TTL = MINUTE
 const TRIES_PER_SIGN_IN = 5
 /**
- * Wrong codes allowed an hour, across all sign-ins, so codes can't be
- * guessed by starting sign-ins over and over (8 letters from 30 is 6.6×10¹¹
- * codes: a year of this many guesses has a 1 in 75 000 chance). High enough
- * that someone typing wrong codes on purpose can't easily lock the user out.
+ * Sign-ins one sender (by address) may start in ten minutes, and all senders
+ * together: with five tries each, that bounds guessing a code (8 letters from
+ * 30 is 6.6×10¹¹ codes; a year at the overall limit has about a 1 in 40 000
+ * chance). A right code is never turned away.
  */
-const WRONG_PER_HOUR = 1000
-const MAX_SIGN_INS = 5
+const SIGN_INS_PER_SENDER = 10
+const SIGN_INS_OVERALL = 60
+/** Sign-ins waiting at once, from one sender (its newest replaces its oldest) and overall. */
+const WAITING_PER_SENDER = 2
+const WAITING_OVERALL = 20
+/** Registrations one sender may make in an hour. */
+const REGISTRATIONS_PER_SENDER = 20
 const MAX_CLIENTS = 100
+/** A registration this new isn't dropped to make room: the client it's for is probably signing in. */
+const CLIENT_GRACE = 10 * MINUTE
+const MAX_REDIRECTS = 5
+const MAX_REDIRECT_LENGTH = 2048
+/** Where a client registering from the internet may be sent back to: Claude's own sign-in, or the computer it runs on. */
+const REMOTE_REDIRECT_HOSTS = ['claude.ai', 'claude.com']
 /** A registered client that never signed in is forgotten after a day. */
 const UNUSED_CLIENT_TTL = 24 * 60 * MINUTE
 const MAX_BODY = 64 * 1024
@@ -55,6 +66,8 @@ export interface OAuthGrant {
   accessExpires: number
   refreshHash: string
   refreshExpires: number
+  /** The refresh token before the last one: used again, it's a copy someone else has, so the grant ends. */
+  previousRefreshHash?: string
 }
 
 export interface OAuthData {
@@ -74,7 +87,16 @@ export interface SignIn {
   client: string
   /** To type on the sign-in page, as "ABCD-EFGH". */
   code: string
+  /** Where access goes once it's typed (the client's address, such as claude.ai). */
+  to: string
   expires: number
+}
+
+/** Who a request is from: the internet (through a tunnel) or this computer, and which sender, for limits. */
+export interface Sender {
+  remote: boolean
+  /** The address it came from (or "local"). */
+  source: string
 }
 
 /** A connected client, as the app lists it. */
@@ -88,14 +110,19 @@ export interface Connection {
 interface PendingSignIn extends SignIn {
   clientId: string
   redirectUri: string
+  /** Whether the client named its redirect_uri (then the token request must too). */
+  named: boolean
   state?: string
   challenge: string
   tries: number
+  source: string
+  timer: ReturnType<typeof setTimeout>
 }
 
 interface IssuedCode {
   clientId: string
   redirectUri: string
+  named: boolean
   challenge: string
   expires: number
 }
@@ -113,6 +140,27 @@ const newCode = () => {
 }
 /** A typed code as it's compared: capitals, without spaces or dashes. */
 const typed = (code: string) => code.toUpperCase().replace(/[^0-9A-Z]/g, '')
+
+/** At most `limit` of something per key in a sliding `window` (ms); old keys are let go. */
+class Limiter {
+  private readonly seen = new Map<string, number[]>()
+  constructor(
+    private readonly limit: number,
+    private readonly window: number,
+    private readonly now: () => number
+  ) {}
+
+  /** Counts one for `key`, if it's under the limit. */
+  take(key: string): boolean {
+    const now = this.now()
+    const times = (this.seen.get(key) ?? []).filter((t) => now - t < this.window)
+    if (times.length >= this.limit) return false
+    times.push(now)
+    this.seen.set(key, times)
+    if (this.seen.size > 10_000) for (const [k, v] of this.seen) if (!v.some((t) => now - t < this.window)) this.seen.delete(k)
+    return true
+  }
+}
 
 /** Clients and grants in a file only this user can read; an unreadable or someone else's file counts as empty. */
 export function fileStore(path: string): OAuthStore {
@@ -151,7 +199,10 @@ export class OAuth {
   private readonly signIns = new Map<string, PendingSignIn>()
   /** Authorization codes, by their hash, until they're exchanged. */
   private readonly codes = new Map<string, IssuedCode>()
-  private wrong: number[] = []
+  private readonly signInsBySender: Limiter
+  private readonly signInsOverall: Limiter
+  private readonly registrations: Limiter
+  private changing: ReturnType<typeof setTimeout> | undefined
 
   /** `changed` is called when sign-ins or connections come or go. */
   constructor(
@@ -161,12 +212,24 @@ export class OAuth {
   ) {
     this.data = store.load()
     this.prune()
+    this.signInsBySender = new Limiter(SIGN_INS_PER_SENDER, SIGN_IN_TTL, now)
+    this.signInsOverall = new Limiter(SIGN_INS_OVERALL, SIGN_IN_TTL, now)
+    this.registrations = new Limiter(REGISTRATIONS_PER_SENDER, 60 * MINUTE, now)
+  }
+
+  /** Tells the app, at most every 200 ms however fast sign-ins come. */
+  private notify(): void {
+    this.changing ??= setTimeout(() => {
+      this.changing = undefined
+      this.changed()
+    }, 200)
+    this.changing.unref?.()
   }
 
   /** Sign-ins waiting for their code, oldest first. */
   pendingSignIns(): SignIn[] {
     const now = this.now()
-    return [...this.signIns.values()].filter((s) => s.expires > now).map(({ id, client, code, expires }) => ({ id, client, code, expires }))
+    return [...this.signIns.values()].filter((s) => s.expires > now).map(({ id, client, code, to, expires }) => ({ id, client, code, to, expires }))
   }
 
   connections(): Connection[] {
@@ -175,7 +238,11 @@ export class OAuth {
 
   /** Turns a sign-in down: its page then says it has expired. */
   deny(signInId: string): void {
-    if (this.signIns.delete(signInId)) this.changed()
+    const signIn = this.signIns.get(signInId)
+    if (!signIn) return
+    clearTimeout(signIn.timer)
+    this.signIns.delete(signInId)
+    this.notify()
   }
 
   /** Disconnects a client: its tokens stop working at once. */
@@ -200,7 +267,7 @@ export class OAuth {
   }
 
   /** The routes OAuth adds, if `url` is one of them; `base` is the server's address as the client reached it. */
-  async handle(req: IncomingMessage, res: ServerResponse, url: URL, base: string): Promise<boolean> {
+  async handle(req: IncomingMessage, res: ServerResponse, url: URL, base: string, from: Sender): Promise<boolean> {
     const route = `${req.method} ${url.pathname}`
     try {
       switch (route) {
@@ -212,10 +279,10 @@ export class OAuth {
           send(res, 200, metadata(base))
           return true
         case 'POST /oauth/register':
-          send(res, 201, this.register((await readJson(req, MAX_BODY)) as Record<string, unknown>))
+          send(res, 201, this.register(await readJson(req, MAX_BODY), from))
           return true
         case 'GET /oauth/authorize':
-          this.authorize(res, url.searchParams, base)
+          this.authorize(res, url.searchParams, base, from)
           return true
         case 'POST /oauth/authorize':
           this.signIn(res, new URLSearchParams(await readText(req, MAX_BODY)), base)
@@ -239,22 +306,29 @@ export class OAuth {
   }
 
   /** Dynamic client registration (RFC 7591). */
-  private register(body: Record<string, unknown>): object {
+  private register(json: unknown, from: Sender): object {
+    if (typeof json !== 'object' || json === null || Array.isArray(json)) throw new OAuthError(400, 'invalid_client_metadata', 'The body must be a JSON object')
+    const body = json as Record<string, unknown>
     const uris = body.redirect_uris
-    if (!Array.isArray(uris) || !uris.length || !uris.every((u) => typeof u === 'string' && redirectAllowed(u))) {
-      throw new OAuthError(400, 'invalid_redirect_uri', 'redirect_uris must be https addresses (or http on this computer)')
+    if (!Array.isArray(uris) || !uris.length || uris.length > MAX_REDIRECTS || !uris.every((u) => typeof u === 'string' && u.length <= MAX_REDIRECT_LENGTH && redirectAllowed(u, from.remote))) {
+      throw new OAuthError(
+        400,
+        'invalid_redirect_uri',
+        from.remote ? `From the internet, redirect_uris must be on ${REMOTE_REDIRECT_HOSTS.join(' or ')} (or http on the client's own computer)` : 'redirect_uris must be https addresses (or http on this computer)'
+      )
     }
+    if (!this.registrations.take(from.source)) throw new OAuthError(429, 'temporarily_unavailable', 'Too many registrations; try again later')
     const method = typeof body.token_endpoint_auth_method === 'string' ? body.token_endpoint_auth_method : 'client_secret_basic'
     if (!['none', 'client_secret_basic', 'client_secret_post'].includes(method)) throw new OAuthError(400, 'invalid_client_metadata', `token_endpoint_auth_method ${method} isn’t supported`)
     const clientSecret = method === 'none' ? undefined : secret()
     const name = typeof body.client_name === 'string' && body.client_name.trim() ? body.client_name.trim().slice(0, 80) : 'An MCP client'
     const client: OAuthClient = { id: secret(), name, redirectUris: uris as string[], created: this.now(), ...(clientSecret && { secretHash: hash(clientSecret) }) }
     this.prune()
-    // Full (anyone can register): the oldest that never signed in makes room, so no one can keep the user's own client out.
+    // Full (anyone can register): the oldest that never signed in makes room, unless it's new enough to be signing in now.
     if (this.data.clients.length >= MAX_CLIENTS) {
       const used = new Set(this.data.grants.map((g) => g.clientId))
-      const unused = this.data.clients.findIndex((c) => !used.has(c.id))
-      if (unused < 0) throw new OAuthError(400, 'invalid_client_metadata', 'Too many clients are connected; remove one in Universe')
+      const unused = this.data.clients.findIndex((c) => !used.has(c.id) && this.now() - c.created > CLIENT_GRACE)
+      if (unused < 0) throw new OAuthError(429, 'temporarily_unavailable', 'Too many clients are registered; try again later')
       this.data.clients.splice(unused, 1)
     }
     this.data.clients.push(client)
@@ -272,8 +346,9 @@ export class OAuth {
   }
 
   /** The sign-in page: checks the request, then asks for the code the app shows. */
-  private authorize(res: ServerResponse, q: URLSearchParams, base: string): void {
+  private authorize(res: ServerResponse, q: URLSearchParams, base: string, from: Sender): void {
     const client = this.data.clients.find((c) => c.id === q.get('client_id'))
+    const named = q.has('redirect_uri')
     const redirectUri = q.get('redirect_uri') ?? (client?.redirectUris.length === 1 ? client.redirectUris[0] : undefined)
     // Without a known client and one of its addresses there's nowhere safe to send an error.
     if (!client || !redirectUri || !client.redirectUris.includes(redirectUri)) return page(res, 400, 'Can’t sign in', '<p>This sign-in link isn’t one Universe knows. Start again from your AI app.</p>')
@@ -282,15 +357,33 @@ export class OAuth {
     const challenge = q.get('code_challenge')
     if (!challenge || q.get('code_challenge_method') !== 'S256') return fail('invalid_request', 'PKCE with code_challenge_method=S256 is required')
     const resource = q.get('resource')
-    if (resource && !resource.startsWith(base)) return fail('invalid_target', `This server is ${base}/mcp`)
-    // The newest sign-in always gets its code: the oldest waiting goes, so sign-ins someone else starts can't crowd the user's out.
-    const waiting = this.pendingSignIns()
-    if (waiting.length >= MAX_SIGN_INS) this.signIns.delete(waiting[0]!.id)
-    const signIn: PendingSignIn = { id: secret(), client: client.name, code: newCode(), expires: this.now() + SIGN_IN_TTL, clientId: client.id, redirectUri, challenge, tries: 0, ...(q.has('state') && { state: q.get('state')! }) }
+    if (resource && ![base, `${base}/`, `${base}/mcp`].includes(resource)) return fail('invalid_target', `This server is ${base}/mcp`)
+    const busy = () => page(res, 429, 'Too many sign-ins', '<p>Too many sign-ins have been started. Try again in a few minutes.</p>')
+    if (!this.signInsBySender.take(from.source)) return busy()
+    // A sender's newest sign-in replaces its oldest, so one sending many can't crowd out anyone else's.
+    const waiting = this.pendingSignIns().map((s) => this.signIns.get(s.id)!)
+    const own = waiting.filter((s) => s.source === from.source)
+    if (own.length >= WAITING_PER_SENDER) this.deny(own[0]!.id)
+    else if (waiting.length >= WAITING_OVERALL || !this.signInsOverall.take('all')) return busy()
+    const signIn: PendingSignIn = {
+      id: secret(),
+      client: client.name,
+      code: newCode(),
+      to: new URL(redirectUri).host,
+      expires: this.now() + SIGN_IN_TTL,
+      clientId: client.id,
+      redirectUri,
+      named,
+      challenge,
+      tries: 0,
+      source: from.source,
+      // Gone from the app's list when it expires.
+      timer: setTimeout(() => this.deny(signIn.id), SIGN_IN_TTL),
+      ...(q.has('state') && { state: q.get('state')! })
+    }
+    signIn.timer.unref?.()
     this.signIns.set(signIn.id, signIn)
-    // Gone from the app's list when it expires.
-    setTimeout(() => this.deny(signIn.id), SIGN_IN_TTL).unref()
-    this.changed()
+    this.notify()
     codePage(res, 200, signIn)
   }
 
@@ -299,10 +392,7 @@ export class OAuth {
     const now = this.now()
     const signIn = this.signIns.get(form.get('signin') ?? '')
     if (!signIn || signIn.expires <= now) return page(res, 410, 'Sign-in expired', '<p>This sign-in has expired or was turned down in Universe. Start again from your AI app.</p>')
-    this.wrong = this.wrong.filter((t) => now - t < 60 * MINUTE)
-    if (this.wrong.length >= WRONG_PER_HOUR) return page(res, 429, 'Too many tries', '<p>Too many wrong codes have been typed. Try again in an hour.</p>')
     if (!sameText(typed(form.get('code') ?? ''), typed(signIn.code))) {
-      this.wrong.push(now)
       if (++signIn.tries >= TRIES_PER_SIGN_IN) {
         this.deny(signIn.id)
         return page(res, 403, 'Sign-in stopped', '<p>That was the wrong code too many times. Start again from your AI app.</p>')
@@ -312,7 +402,7 @@ export class OAuth {
     this.deny(signIn.id)
     const code = secret()
     for (const [key, old] of this.codes) if (old.expires <= now) this.codes.delete(key)
-    this.codes.set(hash(code), { clientId: signIn.clientId, redirectUri: signIn.redirectUri, challenge: signIn.challenge, expires: now + CODE_TTL })
+    this.codes.set(hash(code), { clientId: signIn.clientId, redirectUri: signIn.redirectUri, named: signIn.named, challenge: signIn.challenge, expires: now + CODE_TTL })
     redirect(res, signIn.redirectUri, { code, state: signIn.state, iss: base })
   }
 
@@ -326,14 +416,22 @@ export class OAuth {
       this.codes.delete(key)
       if (!issued || issued.expires <= now || issued.clientId !== client.id) throw new OAuthError(400, 'invalid_grant', 'The authorization code is wrong, used or expired')
       const redirectUri = params.get('redirect_uri')
-      if (redirectUri !== null && redirectUri !== issued.redirectUri) throw new OAuthError(400, 'invalid_grant', 'redirect_uri isn’t the one the code was given for')
+      // Named when signing in, it has to be named again, and the same (OAuth 2.1 §4.1.3).
+      if ((issued.named || redirectUri !== null) && redirectUri !== issued.redirectUri) throw new OAuthError(400, 'invalid_grant', 'redirect_uri isn’t the one the code was given for')
       if (hash(params.get('code_verifier') ?? '') !== issued.challenge) throw new OAuthError(400, 'invalid_grant', 'The code_verifier doesn’t match the code_challenge')
       const grant: OAuthGrant = { id: secret(), clientId: client.id, name: client.name, created: now, lastUsed: now, accessHash: '', accessExpires: 0, refreshHash: '', refreshExpires: 0 }
       this.data.grants.push(grant)
       return this.issue(grant)
     }
     if (params.get('grant_type') === 'refresh_token') {
-      const grant = this.data.grants.find((g) => g.refreshHash === hash(params.get('refresh_token') ?? '') && g.clientId === client.id)
+      const key = hash(params.get('refresh_token') ?? '')
+      // An old refresh token again: two copies exist, one not the client's. Neither goes on working.
+      const replayed = this.data.grants.find((g) => g.previousRefreshHash === key)
+      if (replayed) {
+        this.revoke(replayed.id)
+        throw new OAuthError(400, 'invalid_grant', 'That refresh token was already used; sign in again')
+      }
+      const grant = this.data.grants.find((g) => g.refreshHash === key && g.clientId === client.id)
       if (!grant || grant.refreshExpires <= now) throw new OAuthError(400, 'invalid_grant', 'The refresh token is wrong or expired; sign in again')
       return this.issue(grant)
     }
@@ -344,7 +442,14 @@ export class OAuth {
   private issue(grant: OAuthGrant): object {
     const now = this.now()
     const [access, refresh] = [secret(), secret()]
-    Object.assign(grant, { lastUsed: now, accessHash: hash(access), accessExpires: now + ACCESS_TTL, refreshHash: hash(refresh), refreshExpires: now + REFRESH_TTL })
+    Object.assign(grant, {
+      lastUsed: now,
+      accessHash: hash(access),
+      accessExpires: now + ACCESS_TTL,
+      ...(grant.refreshHash && { previousRefreshHash: grant.refreshHash }),
+      refreshHash: hash(refresh),
+      refreshExpires: now + REFRESH_TTL
+    })
     this.commit()
     return { access_token: access, token_type: 'Bearer', expires_in: ACCESS_TTL / 1000, refresh_token: refresh }
   }
@@ -355,7 +460,11 @@ export class OAuth {
     const basic = /^Basic (.+)$/i.exec(authorization ?? '')?.[1]
     if (basic) {
       const [user, pass] = Buffer.from(basic, 'base64').toString('utf8').split(':')
-      ;[id, given] = [decodeURIComponent(user ?? ''), decodeURIComponent(pass ?? '')]
+      try {
+        ;[id, given] = [decodeURIComponent(user ?? ''), decodeURIComponent(pass ?? '')]
+      } catch {
+        throw new OAuthError(401, 'invalid_client', 'The client credentials aren’t readable')
+      }
     }
     const client = this.data.clients.find((c) => c.id === id)
     if (!client) throw new OAuthError(401, 'invalid_client', 'Unknown client: register again')
@@ -381,7 +490,7 @@ export class OAuth {
   private commit(): void {
     this.prune()
     this.store.save(this.data)
-    this.changed()
+    this.notify()
   }
 }
 
@@ -399,11 +508,18 @@ const metadata = (base: string) => ({
   authorization_response_iss_parameter_supported: true
 })
 
-/** A client may be sent back to an https address, or to http on its own computer (as Claude Code's sign-in is). */
-function redirectAllowed(uri: string): boolean {
+/**
+ * Where a client may be sent back to: http on its own computer (as Claude
+ * Code's sign-in is), or https; registering from the internet, only Claude's
+ * own sign-in, so no one can register a client that sends access to their own
+ * server and phish the user with a link to this server's real sign-in page.
+ */
+function redirectAllowed(uri: string, remote: boolean): boolean {
   try {
     const u = new URL(uri)
-    return !u.hash && (u.protocol === 'https:' || (u.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname)))
+    if (u.hash || u.username || u.password) return false
+    if (u.protocol === 'http:') return ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname)
+    return u.protocol === 'https:' && (!remote || REMOTE_REDIRECT_HOSTS.includes(u.hostname))
   } catch {
     return false
   }
@@ -463,7 +579,7 @@ function codePage(res: ServerResponse, status: number, signIn: PendingSignIn, er
     res,
     status,
     'Connect to Universe',
-    `<p><b>${escapeHtml(signIn.client)}</b> wants to read and change the universe open in Universe on your computer.</p>
+    `<p><b>${escapeHtml(signIn.client)}</b> (at <b>${escapeHtml(signIn.to)}</b>) wants to read and change the universe open in Universe on your computer.</p>
 <p>To let it, type the code Universe shows on your computer (in Connect AI).</p>
 <form method="post" action="/oauth/authorize">
 <input type="hidden" name="signin" value="${escapeHtml(signIn.id)}">

@@ -28,6 +28,8 @@ export interface Operation<S extends z.ZodObject = z.ZodObject> {
   route: { method: 'GET' | 'POST'; path: string }
   /** Changes the project (and so goes through review mode and undo). */
   write?: boolean
+  /** It can delete or overwrite things (MCP's destructiveHint). */
+  destructive?: boolean
   run(ctx: ApiContext, input: z.infer<S>): unknown
 }
 

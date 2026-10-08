@@ -43,6 +43,16 @@ export function alive(pid: number): boolean {
   }
 }
 
+/** Whether a process is running and this user's. */
+function ownProcess(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Writes the discovery, for this user alone. */
 export function writeDiscovery(d: Discovery, path = discoveryPath()): void {
   writePrivate(path, JSON.stringify(d))
@@ -53,7 +63,8 @@ export function readDiscovery(path = discoveryPath()): Discovery | undefined {
   try {
     if (!ours(path)) return undefined
     const d = JSON.parse(readFileSync(path, 'utf8')) as Discovery
-    return typeof d.pid === 'number' && alive(d.pid) ? d : undefined
+    // Ours, so the app ran as this user: a process of that number that's someone else's (EPERM) is a new one, not the app.
+    return typeof d.pid === 'number' && ownProcess(d.pid) ? d : undefined
   } catch {
     return undefined
   }

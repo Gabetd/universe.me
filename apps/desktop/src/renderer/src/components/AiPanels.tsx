@@ -179,7 +179,9 @@ function SignInCodes({ signIns }: { signIns: ApiStatus['phone']['signIns'] }) {
     <div className="sign-in-codes" role="status" aria-label="Sign-in codes">
       {signIns.map((s) => (
         <div key={s.id} className="sign-in-code">
-          <span className="small">🔑 {s.client} is signing in. To let it, type this code on its page:</span>
+          <span className="small">
+            🔑 <b>{s.client}</b> is signing in, to send its access to <b>{s.to}</b>. If that’s yours, type this code on its page:
+          </span>
           <code aria-label={`Code for ${s.client}`}>{s.code}</code>
           <button className="link small" onClick={() => void window.universe.denySignIn(s.id)}>
             Turn it down

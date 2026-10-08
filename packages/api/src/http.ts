@@ -5,7 +5,7 @@ import { errorMessage, errorStatus } from './errors'
 import { readJson, send } from './http-io'
 import { ApiError } from './host'
 import { McpServer } from './mcp'
-import { sameText, type OAuth } from './oauth'
+import { sameText, type OAuth, type Sender } from './oauth'
 import { openApi } from './openapi'
 import type { ApiContext, Operation } from './operation'
 
@@ -17,7 +17,7 @@ export interface ChangeEvent {
   at: string
 }
 
-const MAX_BODY = 8 * 1024 * 1024
+const MAX_BODY = 2 * 1024 * 1024
 
 export interface ApiServerOptions {
   token: string
@@ -28,11 +28,26 @@ export interface ApiServerOptions {
   publicHost?: () => string | undefined
 }
 
-/** Where a request came to: the server's address as its client knows it, and whether that's from elsewhere. */
-interface Reached {
+/** Where a request came to: the server's address as its client knows it, and who sent it (from elsewhere, or this computer). */
+interface Reached extends Sender {
   base: string
-  remote: boolean
 }
+
+/** A change feed open to a client, and what let it in: checked again before each change goes out. */
+interface Feed {
+  token: string
+  at: Reached
+}
+
+/**
+ * Whether a proxy forwarded the request: Tailscale Funnel (and `tailscale
+ * serve`) set these and drop any a client sent, so the client can't hide
+ * them, whatever Host it names.
+ */
+const forwarded = (req: IncomingMessage) => req.headers['tailscale-funnel-request'] !== undefined || req.headers['x-forwarded-for'] !== undefined || req.headers.forwarded !== undefined
+
+/** The address a forwarded request came from, as the proxy says (the last one, the proxy's own). */
+const forwardedFor = (req: IncomingMessage) => String(req.headers['x-forwarded-for'] ?? '').split(',').at(-1)!.trim() || 'unknown'
 
 /** One route of an operation: its pattern, and which captures are which input. */
 interface Route {
@@ -76,7 +91,7 @@ function queryInput(url: URL): Record<string, string | string[]> {
 export class ApiServer {
   private server: Server | undefined
   private readonly mcp: McpServer
-  private readonly feeds = new Set<ServerResponse>()
+  private readonly feeds = new Map<ServerResponse, Feed>()
   private heartbeat: ReturnType<typeof setInterval> | undefined
   private port = 0
   /** The OpenAPI description, made once. */
@@ -100,7 +115,7 @@ export class ApiServer {
         this.server = server
         this.port = (server.address() as AddressInfo).port
         // Keeps feeds open through proxies and idle timeouts.
-        this.heartbeat = setInterval(() => this.feeds.forEach((r) => r.write(': still here\n\n')), 25_000)
+        this.heartbeat = setInterval(() => this.toFeeds(': still here\n\n'), 25_000)
         this.heartbeat.unref()
         resolve(this.port)
       })
@@ -109,7 +124,7 @@ export class ApiServer {
 
   close(): Promise<void> {
     clearInterval(this.heartbeat)
-    for (const feed of this.feeds) feed.end()
+    for (const feed of this.feeds.keys()) feed.end()
     this.feeds.clear()
     const server = this.server
     this.server = undefined
@@ -118,28 +133,46 @@ export class ApiServer {
 
   /** Tells every change feed that the project changed. */
   changed(event: ChangeEvent): void {
-    const line = `event: change\ndata: ${JSON.stringify(event)}\n\n`
-    for (const feed of this.feeds) feed.write(line)
+    this.toFeeds(`event: change\ndata: ${JSON.stringify(event)}\n\n`)
+  }
+
+  /** Writes to every feed whose client still may hear it; one that may not (disconnected, phone access off) is closed. */
+  private toFeeds(text: string): void {
+    for (const [res, feed] of this.feeds) {
+      if (this.stillReached(feed.at) && this.authorized(feed.token, feed.at)) res.write(text)
+      else {
+        this.feeds.delete(res)
+        res.end()
+      }
+    }
+  }
+
+  /** Whether a request's host is still answered (the public host only while phone access is on). */
+  private stillReached(at: Reached): boolean {
+    return !at.remote || `https://${this.options.publicHost?.()}` === at.base
   }
 
   /**
    * Where a request came to: this computer (`127.0.0.1` or `localhost` at
    * the server's port, which a web page can't name by DNS rebinding) or,
    * while phone access is on, the public host its tunnel forwards (it keeps
-   * the host the client asked for). Anything else is turned away.
+   * the host the client asked for). A forwarded request is from elsewhere
+   * whatever Host it names, so it can't pass for this computer's. Anything
+   * else is turned away.
    */
   private reached(req: IncomingMessage): Reached | undefined {
     const host = req.headers.host ?? ''
-    if (host === `127.0.0.1:${this.port}` || host === `localhost:${this.port}`) return { base: `http://${host}`, remote: false }
-    const publicHost = this.options.publicHost?.()
-    return publicHost && host === publicHost ? { base: `https://${publicHost}`, remote: true } : undefined
+    if (forwarded(req)) {
+      const publicHost = this.options.publicHost?.()
+      return publicHost && host === publicHost ? { base: `https://${publicHost}`, remote: true, source: forwardedFor(req) } : undefined
+    }
+    if (host === `127.0.0.1:${this.port}` || host === `localhost:${this.port}`) return { base: `http://${host}`, remote: false, source: 'local' }
+    return undefined
   }
 
   /** The app's token, from this computer only; or an OAuth access token, from anywhere. */
-  private authorized(req: IncomingMessage, at: Reached): boolean {
-    const given = /^Bearer (.+)$/i.exec(req.headers.authorization ?? '')?.[1]
-    if (!given) return false
-    return (!at.remote && sameText(given, this.options.token)) || !!this.options.oauth?.verify(given)
+  private authorized(token: string, at: Reached): boolean {
+    return !!token && ((!at.remote && sameText(token, this.options.token)) || !!this.options.oauth?.verify(token))
   }
 
   private async serve(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -150,15 +183,16 @@ export class ApiServer {
       // Web pages are turned away, but for the sign-in page's own form.
       const origin = req.headers.origin
       if (origin && !(origin === at.base && req.method === 'POST' && url.pathname === '/oauth/authorize')) return send(res, 403, { error: 'Requests from web pages are not allowed' })
-      if (await this.options.oauth?.handle(req, res, url, at.base)) return
-      if (!this.authorized(req, at)) {
+      if (await this.options.oauth?.handle(req, res, url, at.base, at)) return
+      const token = /^Bearer (.+)$/i.exec(req.headers.authorization ?? '')?.[1] ?? ''
+      if (!this.authorized(token, at)) {
         const oauth = this.options.oauth && `, resource_metadata="${at.base}/.well-known/oauth-protected-resource/mcp"`
         res.setHeader('WWW-Authenticate', `Bearer${oauth ?? ''}`)
         return send(res, 401, { error: at.remote ? 'Sign in first (OAuth)' : 'A bearer token is needed: copy it from Connect AI in Universe' })
       }
       if (url.pathname === '/mcp') return await this.serveMcp(req, res)
       if (req.method === 'GET' && url.pathname === '/v1/openapi.json') return send(res, 200, (this.spec ??= openApi(OPERATIONS, this.options.version)))
-      if (req.method === 'GET' && url.pathname === '/v1/changes') return this.openFeed(res)
+      if (req.method === 'GET' && url.pathname === '/v1/changes') return this.openFeed(res, { token, at })
       const matching = routes.filter((r) => r.pattern.test(url.pathname))
       if (matching.length && !matching.some((r) => r.op.route.method === req.method)) {
         res.setHeader('Allow', matching.map((r) => r.op.route.method).join(', '))
@@ -198,10 +232,10 @@ export class ApiServer {
     send(res, 200, answer)
   }
 
-  private openFeed(res: ServerResponse): void {
+  private openFeed(res: ServerResponse, feed: Feed): void {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' })
     res.write(': connected\n\n')
-    this.feeds.add(res)
+    this.feeds.set(res, feed)
     res.on('close', () => this.feeds.delete(res))
   }
 }
