@@ -5,14 +5,25 @@ import {
   autoBiome,
   BIOME,
   BIOMES,
+  LATITUDE_TWIN,
+  buildGroundChunk,
   cellCenter,
+  cellDirections,
+  chunkBounds,
+  chunkOf,
   dirToFace,
   dirToLatLon,
   faceToDir,
   generateBase,
+  kthSmallest,
   latLonToDir,
+  modelSampler,
   renderEquirect,
+  renderFaceTexture,
+  rng,
+  sampleBaseGrid,
   toGrid,
+  worldPalette,
   type BaseTerrain
 } from './index'
 
@@ -33,6 +44,29 @@ describe('cube-sphere', () => {
         expect(back.t).toBeCloseTo(t, 10)
       }
     }
+  })
+
+  it('has the cell directions faceToDir gives', () => {
+    const dirs = cellDirections()
+    let differing = 0
+    for (let face = 0; face < CUBE_FACES; face++) {
+      for (let k = 0; k < 3000; k++) {
+        const c = (k * 7919) % (TERRAIN_RES * TERRAIN_RES)
+        const d = faceToDir(face, cellCenter(c % TERRAIN_RES), cellCenter(Math.floor(c / TERRAIN_RES)))
+        for (let a = 0; a < 3; a++) if (dirs[face]![c * 3 + a] !== Math.fround(d[a]!)) differing++
+      }
+    }
+    expect(differing).toBe(0)
+  })
+
+  it('names the faces whose cells have the same latitudes', () => {
+    const dirs = cellDirections()
+    let differing = 0
+    for (let face = 0; face < CUBE_FACES; face++) {
+      const twin = dirs[LATITUDE_TWIN[face]!]!
+      for (let c = 0; c < TERRAIN_RES * TERRAIN_RES; c++) if (Math.abs(dirs[face]![c * 3 + 1]!) !== Math.abs(twin[c * 3 + 1]!)) differing++
+    }
+    expect(differing).toBe(0)
   })
 
   it('maps cell centers back to their own cell', () => {
@@ -145,11 +179,126 @@ describe('TerrainModel brushes', () => {
     for (let f = 0; f < CUBE_FACES; f++) expect(reloaded.heightEdits[f]).toEqual(model.heightEdits[f])
   })
 
+  it('says where each dab changed cells, and keeps the face colours up to date', () => {
+    const model = new TerrainModel(DEFAULT_WORLD_SETTINGS, base)
+    for (let f = 0; f < CUBE_FACES; f++) model.faceColors(f)
+    // Near a cube corner, so a dab reaches three faces.
+    const corner = faceToDir(0, 0.97, 0.97)
+    for (const [brush, dir] of [
+      [{ tool: 'raise', radiusKm: 700, strength: 1 }, corner],
+      [{ tool: 'smooth', radiusKm: 400, strength: 1 }, latLonToDir(5, 5)],
+      [{ tool: 'paint', radiusKm: 300, strength: 1, biome: BIOME.desert }, latLonToDir(-30, 60)]
+    ] as const) {
+      const before = model.heightEdits.map((h) => h.slice())
+      const paintedBefore = model.biomeEdits.map((b) => b.slice())
+      model.beginStroke(brush, dir)
+      const rects = model.dabRects(dir)
+      model.endStroke('w')
+      expect(rects.length).toBeGreaterThan(0)
+      let changed = 0
+      let outside = 0
+      for (let f = 0; f < CUBE_FACES; f++) {
+        const rect = rects.find((r) => r.face === f)
+        for (let c = 0; c < TERRAIN_RES * TERRAIN_RES; c++) {
+          if (model.heightEdits[f]![c] === before[f]![c] && model.biomeEdits[f]![c] === paintedBefore[f]![c]) continue
+          changed++
+          const [x, y] = [c % TERRAIN_RES, Math.floor(c / TERRAIN_RES)]
+          if (!rect || x < rect.x0 || x > rect.x1 || y < rect.y0 || y > rect.y1) outside++
+        }
+      }
+      expect(changed).toBeGreaterThan(0)
+      expect(outside).toBe(0)
+    }
+    expect(model.dabRects(corner)).toEqual([]) // no stroke
+    // The same edits coloured from scratch.
+    const fresh = new TerrainModel(DEFAULT_WORLD_SETTINGS, base)
+    fresh.heightEdits = model.heightEdits.map((h) => h.slice())
+    fresh.biomeEdits = model.biomeEdits.map((b) => b.slice())
+    const differing = (a: TerrainModel, b: TerrainModel) =>
+      Array.from({ length: CUBE_FACES }, (_, f) => {
+        const expected = b.faceColors(f)
+        return a.faceColors(f).filter((v, k) => v !== expected[k]).length
+      })
+    expect(differing(model, fresh)).toEqual([0, 0, 0, 0, 0, 0])
+    // And after the layers, the sky and the settings change.
+    model.setLayers({})
+    model.setSky({ offsetC: 6, gradient: 0.8 })
+    model.settings = { ...DEFAULT_WORLD_SETTINGS, seaLevel: 200 }
+    const other = new TerrainModel(model.settings, base)
+    other.setSky({ offsetC: 6, gradient: 0.8 })
+    expect(differing(model, other)).toEqual([0, 0, 0, 0, 0, 0])
+  })
+
   it('renders an equirectangular map', () => {
     const model = new TerrainModel(DEFAULT_WORLD_SETTINGS, base)
     const out = new Uint8ClampedArray(256 * 128 * 4)
     renderEquirect(model, out, 256, 128)
     expect(out[3]).toBe(255)
     expect(new Set(out.filter((_, i) => i % 4 === 0)).size).toBeGreaterThan(20)
+  })
+})
+
+describe('kthSmallest', () => {
+  it('finds what sorting would put at k', () => {
+    const r = rng(3)
+    for (const n of [1, 2, 7, 100, 1001]) {
+      // Few distinct values, so there are plenty of ties.
+      const a = Float32Array.from({ length: n }, () => Math.round(r() * 20) - 10 + (r() < 0.5 ? r() : 0))
+      const sorted = a.slice().sort()
+      for (const k of [0, n - 1, n >> 1, Math.floor(n * 0.7), Math.floor(r() * n)]) expect(kthSmallest(a.slice(), k)).toBe(sorted[k])
+    }
+  })
+})
+
+/** FNV-1a over the bytes of some arrays, to pin outputs. */
+function hash(views: ArrayBufferView[]): string {
+  let h = 0x811c9dc5
+  for (const v of views) {
+    const b = new Uint8Array(v.buffer, v.byteOffset, v.byteLength)
+    for (let i = 0; i < b.length; i++) h = Math.imul(h ^ b[i]!, 0x01000193)
+  }
+  return (h >>> 0).toString(16).padStart(8, '0')
+}
+
+describe('outputs stay the same', () => {
+  // Hashes of what the generator, the globe, the map and the ground made before they were optimized: a speed-up must not change a byte.
+  it('for the terrain, its colours, the map and a ground chunk', () => {
+    expect(hash([...base.height, ...base.moisture])).toBe('f67e7407')
+    const model = new TerrainModel(DEFAULT_WORLD_SETTINGS, base)
+    const faces = () =>
+      Array.from({ length: CUBE_FACES }, (_, f) => {
+        const pixels = new Uint8Array(TERRAIN_RES * TERRAIN_RES * 4)
+        renderFaceTexture(model, f, pixels)
+        return pixels
+      })
+    expect(hash(faces())).toBe('1612eb31')
+
+    const settings = { ...DEFAULT_WORLD_SETTINGS, seaLevel: 150, terrain: { ...DEFAULT_WORLD_SETTINGS.terrain, vegetationColor: '#7a3fa0', waterColor: '#3fa08a', temperature: 5, aridity: 0.7, beaches: 1 } }
+    model.settings = settings
+    model.setSky({ offsetC: -3, gradient: 1.2 })
+    model.beginStroke({ tool: 'raise', radiusKm: 800, strength: 1 }, latLonToDir(10, 20))
+    model.dab(latLonToDir(10, 20))
+    model.endStroke('w')
+    model.beginStroke({ tool: 'paint', radiusKm: 500, strength: 1, biome: BIOME.swamp }, latLonToDir(-20, 100))
+    model.dab(latLonToDir(-20, 100))
+    model.endStroke('w')
+    expect(hash(faces())).toBe('b24ed931')
+
+    const map = new Uint8ClampedArray(512 * 256 * 4)
+    renderEquirect(model, map, 512, 256)
+    expect(hash([map])).toBe('a706c823')
+
+    const R = settings.radiusKm
+    const id = chunkOf({ lat: 10, lon: 20 }, R)
+    const b = chunkBounds(id, R)
+    const chunk = buildGroundChunk({
+      id,
+      frame: { origin: { lat: b.lat0, lon: b.lon0 }, radiusKm: R },
+      seed: 12345,
+      grid: sampleBaseGrid(modelSampler(model), b),
+      biomeColors: worldPalette(settings.terrain).biomes,
+      seabedColor: [40, 60, 80]
+    })
+    expect(hash([chunk.positions, chunk.colors, chunk.indices, ...Object.values(chunk.plants)])).toBe('fdc894e4')
   })
 })

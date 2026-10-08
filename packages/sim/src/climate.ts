@@ -1,4 +1,5 @@
 import { AU_KM, type SpatialNode } from '@universe/core'
+import { RAD, clamp } from '@universe/procgen'
 import { EARTH_ORBIT, planetOf, worldOrbit, type SystemModel } from './orbits'
 
 /**
@@ -36,8 +37,8 @@ export function worldClimate(system: SystemModel, bodyId: string): WorldClimate 
   const meanTempC = surfaceTempC(L, distanceAu, planet.eccentricity)
   // Tilts beyond 90° spin backwards but warm the same as their mirror.
   const tilt = body.axialTiltDeg > 90 ? 180 - body.axialTiltDeg : body.axialTiltDeg
-  const gradient = Math.min(1.35, Math.max(0.3, 1 - (tilt - EARTH_TILT) / 70))
-  const seasonalSwingC = 12 * (Math.sin((tilt * Math.PI) / 180) / Math.sin((EARTH_TILT * Math.PI) / 180)) + 40 * planet.eccentricity
+  const gradient = clamp(1 - (tilt - EARTH_TILT) / 70, 0.3, 1.35)
+  const seasonalSwingC = 12 * (Math.sin(tilt * RAD) / Math.sin(EARTH_TILT * RAD)) + 40 * planet.eccentricity
   const [inner, outer] = system.star.habitableAu
   return { meanTempC, offsetC: meanTempC - EARTH_MEAN_C, gradient, seasonalSwingC, distanceAu, inHabitableZone: distanceAu >= inner && distanceAu <= outer }
 }

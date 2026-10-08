@@ -1,4 +1,4 @@
-import { clamp } from './math'
+import { clamp01 } from './math'
 /**
  * Biomes a cell can have. Id 0 ("auto") means "derive from climate"; painted
  * cells store any other id. M4 replaces `autoBiome`'s rough climate with the
@@ -50,6 +50,9 @@ export function hexToRgb(hex: string): [number, number, number] {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
 }
 
+/** "#rrggbb" for whole 0–255 channel values. */
+export const rgbToHex = (rgb: readonly number[]) => `#${rgb.map((v) => v.toString(16).padStart(2, '0')).join('')}`
+
 /** The climate options that shape automatic biomes (see TerrainParams). */
 export interface Climate {
   /** °C added everywhere. */
@@ -64,9 +67,31 @@ export interface Climate {
 
 export const EARTH_CLIMATE: Climate = { temperature: 0, aridity: 0.5, beaches: 0 }
 
+/** A climate's settings as the biome rules use them, worked out once for many cells. */
+export interface ClimateTerms {
+  /** °C at the equator at sea level. */
+  warm: number
+  /** °C colder at the poles than at the equator. */
+  cooling: number
+  /** How high beaches reach, m. */
+  beach: number
+  /** Taken off every cell's wetness. */
+  dry: number
+}
+
+export const climateTerms = (c: Climate): ClimateTerms => ({ warm: c.temperature + 30, cooling: 55 * (c.gradient ?? 1), beach: c.beaches * 40, dry: (c.aridity - 0.5) * 0.8 })
+
+/** How polar a latitude is, for its temperature: 0 at the equator, 1 at the poles. */
+export const polarity = (latDeg: number) => Math.pow(Math.abs(latDeg) / 90, 1.6)
+
+/** The wet and dry latitude bands: 1 (wet) at the equator and 60°, −1 (dry) at 30°. */
+export const wetBand = (latDeg: number) => Math.cos((Math.abs(latDeg) * Math.PI) / 30)
+
+const temperatureAt = (polar: number, elevation: number, k: ClimateTerms) => k.warm - k.cooling * polar - (6.5 * Math.max(0, elevation)) / 1000
+
 /** Average temperature (°C) at a latitude and height: warm at the equator, colder toward the poles and up mountains. */
 export function surfaceTemperature(latDeg: number, elevation: number, climate: Climate = EARTH_CLIMATE): number {
-  return climate.temperature + 30 - 55 * (climate.gradient ?? 1) * Math.pow(Math.abs(latDeg) / 90, 1.6) - (6.5 * Math.max(0, elevation)) / 1000
+  return temperatureAt(polarity(latDeg), elevation, climateTerms(climate))
 }
 
 /**
@@ -76,15 +101,18 @@ export function surfaceTemperature(latDeg: number, elevation: number, climate: C
  * 40 m high at `beaches` = 1.
  */
 export function autoBiome(latDeg: number, elevation: number, moisture: number, climate: Climate = EARTH_CLIMATE): number {
-  const absLat = Math.abs(latDeg)
-  const temperature = surfaceTemperature(latDeg, elevation, climate)
+  return biomeAt(polarity(latDeg), wetBand(latDeg), elevation, moisture, climateTerms(climate))
+}
+
+/** autoBiome from a latitude's polarity and wet band and a climate's terms, for colouring many cells. */
+export function biomeAt(polar: number, band: number, elevation: number, moisture: number, k: ClimateTerms): number {
+  const temperature = temperatureAt(polar, elevation, k)
   if (elevation > 2800) return temperature < -4 ? BIOME.ice : BIOME.rock
   if (temperature < -8) return BIOME.ice
   if (temperature < -1) return BIOME.tundra
-  if (elevation < climate.beaches * 40) return BIOME.beach
+  if (elevation < k.beach) return BIOME.beach
 
-  const band = Math.cos((absLat * Math.PI) / 30)
-  const wet = clamp(moisture * 0.85 + band * 0.22 + 0.05 - (climate.aridity - 0.5) * 0.8, 0, 1)
+  const wet = clamp01(moisture * 0.85 + band * 0.22 + 0.05 - k.dry)
   if (wet > 0.86 && elevation < 160 && temperature > 6) return BIOME.swamp
   if (temperature < 5) return wet > 0.3 ? BIOME.taiga : BIOME.tundra
   if (temperature < 18) return wet < 0.3 ? BIOME.shrubland : wet < 0.48 ? BIOME.grassland : BIOME.temperateForest
@@ -106,7 +134,7 @@ function rgbToHsl([r, g, b]: readonly number[]): Rgb {
 }
 
 /** "#rrggbb" for a hue (degrees), saturation and lightness (0–1). */
-export const hslToHex = (h: number, s: number, l: number) => `#${hslToRgb([h, s, l]).map((v) => v.toString(16).padStart(2, '0')).join('')}`
+export const hslToHex = (h: number, s: number, l: number) => rgbToHex(hslToRgb([h, s, l]))
 
 function hslToRgb([h, s, l]: Rgb): Rgb {
   const k = (n: number) => (n + h / 30) % 12
@@ -120,7 +148,7 @@ function retint(color: readonly number[], reference: string, target: string): Rg
   const [h, s, l] = rgbToHsl(color)
   const [rh, rs, rl] = rgbToHsl(hexToRgb(reference))
   const [th, ts, tl] = rgbToHsl(hexToRgb(target))
-  return hslToRgb([(h + th - rh + 360) % 360, clamp(rs > 0 ? s * (ts / rs) : ts, 0, 1), clamp(l + tl - rl, 0, 1)])
+  return hslToRgb([(h + th - rh + 360) % 360, clamp01(rs > 0 ? s * (ts / rs) : ts), clamp01(l + tl - rl)])
 }
 
 const VEGETATION = [BIOME.tundra, BIOME.taiga, BIOME.temperateForest, BIOME.grassland, BIOME.shrubland, BIOME.savanna, BIOME.rainforest, BIOME.swamp]

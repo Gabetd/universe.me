@@ -1,5 +1,5 @@
 import { AU_KM, orbitId, starId, type Orbit, type OrbitFields, type SpatialNode, type Star } from '@universe/core'
-import { rng, subSeed } from '@universe/procgen'
+import { RAD, TAU, rng, subSeed, wrapTau } from '@universe/procgen'
 import { GM_EARTH, GM_SUN, starInfo, type StarInfo } from './star'
 
 /**
@@ -31,7 +31,6 @@ export function formatPeriod(seconds: number, short = false): string {
   if (days >= 1000) return `${(seconds / YEAR_S).toFixed(days > 10_000 ? 1 : 2)}${short ? ' yr' : ' Earth years'}`
   return `${days.toFixed(days < 10 ? 2 : short ? 0 : 1)}${short ? ' d' : ' Earth days'}`
 }
-const RAD = Math.PI / 180
 
 export const EARTH_ORBIT: OrbitFields = {
   semiMajorAxisKm: AU_KM,
@@ -119,7 +118,7 @@ function bodyOrbit(fields: OrbitFields, bodyId: string, parent: BodyOrbit | null
     bodyId,
     parentBodyId: parent?.bodyId ?? null,
     centralGM,
-    periodS: 2 * Math.PI * Math.sqrt(fields.semiMajorAxisKm ** 3 / centralGM),
+    periodS: TAU * Math.sqrt(fields.semiMajorAxisKm ** 3 / centralGM),
     isDefault
   }
 }
@@ -211,8 +210,8 @@ export type Vec3 = [number, number, number]
 
 /** Where a body is at `t` (seconds), in km from what it orbits: x, y in the orbital reference plane, z out of it. */
 export function orbitPosition(o: BodyOrbit, t: number): Vec3 {
-  const M = o.phaseDeg * RAD + (2 * Math.PI * t) / o.periodS
-  const E = eccentricAnomaly(((M % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), o.eccentricity)
+  const M = o.phaseDeg * RAD + (TAU * t) / o.periodS
+  const E = eccentricAnomaly(wrapTau(M), o.eccentricity)
   const a = o.semiMajorAxisKm
   const x = a * (Math.cos(E) - o.eccentricity)
   const y = a * Math.sqrt(1 - o.eccentricity ** 2) * Math.sin(E)

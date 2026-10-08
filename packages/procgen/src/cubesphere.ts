@@ -1,5 +1,5 @@
-import { CUBE_FACES, TERRAIN_RES, type LatLon } from '@universe/core'
-import { clamp } from './math'
+import { TERRAIN_RES, type LatLon } from '@universe/core'
+import { DEG, clamp } from './math'
 
 /**
  * Cube-sphere grid math. Each face has TERRAIN_RES² cells; cell (i, j) is at
@@ -10,23 +10,31 @@ export type Vec3 = [number, number, number]
 
 const WARP = Math.PI / 4
 
+/**
+ * How each face's warped coordinates u = tan(s·π/4), v = tan(t·π/4) make a
+ * point on the cube: which axis is ±1 (`c`, sign `cs`) and which axes u and
+ * v go on, with their signs. Face 0 is (1, v, −u), 1 (−1, v, u), 2 (u, 1, −v),
+ * 3 (u, −1, v), 4 (u, v, 1) and 5 (−u, v, −1).
+ */
+const FACES = [
+  { c: 0, cs: 1, u: 2, us: -1, v: 1, vs: 1 },
+  { c: 0, cs: -1, u: 2, us: 1, v: 1, vs: 1 },
+  { c: 1, cs: 1, u: 0, us: 1, v: 2, vs: -1 },
+  { c: 1, cs: -1, u: 0, us: 1, v: 2, vs: 1 },
+  { c: 2, cs: 1, u: 0, us: 1, v: 1, vs: 1 },
+  { c: 2, cs: -1, u: 0, us: -1, v: 1, vs: 1 }
+] as const
+
 /** Direction (unit vector) for face coordinates s, t in [-1, 1]. */
 export function faceToDir(face: number, s: number, t: number, out: Vec3 = [0, 0, 0]): Vec3 {
-  const u = Math.tan(s * WARP)
-  const v = Math.tan(t * WARP)
-  let x: number, y: number, z: number
-  switch (face) {
-    case 0: [x, y, z] = [1, v, -u]; break
-    case 1: [x, y, z] = [-1, v, u]; break
-    case 2: [x, y, z] = [u, 1, -v]; break
-    case 3: [x, y, z] = [u, -1, v]; break
-    case 4: [x, y, z] = [u, v, 1]; break
-    default: [x, y, z] = [-u, v, -1]
-  }
-  const len = Math.hypot(x, y, z)
-  out[0] = x / len
-  out[1] = y / len
-  out[2] = z / len
+  const f = FACES[face] ?? FACES[5]
+  out[f.c] = f.cs
+  out[f.u] = f.us * Math.tan(s * WARP)
+  out[f.v] = f.vs * Math.tan(t * WARP)
+  const len = Math.hypot(out[0], out[1], out[2])
+  out[0] /= len
+  out[1] /= len
+  out[2] /= len
   return out
 }
 
@@ -37,8 +45,8 @@ export interface FacePoint {
   t: number
 }
 
-/** Inverse of faceToDir. `dir` need not be normalized. */
-export function dirToFace(x: number, y: number, z: number): FacePoint {
+/** Inverse of faceToDir. `dir` need not be normalized. Pass `out` to fill it instead of a new object. */
+export function dirToFace(x: number, y: number, z: number, out: FacePoint = { face: 0, s: 0, t: 0 }): FacePoint {
   const ax = Math.abs(x)
   const ay = Math.abs(y)
   const az = Math.abs(z)
@@ -56,7 +64,10 @@ export function dirToFace(x: number, y: number, z: number): FacePoint {
     u = z > 0 ? x / az : -x / az
     v = y / az
   }
-  return { face, s: Math.atan(u) / WARP, t: Math.atan(v) / WARP }
+  out.face = face
+  out.s = Math.atan(u) / WARP
+  out.t = Math.atan(v) / WARP
+  return out
 }
 
 /** Grid coordinate (cell units, may be fractional) for a face coordinate. */
@@ -64,17 +75,30 @@ export const toGrid = (s: number): number => ((s + 1) / 2) * TERRAIN_RES - 0.5
 /** Face coordinate of a cell center. */
 export const cellCenter = (i: number): number => ((i + 0.5) / TERRAIN_RES) * 2 - 1
 
+const clampCell = (v: number) => clamp(v, 0, TERRAIN_RES - 1)
+/** The cell (j * TERRAIN_RES + i) nearest face coordinates s, t on their face. */
+export const nearestCell = (s: number, t: number): number => clampCell(Math.round(toGrid(t))) * TERRAIN_RES + clampCell(Math.round(toGrid(s)))
+
 let dirCache: Float32Array[] | undefined
-/** Unit direction of every cell center, xyz-interleaved, one array per face. Computed once. */
+/**
+ * Unit direction of every cell center, xyz-interleaved, one array per face.
+ * Computed once; the same float32 values faceToDir gives for cell centers.
+ */
 export function cellDirections(): Float32Array[] {
   if (dirCache) return dirCache
-  const out: Vec3 = [0, 0, 0]
-  dirCache = Array.from({ length: CUBE_FACES }, (_, face) => {
+  // A cell's u depends on its column alone and v on its row.
+  const tan = Float64Array.from({ length: TERRAIN_RES }, (_, i) => Math.tan(cellCenter(i) * WARP))
+  dirCache = FACES.map(({ c, cs, u: uAxis, us, v: vAxis, vs }) => {
     const dirs = new Float32Array(TERRAIN_RES * TERRAIN_RES * 3)
-    for (let j = 0; j < TERRAIN_RES; j++) {
-      for (let i = 0; i < TERRAIN_RES; i++) {
-        faceToDir(face, cellCenter(i), cellCenter(j), out)
-        dirs.set(out, (j * TERRAIN_RES + i) * 3)
+    for (let j = 0, o = 0; j < TERRAIN_RES; j++) {
+      const v = tan[j]!
+      for (let i = 0; i < TERRAIN_RES; i++, o += 3) {
+        const u = tan[i]!
+        // One coordinate is ±1 on every face, so this is the cube point's length.
+        const len = Math.sqrt(1 + u * u + v * v)
+        dirs[o + c] = cs / len
+        dirs[o + uAxis] = (us * u) / len
+        dirs[o + vAxis] = (vs * v) / len
       }
     }
     return dirs
@@ -82,7 +106,12 @@ export function cellDirections(): Float32Array[] {
   return dirCache
 }
 
-const DEG = 180 / Math.PI
+/**
+ * For each face, the first face whose cells have the same latitudes, give or
+ * take the sign: y is v / len on the four round the equator and ±1 / len on
+ * the two at the poles.
+ */
+export const LATITUDE_TWIN = [0, 0, 2, 2, 0, 0] as const
 
 /** +Y is north; longitude 0 faces +Z and 90°E faces +X. */
 export function dirToLatLon(x: number, y: number, z: number): LatLon {
