@@ -1,7 +1,8 @@
 import { formatTime, parseTime, type Precision } from '@universe/core'
-import { useEffect, useRef, useState } from 'react'
-import { useTimelineOwner } from '../store'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { deleteCommand, useTimelineOwner, useUi, type DeleteKind } from '../store'
 import { useCalendar } from '../world/useSky'
+import { NotesEditor } from './NotesEditor'
 
 /**
  * Inputs that save once when editing finishes (blur, Enter, slider release),
@@ -9,6 +10,12 @@ import { useCalendar } from '../world/useSky'
  */
 export function TextField(props: { label: string; value: string; placeholder?: string; required?: boolean; onCommit(v: string): void }) {
   const [text, setText] = useState(props.value)
+  // A new stored value (a save, undo, an edit elsewhere) replaces what's shown.
+  const [stored, setStored] = useState(props.value)
+  if (stored !== props.value) {
+    setStored(props.value)
+    setText(props.value)
+  }
   const commit = () => {
     const v = text.trim()
     if (props.required && !v) setText(props.value)
@@ -52,13 +59,83 @@ export function TagsField(props: { label: string; tags: string[]; onCommit(tags:
       placeholder="comma, separated"
       value={props.tags.join(', ')}
       onCommit={(text) => {
-        const tags = text
-          .split(',')
-          .map((t) => t.trim())
-          .filter(Boolean)
+        const tags = parseTags(text)
         if (tags.join('\u0000') !== props.tags.join('\u0000')) props.onCommit(tags)
       }}
     />
+  )
+}
+
+/** "a, b ,, c" → ['a', 'b', 'c']. */
+export const parseTags = (text: string): string[] =>
+  text
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean)
+
+/** A new random seed: any 32-bit unsigned integer. */
+export const randomSeed = () => Math.floor(Math.random() * 0x100000000)
+
+/** Rich-text notes under their label. A new stored value (undo, an edit elsewhere) is shown in a fresh editor. */
+export function NotesField({ label, value, grow, onCommit }: { label: string; value: string; grow?: boolean; onCommit(html: string): void }) {
+  return (
+    <div className={grow ? 'field grow' : 'field'}>
+      <span>{label}</span>
+      <NotesEditor key={value} label={label} value={value} onCommit={onCommit} />
+    </div>
+  )
+}
+
+/** A small colour square. */
+export const Swatch = ({ color }: { color: string | undefined }) => <span className="swatch" style={{ background: color }} />
+
+/** The top line of an inspector panel: what it shows, and a button that closes it. */
+export function PanelHeader({ icon, label, onClose }: { icon: ReactNode; label: string; onClose(): void }) {
+  return (
+    <div className="inspector-kind">
+      {icon} {label}
+      <button className="link close" aria-label={`Close ${label.toLowerCase()}`} onClick={onClose}>
+        ✕
+      </button>
+    </div>
+  )
+}
+
+/** The button at the bottom of a panel that deletes what it shows, in one undo step. */
+export function DeleteButton({ kind, ids, children }: { kind: DeleteKind; ids: string[]; children: ReactNode }) {
+  const remove = () => {
+    const command = deleteCommand(kind, ids)
+    if (command) void useUi.getState().execute(command)
+  }
+  return (
+    <button className="danger" onClick={remove}>
+      {children}
+    </button>
+  )
+}
+
+export interface SwatchRow {
+  id: string
+  name: string
+  color: string | undefined
+  selected?: boolean
+  /** Why it's dimmed (it isn't there at the playhead); shown as its tooltip. */
+  absent?: string
+}
+
+/** A list of named colour swatches (regions, characters, structures, events); clicking one picks it. */
+export function SwatchList({ rows, onPick }: { rows: SwatchRow[]; onPick(id: string): void }) {
+  return (
+    <ul className="region-list">
+      {rows.map((r) => (
+        <li key={r.id}>
+          <button className={`link region-row${r.selected ? ' selected' : ''}${r.absent ? ' absent' : ''}`} title={r.absent} onClick={() => onPick(r.id)}>
+            <Swatch color={r.color} />
+            {r.name}
+          </button>
+        </li>
+      ))}
+    </ul>
   )
 }
 

@@ -3,7 +3,7 @@ import { surfaceTemperature, withSky } from '@universe/procgen'
 import { deriveCalendar, formatPeriod, orbitFields, worldOrbit, luminosityOf, moonsOf, planetOf, worldClimate, type BodyOrbit, type SystemModel } from '@universe/sim'
 import { useUi } from '../store'
 import { useSystem, useWorldClimate } from '../world/useSky'
-import { NumberInput, TextField } from './fields'
+import { NumberInput, Swatch, TextField } from './fields'
 
 /** Inspector for a star system: its star. Without edits it's Sun-like. */
 export function StarPanel({ system: node }: { system: SpatialNode }) {
@@ -30,7 +30,7 @@ export function StarPanel({ system: node }: { system: SpatialNode }) {
       <dl className="facts-list small">
         <dt>Surface</dt>
         <dd>
-          <span className="swatch" style={{ background: star.color }} /> {Math.round(star.temperatureK).toLocaleString()} K
+          <Swatch color={star.color} /> {Math.round(star.temperatureK).toLocaleString()} K
         </dd>
         <dt>Size</dt>
         <dd>{star.radiusSun.toFixed(2)} × the Sun</dd>

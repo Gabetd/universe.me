@@ -1,8 +1,6 @@
-import { useMemo } from 'react'
-import { regionAt, type Region, type RegionPatch, type SpatialNode, type WorldSettingsPatch } from '@universe/core'
-import { useUi, useWorld } from '../store'
-import { ColorField, CommitSlider, TextField } from './fields'
-import { NotesEditor } from './NotesEditor'
+import { regionAt, type Region, type SpatialNode } from '@universe/core'
+import { updater, useOwnRecords, useUi, useWorld } from '../store'
+import { ColorField, CommitSlider, DeleteButton, NotesField, PanelHeader, Swatch, SwatchList, TextField } from './fields'
 import { RegionHistory } from './RegionHistory'
 import { BlueprintLibrary } from './BlueprintLibrary'
 import { StructurePanel } from './StructurePanel'
@@ -24,11 +22,9 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
   const selectedStructure = useUi((s) => s.timeline.structures.find((x) => x.id === s.selectedStructureId))
   const selectedCharacter = useUi((s) => s.timeline.characters.find((x) => x.id === s.selectedCharacterId))
   const execute = useUi((s) => s.execute)
-  const changes = useUi((s) => s.timeline.changes)
-  const playhead = usePlayhead(world.id)
   if (!info) return null
   const { settings } = info
-  const update = (patch: WorldSettingsPatch) => void execute({ type: 'world.update', payload: { id: world.id, patch } })
+  const update = updater('world', world.id)
 
   return (
     <>
@@ -55,63 +51,52 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
       <StructureList worldId={world.id} erosionSpeed={settings.erosionSpeed} onErosionSpeed={(erosionSpeed) => update({ erosionSpeed })} />
       <BlueprintLibrary />
 
-      <section className="inspector-section">
-        <h3>Regions</h3>
-        {regions.length === 0 ? (
-          <p className="muted small">None yet. Pick the ⬠ tool and click points on the world to draw one.</p>
-        ) : (
-          <ul className="region-list">
-            {regions.map((r) => (
-              <li key={r.id}>
-                <button
-                  className={`link region-row${r.id === selectedRegion?.id ? ' selected' : ''}${regionAt(r, changes, playhead) ? '' : ' absent'}`}
-                  title={regionAt(r, changes, playhead) ? undefined : 'Doesn’t exist at the playhead'}
-                  onClick={() => selectRegion(r.id)}
-                >
-                  <span className="swatch" style={{ background: r.color }} />
-                  {r.name}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <RegionList worldId={world.id} regions={regions} selectedId={selectedRegion?.id} onPick={selectRegion} />
     </>
   )
 }
 
-function RegionForm({ region }: { region: Region }) {
-  const execute = useUi((s) => s.execute)
-  const selectRegion = useUi((s) => s.selectRegion)
-  const update = (patch: RegionPatch) => void execute({ type: 'region.update', payload: { id: region.id, patch } })
-
+/** The world's regions, dimmed where they don't exist at the playhead (which only this list follows). */
+function RegionList({ worldId, regions, selectedId, onPick }: { worldId: string; regions: Region[]; selectedId: string | undefined; onPick(id: string): void }) {
+  const changes = useUi((s) => s.timeline.changes)
+  const playhead = usePlayhead(worldId)
   return (
-    <section className="inspector-section region-form" aria-label="Region">
-      <div className="inspector-kind">
-        <span className="swatch" style={{ background: region.color }} /> Region
-        <button className="link close" aria-label="Close region" onClick={() => selectRegion(null)}>
-          ✕
-        </button>
-      </div>
-      <TextField label="Region name" value={region.name} required onCommit={(name) => update({ name })} />
-      <ColorField label="Region color" value={region.color} onCommit={(color) => update({ color })} />
-      <RegionTheme worldId={region.worldId} regionId={region.id} />
-      <RegionHistory region={region} />
-      <div className="field">
-        <span>Region notes</span>
-        <NotesEditor label="Region notes" value={region.notes} onCommit={(notes) => update({ notes })} />
-      </div>
-      <button className="danger" onClick={() => void execute({ type: 'region.delete', payload: { id: region.id } })}>
-        Delete region
-      </button>
+    <section className="inspector-section">
+      <h3>Regions</h3>
+      {regions.length === 0 ? (
+        <p className="muted small">None yet. Pick the ⬠ tool and click points on the world to draw one.</p>
+      ) : (
+        <SwatchList
+          rows={regions.map((r) => ({ id: r.id, name: r.name, color: r.color, selected: r.id === selectedId, absent: regionAt(r, changes, playhead) ? undefined : 'Doesn’t exist at the playhead' }))}
+          onPick={onPick}
+        />
+      )}
     </section>
   )
 }
 
-/** The world's structures, coloured by condition at the playhead, and how fast things weather here. */
+function RegionForm({ region }: { region: Region }) {
+  const selectRegion = useUi((s) => s.selectRegion)
+  const update = updater('region', region.id)
+
+  return (
+    <section className="inspector-section region-form" aria-label="Region">
+      <PanelHeader icon={<Swatch color={region.color} />} label="Region" onClose={() => selectRegion(null)} />
+      <TextField label="Region name" value={region.name} required onCommit={(name) => update({ name })} />
+      <ColorField label="Region color" value={region.color} onCommit={(color) => update({ color })} />
+      <RegionTheme worldId={region.worldId} regionId={region.id} />
+      <RegionHistory region={region} />
+      <NotesField label="Region notes" value={region.notes} onCommit={(notes) => update({ notes })} />
+      <DeleteButton kind="region" ids={[region.id]}>
+        Delete region
+      </DeleteButton>
+    </section>
+  )
+}
+
+/** The world's characters, dimmed when they aren't alive at the playhead. */
 function CharacterList({ worldId }: { worldId: string }) {
-  const all = useUi((s) => s.timeline.characters)
-  const characters = useMemo(() => all.filter((x) => x.ownerId === worldId), [all, worldId])
+  const characters = useOwnRecords('characters', worldId)
   const selectedId = useUi((s) => s.selectedCharacterId)
   const playhead = usePlayhead(worldId)
   const add = async () => {
@@ -124,20 +109,10 @@ function CharacterList({ worldId }: { worldId: string }) {
     <section className="inspector-section" aria-label="Characters">
       <h3>Characters</h3>
       {characters.length > 0 && (
-        <ul className="region-list">
-          {characters.map((c) => (
-            <li key={c.id}>
-              <button
-                className={`link region-row${c.id === selectedId ? ' selected' : ''}${isAlive(c, playhead) ? '' : ' absent'}`}
-                title={isAlive(c, playhead) ? undefined : 'Not alive at the playhead'}
-                onClick={() => useUi.getState().selectCharacter(c.id)}
-              >
-                <span className="swatch" style={{ background: c.color }} />
-                {c.name}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <SwatchList
+          rows={characters.map((c) => ({ id: c.id, name: c.name, color: c.color, selected: c.id === selectedId, absent: isAlive(c, playhead) ? undefined : 'Not alive at the playhead' }))}
+          onPick={useUi.getState().selectCharacter}
+        />
       )}
       <div className="add-buttons">
         <button onClick={() => void add()}>+ Character</button>
@@ -146,9 +121,9 @@ function CharacterList({ worldId }: { worldId: string }) {
   )
 }
 
+/** The world's structures, coloured by condition at the playhead, and how fast things weather here. */
 function StructureList({ worldId, erosionSpeed, onErosionSpeed }: { worldId: string; erosionSpeed: number; onErosionSpeed(v: number): void }) {
-  const all = useUi((s) => s.timeline.structures)
-  const structures = useMemo(() => all.filter((x) => x.ownerId === worldId), [all, worldId])
+  const structures = useOwnRecords('structures', worldId)
   const selectedId = useUi((s) => s.selectedStructureId)
   const selectStructure = useUi((s) => s.selectStructure)
   const { curves } = useConditionCurves(worldId)
@@ -165,23 +140,13 @@ function StructureList({ worldId, erosionSpeed, onErosionSpeed }: { worldId: str
           and click on the world to place one.
         </p>
       ) : (
-        <ul className="region-list">
-          {structures.map((x) => {
+        <SwatchList
+          rows={structures.map((x) => {
             const state = stateAt(curves.get(x.id)!, playhead)
-            return (
-              <li key={x.id}>
-                <button
-                  className={`link region-row${x.id === selectedId ? ' selected' : ''}${state.exists ? '' : ' absent'}`}
-                  title={state.exists ? undefined : 'Not standing at the playhead'}
-                  onClick={() => selectStructure(x.id)}
-                >
-                  <span className="swatch" style={{ background: STAGE_COLORS[state.stage] }} />
-                  {state.name}
-                </button>
-              </li>
-            )
+            return { id: x.id, name: state.name, color: STAGE_COLORS[state.stage], selected: x.id === selectedId, absent: state.exists ? undefined : 'Not standing at the playhead' }
           })}
-        </ul>
+          onPick={selectStructure}
+        />
       )}
       <CommitSlider label="Erosion speed" unit="×" min={EROSION_SPEED.min} max={EROSION_SPEED.max} step={EROSION_SPEED.step} value={erosionSpeed} onCommit={onErosionSpeed} />
     </section>

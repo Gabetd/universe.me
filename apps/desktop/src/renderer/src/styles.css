@@ -178,7 +178,15 @@ h2 {
   color: var(--muted);
   margin-bottom: 12px;
 }
-.recent-list {
+/* Lists without bullets or indents. */
+.recent-list,
+.tree,
+.tree ul,
+.region-list,
+.plain-list,
+.month-list,
+.chip-list,
+.link-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -328,12 +336,6 @@ h2 {
   color: var(--muted);
 }
 
-.tree,
-.tree ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
 .tree-row {
   display: flex;
   align-items: center;
@@ -369,6 +371,9 @@ h2 {
   min-height: 100%;
 }
 .inspector-kind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -391,7 +396,8 @@ h2 {
   display: flex;
   gap: 6px;
 }
-.add-buttons {
+.add-buttons,
+.eco-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -833,9 +839,7 @@ input.invalid {
 }
 .chip-list,
 .link-list {
-  list-style: none;
   margin: 0 0 6px;
-  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -900,11 +904,6 @@ input.invalid {
   letter-spacing: 1px;
   color: var(--muted);
 }
-.inspector-kind {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
 .inspector-kind .close {
   margin-left: auto;
   color: var(--muted);
@@ -928,11 +927,6 @@ input[type='color'] {
   border-radius: 3px;
   flex: none;
   border: 1px solid rgba(255, 255, 255, 0.25);
-}
-.region-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
 }
 .region-row {
   display: flex;
@@ -1160,11 +1154,6 @@ input[type='color'] {
   font-weight: 700;
   outline: 1px solid #ffffff;
 }
-.region-history {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
 .region-history .field-row select {
   max-width: 140px;
 }
@@ -1334,9 +1323,7 @@ input[type='color'] {
   transition: width 0.2s;
 }
 .plain-list {
-  list-style: none;
   margin: 4px 0 0;
-  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -1520,9 +1507,6 @@ input[type='color'] {
 }
 
 .month-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
   display: grid;
   gap: 4px;
 }
@@ -1604,11 +1588,6 @@ input[type='color'] {
   border-right: 1px solid var(--border);
   overflow: auto;
   min-width: 0;
-}
-.eco-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
 }
 .eco-editor {
   display: flex;

@@ -3,7 +3,6 @@ import {
   causalChain,
   formatTime,
   timeTicks,
-  timelineOf,
   timelineWarnings,
   type Command,
   type EventGroup,
@@ -12,14 +11,14 @@ import {
   type SpatialNode,
   type TimelineEvent
 } from '@universe/core'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { TimeField } from '../components/fields'
-import { useTimelineOwner, useUi } from '../store'
-import { ROW_H, laneAt, layoutTimeline, type PlacedItem, type TimelineLayout } from './layout'
+import { asCommand, updater, useOwnRecords, useTimelineOwner, useUi } from '../store'
+import { ROW_H, laneAt, onScreen, packTimeline, packingFor, placeTimeline, type PlacedItem, type TimelineLayout } from './layout'
 import { TimeScale, fitRange, panRange, snap, zoomRange, type TimeRange } from './scale'
-import { EFFECT_LABELS } from '../components/EventEffects'
+import { effectIcons } from '../components/EventEffects'
 import { ArrowMarkers, LINK_STYLE, WARN_COLOR } from './linkStyle'
-import { useNow, usePlayhead, useTimelineView } from './timelineStore'
+import { playheadOf, useNow, usePlayhead, useTimelineView } from './timelineStore'
 import { useCalendar } from '../world/useSky'
 import { eventDates } from './labels'
 import { SkyTrack } from './SkyTrack'
@@ -42,23 +41,43 @@ export function Timeline() {
   return <OwnerTimeline key={owner.id} owner={owner} />
 }
 
+/** A function that keeps its identity but always runs the latest render's `fn`: a handler memoized children can take. */
+function useStableHandler<A extends unknown[]>(fn: (...args: A) => void): (...args: A) => void {
+  const latest = useRef(fn)
+  useLayoutEffect(() => {
+    latest.current = fn
+  })
+  return useCallback((...args: A) => latest.current(...args), [])
+}
+
+/**
+ * One node's timeline. The playhead (its field, marker and line) is drawn by
+ * components of its own, so moving or playing it doesn't re-render this.
+ */
 function OwnerTimeline({ owner }: { owner: SpatialNode }) {
-  const data = useUi((s) => s.timeline)
+  // Each kind on its own, so edits to other records (structures, species…) don't re-render the timeline.
+  const events = useOwnRecords('events', owner.id)
+  const links = useOwnRecords('links', owner.id)
+  const changes = useOwnRecords('changes', owner.id)
+  const eras = useOwnRecords('eras', owner.id)
+  const themeSpans = useOwnRecords('themeSpans', owner.id)
+  const groups = useOwnRecords('groups', owner.id)
+  const lanes = useOwnRecords('lanes', owner.id)
+  const effects = useOwnRecords('effects', owner.id)
   const regions = useUi((s) => s.regions)
   const selection = useUi((s) => s.timelineSelection)
   const selectedRegionId = useUi((s) => s.selectedRegionId)
   const { execute, selectTimeline } = useUi.getState()
-  const own = useMemo(() => timelineOf(data, owner.id), [data, owner.id])
-  const warnings = useMemo(() => timelineWarnings(own, regions), [own, regions])
+  const warnings = useMemo(() => timelineWarnings({ events, links, changes }, regions), [events, links, changes, regions])
   const warnedLinks = useMemo(() => new Set(warnings.flatMap((w) => w.refs.filter((r) => r.kind === 'link').map((r) => r.id))), [warnings])
+  const icons = useMemo(() => effectIcons(effects), [effects])
 
   const now = useNow(owner.id)
-  const playhead = usePlayhead(owner.id)
   const cal = useCalendar(owner.id)
   // Only this timeline's range: other timelines' view changes don't re-render it.
   const storedRange = useTimelineView((s) => s.ranges[owner.id])
   const view = useTimelineView.getState()
-  const range = storedRange ?? initialRange(own.events, now)
+  const range = storedRange ?? initialRange(events, now)
   const setRange = (r: TimeRange) => view.setRange(owner.id, r)
   // Remember the first view, so zooming and panning have something to start from.
   useEffect(() => {
@@ -80,14 +99,17 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
 
   // While dragging events, lay them out where they'd land.
   const shownEvents = useMemo(() => {
-    if (drag?.kind === 'move') return own.events.map((e) => (drag.ids.includes(e.id) ? moved(e, drag.dt, drag.ids.length === 1 ? drag.lane : undefined) : e))
-    if (drag?.kind === 'resize') return own.events.map((e) => (e.id === drag.id ? resized(e, drag.edge, drag.t) : e))
-    return own.events
-  }, [own.events, drag])
-  const layout = useMemo(() => layoutTimeline(shownEvents, own.groups, own.lanes, scale), [shownEvents, own.groups, own.lanes, range.t0, range.t1, width]) // eslint-disable-line react-hooks/exhaustive-deps -- scale is derived from range and width
+    if (drag?.kind === 'move') return events.map((e) => (drag.ids.includes(e.id) ? moved(e, drag.dt, drag.ids.length === 1 ? drag.lane : undefined) : e))
+    if (drag?.kind === 'resize') return events.map((e) => (e.id === drag.id ? resized(e, drag.edge, drag.t) : e))
+    return events
+  }, [events, drag])
+  // Packed once per zoom level; panning only moves it sideways.
+  const packing = packingFor(range, width)
+  const packed = useMemo(() => packTimeline(shownEvents, groups, lanes, packing.secondsPerPx, packing.origin), [shownEvents, groups, lanes, packing.secondsPerPx, packing.origin])
+  const layout = useMemo(() => placeTimeline(packed, range.t0), [packed, range.t0])
 
   const selectedEvents = useMemo(() => (selection?.kind === 'event' ? selection.ids : []), [selection])
-  const emphasis = useMemo(() => emphasized(own, selectedEvents, selectedRegionId), [own, selectedEvents, selectedRegionId])
+  const emphasis = useMemo(() => emphasized({ events, links }, selectedEvents, selectedRegionId), [events, links, selectedEvents, selectedRegionId])
 
   // Zoom with the wheel (around the pointer); sideways scrolling pans; Alt+wheel scrolls the lanes.
   useEffect(() => {
@@ -112,7 +134,8 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
   }
 
   const run = (commands: Command[]) => {
-    if (commands.length) void execute(commands.length === 1 ? commands[0]! : { type: 'batch', payload: { commands } })
+    const command = asCommand(commands)
+    if (command) void execute(command)
   }
 
   const onTrackPointerDown = (e: React.PointerEvent) => {
@@ -121,7 +144,8 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
     setDrag({ kind: 'pan', startX: e.clientX, range, moved: false })
   }
 
-  const onEventPointerDown = (e: React.PointerEvent, ev: TimelineEvent) => {
+  // Stable, so the bars (memoized) don't re-render for every pointer move.
+  const onEventPointerDown = useStableHandler((e: React.PointerEvent, ev: TimelineEvent) => {
     if (e.button !== 0) return
     e.stopPropagation()
     const toggle = e.shiftKey || e.metaKey || e.ctrlKey
@@ -134,33 +158,33 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
     selectTimeline({ kind: 'event', ids })
     trackRef.current!.setPointerCapture(e.pointerId)
     setDrag({ kind: 'move', ids, startX: e.clientX, startY: e.clientY, dt: 0, lane: undefined, moved: false })
-  }
+  })
 
-  const onHandlePointerDown = (e: React.PointerEvent, ev: TimelineEvent, edge: 'start' | 'end') => {
+  const onHandlePointerDown = useStableHandler((e: React.PointerEvent, ev: TimelineEvent, edge: 'start' | 'end') => {
     e.stopPropagation()
     selectTimeline({ kind: 'event', ids: [ev.id] })
     trackRef.current!.setPointerCapture(e.pointerId)
     setDrag({ kind: 'resize', id: ev.id, edge, t: edge === 'start' ? ev.start : (ev.end ?? ev.start) })
-  }
+  })
 
-  const onConnectorPointerDown = (e: React.PointerEvent, ev: TimelineEvent) => {
+  const onConnectorPointerDown = useStableHandler((e: React.PointerEvent, ev: TimelineEvent) => {
     e.stopPropagation()
     trackRef.current!.setPointerCapture(e.pointerId)
     setDrag({ kind: 'link', fromId: ev.id, ...point(e) })
-  }
+  })
 
   const onPointerMove = (e: React.PointerEvent) => {
     if (!drag) return
     if (drag.kind === 'pan') {
       const dx = e.clientX - drag.startX
       if (Math.abs(dx) > 2 || drag.moved) {
-        setDrag({ ...drag, moved: true })
+        if (!drag.moved) setDrag({ ...drag, moved: true })
         setRange(panRange(drag.range, -dx * scale.secondsPerPx))
       }
     } else if (drag.kind === 'move') {
       const dx = e.clientX - drag.startX
       const movedEnough = drag.moved || Math.abs(dx) > 3 || Math.abs(e.clientY - drag.startY) > 6
-      const first = own.events.find((x) => x.id === drag.ids[0])!
+      const first = events.find((x) => x.id === drag.ids[0])!
       const dt = snap(first.start + dx * scale.secondsPerPx, scale.secondsPerPx) - first.start
       setDrag({ ...drag, dt: movedEnough ? dt : 0, lane: movedEnough ? laneAt(layout, point(e).y) : undefined, moved: movedEnough })
     } else if (drag.kind === 'resize') {
@@ -180,7 +204,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
     if (d.kind === 'move' && d.moved) {
       run(
         d.ids.flatMap((id) => {
-          const ev = own.events.find((x) => x.id === id)!
+          const ev = events.find((x) => x.id === id)!
           const next = moved(ev, d.dt, d.ids.length === 1 ? d.lane : undefined)
           if (next.start === ev.start && next.laneId === ev.laneId) return []
           return [{ type: 'event.update', payload: { id, patch: { start: next.start, end: next.end, laneId: next.laneId } } }]
@@ -188,9 +212,9 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
       )
     }
     if (d.kind === 'resize') {
-      const ev = own.events.find((x) => x.id === d.id)!
+      const ev = events.find((x) => x.id === d.id)!
       const next = resized(ev, d.edge, d.t)
-      if (next.start !== ev.start || next.end !== ev.end) run([{ type: 'event.update', payload: { id: ev.id, patch: { start: next.start, end: next.end } } }])
+      if (next.start !== ev.start || next.end !== ev.end) updater('event', ev.id)({ start: next.start, end: next.end })
     }
     if (d.kind === 'link') {
       const target = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-event-id]')?.dataset.eventId
@@ -212,12 +236,13 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
   }
 
   const fit = () => {
-    const times = [...own.events.flatMap((e) => [e.start, e.end ?? e.start]), ...[...own.eras, ...own.themeSpans].flatMap((e) => [e.start, e.end])]
+    const times = [...events.flatMap((e) => [e.start, e.end ?? e.start]), ...[...eras, ...themeSpans].flatMap((e) => [e.start, e.end])]
     setRange(times.length ? fitRange(Math.min(...times), Math.max(...times)) : fitRange(now, now))
   }
 
   const ticks = timeTicks(range.t0, range.t1, width, cal)
   const groupable = selectedEvents.length >= 2
+  const precision = precisionFor(scale)
 
   return (
     <div className="timeline" onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
@@ -225,7 +250,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
         <span className="timeline-title" title={owner.name}>
           Timeline · {owner.name}
         </span>
-        <button onClick={() => run([{ type: 'event.create', payload: { ownerId: owner.id, start: playhead, precision: precisionFor(scale) } }])}>+ Event</button>
+        <button onClick={() => run([{ type: 'event.create', payload: { ownerId: owner.id, start: playheadOf(owner.id), precision } }])}>+ Event</button>
         <button onClick={() => run([{ type: 'lane.create', payload: { ownerId: owner.id } }])}>+ Lane</button>
         <button
           onClick={() => {
@@ -242,22 +267,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
           Fit
         </button>
         <span className="toolbar-sep" />
-        <label className="timeline-playhead-field">
-          <span className="muted small">Playhead</span>
-          <TimeField
-            label="Playhead"
-            value={playhead}
-            precision={precisionFor(scale)}
-            onCommit={(v) => {
-              if (!v) return
-              view.setPlayhead(owner.id, v.t)
-              if (v.t < range.t0 || v.t > range.t1) setRange(panRange(range, v.t - (range.t0 + range.t1) / 2))
-            }}
-          />
-        </label>
-        <button title="Make the playhead the story's present" disabled={playhead === now} onClick={() => run([{ type: 'timeline.update', payload: { ownerId: owner.id, patch: { now: playhead } } }])}>
-          Set Now
-        </button>
+        <PlayheadField ownerId={owner.id} now={now} precision={precision} range={range} onRange={setRange} />
         <span className="toolbar-sep" />
         {warnings.length > 0 && (
           <button className="warning-button" aria-expanded={showWarnings} onClick={() => setShowWarnings(!showWarnings)}>
@@ -290,7 +300,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
       <div className="tl-head">
         <div className="tl-corner" style={{ width: LABELS_W }} />
         <div className="tl-ruler" onPointerDown={startPlayheadDrag}>
-          {own.eras.map((era) => {
+          {eras.map((era) => {
             const x0 = scale.x(era.start)
             const x1 = scale.x(era.end)
             if (x1 < 0 || x0 > width) return null
@@ -314,7 +324,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
             </span>
           ))}
           <Marker className="tl-now-marker" x={scale.x(now)} label="Now" />
-          <Marker className="tl-playhead-marker" x={scale.x(playhead)} label={formatTime(playhead, precisionFor(scale), cal)} />
+          <PlayheadMarker ownerId={owner.id} scale={scale} precision={precision} cal={cal} />
         </div>
       </div>
 
@@ -341,7 +351,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
             onPointerDown={onTrackPointerDown}
             onDoubleClick={onTrackDoubleClick}
           >
-            {own.eras.map((era) => (
+            {eras.map((era) => (
               <div key={era.id} className="tl-era" style={{ left: scale.x(era.start), width: Math.max(1, scale.x(era.end) - scale.x(era.start)), ['--c' as string]: era.color }} />
             ))}
             {ticks.map((t) => (
@@ -350,32 +360,76 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
             {layout.lanes.map((l) => (
               <div key={l.lane?.id ?? 'default'} className="tl-lane-bg" style={{ top: l.y, height: l.height }} />
             ))}
-            <Arrows layout={layout} links={own.links} emphasis={emphasis} warned={warnedLinks} selectedLinkId={selection?.kind === 'link' ? selection.ids[0] : undefined} width={width} />
-            {layout.groups.map((g) => (
-              <GroupBar key={g.item.id} placed={g} selected={selection?.kind === 'group' && selection.ids.includes(g.item.id)} />
-            ))}
+            <Arrows layout={layout} links={links} emphasis={emphasis} warned={warnedLinks} selectedLinkId={selection?.kind === 'link' ? selection.ids[0] : undefined} width={width} />
+            {layout.groups.map((g) =>
+              onScreen(g, width) ? <GroupBar key={g.item.id} placed={g} selected={selection?.kind === 'group' && selection.ids.includes(g.item.id)} /> : null
+            )}
             {layout.lanes.flatMap((l) =>
-              l.events.map((p) => (
-                <EventBar
-                  cal={cal}
-                  key={p.item.id}
-                  placed={p}
-                  selected={selectedEvents.includes(p.item.id)}
-                  dimmed={!!emphasis && !emphasis.events.has(p.item.id)}
-                  onPointerDown={onEventPointerDown}
-                  onHandlePointerDown={onHandlePointerDown}
-                  onConnectorPointerDown={onConnectorPointerDown}
-                />
-              ))
+              l.events.map((p) =>
+                onScreen(p, width) ? (
+                  <EventBar
+                    cal={cal}
+                    key={p.item.id}
+                    placed={p}
+                    icons={icons.get(p.item.id)}
+                    selected={selectedEvents.includes(p.item.id)}
+                    dimmed={!!emphasis && !emphasis.events.has(p.item.id)}
+                    onPointerDown={onEventPointerDown}
+                    onHandlePointerDown={onHandlePointerDown}
+                    onConnectorPointerDown={onConnectorPointerDown}
+                  />
+                ) : null
+              )
             )}
             {drag?.kind === 'link' && <LinkPreview layout={layout} fromId={drag.fromId} to={drag} />}
             <div className="tl-line now" style={{ left: scale.x(now) }} />
-            <div className="tl-line playhead" style={{ left: scale.x(playhead) }} />
+            <PlayheadLine ownerId={owner.id} scale={scale} />
           </div>
         </div>
       </div>
     </div>
   )
+}
+
+/** The playhead's box and "Set Now", in the toolbar. */
+function PlayheadField({ ownerId, now, precision, range, onRange }: { ownerId: string; now: number; precision: TimelineEvent['precision']; range: TimeRange; onRange(r: TimeRange): void }) {
+  const playhead = usePlayhead(ownerId)
+  return (
+    <>
+      <label className="timeline-playhead-field">
+        <span className="muted small">Playhead</span>
+        <TimeField
+          label="Playhead"
+          value={playhead}
+          precision={precision}
+          onCommit={(v) => {
+            if (!v) return
+            useTimelineView.getState().setPlayhead(ownerId, v.t)
+            if (v.t < range.t0 || v.t > range.t1) onRange(panRange(range, v.t - (range.t0 + range.t1) / 2))
+          }}
+        />
+      </label>
+      <button
+        title="Make the playhead the story's present"
+        disabled={playhead === now}
+        onClick={() => void useUi.getState().execute({ type: 'timeline.update', payload: { ownerId, patch: { now: playhead } } })}
+      >
+        Set Now
+      </button>
+    </>
+  )
+}
+
+/** The playhead on the ruler, with its date. */
+function PlayheadMarker({ ownerId, scale, precision, cal }: { ownerId: string; scale: TimeScale; precision: TimelineEvent['precision']; cal: Calendar }) {
+  const playhead = usePlayhead(ownerId)
+  return <Marker className="tl-playhead-marker" x={scale.x(playhead)} label={formatTime(playhead, precision, cal)} />
+}
+
+/** The playhead's line down the track. */
+function PlayheadLine({ ownerId, scale }: { ownerId: string; scale: TimeScale }) {
+  const playhead = usePlayhead(ownerId)
+  return <div className="tl-line playhead" style={{ left: scale.x(playhead) }} />
 }
 
 function Marker({ className, x, label }: { className: string; x: number; label: string }) {
@@ -406,7 +460,7 @@ function LaneLabel({ lane, y, height }: { lane: Lane | null; y: number; height: 
           onBlur={(e) => {
             setEditing(false)
             const name = e.target.value.trim()
-            if (name && name !== lane.name) void execute({ type: 'lane.update', payload: { id: lane.id, patch: { name } } })
+            if (name && name !== lane.name) updater('lane', lane.id)({ name })
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') e.currentTarget.blur()
@@ -427,6 +481,8 @@ function LaneLabel({ lane, y, height }: { lane: Lane | null; y: number; height: 
 
 interface EventBarProps {
   placed: PlacedItem<TimelineEvent>
+  /** What it does to structures, one icon per kind of effect. */
+  icons: string | undefined
   selected: boolean
   dimmed: boolean
   onPointerDown(e: React.PointerEvent, ev: TimelineEvent): void
@@ -435,11 +491,8 @@ interface EventBarProps {
   cal: Calendar
 }
 
-function EventBar({ placed, selected, dimmed, onPointerDown, onHandlePointerDown, onConnectorPointerDown, cal }: EventBarProps) {
+const EventBar = memo(function EventBar({ placed, icons, selected, dimmed, onPointerDown, onHandlePointerDown, onConnectorPointerDown, cal }: EventBarProps) {
   const ev = placed.item
-  const allEffects = useUi((s) => s.timeline.effects)
-  // What it does to structures, one icon per kind of effect.
-  const effectIcons = [...new Set(allEffects.filter((e) => e.eventId === ev.id).map((e) => EFFECT_LABELS[e.type].icon))].join('')
   const instant = ev.end === null
   const fuzzy = ev.precision === 'approx' || ev.precision === 'century'
   const classes = ['tl-event', instant ? 'instant' : 'span', selected && 'selected', dimmed && 'dimmed', fuzzy && 'fuzzy'].filter(Boolean).join(' ')
@@ -459,17 +512,17 @@ function EventBar({ placed, selected, dimmed, onPointerDown, onHandlePointerDown
       {instant && <span className="tl-diamond" />}
       <span className="tl-event-label">
         {ev.locations.length > 0 && '📍 '}
-        {effectIcons && <span className="tl-effect-icons" title="Effects on structures">{effectIcons} </span>}
+        {icons && <span className="tl-effect-icons" title="Effects on structures">{icons} </span>}
         {ev.title}
       </span>
       <span className="tl-handle end" title={instant ? 'Drag to give it a duration' : undefined} onPointerDown={(e) => onHandlePointerDown(e, ev, 'end')} />
       <span className="tl-connector" title="Drag onto another event to link them" onPointerDown={(e) => onConnectorPointerDown(e, ev)} />
     </div>
   )
-}
+})
 
-function GroupBar({ placed, selected }: { placed: PlacedItem<EventGroup>; selected: boolean }) {
-  const { execute, selectTimeline } = useUi.getState()
+const GroupBar = memo(function GroupBar({ placed, selected }: { placed: PlacedItem<EventGroup>; selected: boolean }) {
+  const { selectTimeline } = useUi.getState()
   const g = placed.item
   return (
     <div
@@ -486,14 +539,14 @@ function GroupBar({ placed, selected }: { placed: PlacedItem<EventGroup>; select
         className="link tl-group-toggle"
         aria-label={g.collapsed ? `Expand ${g.title}` : `Collapse ${g.title}`}
         onPointerDown={(e) => e.stopPropagation()}
-        onClick={() => void execute({ type: 'group.update', payload: { id: g.id, patch: { collapsed: !g.collapsed } } })}
+        onClick={() => updater('group', g.id)({ collapsed: !g.collapsed })}
       >
         {g.collapsed ? '▸' : '▾'}
       </button>
       <span className="tl-event-label">{g.title}</span>
     </div>
   )
-}
+})
 
 /** Endpoints of a link: the right end of its cause and the left end of its effect (or their group bars). */
 function linkEnds(layout: TimelineLayout, fromId: string, toId: string) {
@@ -523,14 +576,17 @@ interface ArrowsProps {
   width: number
 }
 
-function Arrows({ layout, links, emphasis, warned, selectedLinkId, width }: ArrowsProps) {
+/** Whether a link can show in the track: its curve stays within 40 px (plus the arrowhead) of its ends, sideways. */
+const linkOnScreen = (ends: { x1: number; x2: number }, width: number) => Math.max(ends.x1, ends.x2) + 50 >= 0 && Math.min(ends.x1, ends.x2) - 50 <= width
+
+const Arrows = memo(function Arrows({ layout, links, emphasis, warned, selectedLinkId, width }: ArrowsProps) {
   const selectTimeline = useUi((s) => s.selectTimeline)
   return (
     <svg className="tl-arrows" width={width} height={layout.height}>
       <ArrowMarkers prefix="arrow" />
       {links.map((l) => {
         const ends = linkEnds(layout, l.fromId, l.toId)
-        if (!ends) return null
+        if (!ends || !linkOnScreen(ends, width)) return null
         const style = warned.has(l.id) ? { ...LINK_STYLE[l.type], color: WARN_COLOR } : LINK_STYLE[l.type]
         const d = curve(ends.x1, ends.y1, ends.x2, ends.y2)
         const strong = l.id === selectedLinkId || emphasis?.links.has(l.id)
@@ -543,7 +599,7 @@ function Arrows({ layout, links, emphasis, warned, selectedLinkId, width }: Arro
       })}
     </svg>
   )
-}
+})
 
 function LinkPreview({ layout, fromId, to }: { layout: TimelineLayout; fromId: string; to: { x: number; y: number } }) {
   const a = layout.anchors.get(fromId)

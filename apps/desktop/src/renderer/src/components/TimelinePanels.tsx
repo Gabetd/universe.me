@@ -1,10 +1,10 @@
-import { LINK_TYPES, PRECISIONS, type Command, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type Theme, type ThemeSpan, type TimelineEvent } from '@universe/core'
-import { useUi, type TimelineSelection } from '../store'
+import { LINK_TYPES, PRECISIONS, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type Theme, type ThemeSpan, type TimelineEvent } from '@universe/core'
+import { useMemo } from 'react'
+import { updater, useEventsById, useOwnRecords, useUi, type TimelineSelection } from '../store'
 import { locationLabel } from '../timeline/labels'
 import { useEditor } from '../world/editorStore'
-import { ColorField, TagsField, TextField, TimeField } from './fields'
+import { ColorField, DeleteButton, NotesField, PanelHeader, SwatchList, TagsField, TextField, TimeField } from './fields'
 import { EventEffects } from './EventEffects'
-import { NotesEditor } from './NotesEditor'
 import { ThemePanel, ThemeSpanPanel } from './ThemePanels'
 
 const PRECISION_LABELS: Record<Precision, string> = { exact: 'Exact time', day: 'Day', year: 'Year', century: 'Century', approx: 'Approximate' }
@@ -24,7 +24,8 @@ export function TimelineInspector({ selection }: { selection: TimelineSelection 
   const find = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === id)
   const record = find(timeline[`${selection.kind}s`] as { id: string; updatedAt: string }[])
   if (!record) return null
-  const key = `${record.id}:${record.updatedAt}`
+  // A panel per record; its fields show new stored values (undo, an edit elsewhere) themselves.
+  const key = record.id
   switch (selection.kind) {
     case 'event':
       return <EventPanel key={key} event={record as TimelineEvent} />
@@ -43,34 +44,39 @@ export function TimelineInspector({ selection }: { selection: TimelineSelection 
   }
 }
 
-function PanelHeader({ icon, label }: { icon: string; label: string }) {
-  return (
-    <div className="inspector-kind">
-      {icon} {label}
-      <button className="link close" aria-label={`Close ${label.toLowerCase()}`} onClick={() => useUi.getState().selectTimeline(null)}>
-        ✕
-      </button>
-    </div>
-  )
-}
+const closePanel = () => useUi.getState().selectTimeline(null)
 
 function EventPanel({ event }: { event: TimelineEvent }) {
   const { execute } = useUi.getState()
-  const timeline = useUi((s) => s.timeline)
+  const ownLanes = useOwnRecords('lanes', event.ownerId)
+  const ownEvents = useOwnRecords('events', event.ownerId)
+  const allLinks = useUi((s) => s.timeline.links)
+  const group = useUi((s) => s.timeline.groups.find((g) => g.id === event.groupId))
   const regions = useUi((s) => s.regions)
   const owner = useUi((s) => s.nodes.find((n) => n.id === event.ownerId))
-  const update = (patch: Extract<Command, { type: 'event.update' }>['payload']['patch']) => void execute({ type: 'event.update', payload: { id: event.id, patch } })
-  const lanes = timeline.lanes.filter((l) => l.ownerId === event.ownerId).sort((a, b) => a.order - b.order)
-  const others = timeline.events.filter((e) => e.ownerId === event.ownerId && e.id !== event.id)
-  const title = (id: string) => timeline.events.find((e) => e.id === id)?.title ?? '?'
-  const links = timeline.links.filter((l) => l.fromId === event.id || l.toId === event.id)
-  const group = timeline.groups.find((g) => g.id === event.groupId)
+  const update = updater('event', event.id)
+  const lanes = useMemo(() => [...ownLanes].sort((a, b) => a.order - b.order), [ownLanes])
+  const eventsById = useEventsById()
+  const title = (id: string) => eventsById.get(id)?.title ?? '?'
+  const links = useMemo(() => allLinks.filter((l) => l.fromId === event.id || l.toId === event.id), [allLinks, event.id])
+  const hasOthers = ownEvents.some((e) => e.id !== event.id)
+  // The events it could go on to cause, made once (a timeline can have thousands), not linked to it yet.
+  const causeOptions = useMemo(() => {
+    const linked = new Set(links.flatMap((l) => [l.fromId, l.toId]))
+    return ownEvents
+      .filter((o) => o.id !== event.id && !linked.has(o.id))
+      .map((o) => (
+        <option key={o.id} value={o.id}>
+          {o.title}
+        </option>
+      ))
+  }, [ownEvents, links, event.id])
   const worldRegions = regions.filter((r) => r.worldId === event.ownerId)
   const onWorld = owner?.kind === 'world'
 
   return (
     <section className="inspector-section" aria-label="Event">
-      <PanelHeader icon="◆" label="Event" />
+      <PanelHeader icon="◆" label="Event" onClose={closePanel} />
       <TextField label="Event title" value={event.title} required onCommit={(t) => update({ title: t })} />
       <div className="field-pair">
         <label className="field">
@@ -182,16 +188,10 @@ function EventPanel({ event }: { event: TimelineEvent }) {
             )
           })}
         </ul>
-        {others.length > 0 && (
+        {hasOthers && (
           <select aria-label="Link to event" value="" onChange={(e) => e.target.value && void execute({ type: 'link.create', payload: { fromId: event.id, toId: e.target.value } })}>
             <option value="">+ Causes…</option>
-            {others
-              .filter((o) => !links.some((l) => l.toId === o.id || l.fromId === o.id))
-              .map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.title}
-                </option>
-              ))}
+            {causeOptions}
           </select>
         )}
       </div>
@@ -209,13 +209,10 @@ function EventPanel({ event }: { event: TimelineEvent }) {
       )}
 
       <TagsField label="Event tags" tags={event.tags} onCommit={(tags) => update({ tags })} />
-      <div className="field">
-        <span>Event notes</span>
-        <NotesEditor label="Event notes" value={event.notes} onCommit={(notes) => update({ notes })} />
-      </div>
-      <button className="danger" onClick={() => void execute({ type: 'event.delete', payload: { id: event.id } })}>
+      <NotesField label="Event notes" value={event.notes} onCommit={(notes) => update({ notes })} />
+      <DeleteButton kind="event" ids={[event.id]}>
         Delete event
-      </button>
+      </DeleteButton>
     </section>
   )
 }
@@ -225,24 +222,23 @@ function MultiEventPanel({ ids }: { ids: string[] }) {
   const ownerId = useUi((s) => s.timeline.events.find((e) => e.id === ids[0])?.ownerId)
   return (
     <section className="inspector-section" aria-label="Events">
-      <PanelHeader icon="◆" label={`${ids.length} events`} />
+      <PanelHeader icon="◆" label={`${ids.length} events`} onClose={closePanel} />
       <p className="muted small">Group them to show them as one bar that can be collapsed.</p>
       <div className="add-buttons">
         <button onClick={() => ownerId && void execute({ type: 'group.create', payload: { ownerId, eventIds: ids } })}>Group events</button>
-        <button className="danger" onClick={() => void execute({ type: 'batch', payload: { commands: ids.map((id) => ({ type: 'event.delete', payload: { id } })) } })}>
+        <DeleteButton kind="event" ids={ids}>
           Delete events
-        </button>
+        </DeleteButton>
       </div>
     </section>
   )
 }
 
 function EraPanel({ era }: { era: Era }) {
-  const { execute } = useUi.getState()
-  const update = (patch: Extract<Command, { type: 'era.update' }>['payload']['patch']) => void execute({ type: 'era.update', payload: { id: era.id, patch } })
+  const update = updater('era', era.id)
   return (
     <section className="inspector-section" aria-label="Era">
-      <PanelHeader icon="▭" label="Era" />
+      <PanelHeader icon="▭" label="Era" onClose={closePanel} />
       <TextField label="Era name" value={era.name} required onCommit={(name) => update({ name })} />
       <div className="field-pair">
         <label className="field">
@@ -255,25 +251,22 @@ function EraPanel({ era }: { era: Era }) {
         </label>
       </div>
       <ColorField label="Era color" value={era.color} onCommit={(color) => update({ color })} />
-      <div className="field">
-        <span>Era notes</span>
-        <NotesEditor label="Era notes" value={era.notes} onCommit={(notes) => update({ notes })} />
-      </div>
-      <button className="danger" onClick={() => void execute({ type: 'era.delete', payload: { id: era.id } })}>
+      <NotesField label="Era notes" value={era.notes} onCommit={(notes) => update({ notes })} />
+      <DeleteButton kind="era" ids={[era.id]}>
         Delete era
-      </button>
+      </DeleteButton>
     </section>
   )
 }
 
 function GroupPanel({ group }: { group: EventGroup }) {
-  const { execute, selectTimeline } = useUi.getState()
+  const { selectTimeline } = useUi.getState()
   const events = useUi((s) => s.timeline.events)
   const members = events.filter((e) => e.groupId === group.id)
-  const update = (patch: Extract<Command, { type: 'group.update' }>['payload']['patch']) => void execute({ type: 'group.update', payload: { id: group.id, patch } })
+  const update = updater('group', group.id)
   return (
     <section className="inspector-section" aria-label="Group">
-      <PanelHeader icon="▤" label="Group" />
+      <PanelHeader icon="▤" label="Group" onClose={closePanel} />
       <TextField label="Group title" value={group.title} required onCommit={(title) => update({ title })} />
       <ColorField label="Group color" value={group.color} onCommit={(color) => update({ color })} />
       <label className="checkbox">
@@ -281,35 +274,23 @@ function GroupPanel({ group }: { group: EventGroup }) {
       </label>
       <div className="field">
         <span>Events</span>
-        <ul className="region-list">
-          {members.map((e) => (
-            <li key={e.id}>
-              <button className="link region-row" onClick={() => selectTimeline({ kind: 'event', ids: [e.id] })}>
-                <span className="swatch" style={{ background: e.color }} />
-                {e.title}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <SwatchList rows={members.map((e) => ({ id: e.id, name: e.title, color: e.color }))} onPick={(id) => selectTimeline({ kind: 'event', ids: [id] })} />
       </div>
-      <div className="field">
-        <span>Group notes</span>
-        <NotesEditor label="Group notes" value={group.notes} onCommit={(notes) => update({ notes })} />
-      </div>
-      <button className="danger" onClick={() => void execute({ type: 'group.delete', payload: { id: group.id } })}>
+      <NotesField label="Group notes" value={group.notes} onCommit={(notes) => update({ notes })} />
+      <DeleteButton kind="group" ids={[group.id]}>
         Ungroup
-      </button>
+      </DeleteButton>
     </section>
   )
 }
 
 function LinkPanel({ link }: { link: EventLink }) {
   const { execute, selectTimeline } = useUi.getState()
-  const events = useUi((s) => s.timeline.events)
-  const title = (id: string) => events.find((e) => e.id === id)?.title ?? '?'
+  const eventsById = useEventsById()
+  const title = (id: string) => eventsById.get(id)?.title ?? '?'
   return (
     <section className="inspector-section" aria-label="Link">
-      <PanelHeader icon="→" label="Link" />
+      <PanelHeader icon="→" label="Link" onClose={closePanel} />
       <p className="link-sentence">
         <button className="link" onClick={() => selectTimeline({ kind: 'event', ids: [link.fromId] })}>
           {title(link.fromId)}
@@ -326,9 +307,9 @@ function LinkPanel({ link }: { link: EventLink }) {
         </button>
       </p>
       <TextField label="Link note" value={link.note} onCommit={(note) => void execute({ type: 'link.update', payload: { id: link.id, patch: { note } } })} />
-      <button className="danger" onClick={() => void execute({ type: 'link.delete', payload: { id: link.id } })}>
+      <DeleteButton kind="link" ids={[link.id]}>
         Delete link
-      </button>
+      </DeleteButton>
     </section>
   )
 }

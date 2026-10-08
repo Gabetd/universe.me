@@ -1,9 +1,8 @@
-import type { NodePatch, SpatialNode } from '@universe/core'
+import type { SpatialNode } from '@universe/core'
 import { useEffect, useRef } from 'react'
 import { KIND_ICONS, addOptions, kindLabel } from '../kinds'
-import { selectNode, useUi } from '../store'
-import { NumberInput, TagsField, TextField } from './fields'
-import { NotesEditor } from './NotesEditor'
+import { selectNode, updater, useUi } from '../store'
+import { DeleteButton, NotesField, NumberInput, TagsField, TextField, randomSeed } from './fields'
 import { TimelineInspector } from './TimelinePanels'
 import { WorldPanel } from './WorldPanel'
 import { OrbitPanel, StarPanel } from './SkyPanels'
@@ -32,7 +31,7 @@ export function Inspector() {
 function NodeForm({ node }: { node: SpatialNode }) {
   const nodes = useUi((s) => s.nodes)
   const execute = useUi((s) => s.execute)
-  const update = (patch: NodePatch) => void execute({ type: 'node.update', payload: { id: node.id, patch } })
+  const update = updater('node', node.id)
   const options = addOptions(node, nodes)
 
   return (
@@ -53,16 +52,13 @@ function NodeForm({ node }: { node: SpatialNode }) {
           <span>Seed</span>
           <div className="field-row">
             <NumberInput value={node.seed} min={0} max={0xffffffff} integer onCommit={(seed) => update({ seed })} />
-            <button title="New random seed" aria-label="New random seed" onClick={() => update({ seed: Math.floor(Math.random() * 0x100000000) })}>
+            <button title="New random seed" aria-label="New random seed" onClick={() => update({ seed: randomSeed() })}>
               🎲
             </button>
           </div>
         </label>
         )}
-        <div className="field grow">
-          <span>Notes</span>
-          <NotesEditor label="Notes" value={node.notes} onCommit={(notes) => update({ notes })} />
-        </div>
+        <NotesField label="Notes" value={node.notes} grow onCommit={(notes) => update({ notes })} />
       </section>
 
       {options.length > 0 && (
@@ -80,9 +76,9 @@ function NodeForm({ node }: { node: SpatialNode }) {
       {node.kind === 'star_system' && <PlanetsToClaim node={node} />}
 
       {node.parentId !== null && (
-        <button className="danger" onClick={() => void execute({ type: 'node.delete', payload: { id: node.id } })}>
+        <DeleteButton kind="node" ids={[node.id]}>
           Delete {node.name}
-        </button>
+        </DeleteButton>
       )}
     </>
   )

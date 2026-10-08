@@ -1,5 +1,5 @@
 import { eventSpan, groupSpan, type EventGroup, type Lane, type TimelineEvent } from '@universe/core'
-import type { TimeScale } from './scale'
+import { TimeScale, type TimeRange } from './scale'
 
 export const ROW_H = 26
 /** Rough width of a title in the timeline's 12px font, for packing labels without overlap. */
@@ -30,6 +30,16 @@ export interface TimelineLayout {
   anchors: Map<string, PlacedItem<unknown>>
 }
 
+/**
+ * A layout at one zoom level, with x in px from the time `origin`. Panning
+ * doesn't change which row anything is on, so it's reused while the zoom
+ * stays and only moved sideways ({@link placeTimeline}).
+ */
+export interface PackedTimeline extends TimelineLayout {
+  origin: number
+  secondsPerPx: number
+}
+
 /** Puts each item in the first row where it doesn't overlap the items already there. */
 function pack<T>(items: { item: T; x0: number; x1: number; extent: number }[]): { item: T; x0: number; x1: number; row: number }[] {
   const rowEnds: number[] = []
@@ -43,20 +53,35 @@ function pack<T>(items: { item: T; x0: number; x1: number; extent: number }[]): 
     })
 }
 
+/** Items by a key, in one pass. */
+function bucket<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
+  const out = new Map<K, T[]>()
+  for (const item of items) {
+    const k = key(item)
+    const list = out.get(k)
+    if (list) list.push(item)
+    else out.set(k, [item])
+  }
+  return out
+}
+
 /**
- * Lays the timeline out: a row band for groups on top, then one band per
- * lane (the default lane first), each with as many rows as its events need.
+ * Lays the timeline out at a zoom level: a row band for groups on top, then
+ * one band per lane (the default lane first), each with as many rows as its
+ * events need. x is in px from the time `origin`.
  */
-export function layoutTimeline(events: TimelineEvent[], groups: EventGroup[], lanes: Lane[], scale: TimeScale): TimelineLayout {
+export function packTimeline(events: TimelineEvent[], groups: EventGroup[], lanes: Lane[], secondsPerPx: number, origin: number): PackedTimeline {
+  const x = (t: number) => (t - origin) / secondsPerPx
   const anchors = new Map<string, PlacedItem<unknown>>()
+  const members = bucket(events, (e) => e.groupId)
   const spanned = groups.flatMap((g) => {
-    const span = groupSpan(g, events)
+    const span = groupSpan(g, members.get(g.id) ?? [])
     return span ? [{ g, span }] : []
   })
   const placedGroups = pack(
     spanned.map(({ g, span }) => {
-      const x0 = scale.x(span[0])
-      const x1 = Math.max(scale.x(span[1]), x0 + 4)
+      const x0 = x(span[0])
+      const x1 = Math.max(x(span[1]), x0 + 4)
       return { item: g, x0, x1, extent: Math.max(x1, x0 + labelWidth(g.title) + 16) }
     })
   ).map((p) => ({ item: p.item, x0: p.x0, x1: p.x1, y: p.row * ROW_H }))
@@ -70,15 +95,15 @@ export function layoutTimeline(events: TimelineEvent[], groups: EventGroup[], la
     if (group) anchors.set(e.id, group)
   }
 
+  const byLane = bucket(visible, (e) => e.laneId)
   const ordered: (Lane | null)[] = [null, ...[...lanes].sort((a, b) => a.order - b.order)]
   let y = groupsHeight
   const laneLayouts = ordered.map((lane) => {
-    const own = visible.filter((e) => e.laneId === (lane?.id ?? null))
     const rows = pack(
-      own.map((e) => {
+      (byLane.get(lane?.id ?? null) ?? []).map((e) => {
         const [start, end] = eventSpan(e)
-        const x0 = scale.x(start)
-        const x1 = e.end === null ? x0 : Math.max(scale.x(end), x0 + 4)
+        const x0 = x(start)
+        const x1 = e.end === null ? x0 : Math.max(x(end), x0 + 4)
         return { item: e, x0, x1, extent: Math.max(x1, x0 + labelWidth(e.title)) }
       })
     )
@@ -89,7 +114,47 @@ export function layoutTimeline(events: TimelineEvent[], groups: EventGroup[], la
     y += height
     return layout
   })
-  return { groups: placedGroups, groupsHeight, lanes: laneLayouts, height: y, anchors }
+  return { groups: placedGroups, groupsHeight, lanes: laneLayouts, height: y, anchors, origin, secondsPerPx }
+}
+
+/** A packed layout moved to a view at its zoom level that starts at time `t0`: only x changes. */
+export function placeTimeline(packed: PackedTimeline, t0: number): TimelineLayout {
+  const dx = (packed.origin - t0) / packed.secondsPerPx
+  if (dx === 0) return packed
+  const moved = new Map<PlacedItem<unknown>, PlacedItem<unknown>>()
+  const move = <T>(p: PlacedItem<T>): PlacedItem<T> => {
+    const next = { ...p, x0: p.x0 + dx, x1: p.x1 + dx }
+    moved.set(p, next)
+    return next
+  }
+  const groups = packed.groups.map(move)
+  const lanes = packed.lanes.map((l) => ({ ...l, events: l.events.map(move) }))
+  const anchors = new Map([...packed.anchors].map(([id, p]) => [id, moved.get(p)!]))
+  return { groups, groupsHeight: packed.groupsHeight, lanes, height: packed.height, anchors }
+}
+
+/**
+ * What to pack a view `width` px wide at: its zoom level (rounded, so
+ * panning keeps it) and an origin that stays put until the view has been
+ * panned a long way, so x keeps its precision near what's shown.
+ */
+export function packingFor(range: TimeRange, width: number): { secondsPerPx: number; origin: number } {
+  const secondsPerPx = Number(new TimeScale(range, width).secondsPerPx.toPrecision(12))
+  const step = secondsPerPx * 2 ** 20
+  return { secondsPerPx, origin: Math.floor(range.t0 / step) * step }
+}
+
+/** Lays the timeline out for a view (see {@link packTimeline}). */
+export function layoutTimeline(events: TimelineEvent[], groups: EventGroup[], lanes: Lane[], scale: TimeScale): TimelineLayout {
+  return packTimeline(events, groups, lanes, scale.secondsPerPx, scale.range.t0)
+}
+
+/**
+ * Whether any of a bar shows in a track `width` px wide. Its label can run
+ * past the estimated width (icons, wide letters), so there's room for that.
+ */
+export function onScreen(p: PlacedItem<{ title: string }>, width: number): boolean {
+  return p.x0 <= width + 20 && Math.max(p.x1, p.x0 + 2 * labelWidth(p.item.title) + 120) >= 0
 }
 
 /** The lane under a y position in the lanes area (the default lane above the first one). */

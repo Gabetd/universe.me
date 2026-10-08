@@ -1,11 +1,12 @@
 import { MATERIALS, MATERIAL_INFO, SHAPES, STAGES, stageOf, type Blueprint, type BlueprintPart, type Material, type Shape } from '@universe/core'
 import { OrbitControls } from '@react-three/drei'
 import { Canvas, useThree } from '@react-three/fiber'
-import { useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useState } from 'react'
 import { SPACE_BG } from '../theme'
 import { useUi } from '../store'
 import { blueprintExtent } from '../world/structureLook'
 import { BlueprintParts } from '../world/StructureMesh'
+import { parseTags } from './fields'
 
 /** A blueprint being edited: saved as a new one when it has no id. */
 export type BlueprintDraft = Pick<Blueprint, 'name' | 'parts' | 'model' | 'maintainedByDefault' | 'tags'> & { id?: string }
@@ -14,7 +15,8 @@ const SHAPE_LABELS: Record<Shape, string> = { box: 'Box', cylinder: 'Cylinder', 
 
 const PART_LIST_LIMIT = 40
 
-const newPart = (): BlueprintPart => ({ shape: 'box', material: 'stone', color: MATERIAL_INFO.stone.color, size: [10, 10, 10], at: [0, 0, 0], rotation: 0 })
+/** A 10 m stone cube, the part a new blueprint starts with. */
+export const newPart = (): BlueprintPart => ({ shape: 'box', material: 'stone', color: MATERIAL_INFO.stone.color, size: [10, 10, 10], at: [0, 0, 0], rotation: 0 })
 
 /**
  * Builds a blueprint from primitives (or sets up an imported model), with a
@@ -35,12 +37,10 @@ export function BlueprintBuilder({ initial, onClose }: { initial: BlueprintDraft
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const setPart = (i: number, patch: Partial<BlueprintPart>) => setDraft({ ...draft, parts: draft.parts.map((p, j) => (j === i ? { ...p, ...patch } : p)) })
-  const setVec = (i: number, key: 'size' | 'at', axis: number, v: number) => {
-    const next = [...draft.parts[i]![key]] as [number, number, number]
-    next[axis] = v
-    setPart(i, { [key]: next })
-  }
+  // Stable, so the part rows (memoized) don't all re-render when one part changes.
+  const setPart = useCallback((i: number, patch: Partial<BlueprintPart>) => setDraft((d) => ({ ...d, parts: d.parts.map((p, j) => (j === i ? { ...p, ...patch } : p)) })), [])
+  const duplicatePart = useCallback((i: number) => setDraft((d) => ({ ...d, parts: [...d.parts.slice(0, i + 1), { ...d.parts[i]! }, ...d.parts.slice(i + 1)] })), [])
+  const removePart = useCallback((i: number) => setDraft((d) => ({ ...d, parts: d.parts.filter((_, j) => j !== i) })), [])
 
   const save = async () => {
     const { id, ...fields } = draft
@@ -90,7 +90,7 @@ export function BlueprintBuilder({ initial, onClose }: { initial: BlueprintDraft
               aria-label="Blueprint tags"
               placeholder="comma, separated"
               value={draft.tags.join(', ')}
-              onChange={(e) => setDraft({ ...draft, tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })}
+              onChange={(e) => setDraft({ ...draft, tags: parseTags(e.target.value) })}
             />
           </label>
 
@@ -110,38 +110,7 @@ export function BlueprintBuilder({ initial, onClose }: { initial: BlueprintDraft
               <span>Parts (metres; the base of each part sits at its position)</span>
               <div className="part-list">
                 {(showAll ? draft.parts : draft.parts.slice(0, PART_LIST_LIMIT)).map((p, i) => (
-                  <div className="part-row" key={i} aria-label={`Part ${i + 1}`}>
-                    <div className="field-row">
-                      <select aria-label="Shape" value={p.shape} onChange={(e) => setPart(i, { shape: e.target.value as Shape })}>
-                        {SHAPES.map((s) => (
-                          <option key={s} value={s}>
-                            {SHAPE_LABELS[s]}
-                          </option>
-                        ))}
-                      </select>
-                      <MaterialSelect value={p.material} onChange={(material) => setPart(i, { material, color: MATERIAL_INFO[material].color })} />
-                      <input type="color" aria-label="Part color" value={p.color} onChange={(e) => setPart(i, { color: e.target.value })} />
-                      <button className="link" title="Duplicate part" aria-label="Duplicate part" onClick={() => setDraft({ ...draft, parts: [...draft.parts.slice(0, i + 1), { ...p }, ...draft.parts.slice(i + 1)] })}>
-                        ⧉
-                      </button>
-                      <button className="link" title="Remove part" aria-label="Remove part" onClick={() => setDraft({ ...draft, parts: draft.parts.filter((_, j) => j !== i) })}>
-                        ✕
-                      </button>
-                    </div>
-                    <div className="vec-row">
-                      <span className="muted small">Size</span>
-                      {['W', 'H', 'D'].map((axis, a) => (
-                        <Num key={axis} label={`${axis} size`} value={p.size[a]!} min={0.1} onChange={(v) => setVec(i, 'size', a, v)} />
-                      ))}
-                    </div>
-                    <div className="vec-row">
-                      <span className="muted small">At</span>
-                      {['X', 'Y', 'Z'].map((axis, a) => (
-                        <Num key={axis} label={`${axis} position`} value={p.at[a]!} onChange={(v) => setVec(i, 'at', a, v)} />
-                      ))}
-                      <Num label="Turn (°)" value={p.rotation} onChange={(rotation) => setPart(i, { rotation })} />
-                    </div>
-                  </div>
+                  <PartRow key={i} part={p} index={i} onChange={setPart} onDuplicate={duplicatePart} onRemove={removePart} />
                 ))}
               </div>
               {!showAll && (
@@ -164,6 +133,57 @@ export function BlueprintBuilder({ initial, onClose }: { initial: BlueprintDraft
     </div>
   )
 }
+
+interface PartRowProps {
+  part: BlueprintPart
+  index: number
+  onChange(index: number, patch: Partial<BlueprintPart>): void
+  onDuplicate(index: number): void
+  onRemove(index: number): void
+}
+
+/** One part's shape, material, colour, size and place. Memoized: typing in one part's boxes leaves the other rows alone. */
+const PartRow = memo(function PartRow({ part: p, index: i, onChange, onDuplicate, onRemove }: PartRowProps) {
+  const setVec = (key: 'size' | 'at', axis: number, v: number) => {
+    const next = [...p[key]] as [number, number, number]
+    next[axis] = v
+    onChange(i, { [key]: next })
+  }
+  return (
+    <div className="part-row" aria-label={`Part ${i + 1}`}>
+      <div className="field-row">
+        <select aria-label="Shape" value={p.shape} onChange={(e) => onChange(i, { shape: e.target.value as Shape })}>
+          {SHAPES.map((s) => (
+            <option key={s} value={s}>
+              {SHAPE_LABELS[s]}
+            </option>
+          ))}
+        </select>
+        <MaterialSelect value={p.material} onChange={(material) => onChange(i, { material, color: MATERIAL_INFO[material].color })} />
+        <input type="color" aria-label="Part color" value={p.color} onChange={(e) => onChange(i, { color: e.target.value })} />
+        <button className="link" title="Duplicate part" aria-label="Duplicate part" onClick={() => onDuplicate(i)}>
+          ⧉
+        </button>
+        <button className="link" title="Remove part" aria-label="Remove part" onClick={() => onRemove(i)}>
+          ✕
+        </button>
+      </div>
+      <div className="vec-row">
+        <span className="muted small">Size</span>
+        {['W', 'H', 'D'].map((axis, a) => (
+          <Num key={axis} label={`${axis} size`} value={p.size[a]!} min={0.1} onChange={(v) => setVec('size', a, v)} />
+        ))}
+      </div>
+      <div className="vec-row">
+        <span className="muted small">At</span>
+        {['X', 'Y', 'Z'].map((axis, a) => (
+          <Num key={axis} label={`${axis} position`} value={p.at[a]!} onChange={(v) => setVec('at', a, v)} />
+        ))}
+        <Num label="Turn (°)" value={p.rotation} onChange={(rotation) => onChange(i, { rotation })} />
+      </div>
+    </div>
+  )
+})
 
 /** Frames the blueprint whenever its size changes. */
 function FitCamera({ extent }: { extent: number }) {

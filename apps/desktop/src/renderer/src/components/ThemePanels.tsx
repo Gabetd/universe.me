@@ -10,18 +10,15 @@ import {
   type LightingPreset,
   type SpatialNode,
   type Theme,
-  type ThemePatch,
   type ThemeSpan,
-  type ThemeSpanPatch,
   type Typography
 } from '@universe/core'
 import { useMemo, useState } from 'react'
-import { useUi } from '../store'
+import { updater, useUi } from '../store'
 import { usePlayhead } from '../timeline/timelineStore'
 import { useCalendar } from '../world/useSky'
 import { useThemeLook, useWorldThemes } from '../world/useThemeLook'
-import { ColorField, CommitSlider, NumberInput, TagsField, TextField, TimeField } from './fields'
-import { NotesEditor } from './NotesEditor'
+import { ColorField, CommitSlider, DeleteButton, NotesField, NumberInput, PanelHeader, SwatchList, TagsField, TextField, TimeField } from './fields'
 
 /**
  * Themes in the inspector (PLAN.md §4.5): the editor for a theme (its look,
@@ -41,16 +38,7 @@ export const FONT_STACKS: Record<Typography, string> = {
 
 const execute = (command: Command) => void useUi.getState().execute(command)
 
-function Header({ icon, label }: { icon: string; label: string }) {
-  return (
-    <div className="inspector-kind">
-      {icon} {label}
-      <button className="link close" aria-label={`Close ${label.toLowerCase()}`} onClick={() => useUi.getState().selectTimeline(null)}>
-        ✕
-      </button>
-    </div>
-  )
-}
+const closePanel = () => useUi.getState().selectTimeline(null)
 
 /** A plain multi-line text that saves when you leave it (re-created when the stored text changes, e.g. on undo). */
 function TextAreaField({ label, value, placeholder, onCommit }: { label: string; value: string; placeholder?: string; onCommit(v: string): void }) {
@@ -78,11 +66,11 @@ export function ThemePanel({ theme }: { theme: Theme }) {
   const spans = useUi((s) => s.timeline.themeSpans)
   const nodes = useUi((s) => s.nodes)
   const uses = useMemo(() => spans.filter((s) => s.themeId === theme.id), [spans, theme.id])
-  const update = (patch: ThemePatch) => execute({ type: 'theme.update', payload: { id: theme.id, patch } })
+  const update = updater('theme', theme.id)
   const setColour = (key: keyof Theme['palette']) => (colour: string) => update({ palette: { ...theme.palette, [key]: colour } })
   return (
     <section className="inspector-section" aria-label="Theme">
-      <Header icon="🎨" label="Theme" />
+      <PanelHeader icon="🎨" label="Theme" onClose={closePanel} />
       <ThemePreview theme={theme} />
       <TextField label="Theme name" value={theme.name} required onCommit={(name) => update({ name })} />
       <div className="field-pair">
@@ -122,30 +110,21 @@ export function ThemePanel({ theme }: { theme: Theme }) {
         onCommit={(style) => update({ style })}
       />
       <TagsField label="Music and ambience" tags={theme.ambience} onCommit={(ambience) => update({ ambience })} />
-      <div className="field">
-        <span>Theme notes</span>
-        <NotesEditor label="Theme notes" value={theme.notes} onCommit={(notes) => update({ notes })} />
-      </div>
+      <NotesField label="Theme notes" value={theme.notes} onCommit={(notes) => update({ notes })} />
       <div className="field">
         <span>Used on</span>
         {uses.length ? (
-          <ul className="region-list">
-            {uses.map((s) => (
-              <li key={s.id}>
-                <button className="link region-row" onClick={() => useUi.getState().selectTimeline({ kind: 'themeSpan', ids: [s.id] })}>
-                  <span className="swatch" style={{ background: theme.palette.accent }} />
-                  {nodes.find((n) => n.id === s.ownerId)?.name ?? 'A world'}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <SwatchList
+            rows={uses.map((s) => ({ id: s.id, name: nodes.find((n) => n.id === s.ownerId)?.name ?? 'A world', color: theme.palette.accent }))}
+            onPick={(id) => useUi.getState().selectTimeline({ kind: 'themeSpan', ids: [id] })}
+          />
         ) : (
           <span className="muted small">No world yet: add a span on a world's timeline.</span>
         )}
       </div>
-      <button className="danger" onClick={() => execute({ type: 'theme.delete', payload: { id: theme.id } })}>
+      <DeleteButton kind="theme" ids={[theme.id]}>
         Delete theme{uses.length ? ` and its ${uses.length} span${uses.length > 1 ? 's' : ''}` : ''}
-      </button>
+      </DeleteButton>
     </section>
   )
 }
@@ -158,11 +137,11 @@ export function ThemeSpanPanel({ span }: { span: ThemeSpan }) {
   const theme = themes.find((t) => t.id === span.themeId)
   const year = secondsPerYear(cal)
   const length = (span.end - span.start) / year
-  const update = (patch: ThemeSpanPatch) => execute({ type: 'themeSpan.update', payload: { id: span.id, patch } })
+  const update = updater('themeSpan', span.id)
   const shown = Math.round(spanWeight(span, playhead) * 100)
   return (
     <section className="inspector-section" aria-label="Theme span">
-      <Header icon="▬" label="Theme span" />
+      <PanelHeader icon="▬" label="Theme span" onClose={closePanel} />
       <label className="field">
         <span>Theme</span>
         <select value={span.themeId} onChange={(e) => update({ themeId: e.target.value })}>
@@ -218,9 +197,9 @@ export function ThemeSpanPanel({ span }: { span: ThemeSpan }) {
       <p className="muted small" aria-label="Theme span at the playhead">
         {shown > 0 ? `${shown}% showing at the playhead (${formatTime(playhead, 'year', cal)}).` : `Not showing at the playhead (${formatTime(playhead, 'year', cal)}).`}
       </p>
-      <button className="danger" onClick={() => execute({ type: 'themeSpan.delete', payload: { id: span.id } })}>
+      <DeleteButton kind="themeSpan" ids={[span.id]}>
         Delete theme span
-      </button>
+      </DeleteButton>
     </section>
   )
 }
@@ -273,21 +252,15 @@ export function WorldThemes({ world }: { world: SpatialNode }) {
         <span className="muted small">No theme at the playhead.</span>
       )}
       {spans.length > 0 && (
-        <ul className="region-list" aria-label="Theme spans on this world">
-          {[...spans]
+        <SwatchList
+          rows={[...spans]
             .sort((a, b) => a.start - b.start)
             .map((s) => {
               const t = themeById.get(s.themeId)
-              return (
-                <li key={s.id}>
-                  <button className="link region-row" onClick={() => select({ kind: 'themeSpan', ids: [s.id] })}>
-                    <span className="swatch" style={{ background: t?.palette.accent }} />
-                    {t?.name ?? 'Theme'} · {formatTime(s.start, 'year', cal)} – {formatTime(s.end, 'year', cal)}
-                  </button>
-                </li>
-              )
+              return { id: s.id, name: `${t?.name ?? 'Theme'} · ${formatTime(s.start, 'year', cal)} – ${formatTime(s.end, 'year', cal)}`, color: t?.palette.accent }
             })}
-        </ul>
+          onPick={(id) => select({ kind: 'themeSpan', ids: [id] })}
+        />
       )}
       {themes.length > 0 && (
         <div className="theme-library" aria-label="Theme library">

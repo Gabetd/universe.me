@@ -1,4 +1,4 @@
-import { EMPTY_TIMELINE, timelineOwner, type Command, type SpatialNode } from '@universe/core'
+import { EMPTY_TIMELINE, timelineOwner, type Command, type SpatialNode, type TimelineData, type TimelineEvent } from '@universe/core'
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import type { AppState, Result } from '../../shared/api'
@@ -72,12 +72,16 @@ export const useUi = create<UiState>((set, get) => ({
     return result.value
   },
 
-  async execute(command) {
-    const state = await get().run(window.universe.execute(command))
-    if (state) get().apply(state)
-    return state
-  }
+  execute: (command) => applyReply(window.universe.execute(command))
 }))
+
+/** Runs a bridge call that replies with the project's new state, and shows that state (or the error). */
+export async function applyReply(call: Promise<Result<AppState>>): Promise<AppState | undefined> {
+  const { run, apply } = useUi.getState()
+  const state = await run(call)
+  if (state) apply(state)
+  return state
+}
 
 /** Nothing selected on the world surface or its timeline. */
 const NOTHING_ON_WORLD = { selectedRegionId: null, selectedStructureId: null, selectedCharacterId: null, timelineSelection: null }
@@ -158,10 +162,48 @@ export function useWorld(worldId: string) {
   return { info, regions }
 }
 
-async function historyStep(call: Promise<Result<AppState>>): Promise<void> {
-  const state = await useUi.getState().run(call)
-  if (state) useUi.getState().apply(state)
+export const undo = () => applyReply(window.universe.undo())
+export const redo = () => applyReply(window.universe.redo())
+
+/** One command for several: the command itself when there's one, a batch (one undo step) when there are more, nothing when there are none. */
+export function asCommand(commands: Command[]): Command | undefined {
+  return commands.length > 1 ? { type: 'batch', payload: { commands } } : commands[0]
 }
 
-export const undo = () => historyStep(window.universe.undo())
-export const redo = () => historyStep(window.universe.redo())
+type KindOf<T, Verb extends string> = T extends `${infer K}.${Verb}` ? K : never
+type UpdateCommand = Extract<Command, { payload: { id: string; patch: unknown } }>
+type DeleteCommand = Extract<Command, { type: `${string}.delete`; payload: { id: string } }>
+/** Kinds of record with an `<kind>.update` command taking an id and a patch. */
+export type UpdateKind = KindOf<UpdateCommand['type'], 'update'>
+export type PatchOf<K extends UpdateKind> = Extract<UpdateCommand, { type: `${K}.update` }>['payload']['patch']
+/** Kinds of record with an `<kind>.delete` command taking an id. */
+export type DeleteKind = KindOf<DeleteCommand['type'], 'delete'>
+
+/** Saves patches to one record: `updater('event', id)({ title })`. */
+export function updater<K extends UpdateKind>(kind: K, id: string): (patch: PatchOf<K>) => void {
+  return (patch) => void useUi.getState().execute({ type: `${kind}.update`, payload: { id, patch } } as Command)
+}
+
+/** Deletes records of one kind in one undo step; undefined when there are none. */
+export const deleteCommand = (kind: DeleteKind, ids: string[]): Command | undefined => asCommand(ids.map((id) => ({ type: `${kind}.delete`, payload: { id } }) as Command))
+
+/** One owner's timeline records of a kind (`'events'`, `'lanes'`…): re-rendered and filtered again only when that kind changes. */
+export function useOwnRecords<K extends keyof TimelineData>(key: K, ownerId: string): TimelineData[K] {
+  const list = useUi((s) => s.timeline[key]) as { ownerId: string }[]
+  return useMemo(() => list.filter((r) => r.ownerId === ownerId), [list, ownerId]) as TimelineData[K]
+}
+
+const indexes = new WeakMap<object, Map<string, unknown>>()
+
+/** A list's records by id, built once per list (the store keeps a list while none of its records change). */
+function byId<T extends { id: string }>(list: T[]): Map<string, T> {
+  let index = indexes.get(list) as Map<string, T> | undefined
+  if (!index) {
+    index = new Map(list.map((r) => [r.id, r]))
+    indexes.set(list, index)
+  }
+  return index
+}
+
+/** Every timeline event by id. */
+export const useEventsById = (): Map<string, TimelineEvent> => byId(useUi((s) => s.timeline.events))

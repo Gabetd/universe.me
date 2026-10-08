@@ -1,8 +1,8 @@
-import { LANDFORMS, WORLD_RANGES, type Landform, type SpatialNode, type TerrainParams, type WorldSettings, type WorldSettingsPatch } from '@universe/core'
+import { LANDFORMS, WORLD_RANGES, type Landform, type SpatialNode, type TerrainParams, type WorldSettings } from '@universe/core'
 import { WORLD_PRESETS, encodeWorldCode, randomSeedName, readSeed } from '@universe/procgen'
 import { useState } from 'react'
-import { useUi } from '../store'
-import { ColorField, CommitSlider, NumberInput, TextField } from './fields'
+import { updater, useUi } from '../store'
+import { ColorField, CommitSlider, NumberInput, TextField, randomSeed } from './fields'
 
 const LANDFORM_LABELS: Record<Landform, string> = { continents: 'Continents', supercontinent: 'Supercontinent', archipelago: 'Archipelago' }
 
@@ -17,7 +17,7 @@ export function WorldGenPanel({ world, settings }: { world: SpatialNode; setting
   const t = settings.terrain
   const locked = settings.seedText !== null
   const code = encodeWorldCode({ seed: world.seed, radiusKm: settings.radiusKm, terrain: t })
-  const update = (patch: WorldSettingsPatch) => void execute({ type: 'world.update', payload: { id: world.id, patch } })
+  const update = updater('world', world.id)
   const setTerrain = (terrain: Partial<TerrainParams>) => update({ terrain })
 
   const applySeed = (text: string) => {
@@ -134,7 +134,7 @@ export function WorldGenPanel({ world, settings }: { world: SpatialNode; setting
           <span>Planet radius (km)</span>
           <NumberInput value={settings.radiusKm} min={WORLD_RANGES.radiusKm.min} max={WORLD_RANGES.radiusKm.max} integer onCommit={(v) => update({ radiusKm: v })} />
         </label>
-        <button title="Same options, different continents" onClick={() => void execute({ type: 'node.update', payload: { id: world.id, patch: { seed: Math.floor(Math.random() * 0x100000000) } } })}>
+        <button title="Same options, different continents" onClick={() => updater('node', world.id)({ seed: randomSeed() })}>
           🎲 New shape
         </button>
       </fieldset>
