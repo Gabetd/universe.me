@@ -11,6 +11,8 @@ interface TimelineViewState {
   setRange(ownerId: string, range: TimeRange): void
   setPlayhead(ownerId: string, t: number): void
   setHeight(height: number): void
+  /** Remembers the current height for next time. */
+  saveHeight(): void
 }
 
 const HEIGHT_KEY = 'universe.timelineHeight'
@@ -24,19 +26,19 @@ function storedHeight(): number {
   }
 }
 
-export const useTimelineView = create<TimelineViewState>((set) => ({
+export const useTimelineView = create<TimelineViewState>((set, get) => ({
   ranges: {},
   playheads: {},
   height: storedHeight(),
   setRange: (ownerId, range) => set((s) => ({ ranges: { ...s.ranges, [ownerId]: range } })),
   setPlayhead: (ownerId, t) => set((s) => ({ playheads: { ...s.playheads, [ownerId]: t } })),
-  setHeight(height) {
+  setHeight: (height) => set({ height }),
+  saveHeight() {
     try {
-      localStorage.setItem(HEIGHT_KEY, String(height))
+      localStorage.setItem(HEIGHT_KEY, String(get().height))
     } catch {
       // Not saved; the panel just starts at the default height next time.
     }
-    set({ height })
   }
 }))
 

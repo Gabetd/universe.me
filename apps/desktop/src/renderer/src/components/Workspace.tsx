@@ -1,5 +1,5 @@
 import { ancestry } from '@universe/core'
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { KIND_ICONS } from '../kinds'
 import { isEditingText } from '../input'
 import { deleteCommand, redo, selectNode, undo, useUi } from '../store'
@@ -14,13 +14,19 @@ import { useTimelineView } from '../timeline/timelineStore'
 import { WorldEditor } from '../world/WorldEditor'
 
 export function Workspace() {
-  const nodes = useUi((s) => s.nodes)
   const selected = useUi(selectNode)
   const canUndo = useUi((s) => s.canUndo)
   const canRedo = useUi((s) => s.canRedo)
   const project = useUi((s) => s.project)!
-  const path = selected ? ancestry(nodes, selected.id) : []
-  const timelineHeight = useTimelineView((s) => s.height)
+  const shell = useRef<HTMLDivElement>(null)
+
+  // The timeline's height goes straight onto the element, so resizing it doesn't re-render the app.
+  useLayoutEffect(() => {
+    const el = shell.current!
+    const show = (height: number) => el.style.setProperty('--timeline-h', `${height}px`)
+    show(useTimelineView.getState().height)
+    return useTimelineView.subscribe((s, prev) => s.height !== prev.height && show(s.height))
+  }, [])
 
   useEffect(() => {
     // Tools with their own keys (region drawing) handle them in the capture phase and preventDefault.
@@ -57,19 +63,9 @@ export function Workspace() {
   }, [])
 
   return (
-    <div className="workspace" style={{ ['--timeline-h' as string]: `${timelineHeight}px` }}>
+    <div className="workspace" ref={shell}>
       <header className="topbar">
-        <nav className="breadcrumb" aria-label="Location">
-          {path.map((n, i) => (
-            <span key={n.id} className="crumb">
-              {i > 0 && <span className="crumb-sep">›</span>}
-              <button className="link" onClick={() => zoomTo(n.id)} aria-current={i === path.length - 1}>
-                <span className="crumb-icon">{KIND_ICONS[n.kind]}</span>
-                {n.name}
-              </button>
-            </span>
-          ))}
-        </nav>
+        <Breadcrumb />
         <div className="topbar-actions">
           <button onClick={() => void undo()} disabled={!canUndo} title="Undo (Ctrl/Cmd+Z)">
             ↶ Undo
@@ -105,7 +101,27 @@ export function Workspace() {
   )
 }
 
-/** Drag handle on the timeline panel's top edge to make it taller or shorter. */
+/** Where the selection is: it and its ancestors, each a button that zooms there. */
+function Breadcrumb() {
+  const nodes = useUi((s) => s.nodes)
+  const selectedId = useUi((s) => s.selectedId)
+  const path = useMemo(() => (selectedId ? ancestry(nodes, selectedId) : []), [nodes, selectedId])
+  return (
+    <nav className="breadcrumb" aria-label="Location">
+      {path.map((n, i) => (
+        <span key={n.id} className="crumb">
+          {i > 0 && <span className="crumb-sep">›</span>}
+          <button className="link" onClick={() => zoomTo(n.id)} aria-current={i === path.length - 1}>
+            <span className="crumb-icon">{KIND_ICONS[n.kind]}</span>
+            {n.name}
+          </button>
+        </span>
+      ))}
+    </nav>
+  )
+}
+
+/** Drag handle on the timeline panel's top edge to make it taller or shorter; the height is saved when it's let go. */
 function TimelineResizer() {
   return (
     <div
@@ -125,6 +141,7 @@ function TimelineResizer() {
         const onUp = () => {
           el.removeEventListener('pointermove', onMove)
           el.removeEventListener('pointerup', onUp)
+          useTimelineView.getState().saveHeight()
         }
         el.addEventListener('pointermove', onMove)
         el.addEventListener('pointerup', onUp)
