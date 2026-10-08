@@ -3,9 +3,9 @@ import { dirToLatLon, latLonToDir, type Vec3 } from './cubesphere'
 import { DEG, RAD, clamp } from './math'
 import type { TerrainModel } from './terrain-model'
 
-/** Fills an RGBA TERRAIN_RES² texture for one cube face (unlit; the 3D view lights it). */
+/** Fills an RGBA TERRAIN_RES² texture for one cube face (unlit; the 3D view lights it): a copy of model.faceColors. */
 export function renderFaceTexture(model: TerrainModel, face: number, out: Uint8Array): void {
-  for (let c = 0; c < TERRAIN_RES * TERRAIN_RES; c++) model.color(face, c, out, c * 4)
+  out.set(model.faceColors(face))
 }
 
 /** Latitude/longitude of an equirectangular pixel's center. */

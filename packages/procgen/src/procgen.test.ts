@@ -47,13 +47,15 @@ describe('cube-sphere', () => {
 
   it('has the cell directions faceToDir gives', () => {
     const dirs = cellDirections()
+    let differing = 0
     for (let face = 0; face < CUBE_FACES; face++) {
       for (let k = 0; k < 3000; k++) {
         const c = (k * 7919) % (TERRAIN_RES * TERRAIN_RES)
         const d = faceToDir(face, cellCenter(c % TERRAIN_RES), cellCenter(Math.floor(c / TERRAIN_RES)))
-        expect([...dirs[face]!.subarray(c * 3, c * 3 + 3)]).toEqual(d.map(Math.fround))
+        for (let a = 0; a < 3; a++) if (dirs[face]![c * 3 + a] !== Math.fround(d[a]!)) differing++
       }
     }
+    expect(differing).toBe(0)
   })
 
   it('maps cell centers back to their own cell', () => {
@@ -164,6 +166,48 @@ describe('TerrainModel brushes', () => {
       height: Array.from({ length: CUBE_FACES }, (_, f) => store.worlds.getLayer(parent, 'height', f) ?? emptyLayer('height'))
     })
     for (let f = 0; f < CUBE_FACES; f++) expect(reloaded.heightEdits[f]).toEqual(model.heightEdits[f])
+  })
+
+  it('says where each dab changed cells, and keeps the face colours up to date', () => {
+    const model = new TerrainModel(DEFAULT_WORLD_SETTINGS, base)
+    for (let f = 0; f < CUBE_FACES; f++) model.faceColors(f)
+    // Near a cube corner, so a dab reaches three faces.
+    const corner = faceToDir(0, 0.97, 0.97)
+    for (const [brush, dir] of [
+      [{ tool: 'raise', radiusKm: 700, strength: 1 }, corner],
+      [{ tool: 'smooth', radiusKm: 400, strength: 1 }, latLonToDir(5, 5)],
+      [{ tool: 'paint', radiusKm: 300, strength: 1, biome: BIOME.desert }, latLonToDir(-30, 60)]
+    ] as const) {
+      const before = model.heightEdits.map((h) => h.slice())
+      const paintedBefore = model.biomeEdits.map((b) => b.slice())
+      model.beginStroke(brush, dir)
+      const rects = model.dabRects(dir)
+      model.endStroke('w')
+      expect(rects.length).toBeGreaterThan(0)
+      let changed = 0
+      let outside = 0
+      for (let f = 0; f < CUBE_FACES; f++) {
+        const rect = rects.find((r) => r.face === f)
+        for (let c = 0; c < TERRAIN_RES * TERRAIN_RES; c++) {
+          if (model.heightEdits[f]![c] === before[f]![c] && model.biomeEdits[f]![c] === paintedBefore[f]![c]) continue
+          changed++
+          const [x, y] = [c % TERRAIN_RES, Math.floor(c / TERRAIN_RES)]
+          if (!rect || x < rect.x0 || x > rect.x1 || y < rect.y0 || y > rect.y1) outside++
+        }
+      }
+      expect(changed).toBeGreaterThan(0)
+      expect(outside).toBe(0)
+    }
+    expect(model.dabRects(corner)).toEqual([]) // no stroke
+    // The same edits coloured from scratch.
+    const fresh = new TerrainModel(DEFAULT_WORLD_SETTINGS, base)
+    fresh.heightEdits = model.heightEdits.map((h) => h.slice())
+    fresh.biomeEdits = model.biomeEdits.map((b) => b.slice())
+    const differing = Array.from({ length: CUBE_FACES }, (_, f) => {
+      const expected = fresh.faceColors(f)
+      return model.faceColors(f).filter((v, k) => v !== expected[k]).length
+    })
+    expect(differing).toEqual([0, 0, 0, 0, 0, 0])
   })
 
   it('renders an equirectangular map', () => {

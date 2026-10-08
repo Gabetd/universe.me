@@ -10,7 +10,7 @@ import {
   type TerrainPatch,
   type WorldSettings
 } from '@universe/core'
-import { autoBiome, worldPalette, type Climate, type Palette } from './biomes'
+import { biomeAt, climateTerms, polarity, wetBand, worldPalette, type Climate, type ClimateTerms, type Palette } from './biomes'
 import { angleBetween, cellDirections, dirToFace, faceToDir, toGrid, type FacePoint, type Vec3 } from './cubesphere'
 import { DEG, bilerp, clamp } from './math'
 import type { BaseTerrain } from './generate'
@@ -46,22 +46,50 @@ export const brushLayer = (tool: BrushTool): TerrainLayerName => (tool === 'pain
 const RAISE_PER_DAB = 150
 const CELLS = TERRAIN_RES * TERRAIN_RES
 
-interface DirtyRect {
+/** A rectangle of cells on a face, edges included. */
+export interface CellRect {
   x0: number
   y0: number
   x1: number
   y1: number
 }
 
-let latCache: Float32Array[] | undefined
-function cellLatitudes(): Float32Array[] {
-  latCache ??= cellDirections().map((d) => {
-    const lat = new Float32Array(CELLS)
-    // Latitude is asin(y) alone (as dirToLatLon has it).
-    for (let c = 0; c < CELLS; c++) lat[c] = Math.asin(d[c * 3 + 1]!) * DEG
-    return lat
+/** The cells one dab changed on one face. */
+export interface FaceRect extends CellRect {
+  face: number
+}
+
+const WHOLE_FACE: CellRect = { x0: 0, y0: 0, x1: TERRAIN_RES - 1, y1: TERRAIN_RES - 1 }
+
+/** The parts of a cell's climate that come from its latitude alone (see biomeAt), so they're worked out once. */
+interface LatitudeTerms {
+  polar: Float64Array
+  band: Float64Array
+}
+
+let latitudeCache: LatitudeTerms[] | undefined
+/** Each face's latitude terms per cell. Faces 0, 1, 4 and 5 have the same latitudes cell for cell, and 2 and 3 mirror each other, so they share. */
+function latitudeTerms(): LatitudeTerms[] {
+  if (latitudeCache) return latitudeCache
+  const made: { abs: Float32Array; terms: LatitudeTerms }[] = []
+  latitudeCache = cellDirections().map((d) => {
+    // A cell's latitude is asin(y) (as dirToLatLon has it); only its distance from the equator matters.
+    const abs = new Float32Array(CELLS)
+    for (let c = 0; c < CELLS; c++) abs[c] = Math.abs(Math.asin(d[c * 3 + 1]!) * DEG)
+    const same = made.find((m) => m.abs.every((v, c) => v === abs[c]))
+    if (same) return same.terms
+    const terms = { polar: Float64Array.from(abs, polarity), band: Float64Array.from(abs, wetBand) }
+    made.push({ abs, terms })
+    return terms
   })
-  return latCache
+  return latitudeCache
+}
+
+/** A face's display colours (RGBA, unlit): cut to bytes as the globe's texture has them, and rounded as a canvas stores them. */
+interface FaceColors {
+  truncated: Uint8Array
+  rounded: Uint8ClampedArray
+  fresh: boolean
 }
 
 const FACE_CENTERS = Array.from({ length: CUBE_FACES }, (_, f) => faceToDir(f, 0, 0))
@@ -75,11 +103,14 @@ const FACE_REACH = Math.acos(1 / Math.sqrt(3))
 export class TerrainModel {
   heightEdits: Int16Array[]
   biomeEdits: Uint8Array[]
-  private stroke: { brush: Brush; target: number; dirty: Map<number, DirtyRect> } | undefined
+  private stroke: { brush: Brush; target: number; dirty: Map<number, CellRect> } | undefined
   private palette: { for: WorldSettings; colors: Palette } | undefined
   /** The climate from the world's star and orbit, added to its own settings; undefined keeps it Earth-like. */
   private sky: SkyClimate | undefined
-  private climateFor: { settings: WorldSettings; sky: SkyClimate | undefined; climate: Climate } | undefined
+  private climateFor: { settings: WorldSettings; sky: SkyClimate | undefined; climate: Climate; terms: ClimateTerms } | undefined
+  /** Each face's colours once asked for, and the settings and base they were made from. */
+  private faceColorCache: (FaceColors | undefined)[] = []
+  private colorsFor: { settings: WorldSettings; base: BaseTerrain } | undefined
   /** What `locate` fills in. */
   private located: FacePoint = { face: 0, s: 0, t: 0 }
 
@@ -101,6 +132,7 @@ export class TerrainModel {
       return bytes ? new Int16Array(bytes.slice().buffer) : new Int16Array(CELLS)
     })
     this.biomeEdits = Array.from({ length: CUBE_FACES }, (_, f) => layers.biome?.[f]?.slice() ?? new Uint8Array(CELLS))
+    this.staleColors()
   }
 
   /** A distance on the surface in km, as an angle in radians. */
@@ -120,23 +152,36 @@ export class TerrainModel {
   biome(face: number, cell: number): number {
     const painted = this.biomeEdits[face]![cell]!
     if (painted) return painted
-    return autoBiome(cellLatitudes()[face]![cell]!, this.height(face, cell) - this.settings.seaLevel, this.base.moisture[face]![cell]!, this.climate)
+    const lat = latitudeTerms()[face]!
+    return biomeAt(lat.polar[cell]!, lat.band[cell]!, this.height(face, cell) - this.settings.seaLevel, this.base.moisture[face]![cell]!, this.climateState.terms)
   }
 
   /** Sets the star-and-orbit climate; true if that changes anything (then every face needs recolouring). */
   setSky(sky: SkyClimate | undefined): boolean {
     if (skyKey(sky) === skyKey(this.sky)) return false
     this.sky = sky
+    this.staleColors()
     return true
   }
 
   /** The climate biomes follow: the world's own settings shifted by its star and orbit. */
   get climate(): Climate {
-    // Asked for every cell when recolouring, so it's rebuilt only when the settings or the sky change.
+    return this.climateState.climate
+  }
+
+  private get climateState() {
+    // Asked for every cell, so it's rebuilt only when the settings or the sky change.
     if (this.climateFor?.settings !== this.settings || this.climateFor.sky !== this.sky) {
-      this.climateFor = { settings: this.settings, sky: this.sky, climate: withSky(this.settings.terrain, this.sky) }
+      const climate = withSky(this.settings.terrain, this.sky)
+      this.climateFor = { settings: this.settings, sky: this.sky, climate, terms: climateTerms(climate) }
     }
-    return this.climateFor.climate
+    return this.climateFor
+  }
+
+  /** The world's colours, rebuilt only when the settings object changes (a new one comes with every edit). */
+  private get colors(): Palette {
+    if (this.palette?.for !== this.settings) this.palette = { for: this.settings, colors: worldPalette(this.settings.terrain) }
+    return this.palette.colors
   }
 
   /**
@@ -180,23 +225,86 @@ export class TerrainModel {
 
   /** Writes the cell's display color (no lighting) into `out` at `offset`. */
   color(face: number, cell: number, out: Uint8Array | Uint8ClampedArray, offset: number): void {
-    // Rebuilt only when the settings object changes (a new one comes with every edit).
-    if (this.palette?.for !== this.settings) this.palette = { for: this.settings, colors: worldPalette(this.settings.terrain) }
-    const { shallow, deep, biomes } = this.palette.colors
-    const elevation = this.height(face, cell) - this.settings.seaLevel
-    if (elevation < 0) {
-      const t = Math.sqrt(Math.min(1, -elevation / 4500))
-      out[offset] = shallow[0] + (deep[0] - shallow[0]) * t
-      out[offset + 1] = shallow[1] + (deep[1] - shallow[1]) * t
-      out[offset + 2] = shallow[2] + (deep[2] - shallow[2]) * t
-    } else {
-      const rgb = biomes[this.biome(face, cell)]!
-      const lift = 0.94 + 0.12 * Math.min(1, elevation / 5000)
-      out[offset] = Math.min(255, rgb[0] * lift)
-      out[offset + 1] = Math.min(255, rgb[1] * lift)
-      out[offset + 2] = Math.min(255, rgb[2] * lift)
+    const colors = this.freshColors(face)
+    // A canvas's pixels round and other bytes cut down: each gets what writing the colour itself would give.
+    const from = out instanceof Uint8ClampedArray ? colors.rounded : colors.truncated
+    for (let k = 0; k < 4; k++) out[offset + k] = from[cell * 4 + k]!
+  }
+
+  /**
+   * Every cell's display colour on a face (RGBA, no lighting), as `color`
+   * writes it into a Uint8Array: what the globe shows. It's kept up to date
+   * (a dab recolours just the cells it changed, anything else the whole
+   * face, once), so read it but don't write to it.
+   */
+  faceColors(face: number): Uint8Array {
+    return this.freshColors(face).truncated
+  }
+
+  /** faceColors rounded to the nearest byte rather than down, as `color` writes into a canvas's pixels: what the map shows. */
+  roundedFaceColors(face: number): Uint8ClampedArray {
+    return this.freshColors(face).rounded
+  }
+
+  private freshColors(face: number): FaceColors {
+    this.checkColors()
+    const colors = (this.faceColorCache[face] ??= { truncated: new Uint8Array(CELLS * 4), rounded: new Uint8ClampedArray(CELLS * 4), fresh: false })
+    if (!colors.fresh) {
+      this.paint(face, WHOLE_FACE, colors)
+      colors.fresh = true
     }
-    out[offset + 3] = 255
+    return colors
+  }
+
+  /** Marks every face's colours stale if the settings or the base they were made from have been replaced. */
+  private checkColors(): void {
+    if (this.colorsFor?.settings === this.settings && this.colorsFor.base === this.base) return
+    this.colorsFor = { settings: this.settings, base: this.base }
+    this.staleColors()
+  }
+
+  private staleColors(): void {
+    for (const colors of this.faceColorCache) if (colors) colors.fresh = false
+  }
+
+  /** Recolours a rectangle of a face's cells: water by its depth, land by its biome and a little lighter up high. */
+  private paint(face: number, { x0, y0, x1, y1 }: CellRect, { truncated, rounded }: FaceColors): void {
+    // Everything that's the same for every cell, looked up once.
+    const { shallow, deep, biomes } = this.colors
+    const terms = this.climateState.terms
+    const sea = this.settings.seaLevel
+    const height = this.base.height[face]!
+    const moisture = this.base.moisture[face]!
+    const edits = this.heightEdits[face]!
+    const painted = this.biomeEdits[face]!
+    const { polar, band } = latitudeTerms()[face]!
+    for (let y = y0; y <= y1; y++) {
+      for (let c = y * TERRAIN_RES + x0, end = y * TERRAIN_RES + x1; c <= end; c++) {
+        const elevation = height[c]! + edits[c]! - sea
+        let r: number, g: number, b: number
+        if (elevation < 0) {
+          const t = Math.sqrt(Math.min(1, -elevation / 4500))
+          r = shallow[0] + (deep[0] - shallow[0]) * t
+          g = shallow[1] + (deep[1] - shallow[1]) * t
+          b = shallow[2] + (deep[2] - shallow[2]) * t
+        } else {
+          const rgb = biomes[painted[c] || biomeAt(polar[c]!, band[c]!, elevation, moisture[c]!, terms)]!
+          const lift = 0.94 + 0.12 * Math.min(1, elevation / 5000)
+          r = Math.min(255, rgb[0] * lift)
+          g = Math.min(255, rgb[1] * lift)
+          b = Math.min(255, rgb[2] * lift)
+        }
+        const o = c * 4
+        truncated[o] = r
+        truncated[o + 1] = g
+        truncated[o + 2] = b
+        truncated[o + 3] = 255
+        rounded[o] = r
+        rounded[o + 1] = g
+        rounded[o + 2] = b
+        rounded[o + 3] = 255
+      }
+    }
   }
 
   beginStroke(brush: Brush, dir: Vec3): void {
@@ -208,13 +316,18 @@ export class TerrainModel {
    * Returns the faces it changed, so the caller can refresh just those.
    */
   dab(dir: Vec3): number[] {
+    return this.dabRects(dir).map((r) => r.face)
+  }
+
+  /** Like dab, but returns the cells it changed on each face, so the caller can refresh just those. */
+  dabRects(dir: Vec3): FaceRect[] {
     const stroke = this.stroke
     if (!stroke) return []
     const { brush, target } = stroke
     const radius = this.angularRadius(brush.radiusKm)
     const cosRadius = Math.cos(radius)
     const dirs = cellDirections()
-    const touched: number[] = []
+    const touched: FaceRect[] = []
 
     for (let face = 0; face < CUBE_FACES; face++) {
       // Most dabs reach one or two faces; skip the rest without scanning their cells.
@@ -222,7 +335,7 @@ export class TerrainModel {
       const d = dirs[face]!
       const heights = this.heightEdits[face]!
       const biomes = this.biomeEdits[face]!
-      let changed = false
+      let rect: FaceRect | undefined
       for (let c = 0; c < CELLS; c++) {
         const dot = d[c * 3]! * dir[0] + d[c * 3 + 1]! * dir[1] + d[c * 3 + 2]! * dir[2]
         if (dot < cosRadius) continue
@@ -253,10 +366,24 @@ export class TerrainModel {
             biomes[c] = 0
             break
         }
-        changed = true
-        markDirty(stroke.dirty, face, c % TERRAIN_RES, Math.floor(c / TERRAIN_RES))
+        const x = c % TERRAIN_RES
+        const y = (c - x) / TERRAIN_RES
+        if (rect) grow(rect, x, y)
+        else rect = { face, x0: x, y0: y, x1: x, y1: y }
       }
-      if (changed) touched.push(face)
+      if (!rect) continue
+      touched.push(rect)
+      const dirty = stroke.dirty.get(face)
+      if (dirty) {
+        grow(dirty, rect.x0, rect.y0)
+        grow(dirty, rect.x1, rect.y1)
+      } else stroke.dirty.set(face, { x0: rect.x0, y0: rect.y0, x1: rect.x1, y1: rect.y1 })
+    }
+    // Keep the colours up to date: recolour what changed on faces already coloured.
+    this.checkColors()
+    for (const rect of touched) {
+      const colors = this.faceColorCache[rect.face]
+      if (colors?.fresh) this.paint(rect.face, rect, colors)
     }
     return touched
   }
@@ -303,13 +430,10 @@ const NEIGHBORS = [
 const clampCell = (v: number) => clamp(v, 0, TERRAIN_RES - 1)
 const clampInt16 = (v: number) => clamp(Math.round(v), -32768, 32767)
 
-function markDirty(dirty: Map<number, DirtyRect>, face: number, x: number, y: number): void {
-  const r = dirty.get(face)
-  if (!r) dirty.set(face, { x0: x, y0: y, x1: x, y1: y })
-  else {
-    if (x < r.x0) r.x0 = x
-    if (x > r.x1) r.x1 = x
-    if (y < r.y0) r.y0 = y
-    if (y > r.y1) r.y1 = y
-  }
+/** Grows a rectangle to take in cell (x, y). */
+function grow(r: CellRect, x: number, y: number): void {
+  if (x < r.x0) r.x0 = x
+  if (x > r.x1) r.x1 = x
+  if (y < r.y0) r.y0 = y
+  if (y > r.y1) r.y1 = y
 }

@@ -67,9 +67,31 @@ export interface Climate {
 
 export const EARTH_CLIMATE: Climate = { temperature: 0, aridity: 0.5, beaches: 0 }
 
+/** A climate's settings as the biome rules use them, worked out once for many cells. */
+export interface ClimateTerms {
+  /** °C at the equator at sea level. */
+  warm: number
+  /** °C colder at the poles than at the equator. */
+  cooling: number
+  /** How high beaches reach, m. */
+  beach: number
+  /** Taken off every cell's wetness. */
+  dry: number
+}
+
+export const climateTerms = (c: Climate): ClimateTerms => ({ warm: c.temperature + 30, cooling: 55 * (c.gradient ?? 1), beach: c.beaches * 40, dry: (c.aridity - 0.5) * 0.8 })
+
+/** How polar a latitude is, for its temperature: 0 at the equator, 1 at the poles. */
+export const polarity = (latDeg: number) => Math.pow(Math.abs(latDeg) / 90, 1.6)
+
+/** The wet and dry latitude bands: 1 (wet) at the equator and 60°, −1 (dry) at 30°. */
+export const wetBand = (latDeg: number) => Math.cos((Math.abs(latDeg) * Math.PI) / 30)
+
+const temperatureAt = (polar: number, elevation: number, k: ClimateTerms) => k.warm - k.cooling * polar - (6.5 * Math.max(0, elevation)) / 1000
+
 /** Average temperature (°C) at a latitude and height: warm at the equator, colder toward the poles and up mountains. */
 export function surfaceTemperature(latDeg: number, elevation: number, climate: Climate = EARTH_CLIMATE): number {
-  return climate.temperature + 30 - 55 * (climate.gradient ?? 1) * Math.pow(Math.abs(latDeg) / 90, 1.6) - (6.5 * Math.max(0, elevation)) / 1000
+  return temperatureAt(polarity(latDeg), elevation, climateTerms(climate))
 }
 
 /**
@@ -79,15 +101,18 @@ export function surfaceTemperature(latDeg: number, elevation: number, climate: C
  * 40 m high at `beaches` = 1.
  */
 export function autoBiome(latDeg: number, elevation: number, moisture: number, climate: Climate = EARTH_CLIMATE): number {
-  const absLat = Math.abs(latDeg)
-  const temperature = surfaceTemperature(latDeg, elevation, climate)
+  return biomeAt(polarity(latDeg), wetBand(latDeg), elevation, moisture, climateTerms(climate))
+}
+
+/** autoBiome from a latitude's polarity and wet band and a climate's terms, for colouring many cells. */
+export function biomeAt(polar: number, band: number, elevation: number, moisture: number, k: ClimateTerms): number {
+  const temperature = temperatureAt(polar, elevation, k)
   if (elevation > 2800) return temperature < -4 ? BIOME.ice : BIOME.rock
   if (temperature < -8) return BIOME.ice
   if (temperature < -1) return BIOME.tundra
-  if (elevation < climate.beaches * 40) return BIOME.beach
+  if (elevation < k.beach) return BIOME.beach
 
-  const band = Math.cos((absLat * Math.PI) / 30)
-  const wet = clamp01(moisture * 0.85 + band * 0.22 + 0.05 - (climate.aridity - 0.5) * 0.8)
+  const wet = clamp01(moisture * 0.85 + band * 0.22 + 0.05 - k.dry)
   if (wet > 0.86 && elevation < 160 && temperature > 6) return BIOME.swamp
   if (temperature < 5) return wet > 0.3 ? BIOME.taiga : BIOME.tundra
   if (temperature < 18) return wet < 0.3 ? BIOME.shrubland : wet < 0.48 ? BIOME.grassland : BIOME.temperateForest
