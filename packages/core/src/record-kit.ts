@@ -9,6 +9,7 @@ import {
   liveRegion,
   liveWorld,
   patchRow,
+  previousValues,
   requireRow,
   softDelete,
   type Check,
@@ -16,7 +17,7 @@ import {
   type HandlerResult,
   type Run
 } from './command-kit'
-import type { Command } from './commands'
+import type { Command, Handler } from './commands'
 import { RECORD_KINDS, type RecordKind, type RecordOf } from './records'
 import { Id } from './schema'
 import type { Store } from './store'
@@ -28,8 +29,33 @@ import { worldSimValidators } from './world-sim-validators'
 /** Creating, updating and deleting records of any kind (records.ts), with each kind's checks. */
 
 export const NewId = { id: Id.optional() }
+/** What a delete names. */
+export const ById = z.object({ id: Id })
 export const Ref = z.object({ kind: z.enum(RECORD_KINDS as [RecordKind, ...RecordKind[]]), id: Id })
 export type Ref = z.infer<typeof Ref>
+
+/**
+ * A record kind's `name.update` and `name.delete` commands (`name` is the
+ * kind's, unless the UI knows it by another): their schemas, and the plain
+ * handlers that patch a record and delete it on its own.
+ */
+export function recordCrud<K extends RecordKind, F extends z.ZodRawShape, const N extends string = K>(kind: K, fields: z.ZodObject<F>, name: N = kind as unknown as N) {
+  const Patch = fields.partial()
+  return {
+    commands: [
+      z.object({ type: z.literal(`${name}.update` as const), payload: z.object({ id: Id, patch: Patch }) }),
+      z.object({ type: z.literal(`${name}.delete` as const), payload: ById })
+    ] as const,
+    update: ((store, { id, patch }, ctx) => update(store, kind, ctx, id, patch as Partial<Fields<K>>, name)) as Handler<{ id: string; patch: z.infer<typeof Patch> }>,
+    delete: deletes(kind)
+  }
+}
+
+/** The plain handler of a delete: the record goes on its own. */
+export const deletes =
+  <K extends RecordKind>(kind: K): Handler<z.infer<typeof ById>> =>
+  (store, { id }, ctx, run) =>
+    deleteWith(store, ctx, run, { kind, id })
 
 /** Checks a record against the rest of the project. */
 export const validate = <K extends RecordKind>(store: Store, kind: K, record: RecordOf<K>, check: Partial<Check<K>> = {}) =>
@@ -112,11 +138,32 @@ export function create<K extends RecordKind>(store: Store, kind: K, ctx: Command
   return { inverse: { type: 'record.remove', payload: { refs: [{ kind, id: recordId }] } }, target: { kind, id: recordId }, owner: ownerId }
 }
 
-export function update<K extends RecordKind>(store: Store, kind: K, ctx: CommandContext, id: string, patch: Partial<Fields<K>>): HandlerResult {
+/** Patches a live record; undone by `name.update` (`name` is the kind's, unless its commands go by another). */
+export function update<K extends RecordKind>(store: Store, kind: K, ctx: CommandContext, id: string, patch: Partial<Fields<K>>, name: string = kind): HandlerResult {
   const record = liveRecord(store, kind, id)
   const previous = patchRow(store.records(kind), record, patch, ctx.now(), (next) => validate(store, kind, next, { previous: record }))
-  const inverse = { type: `${kind}.update`, payload: { id, patch: previous } } as Command
+  const inverse = { type: `${name}.update`, payload: { id, patch: previous } } as unknown as Command
   return { inverse, target: { kind, id }, owner: record.ownerId }
+}
+
+/**
+ * An owner's single record (stars, orbits, timeline settings): created with
+ * `fields` the first time, otherwise given `patch` (all of `fields` unless
+ * said), and brought back if it was removed. Undo puts back what was there:
+ * `set` makes the command that writes earlier values back, `reset` the one
+ * that undoes the create.
+ */
+export function upsert<K extends RecordKind>(
+  store: Store, kind: K, ctx: CommandContext, ownerId: string, id: string, fields: Fields<K>,
+  set: (previous: Partial<Fields<K>>) => Command, reset: Command, patch: Partial<Fields<K>> = fields
+): HandlerResult {
+  const existing = store.records(kind).get(id)
+  if (!existing) return { ...create(store, kind, ctx, ownerId, id, fields), inverse: reset }
+  const { deletedAt } = existing
+  if (deletedAt) store.records(kind).update({ ...existing, deletedAt: null })
+  const result = update(store, kind, ctx, id, patch)
+  const restore = set(previousValues(existing as Record<string, unknown>, patch as Record<string, unknown>) as Partial<Fields<K>>)
+  return { ...result, inverse: deletedAt ? batchOf([restore, { type: 'record.remove', payload: { refs: [{ kind, id }] } }]) : restore }
 }
 
 export function setDeleted(store: Store, refs: Ref[], deletedAt: string | null, now: string): string | undefined {

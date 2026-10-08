@@ -297,7 +297,10 @@ describe('timeline owner and settings', () => {
   it('sets “now” undoably', () => {
     bus.execute({ type: 'timeline.update', payload: { ownerId: worldId, patch: { now: year(1500) } } })
     expect(store.records('timeline').get(worldId)!.now).toBe(year(1500))
-    bus.undo()
+    bus.execute({ type: 'timeline.update', payload: { ownerId: worldId, patch: { now: year(1600) } } })
+    expect(bus.undo()?.command).toEqual({ type: 'timeline.update', payload: { ownerId: worldId, patch: { now: year(1500) } } })
+    // The first change undoes to the default, keeping the record.
+    expect(bus.undo()?.command).toEqual({ type: 'timeline.update', payload: { ownerId: worldId, patch: { now: 0 } } })
     expect(store.records('timeline').get(worldId)!.now).toBe(0)
   })
 })
