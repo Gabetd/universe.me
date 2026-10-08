@@ -1,7 +1,7 @@
 import { CUBE_FACES, TERRAIN_RES, type TerrainParams } from '@universe/core'
 import { cellDirections, latLonToDir } from './cubesphere'
 import { rng, subSeed } from './random'
-import { DEG, smoothstep } from './math'
+import { DEG, kthSmallest, smoothstep } from './math'
 import { fbm, seededNoise } from './noise'
 
 /** The generated (unedited) terrain for a world: meters of height and 0–1 moisture per cell. */
@@ -82,8 +82,7 @@ export function generateBase(seed: number, params: TerrainParams): BaseTerrain {
   // Pass 2: the sea level that puts exactly `water` of the cells under it.
   const all = new Float32Array(cells * CUBE_FACES)
   shapes.forEach((sh, i) => all.set(sh, i * cells))
-  all.sort()
-  const sea = all[Math.min(all.length - 1, Math.floor(params.water * all.length))]!
+  const sea = kthSmallest(all, Math.min(all.length - 1, Math.floor(params.water * all.length)))
 
   // Pass 3: heights. Land rises gently from the coast; ocean floors drop steeply to abyssal depths.
   const height = shapes.map((sh, face) => {

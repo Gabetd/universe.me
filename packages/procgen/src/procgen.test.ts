@@ -5,14 +5,23 @@ import {
   autoBiome,
   BIOME,
   BIOMES,
+  buildGroundChunk,
   cellCenter,
+  chunkBounds,
+  chunkOf,
   dirToFace,
   dirToLatLon,
   faceToDir,
   generateBase,
+  kthSmallest,
   latLonToDir,
+  modelSampler,
   renderEquirect,
+  renderFaceTexture,
+  rng,
+  sampleBaseGrid,
   toGrid,
+  worldPalette,
   type BaseTerrain
 } from './index'
 
@@ -151,5 +160,70 @@ describe('TerrainModel brushes', () => {
     renderEquirect(model, out, 256, 128)
     expect(out[3]).toBe(255)
     expect(new Set(out.filter((_, i) => i % 4 === 0)).size).toBeGreaterThan(20)
+  })
+})
+
+describe('kthSmallest', () => {
+  it('finds what sorting would put at k', () => {
+    const r = rng(3)
+    for (const n of [1, 2, 7, 100, 1001]) {
+      // Few distinct values, so there are plenty of ties.
+      const a = Float32Array.from({ length: n }, () => Math.round(r() * 20) - 10 + (r() < 0.5 ? r() : 0))
+      const sorted = a.slice().sort()
+      for (const k of [0, n - 1, n >> 1, Math.floor(n * 0.7), Math.floor(r() * n)]) expect(kthSmallest(a.slice(), k)).toBe(sorted[k])
+    }
+  })
+})
+
+/** FNV-1a over the bytes of some arrays, to pin outputs. */
+function hash(views: ArrayBufferView[]): string {
+  let h = 0x811c9dc5
+  for (const v of views) {
+    const b = new Uint8Array(v.buffer, v.byteOffset, v.byteLength)
+    for (let i = 0; i < b.length; i++) h = Math.imul(h ^ b[i]!, 0x01000193)
+  }
+  return (h >>> 0).toString(16).padStart(8, '0')
+}
+
+describe('outputs stay the same', () => {
+  // Hashes of what the generator, the globe, the map and the ground made before they were optimized: a speed-up must not change a byte.
+  it('for the terrain, its colours, the map and a ground chunk', () => {
+    expect(hash([...base.height, ...base.moisture])).toBe('f67e7407')
+    const model = new TerrainModel(DEFAULT_WORLD_SETTINGS, base)
+    const faces = () =>
+      Array.from({ length: CUBE_FACES }, (_, f) => {
+        const pixels = new Uint8Array(TERRAIN_RES * TERRAIN_RES * 4)
+        renderFaceTexture(model, f, pixels)
+        return pixels
+      })
+    expect(hash(faces())).toBe('1612eb31')
+
+    const settings = { ...DEFAULT_WORLD_SETTINGS, seaLevel: 150, terrain: { ...DEFAULT_WORLD_SETTINGS.terrain, vegetationColor: '#7a3fa0', waterColor: '#3fa08a', temperature: 5, aridity: 0.7, beaches: 1 } }
+    model.settings = settings
+    model.setSky({ offsetC: -3, gradient: 1.2 })
+    model.beginStroke({ tool: 'raise', radiusKm: 800, strength: 1 }, latLonToDir(10, 20))
+    model.dab(latLonToDir(10, 20))
+    model.endStroke('w')
+    model.beginStroke({ tool: 'paint', radiusKm: 500, strength: 1, biome: BIOME.swamp }, latLonToDir(-20, 100))
+    model.dab(latLonToDir(-20, 100))
+    model.endStroke('w')
+    expect(hash(faces())).toBe('b24ed931')
+
+    const map = new Uint8ClampedArray(512 * 256 * 4)
+    renderEquirect(model, map, 512, 256)
+    expect(hash([map])).toBe('a706c823')
+
+    const R = settings.radiusKm
+    const id = chunkOf({ lat: 10, lon: 20 }, R)
+    const b = chunkBounds(id, R)
+    const chunk = buildGroundChunk({
+      id,
+      frame: { origin: { lat: b.lat0, lon: b.lon0 }, radiusKm: R },
+      seed: 12345,
+      grid: sampleBaseGrid(modelSampler(model), b),
+      biomeColors: worldPalette(settings.terrain).biomes,
+      seabedColor: [40, 60, 80]
+    })
+    expect(hash([chunk.positions, chunk.colors, chunk.indices, ...Object.values(chunk.plants)])).toBe('fdc894e4')
   })
 })
