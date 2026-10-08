@@ -235,15 +235,14 @@ function RegionLines({
   )
 }
 
+/** A unit sphere, scaled to each pin's size. */
+const DOT = new THREE.SphereGeometry(1, 16, 12)
+
 /** An event's location: a dot, brighter while the event is happening at the playhead. */
 function Pin({ pin, position, onClick }: { pin: EventPin; position: [number, number, number]; onClick(eventId: string): void }) {
   const size = pin.selected ? 0.014 : pin.active ? 0.01 : 0.007
   return (
-    <mesh
-      position={position}
-      onPointerDown={pickWith(() => onClick(pin.eventId))}
-    >
-      <sphereGeometry args={[size, 16, 12]} />
+    <mesh position={position} scale={size} geometry={DOT} onPointerDown={pickWith(() => onClick(pin.eventId))}>
       <meshBasicMaterial color={pin.color} transparent opacity={pin.active || pin.selected ? 1 : 0.5} />
     </mesh>
   )
@@ -365,6 +364,7 @@ function FocusOn({ focus }: { focus: SurfaceViewProps['focus'] }) {
   const controls = useThree((s) => s.controls) as { update(): void } | null
   const invalidate = useThree((s) => s.invalidate)
   const target = useRef<THREE.Vector3 | null>(null)
+  const next = useMemo(() => new THREE.Vector3(), [])
   const key = focus?.key
   useEffect(() => {
     target.current = focus ? new THREE.Vector3(...latLonToDir(focus.lat, focus.lon)) : null
@@ -375,8 +375,8 @@ function FocusOn({ focus }: { focus: SurfaceViewProps['focus'] }) {
     const goal = target.current
     if (!goal) return
     const distance = camera.position.length()
-    const next = camera.position.clone().normalize().lerp(goal, 0.15).normalize()
-    camera.position.copy(next.multiplyScalar(distance))
+    next.copy(camera.position).normalize().lerp(goal, 0.15).normalize()
+    camera.position.copy(next).multiplyScalar(distance)
     controls?.update()
     if (next.angleTo(goal) < 0.01) target.current = null
     // Another frame: to keep turning, or once there, to draw everything where the camera stopped.

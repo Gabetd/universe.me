@@ -166,7 +166,8 @@ function groundLabels(structures: PlacedStructure[], characters: PlacedCharacter
   const at = (p: LatLon, lift: number) => {
     const [x, z] = toLocal(ground.frame, p)
     const point: [number, number, number] = [x, ground.standAt(x, z) + lift, z]
-    return (camera: THREE.Camera) => (camera.position.distanceTo(new THREE.Vector3(...point)) < DRAW_M ? point : null)
+    const v = new THREE.Vector3(...point)
+    return (camera: THREE.Camera) => (camera.position.distanceTo(v) < DRAW_M ? point : null)
   }
   return viewLabels(structures, characters, pins, {
     structure: (s) => at(s.structure, blueprintExtent(s.blueprint) * s.structure.scale * 0.6 + 4),
@@ -422,13 +423,15 @@ function PlantInstances({
     const matrix = new THREE.Matrix4()
     const q = new THREE.Quaternion()
     const up = new THREE.Vector3(0, 1, 0)
+    const position = new THREE.Vector3()
+    const scale = new THREE.Vector3()
     const color = new THREE.Color()
     kept.forEach((o, i) => {
       const s = list[o + 3]!
       q.setFromAxisAngle(up, list[o + 4]!)
       // Rocks sink into the ground a little.
       const y = level(list[o]!, list[o + 2]!, list[o + 1]!)
-      m.setMatrixAt(i, matrix.compose(new THREE.Vector3(list[o]!, y - (plant === 'rock' ? s * 0.1 : 0.05), list[o + 2]!), q, new THREE.Vector3(s, s, s)))
+      m.setMatrixAt(i, matrix.compose(position.set(list[o]!, y - (plant === 'rock' ? s * 0.1 : 0.05), list[o + 2]!), q, scale.setScalar(s)))
       m.setColorAt(i, instanceTint(plant, list[o + 5]!, color))
     })
     m.instanceMatrix.needsUpdate = true
@@ -488,16 +491,14 @@ function Figure({ at, color, selected, ground, onClick }: { at: LatLon; color: s
   )
 }
 
+const POST = new THREE.CylinderGeometry(0.8, 0.8, 40, 8)
+
 /** Where an event happened: a tall coloured post, seen from afar. */
 function Beacon({ at, color, lit, ground, onClick }: { at: LatLon; color: string; lit: boolean; ground: Ground; onClick(): void }) {
   const [x, z] = toLocal(ground.frame, at)
   if (!inView(x, z)) return null
   return (
-    <mesh
-      position={[x, ground.standAt(x, z) + 20, z]}
-      onPointerDown={pickWith(onClick)}
-    >
-      <cylinderGeometry args={[0.8, 0.8, 40, 8]} />
+    <mesh position={[x, ground.standAt(x, z) + 20, z]} geometry={POST} onPointerDown={pickWith(onClick)}>
       <meshBasicMaterial color={color} transparent opacity={lit ? 0.95 : 0.5} />
     </mesh>
   )

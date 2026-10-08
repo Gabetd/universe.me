@@ -123,10 +123,12 @@ function PartInstances({ parts, age, ghost }: { parts: BlueprintPart[]; age: num
     const m = mesh.current
     if (!m) return
     const matrix = new THREE.Matrix4()
+    const position = new THREE.Vector3()
     const rotation = new THREE.Quaternion()
+    const size = new THREE.Vector3()
     parts.forEach((p, i) => {
       rotation.setFromAxisAngle(UP, (p.rotation * Math.PI) / 180)
-      m.setMatrixAt(i, matrix.compose(new THREE.Vector3(...p.at), rotation, new THREE.Vector3(...p.size)))
+      m.setMatrixAt(i, matrix.compose(position.fromArray(p.at), rotation, size.fromArray(p.size)))
     })
     m.instanceMatrix.needsUpdate = true
     // Clicks and culling use the bounds of all instances.
