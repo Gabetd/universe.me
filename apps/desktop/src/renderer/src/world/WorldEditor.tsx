@@ -1,4 +1,5 @@
-import { characterAt, eventPlace, type LatLon, type SpatialNode } from '@universe/core'
+import { characterAt, eventPlace, findBlueprint, type LatLon, type SpatialNode } from '@universe/core'
+import { viewingDistance } from './structureLook'
 import { playheadOf } from '../timeline/timelineStore'
 import { BIOMES } from '@universe/procgen'
 import { useUi, useWorld } from '../store'
@@ -46,7 +47,7 @@ const hasWebGL = (() => {
 export function WorldEditor({ world }: { world: SpatialNode }) {
   const { info, regions: allRegions } = useWorld(world.id)
   const { regions, pins, highlightRegionIds, focus } = useWorldAtTime(world.id, allRegions)
-  const { view, tool, radiusKm, strength, biome, exaggeration, placeBlueprintId, set } = useEditor()
+  const { view, tool, radiusKm, strength, biome, exaggeration, placeBlueprintId, ground, set } = useEditor()
   const structures = useStructuresAt(world.id)
   const characters = useCharactersAt(world.id)
   const { model, change, error, bump, commit } = useTerrain(world.id, world.seed, info)
@@ -90,7 +91,7 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
           <button
             aria-pressed={activeView === 'ground'}
             disabled={!hasWebGL}
-            onClick={() => useEditor.getState().enterGround(groundTarget(world.id))}
+            onClick={() => useEditor.getState().enterGround(...groundTarget(world.id))}
             title="The ground up close: buildings, trees and people at their real size (or scroll all the way in)"
           >
             🔍 Ground
@@ -159,7 +160,8 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
           activeView === 'globe' ? (
             <GlobeView {...viewProps} />
           ) : activeView === 'ground' ? (
-            <GroundView {...viewProps} seed={world.seed} />
+            // A new spot to go down to opens a fresh view there.
+            <GroundView key={ground ? `${ground.lat},${ground.lon}` : ''} {...viewProps} seed={world.seed} />
           ) : (
             <MapView {...viewProps} />
           )
@@ -171,17 +173,21 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
   )
 }
 
-/** Where the Ground button goes down: the selected character or structure, the selected event's place, or where the globe looks. */
-function groundTarget(worldId: string): LatLon {
+/**
+ * Where the Ground button goes down, and how close: the selected character
+ * or structure, the selected event's place, or where the globe looks.
+ */
+function groundTarget(worldId: string): [LatLon, number?] {
   const { selectedCharacterId, selectedStructureId, timeline, timelineSelection, regions } = useUi.getState()
   const character = timeline.characters.find((c) => c.id === selectedCharacterId)
   const at = character && characterAt(character, playheadOf(worldId))
-  if (at) return at
+  if (at) return [at, 14]
   const structure = timeline.structures.find((s) => s.id === selectedStructureId)
-  if (structure) return structure
+  const blueprint = structure && findBlueprint(timeline.blueprints, structure.blueprintId)
+  if (structure) return [structure, blueprint && viewingDistance(blueprint, structure.scale)]
   const event = timelineSelection?.kind === 'event' ? timeline.events.find((e) => e.id === timelineSelection.ids[0]) : undefined
   const place = event && eventPlace(event, regions)
-  return place ?? useEditor.getState().lookingAt ?? { lat: 0, lon: 0 }
+  return [place ?? useEditor.getState().lookingAt ?? { lat: 0, lon: 0 }]
 }
 
 function Slider(props: { label: string; value: number; min: number; max: number; step: number; unit: string; onChange(v: number): void }) {

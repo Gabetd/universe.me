@@ -1,4 +1,4 @@
-import type { TimelineEvent } from '@universe/core'
+import { eventPlace, type TimelineEvent } from '@universe/core'
 import { useUi } from '../store'
 import { useTimelineView } from '../timeline/timelineStore'
 import { useEditor } from './editorStore'
@@ -6,7 +6,7 @@ import { useEditor } from './editorStore'
 /**
  * Takes the user to when and where an event happened: the playhead moves to
  * its start (scrolling the timeline if it's off screen), the event is
- * selected, and the globe or map turns to its place.
+ * selected, and the globe or map turns to its place (or the ground view goes there).
  */
 export function goToEvent(event: TimelineEvent): void {
   const view = useTimelineView.getState()
@@ -18,5 +18,8 @@ export function goToEvent(event: TimelineEvent): void {
   view.setPlayhead(event.ownerId, event.start)
   useUi.getState().selectTimeline({ kind: 'event', ids: [event.id] })
   const editor = useEditor.getState()
-  editor.set({ view: editor.surfaceView, focusSeq: editor.focusSeq + 1 })
+  // Up close, the ground view moves there instead.
+  const place = eventPlace(event, useUi.getState().regions)
+  if (editor.view === 'ground' && place) editor.enterGround(place)
+  else editor.set({ view: editor.surfaceView, focusSeq: editor.focusSeq + 1 })
 }

@@ -37,12 +37,18 @@ interface EditorState {
   /** Where the globe last looked, and from how far (planet radii from the centre). */
   lookingAt: LatLon | null
   lookDistance: number
-  /** Goes down to the ground at `at`. */
-  enterGround(at: LatLon): void
+  /** How far from the middle of the ground view its camera starts, in metres. */
+  groundDistance: number
+  /** Goes down to the ground at `at`, the camera `distance` metres away (a person needs it closer than a city). */
+  enterGround(at: LatLon, distance?: number): void
   /** Back up to the globe or map, looking at where the ground view was. */
   leaveGround(at: LatLon): void
+  /** Picks a tool from the inspector: shows the surface (from the canvas) and keeps the ground view if it's open. */
+  startTool(patch: Partial<Omit<EditorState, 'set'>> & { tool: EditorTool }): void
   set(patch: Partial<Omit<EditorState, 'set'>>): void
 }
+
+const DEFAULT_GROUND_DISTANCE = 600
 
 export const useEditor = create<EditorState>((set) => ({
   view: 'globe',
@@ -61,8 +67,10 @@ export const useEditor = create<EditorState>((set) => ({
   ground: null,
   lookingAt: null,
   lookDistance: 2.4,
-  enterGround: (at) => set({ view: 'ground', ground: at }),
+  groundDistance: DEFAULT_GROUND_DISTANCE,
+  enterGround: (at, distance = DEFAULT_GROUND_DISTANCE) => set({ view: 'ground', ground: at, groundDistance: distance }),
   leaveGround: (at) => set((s) => ({ view: s.surfaceView, lookingAt: at, lookDistance: 1.25, ground: at })),
+  startTool: (patch) => set((s) => ({ ...patch, view: s.view === 'canvas' ? s.surfaceView : s.view })),
   set: (patch) => set(patch)
 }))
 

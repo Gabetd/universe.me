@@ -6,8 +6,9 @@ import { NotesEditor } from './NotesEditor'
 import { RegionHistory } from './RegionHistory'
 import { BlueprintLibrary } from './BlueprintLibrary'
 import { StructurePanel } from './StructurePanel'
+import { CharacterPanel } from './CharacterPanel'
 import { WorldGenPanel } from './WorldGenPanel'
-import { EROSION_SPEED, stateAt } from '@universe/core'
+import { EROSION_SPEED, isAlive, stateAt } from '@universe/core'
 import { STAGE_COLORS } from '../world/structureLook'
 import { useConditionCurves } from '../world/useStructures'
 import { useEditor } from '../world/editorStore'
@@ -19,6 +20,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
   const selectedRegion = useUi((s) => s.regions.find((r) => r.id === s.selectedRegionId))
   const selectRegion = useUi((s) => s.selectRegion)
   const selectedStructure = useUi((s) => s.timeline.structures.find((x) => x.id === s.selectedStructureId))
+  const selectedCharacter = useUi((s) => s.timeline.characters.find((x) => x.id === s.selectedCharacterId))
   const execute = useUi((s) => s.execute)
   const changes = useUi((s) => s.timeline.changes)
   const playhead = usePlayhead(world.id)
@@ -30,6 +32,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
     <>
       {selectedRegion && <RegionForm key={`${selectedRegion.id}:${selectedRegion.updatedAt}`} region={selectedRegion} />}
       {selectedStructure && <StructurePanel key={`${selectedStructure.id}:${selectedStructure.updatedAt}`} structure={selectedStructure} />}
+      {selectedCharacter && <CharacterPanel key={`${selectedCharacter.id}:${selectedCharacter.updatedAt}`} character={selectedCharacter} />}
 
       <WorldGenPanel world={world} settings={settings} />
 
@@ -43,6 +46,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
         </div>
       </section>
 
+      <CharacterList worldId={world.id} />
       <StructureList worldId={world.id} erosionSpeed={settings.erosionSpeed} onErosionSpeed={(erosionSpeed) => update({ erosionSpeed })} />
       <BlueprintLibrary />
 
@@ -99,6 +103,43 @@ function RegionForm({ region }: { region: Region }) {
 }
 
 /** The world's structures, coloured by condition at the playhead, and how fast things weather here. */
+function CharacterList({ worldId }: { worldId: string }) {
+  const all = useUi((s) => s.timeline.characters)
+  const characters = useMemo(() => all.filter((x) => x.ownerId === worldId), [all, worldId])
+  const selectedId = useUi((s) => s.selectedCharacterId)
+  const playhead = usePlayhead(worldId)
+  const add = async () => {
+    const state = await useUi.getState().execute({ type: 'character.create', payload: { ownerId: worldId, born: playhead } })
+    // Then pick where they're born.
+    const id = state?.focus?.id
+    if (id) useEditor.getState().startTool({ tool: 'travel', travelCharacterId: id })
+  }
+  return (
+    <section className="inspector-section" aria-label="Characters">
+      <h3>Characters</h3>
+      {characters.length > 0 && (
+        <ul className="region-list">
+          {characters.map((c) => (
+            <li key={c.id}>
+              <button
+                className={`link region-row${c.id === selectedId ? ' selected' : ''}${isAlive(c, playhead) ? '' : ' absent'}`}
+                title={isAlive(c, playhead) ? undefined : 'Not alive at the playhead'}
+                onClick={() => useUi.getState().selectCharacter(c.id)}
+              >
+                <span className="swatch" style={{ background: c.color }} />
+                {c.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="add-buttons">
+        <button onClick={() => void add()}>+ Character</button>
+      </div>
+    </section>
+  )
+}
+
 function StructureList({ worldId, erosionSpeed, onErosionSpeed }: { worldId: string; erosionSpeed: number; onErosionSpeed(v: number): void }) {
   const all = useUi((s) => s.timeline.structures)
   const structures = useMemo(() => all.filter((x) => x.ownerId === worldId), [all, worldId])
@@ -112,7 +153,7 @@ function StructureList({ worldId, erosionSpeed, onErosionSpeed }: { worldId: str
       {structures.length === 0 ? (
         <p className="muted small">
           None yet.{' '}
-          <button className="link" onClick={() => useEditor.getState().set({ tool: 'place', view: useEditor.getState().surfaceView })}>
+          <button className="link" onClick={() => useEditor.getState().startTool({ tool: 'place' })}>
             Pick 🏰
           </button>{' '}
           and click on the world to place one.

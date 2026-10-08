@@ -25,7 +25,7 @@ export function BlueprintLibrary() {
 
   const row = (b: Blueprint, own: boolean) => (
     <li key={b.id} className="blueprint-row">
-      <button className="link" title="Place it" onClick={() => useEditor.getState().set({ tool: 'place', placeBlueprintId: b.id, view: useEditor.getState().surfaceView })}>
+      <button className="link" title="Place it" onClick={() => useEditor.getState().startTool({ tool: 'place', placeBlueprintId: b.id })}>
         {b.model ? '📦' : own ? '🏗' : '🏛'} {b.name}
       </button>
       <span className="blueprint-actions">

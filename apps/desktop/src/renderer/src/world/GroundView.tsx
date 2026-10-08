@@ -144,13 +144,14 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
     return { camera, gl, controls: controls as unknown as { target: THREE.Vector3; update(): void } | null }
   }
 
-  // Start looking down at the origin from a few hundred metres up.
+  // Start looking down at the origin, from as far as asked.
   useEffect(() => {
     const { camera, controls } = rig()
     if (!controls) return
     const y = Math.max(0, ground.heightAt(0, 0))
+    const d = useEditor.getState().groundDistance
     controls.target.set(0, y, 0)
-    camera.position.set(0, y + 360, 480)
+    camera.position.set(0, y + d * 0.6, d * 0.8)
     controls.update()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the controls exist
   }, [hasControls])

@@ -19,6 +19,9 @@ export function blueprintExtent(b: Blueprint): number {
   return extent
 }
 
+/** How far back to stand to see a whole structure up close, in metres. */
+export const viewingDistance = (b: Blueprint, scale: number) => Math.max(40, blueprintExtent(b) * scale * 1.4)
+
 /**
  * The parts still standing at a condition. Parts are ranked from most fragile
  * (shortest-lived material, then highest up) to sturdiest; the most fragile

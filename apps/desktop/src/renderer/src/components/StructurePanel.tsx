@@ -1,7 +1,7 @@
-import { erodesAt, formatTime, stateAt, STAGES, type Step, type Structure, type StructurePatch } from '@universe/core'
+import { erodesAt, findBlueprint, formatTime, stateAt, STAGES, type Step, type Structure, type StructurePatch } from '@universe/core'
 import { usePlayhead } from '../timeline/timelineStore'
 import { useUi } from '../store'
-import { STAGE_COLORS } from '../world/structureLook'
+import { STAGE_COLORS, viewingDistance } from '../world/structureLook'
 import { useConditionCurves } from '../world/useStructures'
 import { useEditor } from '../world/editorStore'
 import { goToEvent } from '../world/goToEvent'
@@ -31,6 +31,7 @@ export function StructurePanel({ structure }: { structure: Structure }) {
   const history = maintenances.filter((m) => m.structureId === structure.id).sort((a, b) => a.at - b.at)
   const eroded = curve && erodesAt(curve, playhead)
   const caused = (curve?.steps ?? []).filter((s) => s.eventId)
+  const blueprint = useUi((s) => findBlueprint(s.timeline.blueprints, structure.blueprintId))
   const eventTitle = (id: string | undefined) => events.find((e) => e.id === id)?.title ?? 'an event'
 
   return (
@@ -131,7 +132,8 @@ export function StructurePanel({ structure }: { structure: Structure }) {
           <span className="small">
             {structure.lat.toFixed(2)}°, {structure.lon.toFixed(2)}°
           </span>
-          <button onClick={() => useEditor.getState().set({ tool: 'move', moveStructureId: structure.id, view: useEditor.getState().surfaceView })}>✥ Move</button>
+          <button onClick={() => useEditor.getState().startTool({ tool: 'move', moveStructureId: structure.id })}>✥ Move</button>
+          {blueprint && <button onClick={() => useEditor.getState().enterGround(structure, viewingDistance(blueprint, structure.scale))}>🔍 View up close</button>}
         </div>
       </div>
       <CommitSlider label="Rotation" unit="°" min={0} max={359} step={1} value={((structure.rotation % 360) + 360) % 360} onCommit={(rotation) => update({ rotation })} />
