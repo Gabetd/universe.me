@@ -1,0 +1,280 @@
+<title>Universe Build Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+  /* Layout: a narrow log column (version entries, newest first) above a two-up gallery of capabilities by area. */
+  :root {
+    --bg: #eef1f8;
+    --surface: #ffffff;
+    --ink: #161b2e;
+    --muted: #586078;
+    --line: #d5dbea;
+    --accent: #3f5bd8;
+    --accent-soft: #e2e7fb;
+    --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+    --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b0f1c; --surface: #131a2c; --ink: #e6eaf6; --muted: #98a2bf; --line: #253050; --accent: #8ea4ff; --accent-soft: #1c2647;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0f1c; --surface: #131a2c; --ink: #e6eaf6; --muted: #98a2bf; --line: #253050; --accent: #8ea4ff; --accent-soft: #1c2647;
+    color-scheme: dark;
+  }
+  body { background: var(--bg); color: var(--ink); font: 400 1rem/1.55 var(--body); }
+  .wrap { max-width: 1100px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 56px; }
+  header { display: grid; gap: 12px; max-width: 68ch; }
+  .eyebrow { font: 500 0.75rem/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  h1 { font: 700 clamp(2rem, 5vw, 3.1rem)/1.05 var(--display); margin: 0; text-wrap: balance; }
+  h2 { font: 700 1.5rem/1.2 var(--display); margin: 0; text-wrap: balance; }
+  h3 { font: 600 1.05rem/1.3 var(--body); margin: 0; }
+  p { margin: 0; }
+  .lede { color: var(--muted); font-size: 1.08rem; }
+  .facts { display: flex; flex-wrap: wrap; gap: 8px 20px; font: 500 0.82rem/1.4 var(--mono); color: var(--muted); }
+  .facts b { color: var(--ink); font-weight: 500; }
+  a { color: var(--accent); }
+  section { display: grid; gap: 20px; }
+  .section-head { display: grid; gap: 6px; max-width: 68ch; }
+  .section-head p { color: var(--muted); }
+
+  /* The log: one entry per published build. */
+  .log { display: grid; gap: 28px; }
+  .entry { display: grid; grid-template-columns: 9.5rem 1fr; gap: 20px; padding-top: 22px; border-top: 1px solid var(--line); }
+  .entry-meta { display: grid; align-content: start; gap: 4px; font: 500 0.8rem/1.4 var(--mono); color: var(--muted); }
+  .entry-meta .ver { color: var(--ink); font-size: 0.95rem; }
+  .entry-meta .tag { justify-self: start; margin-top: 4px; padding: 2px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
+  .entry-body { display: grid; gap: 14px; min-width: 0; }
+  .entry-body ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; }
+  .strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+
+  /* Gallery of capabilities. */
+  .area { display: grid; gap: 14px; }
+  .area > h3 { font: 700 1.15rem/1.2 var(--display); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 18px; }
+  figure { margin: 0; display: grid; gap: 8px; align-content: start; }
+  .shot { display: block; width: 100%; padding: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--surface); cursor: zoom-in; }
+  .shot img { display: block; width: 100%; aspect-ratio: 1280 / 873; object-fit: cover; }
+  .shot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  figcaption { display: grid; gap: 2px; }
+  figcaption span { color: var(--muted); font-size: 0.93rem; }
+
+  .next { display: grid; gap: 10px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); max-width: 72ch; }
+  .next ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; color: var(--muted); }
+
+  /* Full-size view. */
+  dialog { border: 0; padding: 0; background: transparent; max-width: min(1280px, 96vw); width: 100%; }
+  dialog::backdrop { background: rgb(5 8 18 / 0.86); }
+  dialog img { display: block; width: 100%; height: auto; border-radius: 6px; }
+  dialog p { color: #e6eaf6; padding: 10px 2px; font-size: 0.95rem; }
+  dialog button { position: absolute; top: 8px; right: 8px; border: 0; border-radius: 99px; padding: 6px 12px; background: rgb(10 14 28 / 0.75); color: #fff; font: 600 0.85rem var(--body); cursor: pointer; }
+
+  @media (max-width: 640px) {
+    .entry { grid-template-columns: 1fr; gap: 10px; }
+    .wrap { padding-block: 28px 48px; gap: 44px; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .shot img { transition: transform 0.25s ease; }
+    .shot:hover img { transform: scale(1.015); }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">universe.me · desktop app</div>
+    <h1>Universe Build Log</h1>
+    <p class="lede">What the worldbuilding app can do today, shown in screenshots taken from the real app by its end-to-end tests. Each published build adds an entry at the top.</p>
+    <div class="facts">
+      <span>Latest build <b id="latest-ver"></b></span>
+      <span>Milestones done <b>M0–M3</b></span>
+      <span>Working on <b>M4 · Star systems &amp; sim</b></span>
+      <span><a href="https://github.com/Gabetd/universe.me/releases/tag/latest-build">Download the latest build</a></span>
+    </div>
+  </header>
+
+  <section aria-labelledby="log-title">
+    <div class="section-head">
+      <h2 id="log-title">Updates</h2>
+      <p>Newest first. Version numbers match the update banner in the app.</p>
+    </div>
+    <div class="log" id="log"></div>
+  </section>
+
+  <section aria-labelledby="caps-title">
+    <div class="section-head">
+      <h2 id="caps-title">Everything it does now</h2>
+      <p>Grouped by area. Click a screenshot to see it full size.</p>
+    </div>
+    <div id="areas" class="log"></div>
+  </section>
+
+  <section aria-labelledby="next-title">
+    <div class="next">
+      <h2 id="next-title">Next up: M4</h2>
+      <ul>
+        <li>Star system editor with real orbits, and an orbit view driven by the timeline</li>
+        <li>Calendars worked out from each world's day, year and moons</li>
+        <li>Moon phases and eclipses as a track on the timeline</li>
+        <li>Climate from the star and orbit, suggesting biomes</li>
+        <li>Species library and food-web graph</li>
+        <li>Erosion driven by climate, part by part, with condition graphs</li>
+      </ul>
+    </div>
+  </section>
+</div>
+
+<dialog id="viewer" aria-label="Screenshot">
+  <button type="button" id="close">Close</button>
+  <img id="viewer-img" alt="">
+  <p id="viewer-cap"></p>
+</dialog>
+
+<script>
+  const SHOTS = {
+    welcome: ['01-welcome', 'Welcome screen with the roadmap'],
+    system: ['02-star-system', 'A star system'],
+    planet: ['03-planet', 'A planet in its system'],
+    globe: ['10-globe', 'A generated world on the globe'],
+    map: ['11-map', 'The same world as a flat map'],
+    sculpt: ['12-globe-edited', 'Sculpted terrain, painted biomes and a region'],
+    seeded: ['30-seeded-world', 'A whole world from one seed word'],
+    custom: ['31-custom-world', 'Custom world options'],
+    timeline: ['20-timeline', 'Timeline with events, links, groups and eras'],
+    worldAtTime: ['21-world-at-time', 'The map as of the playhead'],
+    globeAtTime: ['22-globe-at-time', 'The globe turned to the selected event'],
+    canvas1: ['30-canvas-1255', 'The world canvas: events as nodes'],
+    canvas2: ['31-canvas-1340', 'Later on, past events recede into the distance'],
+    canvas3: ['32-canvas-jump', 'Clicking a node jumps to when and where it happened'],
+    effects: ['40-effect-preview', 'An event’s effect previewed on structures'],
+    structGlobe: ['41-structures-globe', 'Structures on the globe'],
+    structPanel: ['42-structures-close', 'A structure’s condition and history'],
+    builder: ['50-blueprint-builder', 'The blueprint builder'],
+    builderRuin: ['51-blueprint-ruin', 'Previewing a blueprint as a ruin'],
+    model: ['52-model-import', 'An imported glTF model'],
+    blueprints: ['53-blueprints-globe', 'Custom blueprints placed on the globe'],
+    orbit: ['60-orbit-surfaces', 'Planet and moon showing their real surfaces'],
+    pins: ['61-globe-pins', 'Structures as pins from far away'],
+    ground: ['62-ground', 'The ground view: a vast walled city at real size'],
+    groundClose: ['63-ground-close', 'Woods, hills and fields around the city'],
+    charMap: ['70-character-map', 'A character’s lifespan and journey'],
+    charGround: ['71-character-ground', 'The character, life-size on the ground'],
+    update: ['update-banner', 'The update banner offering a new build']
+  }
+
+  // One entry per published build, newest first.
+  const LOG = [
+    {
+      ver: '0.1.16', date: '8 Oct 2026', tag: 'After M3',
+      title: 'Up close, from orbit, and people',
+      points: [
+        'Zoom all the way in to the ground: terrain in 1 km chunks with trees, grass, flowers and rocks of each biome, and buildings at real size on level ground.',
+        'Planets and moons with a world show its real surface, turning, in the system and planet views.',
+        'From far away, structures are pins coloured by condition.',
+        'Characters with a lifespan and a journey: send them somewhere or to an event, and they walk there over time.'
+      ],
+      shots: ['ground', 'orbit', 'pins', 'charMap']
+    },
+    {
+      ver: '0.1.14', date: '7 Oct 2026', tag: 'M3 done',
+      title: 'Structures',
+      points: [
+        '24 detailed prebuilt blueprints: castles, a vast walled city, villages, slums, war and nomad camps, harbours and more.',
+        'Maintained or left to weather from any moment; materials erode at their own pace.',
+        'Events can build, damage, repair, rename or destroy structures in a list, a region or a radius, with a live preview.',
+        'A blueprint builder with an ageing preview, and glTF model import.'
+      ],
+      shots: ['structPanel', 'effects', 'builder']
+    },
+    {
+      ver: '0.1.12', date: 'Oct 2026', tag: 'After M2',
+      title: 'Canvas, self-update, and staying local',
+      points: [
+        'A canvas per world: events as movable, linkable nodes that recede with time.',
+        'An update banner; Upgrade now installs the new build with no further input.',
+        'Everything stays on your computer: no request can leave the app.'
+      ],
+      shots: ['canvas2', 'update']
+    }
+  ]
+
+  const AREAS = [
+    { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom'] },
+    { title: 'From orbit', shots: ['orbit', 'system', 'planet', 'welcome'] },
+    { title: 'Timeline and canvas', shots: ['timeline', 'worldAtTime', 'globeAtTime', 'canvas1', 'canvas2', 'canvas3'] },
+    { title: 'Structures', shots: ['structGlobe', 'structPanel', 'effects', 'pins', 'builder', 'builderRuin', 'model', 'blueprints'] },
+    { title: 'On the ground', shots: ['ground', 'groundClose', 'charGround'] },
+    { title: 'Characters', shots: ['charMap', 'charGround'] },
+    { title: 'Updates', shots: ['update'] }
+  ]
+
+  const viewer = document.getElementById('viewer')
+  const open = (key) => {
+    const [file, caption] = SHOTS[key]
+    document.getElementById('viewer-img').src = `img/${file}.webp`
+    document.getElementById('viewer-img').alt = caption
+    document.getElementById('viewer-cap').textContent = caption
+    viewer.showModal()
+  }
+  document.getElementById('close').addEventListener('click', () => viewer.close())
+  viewer.addEventListener('click', (e) => e.target === viewer && viewer.close())
+
+  const figure = (key, withCaption = true) => {
+    const [file, caption] = SHOTS[key]
+    const f = document.createElement('figure')
+    const b = document.createElement('button')
+    b.className = 'shot'
+    b.type = 'button'
+    b.setAttribute('aria-label', `View full size: ${caption}`)
+    b.addEventListener('click', () => open(key))
+    const img = document.createElement('img')
+    img.src = `img/${file}.webp`
+    img.alt = caption
+    img.loading = 'lazy'
+    b.append(img)
+    f.append(b)
+    if (withCaption) {
+      const c = document.createElement('figcaption')
+      const t = document.createElement('span')
+      t.textContent = caption
+      c.append(t)
+      f.append(c)
+    }
+    return f
+  }
+
+  document.getElementById('latest-ver').textContent = LOG[0].ver
+  const log = document.getElementById('log')
+  for (const e of LOG) {
+    const el = document.createElement('article')
+    el.className = 'entry'
+    el.innerHTML = `<div class="entry-meta"><span class="ver"></span><span class="date"></span><span class="tag"></span></div><div class="entry-body"><h3></h3><ul></ul><div class="strip"></div></div>`
+    el.querySelector('.ver').textContent = `v${e.ver}`
+    el.querySelector('.date').textContent = e.date
+    el.querySelector('.tag').textContent = e.tag
+    el.querySelector('h3').textContent = e.title
+    for (const p of e.points) {
+      const li = document.createElement('li')
+      li.textContent = p
+      el.querySelector('ul').append(li)
+    }
+    for (const s of e.shots) el.querySelector('.strip').append(figure(s, false))
+    log.append(el)
+  }
+
+  const areas = document.getElementById('areas')
+  for (const a of AREAS) {
+    const el = document.createElement('div')
+    el.className = 'area'
+    const h = document.createElement('h3')
+    h.textContent = a.title
+    const g = document.createElement('div')
+    g.className = 'grid'
+    for (const s of a.shots) g.append(figure(s))
+    el.append(h, g)
+    areas.append(el)
+  }
+</script>
