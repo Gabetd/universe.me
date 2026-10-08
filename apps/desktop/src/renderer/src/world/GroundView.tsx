@@ -18,7 +18,7 @@ import {
   type Plant
 } from '@universe/procgen'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useUi } from '../store'
 import { useEditor } from './editorStore'
@@ -75,7 +75,7 @@ interface Pad {
  * by scrolling all the way in on the globe (or the Ground button); scrolling
  * all the way out goes back up.
  */
-export function GroundView(props: SurfaceViewProps & { seed: number; worldId: string }) {
+export const GroundView = memo(function GroundView(props: SurfaceViewProps & { seed: number; worldId: string }) {
   const start = useEditor((s) => s.ground) ?? { lat: 0, lon: 0 }
   const [origin, setOrigin] = useState<LatLon>(start)
   const [center, setCenter] = useState<LatLon>(start)
@@ -157,7 +157,7 @@ export function GroundView(props: SurfaceViewProps & { seed: number; worldId: st
       ))}
     </SurfaceCanvas>
   )
-}
+})
 
 /** Labels for structures that show their name (or are selected), characters, and active or selected events. */
 function groundLabels(structures: PlacedStructure[], characters: PlacedCharacter[], pins: EventPin[], ground: Ground): ViewLabel[] {

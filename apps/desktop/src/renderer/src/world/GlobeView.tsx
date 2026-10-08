@@ -1,8 +1,8 @@
-import { CUBE_FACES, TERRAIN_RES } from '@universe/core'
+import { CUBE_FACES, TERRAIN_RES, type LatLon } from '@universe/core'
 import { dirToLatLon, faceToDir, latLonToDir, renderFaceTexture, type TerrainModel, type Vec3 } from '@universe/procgen'
 import { Line, Stars } from '@react-three/drei'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { useEffect, useMemo, useRef } from 'react'
+import { memo, useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
@@ -51,7 +51,8 @@ function surfacePoint(model: TerrainModel, dir: Vec3, scale: number, lift: numbe
 const CAMERA = { position: [0, 0.6, 3] as [number, number, number], fov: 45, near: 0.01, far: 200 }
 const CONTROLS = { enablePan: false, minDistance: MIN_DISTANCE, maxDistance: MAX_DISTANCE, rotateSpeed: 0.5, zoomSpeed: 0.8 }
 
-export function GlobeView(props: SurfaceViewProps) {
+/** The planet from orbit. Memoized, like the other views: the world editor re-renders for things they don't show. */
+export const GlobeView = memo(function GlobeView(props: SurfaceViewProps) {
   const exaggeration = useEditor((s) => s.exaggeration)
   const scale = exaggeration / (props.model.settings.radiusKm * 1000)
   const items = useMemo(
@@ -71,7 +72,7 @@ export function GlobeView(props: SurfaceViewProps) {
       <ZoomToGround />
     </SurfaceCanvas>
   )
-}
+})
 
 function Planet({
   model,
@@ -98,6 +99,12 @@ function Planet({
   const radiusM = model.settings.radiusKm * 1000
   const scale = exaggeration / radiusM
   const seaRadius = 1 + model.settings.seaLevel * scale
+  // Where each thing stands, worked out again only when they move or the terrain does.
+  const placed = useMemo(() => {
+    const at = (p: LatLon, lift: number) => surfacePoint(model, latLonToDir(p.lat, p.lon), scale, lift)
+    return { pins: pins.map((p) => at(p, 0.006)), structures: structures.map((p) => at(p.structure, 0)), characters: characters.map((c) => at(c.place, 0)) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` stands for the terrain heights
+  }, [pins, structures, characters, model, scale, change])
 
   useEffect(() => {
     if (colorFaces(model, change, seen.current.colored)) invalidate()
@@ -172,28 +179,22 @@ function Planet({
       </mesh>
       <RegionLines model={model} change={change} regions={regions} highlight={highlightRegionIds} scale={scale} />
       {pins.map((p, i) => (
-        <Pin key={`${p.eventId}:${i}`} pin={p} position={surfacePoint(model, latLonToDir(p.lat, p.lon), scale, 0.006)} onClick={onPinClick} />
+        <Pin key={`${p.eventId}:${i}`} pin={p} position={placed.pins[i]!} onClick={onPinClick} />
       ))}
-      {structures.map((p) => (
+      {structures.map((p, i) => (
         <SurfacePin
           key={p.structure.id}
-          at={surfacePoint(model, latLonToDir(p.structure.lat, p.structure.lon), scale, 0)}
+          id={p.structure.id}
+          at={placed.structures[i]!}
           color={STAGE_COLORS[p.state.stage]}
           faded={!p.state.exists}
           selected={p.selected}
           hit={p.hit}
-          onClick={() => onStructureClick(p.structure.id)}
+          onClick={onStructureClick}
         />
       ))}
-      {characters.map((c) => (
-        <SurfacePin
-          key={c.character.id}
-          at={surfacePoint(model, latLonToDir(c.place.lat, c.place.lon), scale, 0)}
-          color={c.character.color}
-          figure
-          selected={c.selected}
-          onClick={() => onCharacterClick(c.character.id)}
-        />
+      {characters.map((c, i) => (
+        <SurfacePin key={c.character.id} id={c.character.id} at={placed.characters[i]!} color={c.character.color} figure selected={c.selected} onClick={onCharacterClick} />
       ))}
     </group>
   )
@@ -267,6 +268,7 @@ const FIGURE = new THREE.CapsuleGeometry(0.75, 1.6, 4, 12).translate(0, 1.55, 0)
  * size on screen; zooming all the way in shows the real thing.
  */
 function SurfacePin({
+  id,
   at,
   color,
   faded = false,
@@ -275,16 +277,18 @@ function SurfacePin({
   figure = false,
   onClick
 }: {
+  id: string
   at: [number, number, number]
   color: string
   faded?: boolean
   selected: boolean
   hit?: number
   figure?: boolean
-  onClick(): void
+  onClick(id: string): void
 }) {
   const group = useRef<THREE.Group>(null)
-  const quaternion = useMemo(() => new THREE.Quaternion().setFromUnitVectors(UP, new THREE.Vector3(...at).normalize()), [at])
+  const [x, y, z] = at
+  const quaternion = useMemo(() => new THREE.Quaternion().setFromUnitVectors(UP, new THREE.Vector3(x, y, z).normalize()), [x, y, z])
   useFrame(({ camera }) => {
     const distance = camera.position.distanceTo(group.current!.position)
     group.current?.scale.setScalar(distance * (selected ? 0.0042 : 0.0032))
@@ -294,7 +298,7 @@ function SurfacePin({
       ref={group}
       position={at}
       quaternion={quaternion}
-      onPointerDown={pickWith(onClick)}
+      onPointerDown={pickWith(() => onClick(id))}
     >
       {figure ? (
         <mesh geometry={FIGURE}>

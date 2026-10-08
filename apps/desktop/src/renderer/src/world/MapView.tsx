@@ -1,6 +1,6 @@
 import type { LatLon } from '@universe/core'
 import { brushRows, latLonToDir, latLonToPixel, pixelToLatLon, renderEquirect, type TerrainModel, type Vec3 } from '@universe/procgen'
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor } from './editorStore'
@@ -77,7 +77,7 @@ function drawMapImage(model: TerrainModel, change: TerrainChange, seen: TerrainC
   map.drawn = change
 }
 
-export function MapView({
+export const MapView = memo(function MapView({
   model,
   change,
   regions,
@@ -359,7 +359,7 @@ export function MapView({
       }}
     />
   )
-}
+})
 
 function tracePath(c: CanvasRenderingContext2D, poly: [number, number][], shift: number): void {
   c.beginPath()
