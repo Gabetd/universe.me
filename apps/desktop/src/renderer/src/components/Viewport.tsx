@@ -4,6 +4,7 @@ import { hueOf, rng } from '@universe/procgen'
 import { kindLabel } from '../kinds'
 import { selectNode, useUi } from '../store'
 import { SPACE_BG } from '../theme'
+import { drawTexturedPlanet, usePlanetTextures, type PlanetTexture } from './planetSprite'
 
 /**
  * Placeholder viewport for every level above a world surface: a 2D canvas
@@ -19,13 +20,20 @@ export function Viewport() {
 
   const scene = useMemo(() => {
     if (!node) return undefined
-    return {
-      node,
-      children: nodes.filter((n) => n.parentId === node.id),
-      world: nodes.find((n) => n.parentId === node.id && n.kind === 'world'),
-      label: kindLabel(node, nodes)
+    const children = nodes.filter((n) => n.parentId === node.id)
+    // The world on each body in view (the body itself and what orbits it), drawn with its real surface.
+    const worlds = new Map<string, SpatialNode>()
+    for (const body of [node, ...children]) {
+      const world = nodes.find((n) => n.parentId === body.id && n.kind === 'world')
+      if (world) worlds.set(body.id, world)
     }
+    return { node, children, world: worlds.get(node.id), worlds, label: kindLabel(node, nodes) }
   }, [node, nodes])
+  const textures = usePlanetTextures(useMemo(() => [...(scene?.worlds.values() ?? [])], [scene]))
+  const texturesRef = useRef(textures)
+  useEffect(() => {
+    texturesRef.current = textures
+  }, [textures])
 
   const hover = useRef<string | null>(null)
   const targets = useRef<Target[]>([])
@@ -45,7 +53,7 @@ export function Viewport() {
         canvas.height = Math.round(h * dpr)
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      targets.current = drawScene(ctx, w, h, scene, hover.current, (performance.now() - start) / 1000)
+      targets.current = drawScene(ctx, w, h, scene, texturesRef.current, hover.current, (performance.now() - start) / 1000)
       frame = requestAnimationFrame(render)
     }
     frame = requestAnimationFrame(render)
@@ -112,10 +120,24 @@ interface Scene {
   node: SpatialNode
   children: SpatialNode[]
   world: SpatialNode | undefined
+  /** Body id → the world on it. */
+  worlds: Map<string, SpatialNode>
 }
 
-function drawScene(ctx: CanvasRenderingContext2D, w: number, h: number, scene: Scene, hoverId: string | null, t: number): Target[] {
+function drawScene(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  scene: Scene,
+  textures: Map<string, PlanetTexture>,
+  hoverId: string | null,
+  t: number
+): Target[] {
   const { node, children } = scene
+  const surfaceOf = (body: SpatialNode) => {
+    const world = scene.worlds.get(body.id)
+    return world && textures.get(world.id)
+  }
   ctx.fillStyle = SPACE_BG
   ctx.fillRect(0, 0, w, h)
   starfield(ctx, w, h, node.seed, node.kind)
@@ -164,7 +186,7 @@ function drawScene(ctx: CanvasRenderingContext2D, w: number, h: number, scene: S
       const isSystem = node.kind === 'star_system'
       const centerR = size * (isSystem ? 0.05 : 0.12)
       if (isSystem) star(ctx, cx, cy, centerR, node.seed)
-      else planet(ctx, cx, cy, centerR, node.seed, !!scene.world)
+      else planet(ctx, cx, cy, centerR, node.seed, !!scene.world, surfaceOf(node), t)
       const orbiting = children.filter((c) => c.kind === 'body')
       orbiting.forEach((child, i) => {
         const r = rng(child.seed)
@@ -179,7 +201,7 @@ function drawScene(ctx: CanvasRenderingContext2D, w: number, h: number, scene: S
         const x = cx + Math.cos(angle) * orbit
         const y = cy + Math.sin(angle) * orbit * 0.42
         const pr = size * (isSystem ? 0.012 : 0.02) * (0.7 + r() * 0.8)
-        planet(ctx, x, y, pr, child.seed, false)
+        planet(ctx, x, y, pr, child.seed, false, surfaceOf(child), t)
         targets.push({ id: child.id, x, y, r: pr + 4 })
         label(ctx, child.name, x, y + pr + 14, child.id === hoverId)
       })
@@ -306,7 +328,17 @@ function star(ctx: CanvasRenderingContext2D, x: number, y: number, radius: numbe
   ctx.fill()
 }
 
-function planet(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, seed: number, hasWorld: boolean) {
+/**
+ * A planet or moon. One with a world shows that world's surface, turning
+ * slowly; others get a seeded colour (with made-up continents when there is a
+ * world whose terrain hasn't loaded yet).
+ */
+function planet(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, seed: number, hasWorld: boolean, surface: PlanetTexture | undefined, t: number) {
+  if (surface) {
+    drawTexturedPlanet(ctx, x, y, radius, surface, t / 90 + (seed % 1000) / 1000)
+    if (hasWorld) worldRing(ctx, x, y, radius)
+    return
+  }
   const hue = hueOf(seed)
   const g = ctx.createRadialGradient(x - radius * 0.4, y - radius * 0.4, radius * 0.1, x, y, radius)
   g.addColorStop(0, `hsl(${hue} 55% 70%)`)
@@ -329,10 +361,15 @@ function planet(ctx: CanvasRenderingContext2D, x: number, y: number, radius: num
       ctx.fill()
     }
     ctx.restore()
-    ctx.strokeStyle = 'rgba(140,200,255,0.5)'
-    ctx.lineWidth = 3
-    ctx.beginPath()
-    ctx.arc(x, y, radius + 2, 0, Math.PI * 2)
-    ctx.stroke()
+    worldRing(ctx, x, y, radius)
   }
+}
+
+/** Marks the body whose world the viewport opens on click. */
+function worldRing(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number) {
+  ctx.strokeStyle = 'rgba(140,200,255,0.5)'
+  ctx.lineWidth = 3
+  ctx.beginPath()
+  ctx.arc(x, y, radius + 2, 0, Math.PI * 2)
+  ctx.stroke()
 }

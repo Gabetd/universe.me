@@ -1,11 +1,10 @@
 import type { Command, LatLon, Region, TerrainParams, WorldInfo } from '@universe/core'
 import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
-import { TerrainModel, shapeKey, type BaseTerrain, type Vec3 } from '@universe/procgen'
+import { TerrainModel, shapeKey, type Vec3 } from '@universe/procgen'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUi } from '../store'
-import type { GenerateRequest } from './terrain.worker'
-import TerrainWorker from './terrain.worker?worker'
+import { fetchLayers, generateBase } from './terrainSource'
 
 /** Which cube faces changed since the last render: views refresh only those. */
 export interface TerrainChange {
@@ -32,38 +31,6 @@ export interface SurfaceViewProps {
   onPointerDown(dir: Vec3): boolean
   onPointerMove(dir: Vec3): void
   onDoubleClick(): void
-}
-
-let worker: Worker | undefined
-let nextRequest = 0
-const pending = new Map<number, (base: BaseTerrain) => void>()
-/** Recently generated terrains, so switching between worlds doesn't regenerate. */
-const baseCache = new Map<string, Promise<BaseTerrain>>()
-const CACHE_SIZE = 4
-
-function generateBase(seed: number, params: TerrainParams): Promise<BaseTerrain> {
-  const key = shapeKey(seed, params)
-  const cached = baseCache.get(key)
-  if (cached) return cached
-  if (!worker) {
-    worker = new TerrainWorker()
-    worker.onmessage = (e: MessageEvent<{ id: number; base: BaseTerrain }>) => {
-      pending.get(e.data.id)?.(e.data.base)
-      pending.delete(e.data.id)
-    }
-  }
-  const id = ++nextRequest
-  const promise = new Promise<BaseTerrain>((resolve) => pending.set(id, resolve))
-  worker.postMessage({ id, seed, params } satisfies GenerateRequest)
-  baseCache.set(key, promise)
-  if (baseCache.size > CACHE_SIZE) baseCache.delete(baseCache.keys().next().value!)
-  return promise
-}
-
-async function fetchLayers(worldId: string) {
-  const result = await window.universe.getTerrain(worldId)
-  if (!result.ok) throw new Error(result.error)
-  return result.value
 }
 
 /**
