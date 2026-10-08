@@ -1,13 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
-import { addChild, inspector, launch, newProject, row, SLOW, type AppHandle } from './helpers'
-
-let h: AppHandle
-test.beforeEach(async () => {
-  h = await launch()
-})
-test.afterEach(async () => {
-  await h?.close()
-})
+import type { Page } from '@playwright/test'
+import { addChild, expect, fill, inspector, newWorld, row, SLOW, test } from './helpers'
 
 /** A world's node seed and generation settings, by world name. */
 const world = (page: Page, name: string) =>
@@ -18,20 +10,9 @@ const world = (page: Page, name: string) =>
     return { seed: node.seed, settings }
   }, name)
 
-async function setSeed(page: Page, seed: string) {
-  const input = inspector(page).getByLabel('Seed', { exact: true })
-  await input.fill(seed)
-  await input.press('Enter')
-}
-
-test('a seed decides the whole world and locks its options; a world code recreates it exactly', async () => {
+test('a seed decides the whole world and locks its options; a world code recreates it exactly', async ({ h }) => {
   const { page } = h
-  await newProject(h, 'Seeds')
-  await addChild(page, '+ Galaxy Cluster', 'Virgo')
-  await addChild(page, '+ Galaxy', 'Milky Way')
-  await addChild(page, '+ Star System', 'Sol')
-  await addChild(page, '+ Planet', 'First')
-  await addChild(page, '+ World surface', 'First Surface')
+  await newWorld(h, 'Seeds', { planet: 'First' })
   await expect(page.getByTestId('globe')).toBeVisible({ timeout: SLOW })
 
   // A custom world: options are editable.
@@ -39,7 +20,7 @@ test('a seed decides the whole world and locks its options; a world code recreat
   await expect(water).toBeEnabled()
 
   // Typing a seed generates the world from it and locks the options.
-  await setSeed(page, 'Avalon')
+  await fill(page, 'Seed', 'Avalon')
   await expect(inspector(page).getByText('Generated from')).toBeVisible()
   await expect(water).toBeDisabled()
   const seeded = await world(page, 'First Surface')
@@ -54,7 +35,7 @@ test('a seed decides the whole world and locks its options; a world code recreat
   await row(page, 'Sol').click()
   await addChild(page, '+ Planet', 'Second')
   await addChild(page, '+ World surface', 'Second Surface')
-  await setSeed(page, code)
+  await fill(page, 'Seed', code)
   await expect.poll(async () => (await world(page, 'Second Surface')).seed).toBe(seeded.seed)
   expect((await world(page, 'Second Surface')).settings).toEqual({ ...seeded.settings, seedText: code })
   await expect(page.getByTestId('world-code')).toHaveText(code)

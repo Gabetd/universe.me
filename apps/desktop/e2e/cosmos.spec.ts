@@ -1,17 +1,7 @@
-import { expect, test, type Page } from '@playwright/test'
-import { inspector, launch, newProject, row, type AppHandle } from './helpers'
+import type { Page } from '@playwright/test'
+import { expect, inspector, newProject, row, state, test, wheel } from './helpers'
 
-let h: AppHandle
-test.beforeEach(async () => {
-  h = await launch()
-})
-test.afterEach(async () => {
-  await h?.close()
-})
-
-const nodes = (page: Page) => page.evaluate(async () => (await window.universe.getState()).nodes)
-const stars = (page: Page) => page.evaluate(async () => (await window.universe.getState()).timeline.stars)
-const orbits = (page: Page) => page.evaluate(async () => (await window.universe.getState()).timeline.orbits)
+const nodes = (page: Page) => state(page, 'nodes')
 
 /** The viewport's box once any zoom between levels has played out (the arriving view is scaled until then). */
 async function viewportBox(page: Page) {
@@ -21,9 +11,8 @@ async function viewportBox(page: Page) {
 
 /** Scrolls over the middle of the viewport. */
 async function scroll(page: Page, dy: number, times: number) {
-  const box = await viewportBox(page)
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  for (let i = 0; i < times; i++) await page.mouse.wheel(0, dy)
+  await viewportBox(page)
+  await wheel(page, page.getByTestId('viewport'), dy, times)
 }
 
 /** Clicks the generated thing nearest the middle of the view (the view reports what's on it). */
@@ -44,7 +33,7 @@ async function clickNearestGenerated(page: Page) {
   throw new Error('Nothing generated near the middle of the view')
 }
 
-test('scale navigation: claim a cluster, a galaxy and a star from what the seeds generate, zoom in and out between levels', async () => {
+test('scale navigation: claim a cluster, a galaxy and a star from what the seeds generate, zoom in and out between levels', async ({ h }) => {
   test.setTimeout(180_000)
   const { page } = h
   await newProject(h, 'Cosmos')
@@ -81,7 +70,7 @@ test('scale navigation: claim a cluster, a galaxy and a star from what the seeds
   const system = (await nodes(page)).find((n) => n.kind === 'star_system')!
   expect(system.name).toBe(name)
   expect(system.position.x !== 0 || system.position.y !== 0).toBe(true)
-  expect((await stars(page))[0]?.ownerId).toBe(system.id)
+  expect((await state(page, 'timeline')).stars[0]?.ownerId).toBe(system.id)
 
   // The star comes with the planets its seed makes, drawn faintly until claimed: claim one, as a world.
   await page.waitForTimeout(600)
@@ -95,7 +84,7 @@ test('scale navigation: claim a cluster, a galaxy and a star from what the seeds
   const planet = all.find((n) => n.name === planetName)!
   expect(planet.parentId).toBe(system.id)
   expect(all.find((n) => n.parentId === planet.id)?.kind).toBe('world')
-  expect((await orbits(page)).some((o) => o.ownerId === planet.id)).toBe(true)
+  expect((await state(page, 'timeline')).orbits.some((o) => o.ownerId === planet.id)).toBe(true)
   await page.waitForTimeout(600)
   await page.screenshot({ path: 'test-results/105-claimed-planet.png' })
 

@@ -1,13 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
-import { addChild, closeProject, drag, inspector, launch, newProject, row, SLOW, writeNotes, type AppHandle } from './helpers'
-
-let h: AppHandle
-test.beforeEach(async () => {
-  h = await launch()
-})
-test.afterEach(async () => {
-  await h?.close()
-})
+import type { Page } from '@playwright/test'
+import { closeProject, drag, drawRegion, expect, fill, inspector, newWorld, row, SLOW, test, writeNotes } from './helpers'
 
 const worldState = (page: Page) =>
   page.evaluate(async () => {
@@ -16,14 +8,9 @@ const worldState = (page: Page) =>
     return { revision: world.terrainRevision, seaLevel: world.settings.seaLevel, regions: s.regions.map((r) => r.name) }
   })
 
-test('edit a world: sculpt, paint, undo, draw a region, and keep it after reopening', async () => {
+test('edit a world: sculpt, paint, undo, draw a region, and keep it after reopening', async ({ h }) => {
   const { app, page } = h
-  await newProject(h, 'Terra')
-  await addChild(page, '+ Galaxy Cluster', 'Local Group')
-  await addChild(page, '+ Galaxy', 'Milky Way')
-  await addChild(page, '+ Star System', 'Sol')
-  await addChild(page, '+ Planet', 'Terra')
-  await addChild(page, '+ World surface', 'Terra Surface')
+  await newWorld(h, 'Terra', { cluster: 'Local Group' })
 
   // The globe renders once terrain generation finishes in the worker.
   await expect(page.getByTestId('globe')).toBeVisible({ timeout: SLOW })
@@ -50,18 +37,11 @@ test('edit a world: sculpt, paint, undo, draw a region, and keep it after reopen
   await expect.poll(async () => (await worldState(page)).revision).toBe(4)
 
   // Draw a region with four clicks and Enter.
-  await page.getByRole('button', { name: 'Draw region' }).click()
-  const map = (await page.getByTestId('map').boundingBox())!
-  for (const [x, y] of [[0.2, 0.3], [0.3, 0.28], [0.32, 0.4], [0.22, 0.42]] as const) {
-    await page.mouse.click(map.x + map.width * x, map.y + map.height * y)
-  }
-  await page.keyboard.press('Enter')
+  await drawRegion(page)
   await expect.poll(async () => (await worldState(page)).regions).toEqual(['New Region'])
 
   // The new region is selected: rename it and write notes.
-  const name = inspector(page).getByLabel('Region name')
-  await name.fill('The Dry Reaches')
-  await name.press('Enter')
+  await fill(page, 'Region name', 'The Dry Reaches')
   await writeNotes(page, 'Region notes', 'Nomads cross here in winter.')
   await expect.poll(async () => (await worldState(page)).regions).toEqual(['The Dry Reaches'])
 

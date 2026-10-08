@@ -1,17 +1,6 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test, type Page } from '@playwright/test'
-import { addChild, launch, newProject, SLOW, type AppHandle } from './helpers'
-
-let h: AppHandle
-test.beforeEach(async () => {
-  h = await launch()
-})
-test.afterEach(async () => {
-  await h?.close()
-})
-
-const records = (page: Page) => page.evaluate(async () => (await window.universe.getState()).timeline)
+import { clickAt, expect, newWorld, openMap, state, test } from './helpers'
 
 /** A tiny binary glTF: a square pyramid, 2 units tall. */
 function pyramidGlb(): Buffer {
@@ -52,18 +41,12 @@ function pyramidGlb(): Buffer {
   return Buffer.concat([header, chunk(0x4e4f534a, text), chunk(0x004e4942, padded)])
 }
 
-test('build a blueprint from parts, import a glTF model, and place both', async () => {
+test('build a blueprint from parts, import a glTF model, and place both', async ({ h }) => {
   const { app, page, dir } = h
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
-  await newProject(h, 'Builders')
-  await addChild(page, '+ Galaxy Cluster', 'Virgo')
-  await addChild(page, '+ Galaxy', 'Milky Way')
-  await addChild(page, '+ Star System', 'Sol')
-  await addChild(page, '+ Planet', 'Terra')
-  await addChild(page, '+ World surface', 'Terra Surface')
-  await page.getByRole('button', { name: '🗺 Map' }).click()
-  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: SLOW })
+  await newWorld(h, 'Builders')
+  await openMap(page)
 
   // A keep: a stone block with a wooden roof.
   await page.getByRole('button', { name: '+ New blueprint' }).click()
@@ -86,17 +69,13 @@ test('build a blueprint from parts, import a glTF model, and place both', async 
   await page.screenshot({ path: 'test-results/51-blueprint-ruin.png' })
   await builder.getByRole('button', { name: 'Add to library' }).click()
   await expect(builder).toBeHidden()
-  await expect.poll(async () => (await records(page)).blueprints.map((b) => [b.name, b.parts.length])).toEqual([['Keep', 2]])
+  await expect.poll(async () => (await state(page, 'timeline')).blueprints.map((b) => [b.name, b.parts.length])).toEqual([['Keep', 2]])
 
   // Clicking it in the library starts placing it.
   await page.locator('.blueprint-row', { hasText: 'Keep' }).getByTitle('Place it').click()
-  const click = async (x: number, y: number) => {
-    const map = (await page.getByTestId('map').boundingBox())!
-    await page.mouse.click(map.x + map.width * x, map.y + map.height * y)
-  }
-  await click(0.5, 0.45)
+  await clickAt(page, 'map', [0.5, 0.45])
   await page.keyboard.press('Escape')
-  await expect.poll(async () => (await records(page)).structures.map((s) => s.name)).toEqual(['Keep'])
+  await expect.poll(async () => (await state(page, 'timeline')).structures.map((s) => s.name)).toEqual(['Keep'])
 
   // Import a model; it's stored in the project and decays as the chosen material.
   const file = join(dir, 'Obelisk.glb')
@@ -112,13 +91,12 @@ test('build a blueprint from parts, import a glTF model, and place both', async 
   await page.waitForTimeout(800)
   await page.screenshot({ path: 'test-results/52-model-import.png' })
   await builder.getByRole('button', { name: 'Add to library' }).click()
-  const obelisk = await expect.poll(async () => (await records(page)).blueprints.find((b) => b.name === 'Obelisk')?.model).toMatchObject({ material: 'megalith', heightM: 40 })
-  void obelisk
+  await expect.poll(async () => (await state(page, 'timeline')).blueprints.find((b) => b.name === 'Obelisk')?.model).toMatchObject({ material: 'megalith', heightM: 40 })
 
   await page.locator('.blueprint-row', { hasText: 'Obelisk' }).getByTitle('Place it').click()
-  await click(0.53, 0.45)
+  await clickAt(page, 'map', [0.53, 0.45])
   await page.keyboard.press('Escape')
-  await expect.poll(async () => (await records(page)).structures.map((s) => s.name)).toEqual(['Keep', 'Obelisk'])
+  await expect.poll(async () => (await state(page, 'timeline')).structures.map((s) => s.name)).toEqual(['Keep', 'Obelisk'])
   await page.getByRole('button', { name: '🌐 Globe' }).click()
   await page.waitForTimeout(1500)
   await page.screenshot({ path: 'test-results/53-blueprints-globe.png' })

@@ -1,16 +1,7 @@
 import { existsSync } from 'node:fs'
-import { expect, test } from '@playwright/test'
-import { launch, newProject, type AppHandle } from './helpers'
+import { expect, newProject, test } from './helpers'
 
-let h: AppHandle
-test.beforeEach(async () => {
-  h = await launch()
-})
-test.afterEach(async () => {
-  await h?.close()
-})
-
-test('everything stays on this computer: projects are local files and no request can leave', async () => {
+test('everything stays on this computer: projects are local files and no request can leave', async ({ h }) => {
   const { app, page } = h
   const path = await newProject(h, 'Private')
   expect(existsSync(path)).toBe(true)
