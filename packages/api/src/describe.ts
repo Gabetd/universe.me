@@ -1,16 +1,15 @@
 import {
-  BUILTIN_BLUEPRINTS,
+  daysPerYear,
   KIND_LABELS,
   STAGES,
   ageAt,
   characterAt,
-  eventSpan,
   findBlueprint,
-  insidePolygon,
+  polygonTester,
   isActiveAt,
-  regionsAt,
   stateAt,
   themeAt,
+  type Calendar,
   type Character,
   type ConditionCurve,
   type LatLon,
@@ -21,6 +20,7 @@ import {
 } from '@universe/core'
 import { BIOMES } from '@universe/procgen'
 import { moonPhase, moonsOf } from '@universe/sim'
+import { ApiError } from './host'
 import type { ProjectModels, WorldView } from './model'
 import { htmlToText } from './text'
 
@@ -47,16 +47,9 @@ export function biomeIds(names: (string | number)[]): number[] {
   return names.map((n) => {
     if (typeof n === 'number') return n
     const b = BIOMES.find((x) => x.id > 0 && x.name.toLowerCase() === n.toLowerCase().trim())
-    if (!b) throw new Error(`There is no biome “${n}”. Biomes: ${BIOMES.filter((x) => x.id > 0).map((x) => x.name).join(', ')}`)
+    if (!b) throw new ApiError(400, `There is no biome “${n}”. Biomes: ${BIOMES.filter((x) => x.id > 0).map((x) => x.name).join(', ')}`)
     return b.id
   })
-}
-
-/** An event's dates at its precision: "1204", or "1204 – 1210". */
-export function eventDates(m: ProjectModels, e: TimelineEvent): string {
-  const [start, end] = eventSpan(e)
-  const from = m.date(e.ownerId, start, e.precision)
-  return end === start ? from : `${from} – ${m.date(e.ownerId, end, e.precision)}`
 }
 
 /** Where an event happens, in words: its regions' names, or coordinates. */
@@ -70,7 +63,7 @@ export function describeEvent(m: ProjectModels, view: WorldView, e: TimelineEven
   return {
     id: e.id,
     title: e.title,
-    when: eventDates(m, e),
+    when: m.eventDates(e),
     ...(e.tags.length && { tags: e.tags }),
     ...(e.locations.length && { where: eventPlaces(e, regions) }),
     ...(group && { group }),
@@ -79,8 +72,16 @@ export function describeEvent(m: ProjectModels, view: WorldView, e: TimelineEven
   }
 }
 
+/** Whether a point is in a region, from a test made once per region outline (lists ask it of every structure and character). */
+const testers = new WeakMap<LatLon[], (p: LatLon) => boolean>()
+function inRegion(place: LatLon, region: Region): boolean {
+  let test = testers.get(region.points)
+  if (!test) testers.set(region.points, (test = polygonTester(region.points)))
+  return test(place)
+}
+
 /** The regions a point lies in. */
-export const regionsHere = (place: LatLon, regions: Region[]) => regions.filter((r) => insidePolygon(place, r.points))
+export const regionsHere = (place: LatLon, regions: Region[]) => regions.filter((r) => inRegion(place, r))
 
 const STAGE_LABEL = Object.fromEntries([...STAGES.map((s) => [s.stage, s.label]), ['destroyed', 'Gone']])
 
@@ -151,12 +152,7 @@ export function describeMoons(m: ProjectModels, worldId: string, t: number) {
 /** Everything on a world at `t`: the date, what's happening, which regions exist, what stands, who's alive, the theme and the moons. */
 export async function worldSnapshot(m: ProjectModels, worldId: string, t: number) {
   const view = m.world(worldId)
-  const data = m.data()
-  const regions = regionsAt(
-    data.regions.filter((r) => r.worldId === worldId),
-    view.timeline.changes,
-    t
-  )
+  const regions = m.regionsAt(worldId, t)
   const { curves } = await m.structures(worldId)
   const happening = view.timeline.events.filter((e) => isActiveAt(e, t))
   const structures = view.timeline.structures.map((s) => describeStructure(m, view, s, curves.get(s.id), t, regions)).filter((s) => s.standing)
@@ -174,4 +170,9 @@ export async function worldSnapshot(m: ProjectModels, worldId: string, t: number
 
 export const round = (v: number, places = 2) => Math.round(v * 10 ** places) / 10 ** places
 
-export const builtinBlueprintNames = () => BUILTIN_BLUEPRINTS.map((b) => b.name)
+/** A calendar in words: its months and their lengths, and how long its days are. */
+export const describeCalendar = (cal: Calendar) => ({
+  months: cal.months.map((x) => `${x.name} (${x.days} days)`),
+  daysPerYear: daysPerYear(cal),
+  hoursPerDay: round(cal.secondsPerDay / 3600)
+})

@@ -4,9 +4,8 @@ import {
   ECO_LINK_TYPES,
   STAGES,
   causalChain,
-  daysPerYear,
+  secondsPerYear,
   erodesAt,
-  regionsAt,
   ruinAt,
   stateAt,
   structureWarnings,
@@ -18,7 +17,7 @@ import {
 import { formatPeriod, deriveCalendar, moonsOf, skyEvents } from '@universe/sim'
 import { z } from 'zod'
 import { exportWorldBible } from './bible'
-import { biomeName, describeCharacter, describeEvent, describeMoons, describeStructure, describeTheme, kindLabel, nodePath, round, worldSnapshot } from './describe'
+import { biomeName, describeCalendar, describeCharacter, describeEvent, describeMoons, describeStructure, describeTheme, kindLabel, nodePath, round, worldSnapshot } from './describe'
 import { ApiError, notFound } from './host'
 import { QueryList, QueryNumber, When, operation, type ApiContext } from './operation'
 import { htmlToText } from './text'
@@ -37,7 +36,7 @@ function worldSummary({ models: m }: ApiContext, node: SpatialNode) {
     name: node.name,
     path: nodePath(m.data().nodes, node.id),
     now: m.date(node.id, m.now(node.id), 'year'),
-    counts: { events: t.events.length, structures: t.structures.length, characters: t.characters.length, regions: m.data().regions.filter((r) => r.worldId === node.id).length, species: t.lifeforms.length }
+    counts: { events: t.events.length, structures: t.structures.length, characters: t.characters.length, regions: view.regions.length, species: t.lifeforms.length }
   }
 }
 
@@ -46,28 +45,9 @@ async function structuresAt(ctx: ApiContext, worldId: string, t: number) {
   const { models: m } = ctx
   const view = m.world(worldId)
   const { curves } = await m.structures(worldId)
-  const regions = regionsAt(
-    m.data().regions.filter((r) => r.worldId === worldId),
-    view.timeline.changes,
-    t
-  )
+  const regions = m.regionsAt(worldId, t)
   return { view, regions, curves, list: view.timeline.structures.map((s) => describeStructure(m, view, s, curves.get(s.id), t, regions)) }
 }
-
-/** A structure and its world, by id. */
-function structureOf({ models: m }: ApiContext, structureId: string) {
-  const s = m.data().timeline.structures.find((x) => x.id === structureId)
-  if (!s) throw notFound('structure', structureId)
-  return { s, view: m.world(s.ownerId) }
-}
-
-function eventOf({ models: m }: ApiContext, eventId: string) {
-  const e = m.data().timeline.events.find((x) => x.id === eventId)
-  if (!e) throw notFound('event', eventId)
-  return { e, view: m.world(e.ownerId) }
-}
-
-const worldRegions = ({ models: m }: ApiContext, worldId: string) => m.data().regions.filter((r) => r.worldId === worldId)
 
 /** Read-only operations: what an AI needs to know a world before it writes about it or adds to it. */
 export const READS = [
@@ -106,7 +86,6 @@ export const READS = [
     run: (ctx, { worldId }) => {
       const { models: m } = ctx
       const view = m.world(worldId)
-      const cal = m.calendar(worldId)
       const climate = m.climate(worldId)
       const s = view.info.settings
       return {
@@ -115,15 +94,15 @@ export const READS = [
         tags: view.node.tags,
         surface: { radiusKm: s.radiusKm, seed: s.seedText, landform: s.terrain.landform, water: s.terrain.water, seaLevelM: s.seaLevel, erosionSpeed: s.erosionSpeed },
         ...(climate && { climate: { meanTempC: round(climate.meanTempC, 1), distanceAu: round(climate.distanceAu, 3), inHabitableZone: climate.inHabitableZone } }),
-        calendar: { months: cal.months.map((x) => `${x.name} (${x.days} days)`), daysPerYear: daysPerYear(cal), hoursPerDay: round(cal.secondsPerDay / 3600, 2) },
-        regions: worldRegions(ctx, worldId).map((r) => ({ id: r.id, name: r.name, ...(r.notes && { notes: htmlToText(r.notes) }) })),
+        calendar: describeCalendar(m.calendar(worldId)),
+        regions: m.world(worldId).regions.map((r) => ({ id: r.id, name: r.name, ...(r.notes && { notes: htmlToText(r.notes) }) })),
         lanes: view.timeline.lanes.map((l) => l.name),
-        eras: view.timeline.eras.map((e) => ({ id: e.id, name: e.name, when: `${m.date(worldId, e.start, 'year')} – ${m.date(worldId, e.end, 'year')}` })),
+        eras: view.timeline.eras.map((e) => ({ id: e.id, name: e.name, when: m.spanDates(worldId, e) })),
         themeSpans: view.timeline.themeSpans.map((sp) => ({
           id: sp.id,
           theme: view.timeline.themes.find((t) => t.id === sp.themeId)?.name,
-          when: `${m.date(worldId, sp.start, 'year')} – ${m.date(worldId, sp.end, 'year')}`,
-          ...(sp.regionId && { region: worldRegions(ctx, worldId).find((r) => r.id === sp.regionId)?.name })
+          when: m.spanDates(worldId, sp),
+          ...(sp.regionId && { region: m.world(worldId).regions.find((r) => r.id === sp.regionId)?.name })
         }))
       }
     }
@@ -175,7 +154,7 @@ export const READS = [
       const events = view.timeline.events
         .filter((e) => (e.end ?? e.start) >= t0 && e.start <= t1 && (!tags?.length || e.tags.some((x) => tags.includes(x))))
         .sort((a, b) => a.start - b.start)
-      const regions = worldRegions(ctx, worldId)
+      const regions = m.world(worldId).regions
       return { count: events.length, events: events.slice(0, limit).map((e) => describeEvent(m, view, e, regions)) }
     }
   }),
@@ -187,11 +166,12 @@ export const READS = [
     route: { method: 'GET', path: '/events/:eventId' },
     run: (ctx, { eventId }) => {
       const { models: m } = ctx
-      const { e, view } = eventOf(ctx, eventId)
+      const e = m.event(eventId)
+      const view = m.world(e.ownerId)
       const title = (id: string) => view.timeline.events.find((x) => x.id === id)?.title ?? 'a deleted event'
       const links = view.timeline.links.filter((l) => l.fromId === e.id || l.toId === e.id)
       return {
-        ...describeEvent(m, view, e, worldRegions(ctx, e.ownerId), true),
+        ...describeEvent(m, view, e, m.world(e.ownerId).regions, true),
         worldId: e.ownerId,
         links: links.map((l) => (l.fromId === e.id ? { id: l.id, this: l.type, event: title(l.toId), eventId: l.toId } : { id: l.id, event: title(l.fromId), eventId: l.fromId, [l.type]: 'this' })),
         effects: view.timeline.effects
@@ -208,9 +188,10 @@ export const READS = [
     route: { method: 'GET', path: '/events/:eventId/chain' },
     run: (ctx, { eventId, direction = 'effects' }) => {
       const { models: m } = ctx
-      const { e, view } = eventOf(ctx, eventId)
+      const e = m.event(eventId)
+      const view = m.world(e.ownerId)
       const ids = causalChain(view.timeline.links, e.id, direction === 'effects' ? 'down' : 'up')
-      const regions = worldRegions(ctx, e.ownerId)
+      const regions = m.world(e.ownerId).regions
       const chain = view.timeline.events.filter((x) => ids.has(x.id) && x.id !== e.id).sort((a, b) => a.start - b.start)
       return { event: e.title, direction, chain: chain.map((x) => describeEvent(m, view, x, regions)) }
     }
@@ -221,7 +202,10 @@ export const READS = [
     description: 'The theme in force on a world (or in one of its regions) at a moment: the themes blending, and the dominant one’s mood, prose style guide, lighting and palette. Write in its style.',
     input: z.object({ worldId: WorldId, at: When, regionId: z.string().optional() }),
     route: { method: 'GET', path: '/worlds/:worldId/theme' },
-    run: ({ models: m }, { worldId, at, regionId }) => ({ date: m.date(worldId, m.when(worldId, at)), theme: describeTheme(m.world(worldId), m.when(worldId, at), regionId) })
+    run: ({ models: m }, { worldId, at, regionId }) => {
+      const t = m.when(worldId, at)
+      return { date: m.date(worldId, t), theme: describeTheme(m.world(worldId), t, regionId) }
+    }
   }),
   operation({
     name: 'list_themes',
@@ -240,7 +224,7 @@ export const READS = [
         palette: th.palette,
         usedOn: data.timeline.themeSpans
           .filter((s) => s.themeId === th.id)
-          .map((s) => ({ world: data.nodes.find((n) => n.id === s.ownerId)?.name, when: `${m.date(s.ownerId, s.start, 'year')} – ${m.date(s.ownerId, s.end, 'year')}` }))
+          .map((s) => ({ world: data.nodes.find((n) => n.id === s.ownerId)?.name, when: m.spanDates(s.ownerId, s) }))
       }))
     }
   }),
@@ -258,7 +242,7 @@ export const READS = [
     route: { method: 'GET', path: '/worlds/:worldId/structures' },
     run: async (ctx, { worldId, at, regionId, stage, includeGone }) => {
       const m = ctx.models
-      const t = at === undefined ? m.now(worldId) : m.when(worldId, at)
+      const t = m.whenOrNow(worldId, at)
       const { list, regions } = await structuresAt(ctx, worldId, t)
       const region = regionId ? regions.find((r) => r.id === regionId)?.name : undefined
       if (regionId && !region) throw notFound('region at that time', regionId)
@@ -276,14 +260,15 @@ export const READS = [
     route: { method: 'GET', path: '/structures/:structureId/condition' },
     run: async (ctx, { structureId, at }) => {
       const { models: m } = ctx
-      const { s, view } = structureOf(ctx, structureId)
-      const t = at === undefined ? m.now(s.ownerId) : m.when(s.ownerId, at)
+      const s = m.structure(structureId)
+      const view = m.world(s.ownerId)
+      const t = m.whenOrNow(s.ownerId, at)
       const { curves } = await m.structures(s.ownerId)
       const curve = curves.get(s.id)!
       const state = stateAt(curve, t)
       const title = (id?: string) => (id ? view.timeline.events.find((e) => e.id === id)?.title : undefined)
       return {
-        ...describeStructure(m, view, s, curve, t, worldRegions(ctx, s.ownerId)),
+        ...describeStructure(m, view, s, curve, t, m.world(s.ownerId).regions),
         date: m.date(s.ownerId, t),
         materials: Object.fromEntries(Object.entries(state.materials).map(([k, v]) => [k, Math.round(v!)])),
         history: curve.steps
@@ -307,8 +292,8 @@ export const READS = [
     route: { method: 'GET', path: '/structures/:structureId/decay' },
     run: async (ctx, { structureId, from }) => {
       const { models: m } = ctx
-      const { s } = structureOf(ctx, structureId)
-      const t = from === undefined ? m.now(s.ownerId) : m.when(s.ownerId, from)
+      const s = m.structure(structureId)
+      const t = m.whenOrNow(s.ownerId, from)
       const curve = (await m.structures(s.ownerId)).curves.get(s.id)!
       const state = stateAt(curve, t)
       const ruin = ruinAt(curve, t)
@@ -402,7 +387,7 @@ export const READS = [
       const t = m.when(worldId, at)
       const system = m.system(worldId)
       const bodyId = m.world(worldId).node.parentId
-      const year = daysPerYear(m.calendar(worldId)) * m.calendar(worldId).secondsPerDay
+      const year = secondsPerYear(m.calendar(worldId))
       const names = new Map(m.data().nodes.map((n) => [n.id, n.name]))
       const coming = system && bodyId && system.bodies.has(bodyId) ? skyEvents(system, bodyId, t, t + year) : []
       return {
@@ -423,7 +408,7 @@ export const READS = [
       const view = m.world(worldId)
       const { world, curves } = await m.structures(worldId)
       const warnings = [
-        ...timelineWarnings(view.timeline, worldRegions(ctx, worldId)).map((w) => ({ area: 'timeline', message: w.message, refs: w.refs })),
+        ...timelineWarnings(view.timeline, m.world(worldId).regions).map((w) => ({ area: 'timeline', message: w.message, refs: w.refs })),
         ...structureWarnings(world, curves).map((w) => ({ area: 'structures', message: w.message, refs: w.refs })),
         ...ecosystemWarnings(view.timeline.lifeforms, view.timeline.ecolinks).map((w) => ({ area: 'ecosystem', message: w.message, refs: w.ids.map((id) => ({ kind: 'species', id })) }))
       ]
@@ -438,9 +423,9 @@ export const READS = [
     route: { method: 'GET', path: '/worlds/:worldId/characters' },
     run: (ctx, { worldId, at }) => {
       const { models: m } = ctx
-      const t = at === undefined ? m.now(worldId) : m.when(worldId, at)
+      const t = m.whenOrNow(worldId, at)
       const view = m.world(worldId)
-      const regions = regionsAt(worldRegions(ctx, worldId), view.timeline.changes, t)
+      const regions = m.regionsAt(worldId, t)
       return { date: m.date(worldId, t), characters: view.timeline.characters.map((c) => describeCharacter(m, c, t, regions)) }
     }
   }),

@@ -1,6 +1,6 @@
 import { fromVector, toUnitVector } from './geo'
 import type { SpatialNode } from './schema'
-import type { Time } from './time'
+import { formatTime, type Calendar, type Time } from './time'
 import type { TimelineData } from './records'
 import { ORDERED_LINKS, type EntityChange, type EventGroup, type EventLink, type TimelineEvent } from './timeline'
 import { byId, memoize } from './util'
@@ -24,6 +24,13 @@ export function timelineOf(data: TimelineData, ownerId: string): TimelineData {
 }
 
 /** Start and end of an event; an instant ends where it starts. */
+/** "1204 – 1210": the years a span of time (an era, a theme span) covers. */
+export const spanDates = (s: { start: Time; end: Time }, cal?: Calendar): string => `${formatTime(s.start, 'year', cal)} – ${formatTime(s.end, 'year', cal)}`
+
+/** "1204" or "1204 – 1210", at the event's precision. */
+export const eventDates = (e: TimelineEvent, cal?: Calendar): string =>
+  e.end === null || e.end === e.start ? formatTime(e.start, e.precision, cal) : `${formatTime(e.start, e.precision, cal)} – ${formatTime(e.end, e.precision, cal)}`
+
 export const eventSpan = (e: TimelineEvent): [Time, Time] => [e.start, e.end ?? e.start]
 
 /** Every group's span (see `groupSpan`), from one pass over the events, once per array. Empty groups are missing. */

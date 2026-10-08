@@ -40,3 +40,10 @@ export class ApiError extends Error {
 }
 
 export const notFound = (what: string, id: string) => new ApiError(404, `There is no ${what} ${id}`)
+
+/** The item of a list with this id, or a 404 naming what was asked for. */
+export function findOr404<T extends { id: string }>(list: readonly T[], id: string, what: string): T {
+  const found = list.find((x) => x.id === id)
+  if (!found) throw notFound(what, id)
+  return found
+}

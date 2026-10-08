@@ -1,5 +1,4 @@
-import { daysPerYear } from '@universe/core'
-import { biomeName, describeCharacter, describeEvent, describeStructure, nodePath } from './describe'
+import { biomeName, describeCalendar, describeCharacter, describeEvent, describeStructure, nodePath } from './describe'
 import type { ApiContext } from './operation'
 import { htmlToText } from './text'
 
@@ -17,22 +16,21 @@ type BibleData = Awaited<ReturnType<typeof bibleData>>
 
 async function bibleData({ models: m }: ApiContext, worldId: string) {
   const view = m.world(worldId)
-  const data = m.data()
   const now = m.now(worldId)
-  const regions = data.regions.filter((r) => r.worldId === worldId)
+  const regions = view.regions
   const { curves } = await m.structures(worldId)
   const cal = m.calendar(worldId)
   const t = view.timeline
   const name = (id: string) => t.lifeforms.find((s) => s.id === id)?.name ?? '?'
   return {
     world: view.node.name,
-    path: nodePath(data.nodes, worldId),
+    path: nodePath(m.data().nodes, worldId),
     now: m.date(worldId, now, 'year'),
     notes: htmlToText(view.node.notes),
-    calendar: { months: cal.months.map((x) => `${x.name} (${x.days})`), daysPerYear: daysPerYear(cal), hoursPerDay: Math.round((cal.secondsPerDay / 3600) * 100) / 100 },
+    calendar: describeCalendar(cal),
     surface: { radiusKm: view.info.settings.radiusKm, landform: view.info.settings.terrain.landform, seed: view.info.settings.seedText },
     regions: regions.map((r) => ({ name: r.name, notes: htmlToText(r.notes) })),
-    eras: [...t.eras].sort((a, b) => a.start - b.start).map((e) => ({ name: e.name, when: `${m.date(worldId, e.start, 'year')} – ${m.date(worldId, e.end, 'year')}` })),
+    eras: [...t.eras].sort((a, b) => a.start - b.start).map((e) => ({ name: e.name, when: m.spanDates(worldId, e) })),
     history: [...t.events].sort((a, b) => a.start - b.start).map((e) => describeEvent(m, view, e, regions, true)),
     structures: t.structures.map((s) => ({ ...describeStructure(m, view, s, curves.get(s.id), now, regions), notes: htmlToText(s.notes) })),
     characters: t.characters.map((c) => ({ ...describeCharacter(m, c, now, regions), notes: htmlToText(c.notes) })),
@@ -50,7 +48,7 @@ async function bibleData({ models: m }: ApiContext, worldId: string) {
       .sort((a, b) => a.span.start - b.span.start)
       .map(({ span, theme }) => ({
         name: theme!.name,
-        when: `${m.date(worldId, span.start, 'year')} – ${m.date(worldId, span.end, 'year')}`,
+        when: m.spanDates(worldId, span),
         ...(span.regionId && { region: regions.find((r) => r.id === span.regionId)?.name }),
         mood: theme!.mood,
         style: theme!.style

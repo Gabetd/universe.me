@@ -12,6 +12,7 @@ import {
   SPECIES_KINDS,
   THEME_PRESETS,
   TYPOGRAPHY,
+  secondsPerYear,
   sphericalMean,
   type Command,
   type LatLon
@@ -20,8 +21,9 @@ import { readSeed } from '@universe/procgen'
 import { EARTH_ORBIT, luminosityOf } from '@universe/sim'
 import { z } from 'zod'
 import { biomeIds } from './describe'
-import { ApiError, notFound } from './host'
+import { ApiError, findOr404 } from './host'
 import { When, operation, written, type ApiContext } from './operation'
+import type { WorldView } from './model'
 import { textToHtml } from './text'
 
 const newId = () => crypto.randomUUID()
@@ -32,19 +34,28 @@ const Notes = z.string().describe('Plain text: paragraphs separated by a blank l
 /** Applies (or proposes) commands as one undoable step, and says what was done. */
 function write(ctx: ApiContext, commands: Command[], summary: string, ids: Record<string, string> = {}) {
   const command: Command = commands.length === 1 ? commands[0]! : { type: 'batch', payload: { commands } }
-  return written(ctx.host.write(command, summary), summary, ids)
+  const outcome = ctx.host.write(command, summary)
+  // What's read next sees the change.
+  ctx.models.forget()
+  return written(outcome, summary, ids)
 }
 
-const regionOn = (ctx: ApiContext, worldId: string, regionId: string) => {
-  const r = ctx.models.data().regions.find((x) => x.id === regionId && x.worldId === worldId)
-  if (!r) throw notFound('region on that world', regionId)
-  return r
+/** A client's notes and tags as a record has them. */
+const notesAndTags = (p: { notes?: string; tags?: string[] }) => ({ ...(p.notes && { notes: textToHtml(p.notes) }), ...(p.tags && { tags: p.tags }) })
+
+/** The lane called `name` on a world, made (by the returned commands) if it has none; no lane without a name. */
+function laneFor(view: WorldView, name: string | undefined): { laneId: string | null; commands: Command[] } {
+  if (!name) return { laneId: null, commands: [] }
+  const lane = view.timeline.lanes.find((l) => l.name.toLowerCase() === name.toLowerCase())
+  if (lane) return { laneId: lane.id, commands: [] }
+  const laneId = newId()
+  return { laneId, commands: [{ type: 'lane.create', payload: { id: laneId, ownerId: view.node.id, name } }] }
 }
 
 /** Where something goes: a point, or the middle of a region. */
 function placeOf(ctx: ApiContext, worldId: string, place: LatLon | undefined, regionId: string | undefined): LatLon {
   if (place) return place
-  if (regionId) return sphericalMean(regionOn(ctx, worldId, regionId).points)
+  if (regionId) return sphericalMean(ctx.models.region(worldId, regionId).points)
   throw new ApiError(400, 'Say where: a place {lat, lon} or a regionId')
 }
 
@@ -54,12 +65,6 @@ function blueprintId(ctx: ApiContext, nameOrId: string): string {
   const b = all.find((x) => x.id === nameOrId) ?? all.find((x) => x.name.toLowerCase() === nameOrId.toLowerCase().trim())
   if (!b) throw new ApiError(404, `There is no blueprint “${nameOrId}”. list_blueprints names them`)
   return b.id
-}
-
-const eventOf = (ctx: ApiContext, id: string) => {
-  const e = ctx.models.data().timeline.events.find((x) => x.id === id)
-  if (!e) throw notFound('event', id)
-  return e
 }
 
 /** Where notes go, by the kind of thing an id names. */
@@ -112,16 +117,11 @@ export const WRITES = [
       const start = m.parse(p.worldId, p.start)
       const end = p.end === undefined ? null : m.when(p.worldId, p.end)
       if (end !== null && end < start.t) throw new ApiError(400, 'The event ends before it starts')
-      for (const id of p.regionIds ?? []) regionOn(ctx, p.worldId, id)
+      for (const id of p.regionIds ?? []) m.region(p.worldId, id)
       const id = newId()
-      const commands: Command[] = []
-      let laneId: string | null = null
-      if (p.lane) {
-        const lane = view.timeline.lanes.find((l) => l.name.toLowerCase() === p.lane!.toLowerCase())
-        laneId = lane?.id ?? newId()
-        if (!lane) commands.push({ type: 'lane.create', payload: { id: laneId, ownerId: p.worldId, name: p.lane } })
-      }
-      commands.push({
+      const precision = p.precision ?? start.precision
+      const lane = laneFor(view, p.lane)
+      const event: Command = {
         type: 'event.create',
         payload: {
           id,
@@ -129,15 +129,14 @@ export const WRITES = [
           title: p.title,
           start: start.t,
           end,
-          precision: p.precision ?? start.precision,
-          laneId,
+          precision,
+          laneId: lane.laneId,
           ...(p.color && { color: p.color }),
-          ...(p.notes && { notes: textToHtml(p.notes) }),
-          ...(p.tags && { tags: p.tags }),
+          ...notesAndTags(p),
           locations: [...(p.regionIds ?? []).map((regionId) => ({ kind: 'region' as const, regionId })), ...(p.places ?? []).map((pl) => ({ kind: 'point' as const, ...pl }))]
         }
-      })
-      return write(ctx, commands, `Added the event “${p.title}” (${m.date(p.worldId, start.t, p.precision ?? start.precision)})`, { eventId: id })
+      }
+      return write(ctx, [...lane.commands, event], `Added the event “${p.title}” (${m.date(p.worldId, start.t, precision)})`, { eventId: id })
     }
   }),
   operation({
@@ -149,14 +148,13 @@ export const WRITES = [
     write: true,
     run: (ctx, p) => {
       const m = ctx.models
-      const e = eventOf(ctx, p.eventId)
+      const e = m.event(p.eventId)
       const start = p.start === undefined ? undefined : m.parse(e.ownerId, p.start)
       const patch = {
         ...(p.title && { title: p.title }),
         ...(start && { start: start.t, precision: start.precision }),
         ...(p.end !== undefined && { end: p.end === null ? null : m.when(e.ownerId, p.end) }),
-        ...(p.tags && { tags: p.tags }),
-        ...(p.notes !== undefined && { notes: textToHtml(p.notes) })
+        ...notesAndTags(p)
       }
       return write(ctx, [{ type: 'event.update', payload: { id: e.id, patch } }], `Edited the event “${p.title ?? e.title}”`)
     }
@@ -169,7 +167,7 @@ export const WRITES = [
     route: { method: 'POST', path: '/event-links' },
     write: true,
     run: (ctx, p) => {
-      const [a, b] = [eventOf(ctx, p.fromId), eventOf(ctx, p.toId)]
+      const [a, b] = [ctx.models.event(p.fromId), ctx.models.event(p.toId)]
       const id = newId()
       return write(ctx, [{ type: 'link.create', payload: { id, fromId: a.id, toId: b.id, type: p.type, ...(p.note && { note: p.note }) } }], `“${a.title}” ${p.type} “${b.title}”`, { linkId: id })
     }
@@ -182,7 +180,7 @@ export const WRITES = [
     route: { method: 'POST', path: '/event-groups' },
     write: true,
     run: (ctx, p) => {
-      const events = p.eventIds.map((id) => eventOf(ctx, id))
+      const events = p.eventIds.map((id) => ctx.models.event(id))
       const id = newId()
       return write(ctx, [{ type: 'group.create', payload: { id, ownerId: events[0]!.ownerId, title: p.title, eventIds: p.eventIds } }], `Grouped ${events.length} events as “${p.title}”`, { groupId: id })
     }
@@ -209,11 +207,11 @@ export const WRITES = [
     route: { method: 'POST', path: '/events/:eventId/effects' },
     write: true,
     run: (ctx, p) => {
-      const e = eventOf(ctx, p.eventId)
+      const e = ctx.models.event(p.eventId)
       const target = p.structureIds
         ? { kind: 'structures' as const, ids: p.structureIds }
         : p.regionId
-          ? { kind: 'region' as const, regionId: regionOn(ctx, e.ownerId, p.regionId).id }
+          ? { kind: 'region' as const, regionId: ctx.models.region(e.ownerId, p.regionId).id }
           : p.radiusKm
             ? { kind: 'radius' as const, km: p.radiusKm, falloff: p.falloff ?? true }
             : undefined
@@ -283,8 +281,7 @@ export const WRITES = [
               ...(p.maintained !== undefined && { maintained: p.maintained }),
               ...(p.neverDecays !== undefined && { neverDecays: p.neverDecays }),
               ...(p.scale && { scale: p.scale }),
-              ...(p.notes && { notes: textToHtml(p.notes) }),
-              ...(p.tags && { tags: p.tags })
+              ...notesAndTags(p)
             }
           }
         ],
@@ -301,12 +298,11 @@ export const WRITES = [
     route: { method: 'POST', path: '/structures/:structureId/maintenance' },
     write: true,
     run: (ctx, p) => {
-      const s = ctx.models.data().timeline.structures.find((x) => x.id === p.structureId)
-      if (!s) throw notFound('structure', p.structureId)
+      const s = ctx.models.structure(p.structureId)
       const at = ctx.models.when(s.ownerId, p.at)
       return write(
         ctx,
-        [{ type: 'maintenance.set', payload: { structureId: s.id, at, maintained: p.maintained, ...(p.causeEventId && { causeEventId: eventOf(ctx, p.causeEventId).id }) } }],
+        [{ type: 'maintenance.set', payload: { structureId: s.id, at, maintained: p.maintained, ...(p.causeEventId && { causeEventId: ctx.models.event(p.causeEventId).id }) } }],
         `${s.name} is ${p.maintained ? 'maintained' : 'left to weather'} from ${ctx.models.date(s.ownerId, at, 'year')}`
       )
     }
@@ -336,8 +332,7 @@ export const WRITES = [
               born,
               died: p.died === undefined ? null : m.when(p.worldId, p.died),
               stops: [{ at: born, lat: at.lat, lon: at.lon, travel: 0, eventId: null }],
-              ...(p.notes && { notes: textToHtml(p.notes) }),
-              ...(p.tags && { tags: p.tags })
+              ...notesAndTags(p)
             }
           }
         ],
@@ -356,7 +351,7 @@ export const WRITES = [
     run: (ctx, p) => {
       ctx.models.world(p.worldId)
       const id = newId()
-      return write(ctx, [{ type: 'region.create', payload: { id, worldId: p.worldId, name: p.name, points: p.points, ...(p.notes && { notes: textToHtml(p.notes) }) } }], `Drew the region ${p.name}`, {
+      return write(ctx, [{ type: 'region.create', payload: { id, worldId: p.worldId, name: p.name, points: p.points, ...notesAndTags(p) } }], `Drew the region ${p.name}`, {
         regionId: id
       })
     }
@@ -392,18 +387,13 @@ export const WRITES = [
     write: true,
     run: (ctx, p) => {
       const view = ctx.models.world(p.worldId)
-      let biomes: number[]
-      try {
-        biomes = biomeIds(p.biomes ?? [])
-      } catch (err) {
-        throw new ApiError(400, (err as Error).message)
-      }
-      for (const prey of p.eats ?? []) if (!view.timeline.lifeforms.some((s) => s.id === prey)) throw notFound('species on that world', prey)
+      const biomes = biomeIds(p.biomes ?? [])
+      for (const prey of p.eats ?? []) findOr404(view.timeline.lifeforms, prey, 'species on that world')
       const id = newId()
       return write(
         ctx,
         [
-          { type: 'species.create', payload: { id, ownerId: p.worldId, name: p.name, kind: p.kind, diet: p.diet, biomes, ...(p.notes && { notes: textToHtml(p.notes) }), ...(p.tags && { tags: p.tags }) } },
+          { type: 'species.create', payload: { id, ownerId: p.worldId, name: p.name, kind: p.kind, diet: p.diet, biomes, ...notesAndTags(p) } },
           ...(p.eats ?? []).map((prey): Command => ({ type: 'ecolink.create', payload: { fromId: id, toId: prey, type: 'eats' } }))
         ],
         `Added the species ${p.name}`,
@@ -420,9 +410,9 @@ export const WRITES = [
     write: true,
     run: (ctx, p) => {
       const all = ctx.models.data().timeline.lifeforms
-      const [a, b] = [p.fromId, p.toId].map((id) => all.find((s) => s.id === id) ?? (() => { throw notFound('species', id) })())
+      const [a, b] = [findOr404(all, p.fromId, 'species'), findOr404(all, p.toId, 'species')]
       const id = newId()
-      return write(ctx, [{ type: 'ecolink.create', payload: { id, fromId: a!.id, toId: b!.id, type: p.type } }], `${a!.name} ${p.type} ${b!.name}`, { linkId: id })
+      return write(ctx, [{ type: 'ecolink.create', payload: { id, fromId: a.id, toId: b.id, type: p.type } }], `${a.name} ${p.type} ${b.name}`, { linkId: id })
     }
   }),
   operation({
@@ -467,12 +457,10 @@ export const WRITES = [
     run: (ctx, p) => {
       const m = ctx.models
       m.world(p.worldId)
-      const theme = m.data().timeline.themes.find((t) => t.id === p.themeId)
-      if (!theme) throw notFound('theme', p.themeId)
-      if (p.regionId) regionOn(ctx, p.worldId, p.regionId)
+      const theme = findOr404(m.data().timeline.themes, p.themeId, 'theme')
+      if (p.regionId) m.region(p.worldId, p.regionId)
       const [start, end] = [m.when(p.worldId, p.start), m.when(p.worldId, p.end)]
-      const cal = m.calendar(p.worldId)
-      const year = cal.months.reduce((n, x) => n + x.days, 0) * cal.secondsPerDay
+      const year = secondsPerYear(m.calendar(p.worldId))
       const id = newId()
       return write(
         ctx,
