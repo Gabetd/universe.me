@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { addChild, inspector, launch, newProject, type AppHandle } from './helpers'
+import { addChild, inspector, launch, newProject, SLOW, type AppHandle } from './helpers'
 
 let h: AppHandle
 test.beforeEach(async () => {
@@ -32,7 +32,7 @@ test('characters live, travel from place to place, and go to events', async () =
   await addChild(page, '+ Planet', 'Terra')
   await addChild(page, '+ World surface', 'Terra Surface')
   await page.getByRole('button', { name: '🗺 Map' }).click()
-  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: 20_000 })
+  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: SLOW })
   const at = async (x: number, y: number) => {
     const map = (await page.getByTestId('map').boundingBox())!
     await page.mouse.click(map.x + map.width * x, map.y + map.height * y)
@@ -79,7 +79,7 @@ test('characters live, travel from place to place, and go to events', async () =
   // Up close she's life-size, on the ground.
   await setPlayhead(page, '1050')
   await inspector(page).getByRole('button', { name: '🔍 View up close' }).click()
-  await expect(page.locator('[data-chunks="25"]')).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator('[data-chunks="25"]')).toBeVisible({ timeout: SLOW })
   await page.waitForTimeout(500)
   await page.screenshot({ path: 'test-results/71-character-ground.png' })
 

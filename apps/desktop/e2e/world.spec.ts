@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { addChild, closeProject, drag, inspector, launch, newProject, row, writeNotes, type AppHandle } from './helpers'
+import { addChild, closeProject, drag, inspector, launch, newProject, row, SLOW, writeNotes, type AppHandle } from './helpers'
 
 let h: AppHandle
 test.beforeEach(async () => {
@@ -26,7 +26,7 @@ test('edit a world: sculpt, paint, undo, draw a region, and keep it after reopen
   await addChild(page, '+ World surface', 'Terra Surface')
 
   // The globe renders once terrain generation finishes in the worker.
-  await expect(page.getByTestId('globe')).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByTestId('globe')).toBeVisible({ timeout: SLOW })
   await expect(page.getByText('Generating terrain…')).toHaveCount(0)
   await page.waitForTimeout(800)
   await page.screenshot({ path: 'test-results/10-globe.png' })

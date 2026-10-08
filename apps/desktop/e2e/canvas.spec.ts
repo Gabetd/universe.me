@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { addChild, inspector, launch, newProject, type AppHandle } from './helpers'
+import { addChild, inspector, launch, newProject, SLOW, type AppHandle } from './helpers'
 
 let h: AppHandle
 test.beforeEach(async () => {
@@ -36,7 +36,7 @@ test('events become nodes on the world canvas: move, hide, link, recede with tim
   await addChild(page, '+ Planet', 'Terra')
   await addChild(page, '+ World surface', 'Terra Surface')
   await page.getByRole('button', { name: '🗺 Map' }).click()
-  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: 20_000 })
+  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: SLOW })
 
   await addEvent(page, 'Founding', '1200')
   await addEvent(page, 'War of the Straits', '1250', '1260')

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { addChild, closeProject, inspector, launch, newProject, row, type AppHandle } from './helpers'
+import { addChild, closeProject, inspector, launch, newProject, row, SLOW, type AppHandle } from './helpers'
 
 let h: AppHandle
 test.beforeEach(async () => {
@@ -140,7 +140,7 @@ test('place events on the world and watch regions come and go with the playhead'
   await addChild(page, '+ Planet', 'Terra')
   await addChild(page, '+ World surface', 'Terra Surface')
   await page.getByRole('button', { name: '🗺 Map' }).click()
-  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: 20_000 })
+  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: SLOW })
 
   // A region, founded in 1200 by an event.
   await page.getByRole('button', { name: 'Draw region' }).click()

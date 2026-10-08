@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { addChild, launch, newProject, type AppHandle } from './helpers'
+import { addChild, launch, newProject, SLOW, type AppHandle } from './helpers'
 
 let h: AppHandle
 test.beforeEach(async () => {
@@ -20,7 +20,7 @@ test('species: suggested from the world’s biomes, a food web, links and warnin
   await addChild(page, '+ Planet', 'Terra')
   await addChild(page, '+ World surface', 'Terra Surface')
   await page.getByRole('button', { name: '🦌 Species' }).click()
-  await expect(page.getByText(/Biomes here:/)).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText(/Biomes here:/)).toBeVisible({ timeout: SLOW })
 
   // Suggestions for the biomes it has, already linked into a food web.
   await page.getByRole('button', { name: 'Suggest for this world' }).click()

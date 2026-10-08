@@ -3,6 +3,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 
+const CI = !!process.env.CI
+/** For the slow waits (generating terrain, loading the ground, an update): CI machines draw in software. */
+export const SLOW = CI ? 60_000 : 30_000
+/** Starting the app: the first launch on a fresh machine can be slow (Electron unpacking, a cold disk). */
+const LAUNCH = 90_000
+
 export interface AppHandle {
   app: ElectronApplication
   page: Page
@@ -101,11 +107,13 @@ export async function launch(env: (dir: string) => Record<string, string> = () =
       UNIVERSE_UPDATE_URL: 'off',
       UNIVERSE_E2E_SEED: String(seedOf(test.info().title)),
       ...env(dir)
-    }
+    },
+    timeout: LAUNCH
   })
-  const page = await app.firstWindow()
-  // The first launch on a fresh machine can be slow (Electron unpacking, a cold disk): wait for the app itself, not a fixed few seconds.
-  await page.getByRole('button', { name: 'New Universe…' }).waitFor({ timeout: 60_000 })
+  const page = await app.firstWindow({ timeout: LAUNCH })
+  page.setDefaultTimeout(CI ? 60_000 : 30_000)
+  // Wait for the app itself, not a fixed few seconds.
+  await page.getByRole('button', { name: 'New Universe…' }).waitFor({ timeout: LAUNCH })
   return {
     app,
     page,

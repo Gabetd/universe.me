@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { addChild, inspector, launch, newProject, row, type AppHandle } from './helpers'
+import { addChild, inspector, launch, newProject, row, SLOW, type AppHandle } from './helpers'
 
 let h: AppHandle
 test.beforeEach(async () => {
@@ -60,7 +60,7 @@ test('planets show their surface, structures are pins from afar, and the ground 
 
   await row(page, 'Terra Surface').click()
   await page.getByRole('button', { name: '🗺 Map' }).click()
-  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: 20_000 })
+  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: SLOW })
   await setPlayhead(page, '1000')
   await page.getByRole('button', { name: 'Place structure' }).click()
   await page.getByLabel('Blueprint to place').selectOption({ label: 'Walled city (vast)' })
@@ -77,7 +77,7 @@ test('planets show their surface, structures are pins from afar, and the ground 
 
   // Down to the ground at the city.
   await page.getByRole('button', { name: '🔍 Ground' }).click()
-  await expect(page.locator('[data-chunks="25"]')).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator('[data-chunks="25"]')).toBeVisible({ timeout: SLOW })
   await page.waitForTimeout(1000)
   await page.screenshot({ path: 'test-results/62-ground.png' })
   const ground = (await page.getByTestId('ground').boundingBox())!

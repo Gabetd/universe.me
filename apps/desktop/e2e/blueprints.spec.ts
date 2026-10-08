@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { addChild, launch, newProject, type AppHandle } from './helpers'
+import { addChild, launch, newProject, SLOW, type AppHandle } from './helpers'
 
 let h: AppHandle
 test.beforeEach(async () => {
@@ -63,7 +63,7 @@ test('build a blueprint from parts, import a glTF model, and place both', async 
   await addChild(page, '+ Planet', 'Terra')
   await addChild(page, '+ World surface', 'Terra Surface')
   await page.getByRole('button', { name: '🗺 Map' }).click()
-  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: 20_000 })
+  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: SLOW })
 
   // A keep: a stone block with a wooden roof.
   await page.getByRole('button', { name: '+ New blueprint' }).click()

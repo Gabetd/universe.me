@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { addChild, inspector, launch, newProject, row, type AppHandle } from './helpers'
+import { addChild, inspector, launch, newProject, row, SLOW, type AppHandle } from './helpers'
 
 let h: AppHandle
 test.beforeEach(async () => {
@@ -32,7 +32,7 @@ test('a seed decides the whole world and locks its options; a world code recreat
   await addChild(page, '+ Star System', 'Sol')
   await addChild(page, '+ Planet', 'First')
   await addChild(page, '+ World surface', 'First Surface')
-  await expect(page.getByTestId('globe')).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByTestId('globe')).toBeVisible({ timeout: SLOW })
 
   // A custom world: options are editable.
   const water = inspector(page).getByLabel('Water', { exact: true })
@@ -46,7 +46,7 @@ test('a seed decides the whole world and locks its options; a world code recreat
   expect(seeded.settings.seedText).toBe('Avalon')
   const code = (await page.getByTestId('world-code').textContent())!
   expect(code).toMatch(/^W1-/)
-  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: 20_000 })
+  await expect(page.getByText('Generating terrain…')).toHaveCount(0, { timeout: SLOW })
   await page.waitForTimeout(800)
   await page.screenshot({ path: 'test-results/30-seeded-world.png' })
 
