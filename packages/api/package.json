@@ -1,0 +1,21 @@
+{
+  "name": "@universe/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The local API: one table of operations served as REST (with OpenAPI and a change feed) and as an MCP server (HTTP and stdio). Node-only.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@universe/core": "workspace:*",
+    "@universe/db": "workspace:*",
+    "@universe/procgen": "workspace:*",
+    "@universe/sim": "workspace:*",
+    "zod": "^4.6.5"
+  }
+}

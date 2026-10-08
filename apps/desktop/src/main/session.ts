@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
-import { CUBE_FACES, EMPTY_TIMELINE, type ExecuteResult, type Target, type TerrainLayerName } from '@universe/core'
+import { EMPTY_TIMELINE, type ExecuteResult, type Target } from '@universe/core'
 import { Project } from '@universe/db'
 import type { AppState, WorldTerrain } from '../shared/api'
 
@@ -64,11 +64,9 @@ export class Session {
     return this.applied(this.require().bus.redo())
   }
 
-  /** Edit layers of a world. Unedited faces are left out, so loading a fresh world copies almost nothing. */
+  /** Edit layers of a world. */
   terrain(worldId: string): WorldTerrain {
-    const { worlds } = this.require().store
-    const layer = (name: TerrainLayerName) => Array.from({ length: CUBE_FACES }, (_, face) => worlds.getLayer(worldId, name, face))
-    return { revision: worlds.terrainRevision(worldId), height: layer('height'), biome: layer('biome') }
+    return this.require().terrain(worldId)
   }
 
   /** Keeps a file in the project with `asset.add`, undoable like any command. */

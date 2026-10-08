@@ -262,7 +262,8 @@ export function eventPlace(event: TimelineEvent, regions: Region[]): LatLon | un
   return undefined
 }
 
-function sphericalMean(points: LatLon[]): LatLon {
+/** The middle of some points on the sphere (of a region's outline, say), averaged as directions so it works across the date line. */
+export function sphericalMean(points: LatLon[]): LatLon {
   const sum: [number, number, number] = [0, 0, 0]
   for (const p of points) {
     const [x, y, z] = toUnitVector(p)

@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
-import { CommandBus, createRootUniverse, findRoot, type CommandBusOptions, type Store } from '@universe/core'
+import { CUBE_FACES, CommandBus, createRootUniverse, findRoot, type CommandBusOptions, type Store, type TerrainLayerName, type TerrainLayers } from '@universe/core'
 import { TrackedStore } from './changes'
 import { SqliteHistoryLog } from './history-log'
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations'
@@ -107,6 +107,13 @@ export class Project {
   /** Everything live in the project. Cheap to call again: only what was written since the last call is reloaded. */
   snapshot(): Snapshot {
     return this.snapshots.snapshot()
+  }
+
+  /** A world's edit layers, with the revision they're at. Unedited faces are left out, so a fresh world copies almost nothing. */
+  terrain(worldId: string): TerrainLayers & { revision: number } {
+    const { worlds } = this.store
+    const layer = (name: TerrainLayerName) => Array.from({ length: CUBE_FACES }, (_, face) => worlds.getLayer(worldId, name, face))
+    return { revision: worlds.terrainRevision(worldId), height: layer('height'), biome: layer('biome') }
   }
 
   getMeta(key: string): string | undefined {

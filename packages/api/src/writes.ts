@@ -1,0 +1,546 @@
+import {
+  AU_KM,
+  BUILTIN_BLUEPRINTS,
+  DIETS,
+  EFFECT_TYPES,
+  ECO_LINK_TYPES,
+  HexColor,
+  LIGHTING_PRESETS,
+  LINK_TYPES,
+  MATERIALS,
+  PRECISIONS,
+  SPECIES_KINDS,
+  THEME_PRESETS,
+  TYPOGRAPHY,
+  sphericalMean,
+  type Command,
+  type LatLon
+} from '@universe/core'
+import { readSeed } from '@universe/procgen'
+import { EARTH_ORBIT, luminosityOf } from '@universe/sim'
+import { z } from 'zod'
+import { biomeIds } from './describe'
+import { ApiError, notFound } from './host'
+import { When, operation, written, type ApiContext } from './operation'
+import { textToHtml } from './text'
+
+const newId = () => crypto.randomUUID()
+const Place = z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) })
+const Tags = z.array(z.string().min(1).max(60))
+const Notes = z.string().describe('Plain text: paragraphs separated by a blank line, "- " for list items')
+
+/** Applies (or proposes) commands as one undoable step, and says what was done. */
+function write(ctx: ApiContext, commands: Command[], summary: string, ids: Record<string, string> = {}) {
+  const command: Command = commands.length === 1 ? commands[0]! : { type: 'batch', payload: { commands } }
+  return written(ctx.host.write(command, summary), summary, ids)
+}
+
+const regionOn = (ctx: ApiContext, worldId: string, regionId: string) => {
+  const r = ctx.models.data().regions.find((x) => x.id === regionId && x.worldId === worldId)
+  if (!r) throw notFound('region on that world', regionId)
+  return r
+}
+
+/** Where something goes: a point, or the middle of a region. */
+function placeOf(ctx: ApiContext, worldId: string, place: LatLon | undefined, regionId: string | undefined): LatLon {
+  if (place) return place
+  if (regionId) return sphericalMean(regionOn(ctx, worldId, regionId).points)
+  throw new ApiError(400, 'Say where: a place {lat, lon} or a regionId')
+}
+
+/** A blueprint by id or (built-in or the project's) name. */
+function blueprintId(ctx: ApiContext, nameOrId: string): string {
+  const all = [...BUILTIN_BLUEPRINTS, ...ctx.models.data().timeline.blueprints]
+  const b = all.find((x) => x.id === nameOrId) ?? all.find((x) => x.name.toLowerCase() === nameOrId.toLowerCase().trim())
+  if (!b) throw new ApiError(404, `There is no blueprint “${nameOrId}”. list_blueprints names them`)
+  return b.id
+}
+
+const eventOf = (ctx: ApiContext, id: string) => {
+  const e = ctx.models.data().timeline.events.find((x) => x.id === id)
+  if (!e) throw notFound('event', id)
+  return e
+}
+
+/** Where notes go, by the kind of thing an id names. */
+function notesTarget(ctx: ApiContext, id: string): { type: string; notes: string; name: string } {
+  const data = ctx.models.data()
+  const node = data.nodes.find((n) => n.id === id)
+  if (node) return { type: 'node.update', notes: node.notes, name: node.name }
+  const region = data.regions.find((r) => r.id === id)
+  if (region) return { type: 'region.update', notes: region.notes, name: region.name }
+  const t = data.timeline
+  const lists: [string, { id: string; notes: string; name?: string; title?: string }[]][] = [
+    ['event.update', t.events],
+    ['structure.update', t.structures],
+    ['character.update', t.characters],
+    ['species.update', t.lifeforms],
+    ['theme.update', t.themes],
+    ['group.update', t.groups]
+  ]
+  for (const [type, list] of lists) {
+    const r = list.find((x) => x.id === id)
+    if (r) return { type, notes: r.notes, name: r.name ?? r.title ?? '' }
+  }
+  throw new ApiError(404, `Nothing with notes has the id ${id}`)
+}
+
+/** Operations that change the project: each one undoable in one step, tagged as the AI's, and held for review in review mode. */
+export const WRITES = [
+  operation({
+    name: 'create_event',
+    title: 'Create an event',
+    description: 'Adds an event to a world’s timeline: a title, when (a moment, or a span with an end), where (regions and/or points), notes and tags. Returns its id.',
+    input: z.object({
+      worldId: z.string(),
+      title: z.string().min(1).max(200),
+      start: When,
+      end: When.optional().describe('For a span; leave out for a moment'),
+      precision: z.enum(PRECISIONS).optional().describe('How exactly the date is known; taken from how start is written by default'),
+      notes: Notes.optional(),
+      tags: Tags.optional(),
+      regionIds: z.array(z.string()).optional(),
+      places: z.array(Place).optional(),
+      lane: z.string().optional().describe('A lane by name; made if the world has none called that'),
+      color: HexColor.optional()
+    }),
+    route: { method: 'POST', path: '/worlds/:worldId/events' },
+    write: true,
+    run: (ctx, p) => {
+      const m = ctx.models
+      const view = m.world(p.worldId)
+      const start = m.parse(p.worldId, p.start)
+      const end = p.end === undefined ? null : m.when(p.worldId, p.end)
+      if (end !== null && end < start.t) throw new ApiError(400, 'The event ends before it starts')
+      for (const id of p.regionIds ?? []) regionOn(ctx, p.worldId, id)
+      const id = newId()
+      const commands: Command[] = []
+      let laneId: string | null = null
+      if (p.lane) {
+        const lane = view.timeline.lanes.find((l) => l.name.toLowerCase() === p.lane!.toLowerCase())
+        laneId = lane?.id ?? newId()
+        if (!lane) commands.push({ type: 'lane.create', payload: { id: laneId, ownerId: p.worldId, name: p.lane } })
+      }
+      commands.push({
+        type: 'event.create',
+        payload: {
+          id,
+          ownerId: p.worldId,
+          title: p.title,
+          start: start.t,
+          end,
+          precision: p.precision ?? start.precision,
+          laneId,
+          ...(p.color && { color: p.color }),
+          ...(p.notes && { notes: textToHtml(p.notes) }),
+          ...(p.tags && { tags: p.tags }),
+          locations: [...(p.regionIds ?? []).map((regionId) => ({ kind: 'region' as const, regionId })), ...(p.places ?? []).map((pl) => ({ kind: 'point' as const, ...pl }))]
+        }
+      })
+      return write(ctx, commands, `Added the event “${p.title}” (${m.date(p.worldId, start.t, p.precision ?? start.precision)})`, { eventId: id })
+    }
+  }),
+  operation({
+    name: 'update_event',
+    title: 'Edit an event',
+    description: 'Changes an event’s title, dates, tags or notes (notes replace what’s there; use update_note to add to them).',
+    input: z.object({ eventId: z.string(), title: z.string().min(1).max(200).optional(), start: When.optional(), end: z.union([When, z.null()]).optional(), tags: Tags.optional(), notes: Notes.optional() }),
+    route: { method: 'POST', path: '/events/:eventId' },
+    write: true,
+    run: (ctx, p) => {
+      const m = ctx.models
+      const e = eventOf(ctx, p.eventId)
+      const start = p.start === undefined ? undefined : m.parse(e.ownerId, p.start)
+      const patch = {
+        ...(p.title && { title: p.title }),
+        ...(start && { start: start.t, precision: start.precision }),
+        ...(p.end !== undefined && { end: p.end === null ? null : m.when(e.ownerId, p.end) }),
+        ...(p.tags && { tags: p.tags }),
+        ...(p.notes !== undefined && { notes: textToHtml(p.notes) })
+      }
+      return write(ctx, [{ type: 'event.update', payload: { id: e.id, patch } }], `Edited the event “${p.title ?? e.title}”`)
+    }
+  }),
+  operation({
+    name: 'link_events',
+    title: 'Link two events',
+    description: 'Says how two events on a world relate: one causes, enables, prevents or precedes the other, or they’re related.',
+    input: z.object({ fromId: z.string(), toId: z.string(), type: z.enum(LINK_TYPES), note: z.string().optional() }),
+    route: { method: 'POST', path: '/event-links' },
+    write: true,
+    run: (ctx, p) => {
+      const [a, b] = [eventOf(ctx, p.fromId), eventOf(ctx, p.toId)]
+      const id = newId()
+      return write(ctx, [{ type: 'link.create', payload: { id, fromId: a.id, toId: b.id, type: p.type, ...(p.note && { note: p.note }) } }], `“${a.title}” ${p.type} “${b.title}”`, { linkId: id })
+    }
+  }),
+  operation({
+    name: 'group_events',
+    title: 'Group events',
+    description: 'Gathers events of one world into a named group ("The Great War"); its span is theirs.',
+    input: z.object({ title: z.string().min(1).max(200), eventIds: z.array(z.string()).min(1) }),
+    route: { method: 'POST', path: '/event-groups' },
+    write: true,
+    run: (ctx, p) => {
+      const events = p.eventIds.map((id) => eventOf(ctx, id))
+      const id = newId()
+      return write(ctx, [{ type: 'group.create', payload: { id, ownerId: events[0]!.ownerId, title: p.title, eventIds: p.eventIds } }], `Grouped ${events.length} events as “${p.title}”`, { groupId: id })
+    }
+  }),
+  operation({
+    name: 'add_event_effect',
+    title: 'Give an event an effect',
+    description:
+      'What an event does to structures at its start: build, damage or repair them (by condition points 0–100), destroy them, start or stop their maintenance, or rename or rebuild them. Targets: listed structures, everything in a region, or everything within km of the event’s place.',
+    input: z.object({
+      eventId: z.string(),
+      type: z.enum(EFFECT_TYPES),
+      structureIds: z.array(z.string()).optional(),
+      regionId: z.string().optional(),
+      radiusKm: z.number().positive().optional(),
+      falloff: z.boolean().optional().describe('With radiusKm: weaker toward the edge'),
+      amount: z.number().min(0).max(100).optional(),
+      maintained: z.boolean().optional().describe('set_maintenance: maintained (true) or left to weather (false)'),
+      rename: z.string().min(1).max(200).optional().describe('modify: the new name'),
+      blueprint: z.string().optional().describe('modify: the new blueprint, by name or id'),
+      onlyTags: Tags.optional(),
+      onlyMaterials: z.array(z.enum(MATERIALS)).optional()
+    }),
+    route: { method: 'POST', path: '/events/:eventId/effects' },
+    write: true,
+    run: (ctx, p) => {
+      const e = eventOf(ctx, p.eventId)
+      const target = p.structureIds
+        ? { kind: 'structures' as const, ids: p.structureIds }
+        : p.regionId
+          ? { kind: 'region' as const, regionId: regionOn(ctx, e.ownerId, p.regionId).id }
+          : p.radiusKm
+            ? { kind: 'radius' as const, km: p.radiusKm, falloff: p.falloff ?? true }
+            : undefined
+      if (!target) throw new ApiError(400, 'Say what it reaches: structureIds, a regionId, or a radiusKm around the event')
+      const id = newId()
+      return write(
+        ctx,
+        [
+          {
+            type: 'effect.create',
+            payload: {
+              id,
+              eventId: e.id,
+              type: p.type,
+              target,
+              filter: { tags: p.onlyTags ?? [], materials: p.onlyMaterials ?? [] },
+              ...(p.amount !== undefined && { amount: p.amount }),
+              ...(p.maintained !== undefined && { maintained: p.maintained }),
+              ...(p.rename && { rename: p.rename }),
+              ...(p.blueprint && { blueprintId: blueprintId(ctx, p.blueprint) })
+            }
+          }
+        ],
+        `“${e.title}” now has a ${p.type.replace('_', ' ')} effect`,
+        { effectId: id }
+      )
+    }
+  }),
+  operation({
+    name: 'create_structure',
+    title: 'Place a structure',
+    description: 'Builds a structure on a world from a blueprint (list_blueprints): where (a place, or the middle of a region), when it was built, and whether it’s maintained (castles usually are; standing stones weather).',
+    input: z.object({
+      worldId: z.string(),
+      name: z.string().min(1).max(200),
+      blueprint: z.string().describe('A blueprint’s name or id'),
+      builtAt: When,
+      place: Place.optional(),
+      regionId: z.string().optional(),
+      maintained: z.boolean().optional(),
+      neverDecays: z.boolean().optional(),
+      scale: z.number().positive().max(20).optional(),
+      notes: Notes.optional(),
+      tags: Tags.optional()
+    }),
+    route: { method: 'POST', path: '/worlds/:worldId/structures' },
+    write: true,
+    run: (ctx, p) => {
+      const m = ctx.models
+      m.world(p.worldId)
+      const at = placeOf(ctx, p.worldId, p.place, p.regionId)
+      const id = newId()
+      const builtAt = m.when(p.worldId, p.builtAt)
+      return write(
+        ctx,
+        [
+          {
+            type: 'structure.create',
+            payload: {
+              id,
+              ownerId: p.worldId,
+              name: p.name,
+              blueprintId: blueprintId(ctx, p.blueprint),
+              lat: at.lat,
+              lon: at.lon,
+              builtAt,
+              ...(p.maintained !== undefined && { maintained: p.maintained }),
+              ...(p.neverDecays !== undefined && { neverDecays: p.neverDecays }),
+              ...(p.scale && { scale: p.scale }),
+              ...(p.notes && { notes: textToHtml(p.notes) }),
+              ...(p.tags && { tags: p.tags })
+            }
+          }
+        ],
+        `Built ${p.name} (${m.date(p.worldId, builtAt, 'year')})`,
+        { structureId: id }
+      )
+    }
+  }),
+  operation({
+    name: 'set_maintenance',
+    title: 'Maintain a structure, or stop',
+    description: 'From a moment on, a structure is maintained (kept in repair) or left to weather; optionally because of an event.',
+    input: z.object({ structureId: z.string(), at: When, maintained: z.boolean(), causeEventId: z.string().optional() }),
+    route: { method: 'POST', path: '/structures/:structureId/maintenance' },
+    write: true,
+    run: (ctx, p) => {
+      const s = ctx.models.data().timeline.structures.find((x) => x.id === p.structureId)
+      if (!s) throw notFound('structure', p.structureId)
+      const at = ctx.models.when(s.ownerId, p.at)
+      return write(
+        ctx,
+        [{ type: 'maintenance.set', payload: { structureId: s.id, at, maintained: p.maintained, ...(p.causeEventId && { causeEventId: eventOf(ctx, p.causeEventId).id }) } }],
+        `${s.name} is ${p.maintained ? 'maintained' : 'left to weather'} from ${ctx.models.date(s.ownerId, at, 'year')}`
+      )
+    }
+  }),
+  operation({
+    name: 'create_character',
+    title: 'Create a character',
+    description: 'Adds a person to a world: born (and died) when, born where (a place or a region’s middle), with notes and tags.',
+    input: z.object({ worldId: z.string(), name: z.string().min(1).max(200), born: When, died: When.optional(), place: Place.optional(), regionId: z.string().optional(), notes: Notes.optional(), tags: Tags.optional() }),
+    route: { method: 'POST', path: '/worlds/:worldId/characters' },
+    write: true,
+    run: (ctx, p) => {
+      const m = ctx.models
+      m.world(p.worldId)
+      const born = m.when(p.worldId, p.born)
+      const at = placeOf(ctx, p.worldId, p.place, p.regionId)
+      const id = newId()
+      return write(
+        ctx,
+        [
+          {
+            type: 'character.create',
+            payload: {
+              id,
+              ownerId: p.worldId,
+              name: p.name,
+              born,
+              died: p.died === undefined ? null : m.when(p.worldId, p.died),
+              stops: [{ at: born, lat: at.lat, lon: at.lon, travel: 0, eventId: null }],
+              ...(p.notes && { notes: textToHtml(p.notes) }),
+              ...(p.tags && { tags: p.tags })
+            }
+          }
+        ],
+        `Added the character ${p.name}`,
+        { characterId: id }
+      )
+    }
+  }),
+  operation({
+    name: 'create_region',
+    title: 'Draw a region',
+    description: 'Adds a named region (a country, a forest, a sea) to a world, as an outline of at least three points.',
+    input: z.object({ worldId: z.string(), name: z.string().min(1).max(200), points: z.array(Place).min(3), notes: Notes.optional() }),
+    route: { method: 'POST', path: '/worlds/:worldId/regions' },
+    write: true,
+    run: (ctx, p) => {
+      ctx.models.world(p.worldId)
+      const id = newId()
+      return write(ctx, [{ type: 'region.create', payload: { id, worldId: p.worldId, name: p.name, points: p.points, ...(p.notes && { notes: textToHtml(p.notes) }) } }], `Drew the region ${p.name}`, {
+        regionId: id
+      })
+    }
+  }),
+  operation({
+    name: 'update_note',
+    title: 'Write notes',
+    description: 'Replaces or adds to the notes of anything that has them: a world or other node, a region, an event, a structure, a character, a species, a theme or an event group.',
+    input: z.object({ id: z.string(), text: Notes, mode: z.enum(['replace', 'append']).optional() }),
+    route: { method: 'POST', path: '/notes/:id' },
+    write: true,
+    run: (ctx, p) => {
+      const target = notesTarget(ctx, p.id)
+      const notes = (p.mode === 'append' ? target.notes : '') + textToHtml(p.text)
+      return write(ctx, [{ type: target.type, payload: { id: p.id, patch: { notes } } } as Command], `${p.mode === 'append' ? 'Added to' : 'Wrote'} the notes of ${target.name}`)
+    }
+  }),
+  operation({
+    name: 'create_species',
+    title: 'Create a species',
+    description: 'Adds a species to a world’s life: flora, fauna or fungi, its diet, the biomes it lives in (by name: Tundra, Temperate forest, Desert…), and what it eats (other species on the world).',
+    input: z.object({
+      worldId: z.string(),
+      name: z.string().min(1).max(200),
+      kind: z.enum(SPECIES_KINDS),
+      diet: z.enum(DIETS),
+      biomes: z.array(z.union([z.string(), z.number()])).optional(),
+      eats: z.array(z.string()).optional().describe('Ids of species it eats'),
+      notes: Notes.optional(),
+      tags: Tags.optional()
+    }),
+    route: { method: 'POST', path: '/worlds/:worldId/species' },
+    write: true,
+    run: (ctx, p) => {
+      const view = ctx.models.world(p.worldId)
+      let biomes: number[]
+      try {
+        biomes = biomeIds(p.biomes ?? [])
+      } catch (err) {
+        throw new ApiError(400, (err as Error).message)
+      }
+      for (const prey of p.eats ?? []) if (!view.timeline.lifeforms.some((s) => s.id === prey)) throw notFound('species on that world', prey)
+      const id = newId()
+      return write(
+        ctx,
+        [
+          { type: 'species.create', payload: { id, ownerId: p.worldId, name: p.name, kind: p.kind, diet: p.diet, biomes, ...(p.notes && { notes: textToHtml(p.notes) }), ...(p.tags && { tags: p.tags }) } },
+          ...(p.eats ?? []).map((prey): Command => ({ type: 'ecolink.create', payload: { fromId: id, toId: prey, type: 'eats' } }))
+        ],
+        `Added the species ${p.name}`,
+        { speciesId: id }
+      )
+    }
+  }),
+  operation({
+    name: 'link_species',
+    title: 'Link two species',
+    description: 'A food-web link on a world: one species eats, pollinates, lives in symbiosis with or competes with another.',
+    input: z.object({ fromId: z.string(), toId: z.string(), type: z.enum(ECO_LINK_TYPES) }),
+    route: { method: 'POST', path: '/species-links' },
+    write: true,
+    run: (ctx, p) => {
+      const all = ctx.models.data().timeline.lifeforms
+      const [a, b] = [p.fromId, p.toId].map((id) => all.find((s) => s.id === id) ?? (() => { throw notFound('species', id) })())
+      const id = newId()
+      return write(ctx, [{ type: 'ecolink.create', payload: { id, fromId: a!.id, toId: b!.id, type: p.type } }], `${a!.name} ${p.type} ${b!.name}`, { linkId: id })
+    }
+  }),
+  operation({
+    name: 'create_theme',
+    title: 'Create a theme',
+    description: `Adds a theme (the look and tone of an age) to the project’s library, from a preset (${Object.keys(THEME_PRESETS).join(', ')}) or from scratch: palette, lighting, haze, type, mood words, a prose style guide for writing about it, ambience.`,
+    input: z.object({
+      name: z.string().min(1).max(200),
+      preset: z.enum(Object.keys(THEME_PRESETS) as [string, ...string[]]).optional(),
+      palette: z.object({ sky: HexColor, water: HexColor, land: HexColor, accent: HexColor }).optional(),
+      lighting: z.enum(LIGHTING_PRESETS).optional(),
+      atmosphere: z.number().min(0).max(1).optional().describe('How hazy the air is, 0–1'),
+      typography: z.enum(TYPOGRAPHY).optional(),
+      mood: Tags.optional(),
+      style: z.string().max(4000).optional().describe('How to write about this age: voice, tense, words to use and avoid'),
+      ambience: Tags.optional(),
+      notes: Notes.optional()
+    }),
+    route: { method: 'POST', path: '/themes' },
+    write: true,
+    run: (ctx, { notes, ...p }) => {
+      const id = newId()
+      return write(ctx, [{ type: 'theme.create', payload: { id, ownerId: ctx.models.project().rootId, ...p, ...(notes && { notes: textToHtml(notes) }) } }], `Added the theme ${p.name}`, { themeId: id })
+    }
+  }),
+  operation({
+    name: 'assign_theme_span',
+    title: 'Put a theme on a world',
+    description: 'Puts a theme on a world (or one of its regions) from one date to another, fading in and out over some years; where spans overlap, the higher priority shows on top.',
+    input: z.object({
+      worldId: z.string(),
+      themeId: z.string(),
+      start: When,
+      end: When,
+      regionId: z.string().optional(),
+      priority: z.number().int().min(-100).max(100).optional(),
+      fadeInYears: z.number().min(0).optional(),
+      fadeOutYears: z.number().min(0).optional()
+    }),
+    route: { method: 'POST', path: '/worlds/:worldId/theme-spans' },
+    write: true,
+    run: (ctx, p) => {
+      const m = ctx.models
+      m.world(p.worldId)
+      const theme = m.data().timeline.themes.find((t) => t.id === p.themeId)
+      if (!theme) throw notFound('theme', p.themeId)
+      if (p.regionId) regionOn(ctx, p.worldId, p.regionId)
+      const [start, end] = [m.when(p.worldId, p.start), m.when(p.worldId, p.end)]
+      const cal = m.calendar(p.worldId)
+      const year = cal.months.reduce((n, x) => n + x.days, 0) * cal.secondsPerDay
+      const id = newId()
+      return write(
+        ctx,
+        [
+          {
+            type: 'themeSpan.create',
+            payload: {
+              id,
+              ownerId: p.worldId,
+              themeId: theme.id,
+              start,
+              end,
+              regionId: p.regionId ?? null,
+              priority: p.priority ?? 0,
+              blendIn: (p.fadeInYears ?? 0) * year,
+              blendOut: (p.fadeOutYears ?? 0) * year
+            }
+          }
+        ],
+        `${theme.name} from ${m.date(p.worldId, start, 'year')} to ${m.date(p.worldId, end, 'year')}`,
+        { themeSpanId: id }
+      )
+    }
+  }),
+  operation({
+    name: 'create_star_system',
+    title: 'Create a star system',
+    description: 'Adds a star system to a galaxy, optionally with its star’s mass (in Suns; brightness follows).',
+    input: z.object({ galaxyId: z.string(), name: z.string().min(1).max(200), massSun: z.number().min(0.08).max(100).optional() }),
+    route: { method: 'POST', path: '/star-systems' },
+    write: true,
+    run: (ctx, p) => {
+      if (ctx.models.node(p.galaxyId).kind !== 'galaxy') throw new ApiError(400, 'A star system goes in a galaxy')
+      const id = newId()
+      const commands: Command[] = [{ type: 'node.create', payload: { id, parentId: p.galaxyId, kind: 'star_system', name: p.name } }]
+      if (p.massSun) commands.push({ type: 'star.set', payload: { systemId: id, star: { massSun: p.massSun, luminositySun: luminosityOf(p.massSun) } } })
+      return write(ctx, commands, `Added the star system ${p.name}`, { systemId: id })
+    }
+  }),
+  operation({
+    name: 'create_world',
+    title: 'Create a world',
+    description:
+      'Adds a planet to a star system with a world surface to build on, optionally at a distance from its star (AU) and grown from a seed word (any text: the same text grows the same planet). Returns the world’s id.',
+    input: z.object({ systemId: z.string(), name: z.string().min(1).max(200), distanceAu: z.number().positive().max(1000).optional(), seed: z.string().min(1).max(200).optional() }),
+    route: { method: 'POST', path: '/worlds' },
+    write: true,
+    run: (ctx, p) => {
+      if (ctx.models.node(p.systemId).kind !== 'star_system') throw new ApiError(400, 'A world’s planet goes in a star system')
+      const [bodyId, worldId] = [newId(), newId()]
+      const seeded = p.seed ? readSeed(p.seed) : undefined
+      const commands: Command[] = [
+        { type: 'node.create', payload: { id: bodyId, parentId: p.systemId, kind: 'body', name: p.name } },
+        { type: 'node.create', payload: { id: worldId, parentId: bodyId, kind: 'world', name: `${p.name} Surface`, ...(seeded && { seed: seeded.seed }) } }
+      ]
+      if (seeded) commands.push({ type: 'world.update', payload: { id: worldId, patch: { seedText: p.seed!.trim(), radiusKm: seeded.radiusKm, terrain: seeded.terrain } } })
+      if (p.distanceAu) commands.push({ type: 'orbit.set', payload: { bodyId, orbit: { ...EARTH_ORBIT, semiMajorAxisKm: p.distanceAu * AU_KM } } })
+      return write(ctx, commands, `Added the world ${p.name}`, { bodyId, worldId })
+    }
+  }),
+  operation({
+    name: 'run_commands',
+    title: 'Run commands',
+    description:
+      'Runs any of the app’s commands (describe_commands lists them and gives each one’s schema) as one undoable step: for what the other tools don’t cover, such as renaming, moving, editing or deleting things. Times are seconds on the world’s timeline; notes are HTML.',
+    input: z.object({ commands: z.array(z.record(z.string(), z.unknown())).min(1), summary: z.string().min(1).max(300).describe('What these do, in a few words, for the user') }),
+    route: { method: 'POST', path: '/commands' },
+    write: true,
+    run: (ctx, p) => write(ctx, p.commands as unknown as Command[], p.summary)
+  })
+]
