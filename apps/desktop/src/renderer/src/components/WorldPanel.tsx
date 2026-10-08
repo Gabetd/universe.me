@@ -7,7 +7,7 @@ import { RegionHistory } from './RegionHistory'
 import { BlueprintLibrary } from './BlueprintLibrary'
 import { StructurePanel } from './StructurePanel'
 import { CharacterPanel } from './CharacterPanel'
-import { CalendarPanel } from './SkyPanels'
+import { CalendarPanel, ClimatePanel } from './SkyPanels'
 import { WorldGenPanel } from './WorldGenPanel'
 import { EROSION_SPEED, isAlive, stateAt } from '@universe/core'
 import { STAGE_COLORS } from '../world/structureLook'
@@ -36,6 +36,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
       {selectedCharacter && <CharacterPanel key={`${selectedCharacter.id}:${selectedCharacter.updatedAt}`} character={selectedCharacter} />}
 
       <WorldGenPanel world={world} settings={settings} />
+      <ClimatePanel world={world} settings={settings} />
       <CalendarPanel world={world} />
 
       <section className="inspector-section" aria-label="Edits">

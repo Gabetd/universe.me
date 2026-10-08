@@ -34,9 +34,31 @@ export function useCalendar(ownerId: string | undefined): Calendar {
 export function useWorldClimate(worldId: string): WorldClimate | undefined {
   const nodes = useUi((s) => s.nodes)
   const system = useSystem(worldId)
-  return useMemo(() => {
-    const bodyId = bodyOfWorld(nodes, worldId)
-    const body = bodyId ? system?.bodies.get(bodyId) : undefined
-    return body && !body.isDefault ? worldClimate(system!, body.bodyId) : undefined
-  }, [nodes, system, worldId])
+  return useMemo(() => climateOfWorld(nodes, system, worldId), [nodes, system, worldId])
+}
+
+/** A world's climate in its system, once its body's orbit has been set. */
+export function climateOfWorld(nodes: SpatialNode[], system: SystemModel | undefined, worldId: string): WorldClimate | undefined {
+  const bodyId = bodyOfWorld(nodes, worldId)
+  const body = bodyId ? system?.bodies.get(bodyId) : undefined
+  return body && !body.isDefault ? worldClimate(system!, body.bodyId) : undefined
+}
+
+/** Climates for several worlds at once, outside a world's own view (the orbit views' planet textures). */
+export function useWorldClimates(worldIds: string[]): Map<string, WorldClimate | undefined> {
+  const nodes = useUi((s) => s.nodes)
+  const stars = useUi((s) => s.timeline.stars)
+  const orbits = useUi((s) => s.timeline.orbits)
+  const key = worldIds.join()
+  return useMemo(
+    () =>
+      new Map(
+        worldIds.map((id) => {
+          const systemId = systemIdOf(nodes, id)
+          return [id, systemId ? climateOfWorld(nodes, systemModel(nodes, { stars, orbits }, systemId), id) : undefined]
+        })
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` stands for `worldIds`
+    [nodes, stars, orbits, key]
+  )
 }

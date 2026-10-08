@@ -1,7 +1,8 @@
-import { AU_KM, type OrbitFields, type SpatialNode } from '@universe/core'
+import { AU_KM, type OrbitFields, type SpatialNode, type WorldSettings } from '@universe/core'
+import { surfaceTemperature } from '@universe/procgen'
 import { DAY_S, deriveCalendar, luminosityOf, moonsOf, planetOf, worldClimate, type BodyOrbit, type SystemModel } from '@universe/sim'
 import { useUi } from '../store'
-import { useSystem } from '../world/useSky'
+import { useSystem, useWorldClimate } from '../world/useSky'
 import { NumberInput, TextField } from './fields'
 
 /** Inspector for a star system: its star. Without edits it's Sun-like. */
@@ -108,7 +109,7 @@ function Derived({ system, orbit, hasWorld }: { system: SystemModel; orbit: Body
           </dd>
           <dt>Climate</dt>
           <dd>
-            {Math.round(climate.meanTempC)} °C on average, seasons ±{Math.round(climate.seasonalSwingC)} °C {climate.inHabitableZone ? '· habitable zone' : '· outside the habitable zone'}
+            {degrees(climate.meanTempC)} on average, seasons ±{degrees(climate.seasonalSwingC)} {climate.inHabitableZone ? '· habitable zone' : '· outside the habitable zone'}
           </dd>
         </>
       )}
@@ -129,6 +130,9 @@ function Derived({ system, orbit, hasWorld }: { system: SystemModel; orbit: Body
 }
 
 const round = (v: number, digits: number) => Number(v.toFixed(digits))
+
+/** "−12 °C", with a real minus sign. */
+const degrees = (c: number, digits = 0) => `${c.toFixed(digits).replace('-', '−')} °C`
 
 function fieldsOf(o: BodyOrbit): OrbitFields {
   const { semiMajorAxisKm, eccentricity, inclinationDeg, phaseDeg, rotationHours, axialTiltDeg, massEarth, radiusKm, monthNames } = o
@@ -180,6 +184,33 @@ export function CalendarPanel({ world }: { world: SpatialNode }) {
           </ol>
         </>
       )}
+    </section>
+  )
+}
+
+/** A world's climate from its star and orbit: what the automatic biomes follow. */
+export function ClimatePanel({ world, settings }: { world: SpatialNode; settings: WorldSettings }) {
+  const climate = useWorldClimate(world.id)
+  const own = settings.terrain
+  const at = (lat: number) =>
+    Math.round(surfaceTemperature(lat, 0, { ...own, temperature: own.temperature + (climate?.offsetC ?? 0), gradient: climate?.gradient ?? 1 }))
+  return (
+    <section className="inspector-section" aria-label="Climate">
+      <h3>Climate</h3>
+      <p className="muted small">
+        {climate
+          ? `From its star and orbit: ${degrees(climate.meanTempC)} on average (${climate.offsetC >= 0 ? '+' : ''}${degrees(climate.offsetC, 1)} against Earth), seasons ±${degrees(climate.seasonalSwingC)}${climate.inHabitableZone ? '' : ', outside the habitable zone'}.`
+          : 'Earth-like until the orbit of the planet it’s on is set; then its star and distance warm or cool it.'}{' '}
+        Automatic biomes follow it.
+      </p>
+      <dl className="facts-list small" aria-label="Temperature by latitude">
+        <dt>Equator</dt>
+        <dd>{degrees(at(0))}</dd>
+        <dt>45°</dt>
+        <dd>{degrees(at(45))}</dd>
+        <dt>Poles</dt>
+        <dd>{degrees(at(90))}</dd>
+      </dl>
     </section>
   )
 }

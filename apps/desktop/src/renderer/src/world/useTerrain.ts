@@ -3,9 +3,10 @@ import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
 import { TerrainModel, shapeKey, type Vec3 } from '@universe/procgen'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useUi } from '../store'
 import { fetchLayers, generateBase } from './terrainSource'
+import { useWorldClimate } from './useSky'
 
 /** Which cube faces changed since the last render: views refresh only those. */
 export interface TerrainChange {
@@ -54,6 +55,15 @@ export function useTerrain(worldId: string, seed: number, info: WorldInfo | unde
   const modelRef = useRef<TerrainModel>(undefined)
   const bump = useCallback((faces: TerrainChange['faces'], dab?: TerrainChange['dab']) => setChange({ faces, dab }), [])
 
+  // The star and orbit warm or cool the world and change its biomes.
+  const climate = useWorldClimate(worldId)
+  const sky = useMemo(() => climate && { offsetC: climate.offsetC, gradient: climate.gradient }, [climate])
+  const skyKey = sky ? `${sky.offsetC}:${sky.gradient}` : ''
+  const skyRef = useRef(sky)
+  useEffect(() => {
+    skyRef.current = sky
+  }, [sky])
+
   const settings = info?.settings
   const params = settings?.terrain
   // Only shape options regenerate; climate, colors, sea level and radius just recolor.
@@ -66,6 +76,7 @@ export function useTerrain(worldId: string, seed: number, info: WorldInfo | unde
       .then(([base, layers]) => {
         if (cancelled) return
         const m = new TerrainModel(useUi.getState().worlds.find((w) => w.id === worldId)!.settings, base, layers)
+        m.sky = skyRef.current
         revision.current = layers.revision
         modelRef.current = m
         setError(undefined)
@@ -85,6 +96,14 @@ export function useTerrain(worldId: string, seed: number, info: WorldInfo | unde
     m.settings = settings
     bump('all')
   }, [settings, bump])
+
+  useEffect(() => {
+    const m = modelRef.current
+    if (!m || (m.sky ? `${m.sky.offsetC}:${m.sky.gradient}` : '') === skyKey) return
+    m.sky = sky
+    bump('all')
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `skyKey` stands for `sky`
+  }, [skyKey, model, bump])
 
   const reload = useCallback(async () => {
     const m = modelRef.current

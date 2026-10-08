@@ -3,6 +3,7 @@ import { renderEquirect } from '@universe/procgen'
 import { useEffect, useState } from 'react'
 import { useUi } from '../store'
 import { loadTerrain } from '../world/terrainSource'
+import { useWorldClimates } from '../world/useSky'
 
 /** A world's surface as a small equirectangular image, for drawing its planet from orbit. */
 export interface PlanetTexture {
@@ -20,16 +21,21 @@ const TEX_H = 128
  */
 export function usePlanetTextures(worlds: SpatialNode[]): Map<string, PlanetTexture> {
   const infos = useUi((s) => s.worlds)
+  const climates = useWorldClimates(worlds.map((w) => w.id))
   const [textures, setTextures] = useState(() => new Map<string, PlanetTexture>())
   const wanted = worlds.map((w) => [w, infos.find((i) => i.id === w.id)] as const).filter((p): p is [SpatialNode, WorldInfo] => !!p[1])
   // One key per world's current state: a new settings object or terrain revision redraws it.
-  const key = wanted.map(([w, info]) => `${w.id}:${w.seed}:${info.terrainRevision}:${settingsVersion(info)}`).join('|')
+  const climateKey = (id: string) => {
+    const c = climates.get(id)
+    return c ? `${c.offsetC.toFixed(2)}:${c.gradient.toFixed(3)}` : ''
+  }
+  const key = wanted.map(([w, info]) => `${w.id}:${w.seed}:${info.terrainRevision}:${settingsVersion(info)}:${climateKey(w.id)}`).join('|')
 
   useEffect(() => {
     let cancelled = false
     void Promise.all(
       wanted.map(async ([node, info]) => {
-        const model = await loadTerrain(info, node.seed)
+        const model = await loadTerrain(info, node.seed, climates.get(node.id))
         const pixels = new Uint8ClampedArray(TEX_W * TEX_H * 4)
         renderEquirect(model, pixels, TEX_W, TEX_H)
         return [node.id, { pixels, width: TEX_W, height: TEX_H }] as const

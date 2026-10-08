@@ -49,7 +49,8 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await expect(page.getByLabel('Moons and eclipses')).toContainText('Zoom in')
   const ruler = (await page.locator('.tl-ruler').boundingBox())!
   await page.mouse.move(ruler.x + ruler.width / 2, ruler.y + ruler.height / 2)
-  for (let i = 0; i < 8; i++) await page.mouse.wheel(0, -500)
+  // About two and a half years: room for the phases, and always a few eclipses.
+  for (let i = 0; i < 5; i++) await page.mouse.wheel(0, -500)
   await expect(page.locator('.tl-moon.full-moon').first()).toBeAttached()
   await expect(page.locator('.tl-eclipse').first()).toBeAttached()
   await page.screenshot({ path: 'test-results/82-moon-track.png' })
@@ -70,6 +71,18 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await playhead.press('Enter')
   // Zoomed in to days, it's written back with the new month name.
   await expect(playhead).toHaveValue('3 Frostmoon 120')
+
+  // Farther from the star the world is colder: more ice and tundra.
+  await expect(inspector(page).getByLabel('Climate', { exact: true })).toContainText('against Earth')
+  await row(page, 'Terra').click()
+  const distance = inspector(page).getByLabel('Distance (AU)')
+  await distance.fill('1.25')
+  await distance.press('Enter')
+  await row(page, 'Terra Surface').click()
+  await expect(inspector(page).getByLabel('Climate', { exact: true })).toContainText('−')
+  await page.waitForTimeout(1500)
+  await page.screenshot({ path: 'test-results/83-colder-world.png' })
+  await page.getByRole('button', { name: /Undo/ }).click()
 
   // Undoing the rename, the eclipse event and the orbit goes back to the Earth calendar.
   for (let i = 0; i < 3; i++) await page.getByRole('button', { name: /Undo/ }).click()

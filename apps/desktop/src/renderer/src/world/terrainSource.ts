@@ -1,5 +1,5 @@
 import type { TerrainParams, WorldInfo } from '@universe/core'
-import { TerrainModel, shapeKey, type BaseTerrain } from '@universe/procgen'
+import { TerrainModel, shapeKey, type BaseTerrain, type SkyClimate } from '@universe/procgen'
 import type { GenerateRequest } from './terrain.worker'
 import TerrainWorker from './terrain.worker?worker'
 
@@ -38,7 +38,9 @@ export async function fetchLayers(worldId: string) {
 }
 
 /** A world's terrain as it is now, for views that only show it (the system and moon views). */
-export async function loadTerrain(world: WorldInfo, seed: number): Promise<TerrainModel> {
+export async function loadTerrain(world: WorldInfo, seed: number, sky?: SkyClimate): Promise<TerrainModel> {
   const [base, layers] = await Promise.all([generateBase(seed, world.settings.terrain), fetchLayers(world.id)])
-  return new TerrainModel(world.settings, base, layers)
+  const model = new TerrainModel(world.settings, base, layers)
+  model.sky = sky
+  return model
 }

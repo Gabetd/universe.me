@@ -10,10 +10,16 @@ import {
   type TerrainPatch,
   type WorldSettings
 } from '@universe/core'
-import { autoBiome, worldPalette, type Palette } from './biomes'
+import { autoBiome, worldPalette, type Climate, type Palette } from './biomes'
 import { angleBetween, cellDirections, dirToFace, dirToLatLon, faceToDir, toGrid, type Vec3 } from './cubesphere'
 import { clamp } from './math'
 import type { BaseTerrain } from './generate'
+
+/** What a star and orbit do to a world's climate: degrees warmer than Earth, and how strongly it cools toward the poles. */
+export interface SkyClimate {
+  offsetC: number
+  gradient: number
+}
 
 export type BrushTool = 'raise' | 'lower' | 'smooth' | 'flatten' | 'paint' | 'erase'
 
@@ -62,6 +68,9 @@ export class TerrainModel {
   biomeEdits: Uint8Array[]
   private stroke: { brush: Brush; target: number; dirty: Map<number, DirtyRect> } | undefined
   private palette: { for: WorldSettings; colors: Palette } | undefined
+  /** The climate from the world's star and orbit, added to its own settings; undefined keeps it Earth-like. */
+  sky: SkyClimate | undefined
+  private climateFor: { settings: WorldSettings; sky: SkyClimate | undefined; climate: Climate } | undefined
 
   constructor(
     public settings: WorldSettings,
@@ -100,7 +109,17 @@ export class TerrainModel {
   biome(face: number, cell: number): number {
     const painted = this.biomeEdits[face]![cell]!
     if (painted) return painted
-    return autoBiome(cellLatitudes()[face]![cell]!, this.height(face, cell) - this.settings.seaLevel, this.base.moisture[face]![cell]!, this.settings.terrain)
+    return autoBiome(cellLatitudes()[face]![cell]!, this.height(face, cell) - this.settings.seaLevel, this.base.moisture[face]![cell]!, this.climate)
+  }
+
+  /** The climate biomes follow: the world's own settings shifted by its star and orbit. */
+  get climate(): Climate {
+    // Asked for every cell when recolouring, so it's rebuilt only when the settings or the sky change.
+    if (this.climateFor?.settings !== this.settings || this.climateFor.sky !== this.sky) {
+      const t = this.settings.terrain
+      this.climateFor = { settings: this.settings, sky: this.sky, climate: this.sky ? { ...t, temperature: t.temperature + this.sky.offsetC, gradient: this.sky.gradient } : t }
+    }
+    return this.climateFor.climate
   }
 
   /** Nearest cell to a direction. */

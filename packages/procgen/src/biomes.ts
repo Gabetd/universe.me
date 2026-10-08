@@ -58,18 +58,26 @@ export interface Climate {
   aridity: number
   /** 0 no automatic beaches, 1 wide sandy coasts. */
   beaches: number
+  /** How strongly it cools toward the poles (1 = Earth); the star system's axial tilt sets it (packages/sim). */
+  gradient?: number
 }
 
 export const EARTH_CLIMATE: Climate = { temperature: 0, aridity: 0.5, beaches: 0 }
 
+/** Average temperature (°C) at a latitude and height: warm at the equator, colder toward the poles and up mountains. */
+export function surfaceTemperature(latDeg: number, elevation: number, climate: Climate = EARTH_CLIMATE): number {
+  return climate.temperature + 30 - 55 * (climate.gradient ?? 1) * Math.pow(Math.abs(latDeg) / 90, 1.6) - (6.5 * Math.max(0, elevation)) / 1000
+}
+
 /**
- * Placeholder climate until M4: temperature from latitude and altitude,
- * moisture from noise plus wet/dry latitude bands (wet equator, dry 30°, wet 60°).
- * Beaches are a band just above sea level, up to 40 m high at `beaches` = 1.
+ * Biomes from climate (a Whittaker-style chart): temperature from latitude
+ * and altitude, moisture from noise plus wet/dry latitude bands (wet
+ * equator, dry 30°, wet 60°). Beaches are a band just above sea level, up to
+ * 40 m high at `beaches` = 1.
  */
 export function autoBiome(latDeg: number, elevation: number, moisture: number, climate: Climate = EARTH_CLIMATE): number {
   const absLat = Math.abs(latDeg)
-  const temperature = climate.temperature + 30 - 55 * Math.pow(absLat / 90, 1.6) - (6.5 * Math.max(0, elevation)) / 1000
+  const temperature = surfaceTemperature(latDeg, elevation, climate)
   if (elevation > 2800) return temperature < -4 ? BIOME.ice : BIOME.rock
   if (temperature < -8) return BIOME.ice
   if (temperature < -1) return BIOME.tundra
