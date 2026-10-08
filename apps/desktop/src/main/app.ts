@@ -317,9 +317,15 @@ function registerIpc(): void {
   handle('acceptProposal', (id) => wrap(() => changed(session.accept(id), 'An AI suggestion accepted in the app')))
   handle('rejectProposal', (id) => wrap(() => session.reject(id)))
   handle('exportBible', (worldId) => wrap(() => exportBible(worldId)))
-  handle('apiStatus', () => api.status())
+  // Tailscale is looked at again each time Connect AI opens; what it finds comes as a status event.
+  handle('apiStatus', () => {
+    void api.syncPhone()
+    return api.status()
+  })
   handle('setApi', (patch) => api.set(patch))
   handle('newApiToken', () => api.newToken())
+  handle('denySignIn', (id) => api.denySignIn(id))
+  handle('removeConnection', (id) => api.removeConnection(id))
   handle('updateStatus', () => updater.current())
   handle('installUpdate', () => updater.install())
   handle('dismissUpdate', () => updater.dismiss())

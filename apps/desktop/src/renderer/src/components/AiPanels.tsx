@@ -20,7 +20,8 @@ function useApiStatus(): [ApiStatus | undefined, (patch: ApiSettingsPatch) => vo
     return window.universe.onApi(setStatus)
   }, [])
   const set = (patch: ApiSettingsPatch) => {
-    setStatus((s) => s && { ...s, ...patch })
+    const { phone, ...rest } = patch
+    setStatus((s) => s && { ...s, ...rest, phone: phone === undefined ? s.phone : { ...s.phone, on: phone } })
     void window.universe.setApi(patch).then(setStatus)
   }
   return [status, set]
@@ -50,6 +51,12 @@ export function ConnectAiButton() {
         <span className={`connect-dot${on ? ' on' : ''}`} aria-hidden /> Connect AI
       </button>
       {open && status && <ConnectPanel status={status} set={set} onClose={() => setOpen(false)} />}
+      {/* A client signing in needs its code even with the panel closed. */}
+      {!open && !!status?.phone.signIns.length && (
+        <div className="sign-in-popover">
+          <SignInCodes signIns={status.phone.signIns} />
+        </div>
+      )}
     </div>
   )
 }
@@ -101,8 +108,85 @@ function ConnectPanel({ status, set, onClose }: { status: ApiStatus; set(patch: 
             </button>
           </>
         )}
+        <PhoneAccess status={status} set={set} />
       </div>
     </section>
+  )
+}
+
+/** What phone access is doing, in a line. */
+function phoneLine({ enabled, phone }: ApiStatus): string {
+  const ts = phone.tailscale
+  if (!enabled) return 'Turn on “Let AI connect” first.'
+  if (ts.kind === 'missing') return 'Needs Tailscale: install it from tailscale.com and sign in, then open this panel again.'
+  if (ts.kind === 'stopped') return `${ts.detail}. Start it and sign in, then open this panel again.`
+  if (!phone.on) return `Off. Tailscale is ready on ${ts.host}.`
+  if (phone.url) return `On, through Tailscale Funnel at https://${ts.host}.`
+  return phone.error ? 'Funnel isn’t on yet:' : 'Turning on Funnel…'
+}
+
+/**
+ * Phone access (PLAN.md §6.4): Claude on a phone, or claude.ai anywhere,
+ * reaching this app through Tailscale Funnel; a client signs in with a code
+ * shown here, and can be disconnected here.
+ */
+function PhoneAccess({ status, set }: { status: ApiStatus; set(patch: ApiSettingsPatch): void }) {
+  const { phone } = status
+  const day = (ms: number) => new Date(ms).toLocaleDateString()
+  return (
+    <section className="phone-access" aria-label="From your phone">
+      <h3>From your phone</h3>
+      <p className="small muted">
+        Claude on your phone reaches this app through Tailscale Funnel, a public address for this computer that forwards here. A client signs in with a code shown here, then can do what Claude Code can.
+      </p>
+      <label className="checkbox">
+        <input type="checkbox" checked={phone.on} disabled={!status.enabled} onChange={(e) => set({ phone: e.target.checked })} /> Let Claude on my phone connect
+      </label>
+      <p className="small" aria-label="Phone access status">
+        {phoneLine(status)}
+      </p>
+      {phone.error && (
+        <p className="small phone-error" role="alert">
+          {phone.error}
+        </p>
+      )}
+      {phone.url && <CopyField label="Add it on claude.ai as a custom connector (Settings → Connectors), then use it from the Claude app" value={phone.url} />}
+      {phone.signIns.length > 0 && <SignInCodes signIns={phone.signIns} />}
+      {phone.connections.length > 0 && (
+        <div className="field">
+          <span>Connected</span>
+          <ul className="connections" aria-label="Connected clients">
+            {phone.connections.map((c) => (
+              <li key={c.id}>
+                <span>
+                  {c.name} <span className="muted">· added {day(c.created)} · last used {day(c.lastUsed)}</span>
+                </span>
+                <button className="link small" onClick={() => void window.universe.removeConnection(c.id)}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  )
+}
+
+/** The code each client signing in needs typed on its page, to let it in (or turn it down). */
+function SignInCodes({ signIns }: { signIns: ApiStatus['phone']['signIns'] }) {
+  return (
+    <div className="sign-in-codes" role="status" aria-label="Sign-in codes">
+      {signIns.map((s) => (
+        <div key={s.id} className="sign-in-code">
+          <span className="small">🔑 {s.client} is signing in. To let it, type this code on its page:</span>
+          <code aria-label={`Code for ${s.client}`}>{s.code}</code>
+          <button className="link small" onClick={() => void window.universe.denySignIn(s.id)}>
+            Turn it down
+          </button>
+        </div>
+      ))}
+    </div>
   )
 }
 

@@ -1964,6 +1964,62 @@ input[type='color'] {
   gap: 10px;
   padding: 12px;
 }
+.phone-access {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.phone-access h3 {
+  margin: 0;
+  font-size: 13px;
+}
+.phone-error {
+  color: var(--danger);
+  user-select: text;
+  word-break: break-word;
+}
+.connections {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.connections li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.sign-in-codes {
+  display: grid;
+  gap: 8px;
+}
+.sign-in-code {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+}
+.sign-in-code code {
+  font: 600 22px/1.2 ui-monospace, Consolas, Menlo, monospace;
+  letter-spacing: 0.12em;
+  user-select: all;
+}
+.sign-in-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  width: 320px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
 .copy-field {
   font-family: ui-monospace, Consolas, Menlo, monospace;
   font-size: 11px;

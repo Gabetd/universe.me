@@ -55,10 +55,33 @@ export interface ApiStatus {
   token: string
   /** How to add it to Claude Code: over HTTP to the app, and over stdio (which also works while the app is closed). */
   connect: { http: string; stdio: string } | null
+  phone: PhoneStatus
+}
+
+/** Tailscale on this computer, as phone access needs it: not there, there but not running or signed in, or ready (with where Funnel forwards, if anywhere). */
+export type TailscaleState = { kind: 'missing' } | { kind: 'stopped'; detail: string } | { kind: 'ready'; host: string; funnelPort: number | null }
+
+/** Phone access (PLAN.md §6.4): Claude on a phone, through a claude.ai custom connector, Tailscale Funnel and OAuth. */
+export interface PhoneStatus {
+  on: boolean
+  tailscale: TailscaleState
+  /** The connector's address to add on claude.ai, while phone access works. */
+  url: string | null
+  /** What's in the way, if it should work. */
+  error?: string
+  /** Clients signing in now, each with the code to type on its sign-in page. */
+  signIns: { id: string; client: string; code: string; expires: number }[]
+  /** Clients that have signed in. */
+  connections: { id: string; name: string; created: number; lastUsed: number }[]
 }
 
 /** What the user can change about the API. */
-export type ApiSettingsPatch = Partial<Pick<ApiStatus, 'enabled' | 'review'>>
+export interface ApiSettingsPatch {
+  enabled?: boolean
+  review?: boolean
+  /** Phone access: Funnel to the API's port, and the public address accepted. */
+  phone?: boolean
+}
 
 /** A change an AI client made, for the app to show. */
 export interface AiChange {
@@ -105,6 +128,10 @@ export interface UniverseApi {
   setApi(patch: ApiSettingsPatch): Promise<ApiStatus>
   /** A new token: clients with the old one stop working. */
   newApiToken(): Promise<ApiStatus>
+  /** Turns down a client signing in (its page then says so). */
+  denySignIn(id: string): Promise<ApiStatus>
+  /** Disconnects a client that signed in: its tokens stop working at once. */
+  removeConnection(id: string): Promise<ApiStatus>
   onApi(listener: (status: ApiStatus) => void): () => void
   onAiChange(listener: (change: AiChange) => void): () => void
   onState(listener: (state: AppState) => void): () => void
@@ -135,6 +162,8 @@ export const INVOKE: Record<InvokeMethod, string> = {
   apiStatus: 'api:status',
   setApi: 'api:set',
   newApiToken: 'api:new-token',
+  denySignIn: 'api:deny-sign-in',
+  removeConnection: 'api:remove-connection',
   getTerrain: 'world:terrain',
   importModel: 'asset:import-model',
   getAsset: 'asset:get',

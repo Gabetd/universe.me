@@ -109,6 +109,9 @@ export async function launch(env: (dir: string) => Record<string, string> = () =
       // The local API on any free port, found through this test's own file: never a real Universe's.
       UNIVERSE_API_PORT: '0',
       UNIVERSE_API_DISCOVERY: join(dir, 'api.json'),
+      // A stand-in for Tailscale, never the computer's own.
+      UNIVERSE_TAILSCALE: join(__dirname, 'fake-tailscale.mjs'),
+      FAKE_TAILSCALE_STATE: join(dir, 'tailscale.json'),
       UNIVERSE_E2E_SEED: String(seedOf(base.info().title)),
       ...env(dir)
     },
