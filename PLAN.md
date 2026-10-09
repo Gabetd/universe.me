@@ -148,6 +148,19 @@ Validation warns (but doesn't block) when an effect starts before its cause.
 - When the timeline playhead moves, the renderer blends between themes (palettes and lighting are interpolated over the blend window).
 - Themes are also exposed to the AI, so generated text matches the tone of that era.
 
+### 4.6 Power systems
+
+How the world's powers work, age by age: magic, divine gifts, technology and energy, political power, or anything else. A world holds any number of systems.
+
+| Entity | Key fields |
+|---|---|
+| `PowerSystem` | `ownerId` (the world), name, `template` (magic, divine, psionic, technology, political, other), color, summary, `aspects` (the questions it answers, from its template and editable: Source, Rules, Costs & limits, Who can use it…), `values` (what's true in every age, per aspect), notes |
+| `PowerAge` | `systemId`, `eraId` (an age is one of the world's eras), `values` (what's different in that age, per aspect; an aspect left empty keeps the always-true answer), `strength` (0–1 or unset: how strong or widespread it is then), summary |
+
+- The Powers page lists the systems; one shows its aspects for **Always** and for each era in time order, with the era under the playhead marked, and how its strength rises and falls across the ages.
+- Deleting an era takes its age entries with it (undo brings both back). Era changes don't move anything else: an entry follows its era.
+- The API reads a system at any moment (the always-true answers with that age's on top), and it goes into the world bible and `write_scene`.
+
 ### 4.7 Structure condition: events, maintenance, and erosion
 
 Every structure has a **condition** from 100 (pristine) to 0 (gone). Condition
@@ -323,6 +336,14 @@ claude mcp add universe -- /Applications/Universe.app/Contents/MacOS/Universe --
 - Optional **"review mode"**: AI writes land as *proposals* that the user accepts or rejects in the app.
 - A toast notification shows in the app whenever an external client changes something.
 
+### 6.5 Inconsistency detector (with a connected AI)
+
+The app's own checks (`check_consistency`) catch mechanical mistakes: effects before causes, loops, structures used before they're built. What only a reader can catch — a character in two places at once, magic used in an age where it's gone, a festival in a season the calendar doesn't have, a region's history that contradicts its notes — the connected Claude finds.
+- `review_consistency` (an MCP prompt, also a button that copies it): asks Claude to read a world (snapshot, timeline, bible, power systems) and report each problem with `report_inconsistency`.
+- `report_inconsistency(worldId, severity, title, explanation, refs[], suggestion?)` stores a **finding**: a record in the project, so it's undoable, kept with the world and seen by every device. `list_inconsistencies` lets Claude skip what it reported before.
+- In the app: a **Warnings** panel lists the app's own warnings and Claude's findings together, each linking to what it's about (opening it, or its right-click menu); a finding can be resolved (kept, marked fixed) or dismissed (not a problem; Claude is told not to raise it again). Elements with an open finding show an amber mark in the tree, the timeline and the inspector.
+- When Claude changes something, a finding about it isn't cleared on its own: Claude (or the user) resolves it.
+
 ### 6.4 From the phone (remote MCP)
 Claude on a phone can't reach `127.0.0.1`: a claude.ai custom connector (added once on claude.ai, then on every device signed in to it, the phone app included) is called from Anthropic's servers, so it needs a public HTTPS address with a real certificate, and OAuth instead of a pasted token.
 - **Tunnel: Tailscale Funnel.** The app keeps listening on 127.0.0.1 only. The user installs Tailscale and signs in; Connect AI finds it, turns on Funnel for the API's port (`tailscale funnel --bg <port>`, or the user runs it) and shows the public address, `https://<computer>.<tailnet>.ts.net/mcp`, to add as a custom connector on claude.ai (Settings → Connectors). Funnel forwards to the app with the public host in `Host`; the app accepts that host and no other. Phone access can be turned off in the app (it then turns away every request for the public host) and Funnel turned off from the same place.
@@ -345,6 +366,23 @@ Keep it simple and deterministic:
 
 ---
 
+### 6.6 The phone app (a web app from the computer)
+
+The app the computer runs, in the phone's browser (installable to the home screen), through Tailscale. The computer has to be on.
+- **Served by the app**: the renderer's own build at `/app/` on the API server, with a web bridge in place of Electron's: the same `UniverseApi` methods as HTTP calls and its events as a server-sent stream. Nothing loads from elsewhere; the page's Content-Security-Policy allows only itself.
+- **Tailnet only**: `tailscale serve` (not Funnel) on its own port, so only devices signed in to the user's tailnet can reach it; requests must carry Tailscale's `Tailscale-User-Login` of the tailnet's owner. Funnel stays for claude.ai alone.
+- **Signed in once per device** with a code the computer shows (as for Claude), then a session cookie (HttpOnly, Secure, SameSite=Strict, 90 days unused); each phone is listed with the connected clients and can be removed.
+- **Phone layout**: below 700 px the workspace becomes tabs (Tree, View, Details, Timeline) with touch controls: drag to turn the globe and pan the map, pinch to zoom, long-press for the right-click menu.
+- One project at a time: the one open on the computer. Edits go through the computer's command bus, so undo and history are shared.
+
+### 6.7 Sync between devices (over Tailscale)
+
+The same universe on several computers (and through them, phones), with no cloud: devices on the user's tailnet sync with each other directly.
+- **Pairing**: Sync in the app finds other Universe apps on the tailnet (`tailscale status` peers answering on the sync port) and pairs one with a code shown on the other. A project is shared by choosing it on one device; the other gets a copy.
+- **What syncs**: rows, not commands. Every row (nodes, records, regions, terrain tiles, assets) carries a hybrid logical clock stamp and the device that wrote it; deletes are soft, so they sync too. Each side sends the rows changed since the other's last-seen clock; the later stamp wins, per row (per field for nodes and world settings). Undo stays per device and works on what it sees.
+- **When**: while both are online, changes go across within seconds; otherwise the next time they meet. The status bar says when a project last synced and with what.
+- **Conflicts** that matter (two devices rewrite the same event's text) keep the losing version as a note in history, so nothing is lost.
+
 ## 8. Persistence
 
 - One project = one `.universe` file (SQLite) + a sibling `.universe-assets/` folder (textures, glTF, images). An optional "package" export zips both.
@@ -364,7 +402,7 @@ Each milestone ends with something you can launch and demo.
 - [x] `core` command bus with undo/redo, Zod schemas, SQLite + migrations, command history log.
 - [x] Create/open/save-a-copy `.universe` project, recent projects. Main layout (breadcrumb, outline, viewport, inspector, timeline placeholder).
 - [x] Universe tree editing (cluster → galaxy → system → planet → moon/world) with a seeded 2D placeholder viewport.
-- [ ] Code signing (Windows certificate, Apple Developer ID). Deferred to M9; builds are unsigned until then.
+- [ ] Code signing (Windows certificate, Apple Developer ID). Deferred to M13; builds are unsigned until then.
 - [x] *Added after M2:* self-update. Each CI build is versioned `0.1.<run>` and publishes an `update.json` manifest (file names, sizes, SHA-512) with the installers. The app checks it at launch and hourly (and on request: Help → Check for Updates, or the **Check for updates** button on the start screen and in the status bar, which says right there when there’s nothing newer); a dismissable banner offers the new version, and **Upgrade now** downloads, verifies and installs it, then restarts, with no further input: NSIS installer run silently, portable exe swapped, macOS `.app` replaced from the zip, AppImage replaced in place. A `.deb` install needs the system password (root).
 - [x] *Added after M2:* local only. All data lives in the project's SQLite file (built into the app via `node:sqlite`, no server). The main process cancels every network request except the app's own files and the self-updater's download from this repo's GitHub release; pages can't reach the network at all, and links open in the browser instead of the app window.
 
@@ -435,10 +473,28 @@ Each milestone ends with something you can launch and demo.
   - Data: nothing in a note, a date, a far-off time or a crafted project can stall the app (linear note reading, bounded dates, step-counted moon phases, inflation capped at a layer's size); the world bible escapes everything.
   - Build and release: read-only tokens unless publishing, one publish at a time, the updater takes only an installer's name from the manifest and stops a download that runs long; ci:local checks what it downloads and marks the commit it tested.
 - Not yet tried against claude.ai itself and a real tailnet (the tests stand in for both).
-- Deferred from the audit: signed update manifests (an Ed25519 key kept as a GitHub secret, its public half in the app) and publishing installed copies' updates from `main` only (both the owner's call); Electron fuses (asar integrity, no NODE_OPTIONS or inspect flags; RunAsNode stays for `--mcp`) with code signing in M9; validating every row of a project on load (a crafted project can still break the window, but its colours and links no longer reach anything); the .deb installer's wait between checking and installing; a nonce the stdio server checks before handing the app its token.
+- Deferred from the audit: signed update manifests (an Ed25519 key kept as a GitHub secret, its public half in the app) and publishing installed copies' updates from `main` only (both the owner's call); Electron fuses (asar integrity, no NODE_OPTIONS or inspect flags; RunAsNode stays for `--mcp`) with code signing in M13; validating every row of a project on load (a crafted project can still break the window, but its colours and links no longer reach anything); the .deb installer's wait between checking and installing; a nonce the stdio server checks before handing the app its token.
 
-### M9 — Polish & release (2 weeks) — *active*
+### M9 — Power systems (1 week) — *active*
+- `power` and `powerAge` records, commands and templates in core; the Powers page on a world (systems, aspects for Always and each age, strength across the ages, the playhead's age marked); right-click menus; era deletes take their entries.
+- API: `list_power_systems(worldId, at?)`, `create_power_system`, `update_power_system`, `describe_power_age`; in the bible and `write_scene`.
+- Tests: core do/undo, the operations, e2e on the page.
+
+### M10 — Inconsistency detector (1 week)
+- Findings as records; `report_inconsistency`, `list_inconsistencies`, `resolve_inconsistency` and the `review_consistency` prompt; the Warnings panel with the app's own checks and Claude's findings; amber marks on what they're about.
+- Tests: the operations and prompt, e2e with a stand-in client reporting findings.
+
+### M11 — Phone app (2 weeks)
+- The renderer served at `/app/` with the web bridge; `tailscale serve` on the tailnet; sign-in with a code and device sessions; the phone layout and touch controls.
+- Tests: the bridge against the real main process; e2e of the whole app in a phone-sized browser through the bridge.
+
+### M12 — Sync (2–3 weeks)
+- Clock stamps on every row (a migration), the changed-rows exchange, pairing over the tailnet, last-writer-wins merge, sync status.
+- Tests: two projects edited apart then synced (every kind of row, deletes, terrain), convergence in any order; e2e of two app instances syncing.
+
+### M13 — Polish & release (2 weeks)
 - [x] **Right-click menus** on everything (`contextMenu.ts`): a node in the tree or a claimed one in the cosmos, an event, era, group, link, lane or theme span on the timeline or the canvas, a region, structure, character or event pin on the map, globe or ground, a species in the food web, a row in the inspector's lists. Each gives what its kind can do (open, rename, add to it, go to it, follow a link, move the playhead, delete); the keyboard opens and moves through it too.
+- [x] **Check for updates** on the start screen and in the status bar (as well as the Help menu): it says right there when there's nothing newer.
 - Onboarding sample universe, keyboard shortcuts, performance pass (LOD, instancing for structures).
 - Signed installers (Windows NSIS, macOS dmg + notarization, Linux AppImage/deb); auto-update already works unsigned (see M0) and should move to signature-checked updates once signed.
 - E2E tests for the main flows.
@@ -475,7 +531,7 @@ Each milestone ends with something you can launch and demo.
 ## 12. Post-v1 ideas
 - Factions, relationship graphs between characters, and per-character timeline lanes (characters with lifespans and journeys exist since M3).
 - Rivers/erosion simulation, plate tectonics over time.
-- Cloud sync and collaboration (CRDT over the command log).
+- Live collaboration (several people editing at once, beyond M12's device sync).
 - Image generation for structures/themes via AI; ambient soundscapes per theme.
 - Plugin system for custom generators and exporters (e.g., to game engines).
 
