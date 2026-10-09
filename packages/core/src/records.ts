@@ -3,13 +3,14 @@ import { Orbit, Star } from './astro'
 import { Character } from './characters'
 import { EcoLink, Species } from './ecosystem'
 import { Blueprint, EventEffect, MaintenanceChange, Structure } from './structures'
+import { Finding } from './findings'
 import { PowerAge, PowerSystem } from './powers'
 import { Theme, ThemeSpan } from './themes'
 import { EntityChange, Era, EventGroup, EventLink, Lane, TimelineEvent, TimelineSettings } from './timeline'
 
 /**
  * Every kind of record kept in the generic `records` table: the timeline
- * (timeline.ts), structures (structures.ts), characters (characters.ts), stars and orbits (astro.ts), species (ecosystem.ts), themes (themes.ts) and power systems (powers.ts). Each record belongs to a node
+ * (timeline.ts), structures (structures.ts), characters (characters.ts), stars and orbits (astro.ts), species (ecosystem.ts), themes (themes.ts), power systems (powers.ts) and findings (findings.ts). Each record belongs to a node
  * through `ownerId`, mostly a world.
  */
 export const RECORD_SCHEMAS = {
@@ -32,7 +33,8 @@ export const RECORD_SCHEMAS = {
   theme: Theme,
   themeSpan: ThemeSpan,
   power: PowerSystem,
-  powerAge: PowerAge
+  powerAge: PowerAge,
+  finding: Finding
 } as const
 export type RecordKind = keyof typeof RECORD_SCHEMAS
 export const RECORD_KINDS = Object.keys(RECORD_SCHEMAS) as RecordKind[]

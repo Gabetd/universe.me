@@ -114,7 +114,8 @@ const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>, check
   },
   ...worldSimValidators,
   ...themeValidators,
-  ...powerValidators
+  ...powerValidators,
+  finding: (store, f) => void liveWorld(store, f.ownerId)
 }
 
 /** A blueprint by id: a built-in one or one in the project's library. */
