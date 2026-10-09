@@ -4,29 +4,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { Page } from '@playwright/test'
 import electronPath from 'electron'
-import { closeProject, expect, inspector, newWorld, row, shot, state, stubSaveDialog, test, type AppHandle } from './helpers'
-
-/** Where the app says its API is (each test's own file, see `launch`). */
-const discovery = (h: AppHandle) => JSON.parse(readFileSync(join(h.dir, 'api.json'), 'utf8')) as { port: number | null; token: string; project: string | null }
-
-/** An MCP client talking to the app over HTTP, as Claude Code does with `--transport http`. */
-function httpMcp(h: AppHandle): Rpc {
-  let id = 0
-  return async (method, params = {}) => {
-    const { port, token } = discovery(h)
-    const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params })
-    })
-    return res.json()
-  }
-}
-
-type Rpc = (method: string, params?: object) => Promise<{ result: { content: { text: string }[] } & Record<string, unknown> }>
-
-/** A tool's answer, read as JSON, from either kind of client. */
-const tool = async (call: Rpc, name: string, args: object) => JSON.parse((await call('tools/call', { name, arguments: args })).result.content[0]!.text)
+import { closeProject, discovery, expect, httpMcp, inspector, newWorld, row, shot, state, stubSaveDialog, test, tool, type AppHandle, type Rpc } from './helpers'
 
 const INIT = { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'e2e', version: '1' } }
 

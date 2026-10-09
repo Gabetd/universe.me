@@ -9,6 +9,7 @@ import { isBrushTool, showsSurface, useEditor, type EditorTool, type EditorView 
 import { EcosystemView } from './EcosystemView'
 import { EventCanvas } from './EventCanvas'
 import { PowersView } from './PowersView'
+import { WarningsView, useWarningCount } from './WarningsView'
 import { GlobeView } from './GlobeView'
 import { GroundView } from './GroundView'
 import { MapView } from './MapView'
@@ -55,6 +56,7 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
   const { view, tool, ground, set } = useEditor(useShallow((s) => ({ view: s.view, tool: s.tool, ground: s.ground, set: s.set })))
   const structures = useStructuresAt(world.id)
   const characters = useCharactersAt(world.id)
+  const warnings = useWarningCount(world.id)
   const { model, change, error, bump, commit } = useTerrain(world.id, world.seed, info)
   const { pointerDown, pointerMove, finishRegion } = useSurfaceTools(world.id, model, bump, commit)
   // Without WebGL the 3D views fall back to the map.
@@ -118,6 +120,9 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
           <button aria-pressed={activeView === 'powers'} onClick={() => set({ view: 'powers' })} title="How magic, faith, technology or politics work here, age by age">
             ✨ Powers
           </button>
+          <button aria-pressed={activeView === 'warnings'} onClick={() => set({ view: 'warnings' })} title="What doesn’t fit: what Claude found, and the app’s own checks">
+            ⚠ Warnings{warnings > 0 && <span className="badge warn">{warnings}</span>}
+          </button>
         </div>
         {onSurface && (
           <div className="segmented" role="group" aria-label="Tool">
@@ -136,6 +141,8 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
           <EcosystemView worldId={world.id} model={model} change={change} error={error} />
         ) : activeView === 'powers' ? (
           <PowersView worldId={world.id} />
+        ) : activeView === 'warnings' ? (
+          <WarningsView worldId={world.id} />
         ) : activeView === 'canvas' ? (
           <EventCanvas worldId={world.id} regions={allRegions} />
         ) : viewProps ? (

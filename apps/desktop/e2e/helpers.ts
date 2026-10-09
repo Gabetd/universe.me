@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _electron as electron, test as base, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test'
@@ -351,3 +351,25 @@ export async function drawRegion(page: Page): Promise<void> {
   for (const at of [[0.2, 0.3], [0.3, 0.28], [0.32, 0.4], [0.22, 0.42]] as const) await clickAt(page, 'map', at)
   await page.keyboard.press('Enter')
 }
+
+/** Where the app says its API is (each test's own file, see `launch`). */
+export const discovery = (h: AppHandle) => JSON.parse(readFileSync(join(h.dir, 'api.json'), 'utf8')) as { port: number | null; token: string; project: string | null }
+
+/** An MCP client talking to the app over HTTP, as Claude Code does with `--transport http`. */
+export function httpMcp(h: AppHandle): Rpc {
+  let id = 0
+  return async (method, params = {}) => {
+    const { port, token } = discovery(h)
+    const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params })
+    })
+    return res.json()
+  }
+}
+
+export type Rpc = (method: string, params?: object) => Promise<{ result: { content: { text: string }[] } & Record<string, unknown> }>
+
+/** A tool's answer, read as JSON, from either kind of client. */
+export const tool = async (call: Rpc, name: string, args: object) => JSON.parse((await call('tools/call', { name, arguments: args })).result.content[0]!.text)

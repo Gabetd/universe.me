@@ -5,6 +5,7 @@ import { ColorField, TagsField, TextField } from '../components/fields'
 import { NotesEditor } from '../components/NotesEditor'
 import { useUi } from '../store'
 import { openElementMenu } from '../contextMenu'
+import { flagClass, useFlaggedIds } from '../flags'
 
 /**
  * A world's species and food web (PLAN.md §5.5): a list with an editor on the
@@ -46,6 +47,7 @@ export function EcosystemView({ worldId, model, change, error }: { worldId: stri
   const species = useMemo(() => all.filter((s) => s.ownerId === worldId), [all, worldId])
   const links = useMemo(() => allLinks.filter((l) => l.ownerId === worldId), [allLinks, worldId])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const flagged = useFlaggedIds()
   const selected = species.find((s) => s.id === selectedId)
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` stands for the terrain the model holds
   const shares = useMemo(() => biomeShares(model), [model, change])
@@ -101,7 +103,7 @@ export function EcosystemView({ worldId, model, change, error }: { worldId: stri
           <ul className="region-list" aria-label="Species">
             {species.map((s) => (
               <li key={s.id}>
-                <button className="link region-row" onClick={() => setSelectedId(s.id)} onContextMenu={(e) => speciesMenu(e, s.id)}>
+                <button className={`link region-row${flagClass(flagged.has(s.id))}`} onClick={() => setSelectedId(s.id)} onContextMenu={(e) => speciesMenu(e, s.id)}>
                   <span className="swatch" style={{ background: s.color }} />
                   {s.name} <span className="muted small">· {s.diet}</span>
                 </button>

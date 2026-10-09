@@ -19,8 +19,8 @@ export const ROADMAP: Milestone[] = [
   { id: 'M7', title: 'API & MCP', status: 'done', summary: 'A local REST API and MCP server for Claude Code; AI changes undo in one click or wait for review' },
   { id: 'M8', title: 'Phone access', status: 'done', summary: 'Claude on your phone reaches the universe on your computer, through Tailscale Funnel and OAuth' },
   { id: 'M9', title: 'Power systems', status: 'done', summary: 'How magic, technology, faith or politics work on a world, age by age' },
-  { id: 'M10', title: 'Inconsistency detector', status: 'active', summary: 'Claude reads a world and flags what contradicts itself; warnings in one panel' },
-  { id: 'M11', title: 'Phone app', status: 'planned', summary: 'The whole app on your phone, from your computer, through Tailscale' },
+  { id: 'M10', title: 'Inconsistency detector', status: 'done', summary: 'Claude reads a world and flags what contradicts itself; warnings in one panel' },
+  { id: 'M11', title: 'Phone app', status: 'active', summary: 'The whole app on your phone, from your computer, through Tailscale' },
   { id: 'M12', title: 'Sync', status: 'planned', summary: 'The same universe on several devices, synced directly over Tailscale' },
   { id: 'M13', title: 'Polish & release', status: 'planned', summary: 'Right-click menus and update checks done; onboarding, performance, signed installers' }
 ]

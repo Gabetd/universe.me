@@ -24,6 +24,7 @@ import { eventDates, spanDates } from './labels'
 import { SkyTrack } from './SkyTrack'
 import { ThemeTrack } from './ThemeTrack'
 import { DerivedTrack } from './DerivedTrack'
+import { useFlagged } from '../flags'
 import { menuRef, openElementMenu } from '../contextMenu'
 
 const LABELS_W = 132
@@ -511,7 +512,8 @@ const EventBar = memo(function EventBar({ placed, icons, selected, dimmed, onPoi
   const ev = placed.item
   const instant = ev.end === null
   const fuzzy = ev.precision === 'approx' || ev.precision === 'century'
-  const classes = ['tl-event', instant ? 'instant' : 'span', selected && 'selected', dimmed && 'dimmed', fuzzy && 'fuzzy'].filter(Boolean).join(' ')
+  const flagged = useFlagged(ev.id)
+  const classes = ['tl-event', instant ? 'instant' : 'span', selected && 'selected', dimmed && 'dimmed', fuzzy && 'fuzzy', flagged && 'flagged'].filter(Boolean).join(' ')
   return (
     <div
       className={classes}

@@ -125,7 +125,7 @@ const KINDS: Record<ElementKind, { label: string; nameField?: string; inspector:
 }
 
 /** An element's name, as the menu's title shows it; undefined if it no longer exists. */
-function nameOf({ kind, id }: ElementRef): string | undefined {
+export function nameOf({ kind, id }: ElementRef): string | undefined {
   const s = useUi.getState()
   const t = s.timeline
   const find = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === id)

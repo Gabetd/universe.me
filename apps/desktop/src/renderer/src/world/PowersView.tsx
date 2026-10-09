@@ -20,6 +20,7 @@ import { openElementMenu } from '../contextMenu'
 import { useUi } from '../store'
 import { usePlayhead } from '../timeline/timelineStore'
 import { useSteadyScroll } from '../useSteadyScroll'
+import { flagClass, useFlaggedIds } from '../flags'
 import { useCalendar } from './useSky'
 
 /**
@@ -53,6 +54,7 @@ export function PowersView({ worldId }: { worldId: string }) {
   const nowEra = eraAt(eras, playhead)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const selected = systems.find((s) => s.id === selectedId) ?? systems[0]
+  const flagged = useFlaggedIds()
 
   const add = async (template: PowerTemplate) => {
     const state = await execute({ type: 'power.create', payload: { ownerId: worldId, template } })
@@ -77,7 +79,7 @@ export function PowersView({ worldId }: { worldId: string }) {
         <ul className="region-list" aria-label="Power systems">
           {systems.map((s) => (
             <li key={s.id}>
-              <button className={`link region-row${s.id === selected?.id ? ' selected' : ''}`} onClick={() => setSelectedId(s.id)} onContextMenu={(e) => menu(e, s.id)}>
+              <button className={`link region-row${s.id === selected?.id ? ' selected' : ''}${flagClass(flagged.has(s.id))}`} onClick={() => setSelectedId(s.id)} onContextMenu={(e) => menu(e, s.id)}>
                 <Swatch color={s.color} />
                 {s.name} <span className="muted small">· {TEMPLATE_LABELS[s.template]}</span>
               </button>

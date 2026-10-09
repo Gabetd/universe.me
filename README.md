@@ -94,6 +94,16 @@ for you to accept or reject them. The same operations are a REST API under
 `/v1` (described at `/v1/openapi.json`), with a change feed at `/v1/changes`.
 Any world exports as a Markdown world bible from its inspector.
 
+Claude can also check a world for what doesn't fit. On a world's **Warnings**
+page, copy the request for Claude and paste it into Claude (on the computer or
+your phone): it reads the world as a whole and reports each problem it finds
+(someone in two places at once, magic used in an age that doesn't allow it,
+notes at odds with the history), with what it's about and a suggested fix.
+Each one shows on the Warnings page next to the app's own checks, with an
+amber mark on what it's about in the tree, the timeline and the lists; mark
+it resolved, or dismiss it as not a problem so it isn't raised again. Findings
+are advice, so they show even with **Review AI changes** on.
+
 ## From your phone
 
 Claude on your phone can reach the universe open on your computer. The

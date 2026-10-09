@@ -2,6 +2,7 @@ import { ancestry, buildTree, type TreeNode } from '@universe/core'
 import { memo, useCallback, useMemo, useState } from 'react'
 import { KIND_ICONS } from '../kinds'
 import { useUi } from '../store'
+import { flagClass, useFlagged } from '../flags'
 import { menuRef } from '../contextMenu'
 
 export function Outline() {
@@ -47,13 +48,14 @@ interface RowProps {
 /** Memoized: selecting something re-renders only the rows on the old and new paths to the selection. */
 const Row = memo(function Row({ node, depth, collapsed, path, toggle }: RowProps) {
   const selected = useUi((s) => s.selectedId === node.id)
+  const flagged = useFlagged(node.id)
   const select = useUi((s) => s.select)
   const hasChildren = node.children.length > 0
   const open = hasChildren && (!collapsed.has(node.id) || (!!path && !selected))
 
   return (
     <li role="treeitem" aria-selected={selected} aria-expanded={hasChildren ? open : undefined}>
-      <div className={`tree-row${selected ? ' selected' : ''}`} style={{ paddingLeft: 8 + depth * 14 }} data-menu={menuRef('node', node.id)} onClick={() => select(node.id)}>
+      <div className={`tree-row${selected ? ' selected' : ''}${flagClass(flagged)}`} style={{ paddingLeft: 8 + depth * 14 }} data-menu={menuRef('node', node.id)} onClick={() => select(node.id)}>
         <button
           className="tree-caret link"
           style={{ visibility: hasChildren ? 'visible' : 'hidden' }}

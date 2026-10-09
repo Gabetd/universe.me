@@ -4,6 +4,7 @@ import { deleteCommand, useTimelineOwner, useUi, type DeleteKind } from '../stor
 import { useCalendar } from '../world/useSky'
 import { NotesEditor } from './NotesEditor'
 import { menuRef, takeFocusRequest, useContextMenu, type ElementKind } from '../contextMenu'
+import { flagClass, useFlaggedIds } from '../flags'
 
 /**
  * Inputs that save once when editing finishes (blur, Enter, slider release),
@@ -170,11 +171,12 @@ export interface SwatchRow {
 
 /** A list of named colour swatches (regions, characters, structures, events); clicking one picks it, right-clicking it (as `menu`) gives its options. */
 export function SwatchList({ rows, onPick, menu }: { rows: SwatchRow[]; onPick(id: string): void; menu?: ElementKind }) {
+  const flagged = useFlaggedIds()
   return (
     <ul className="region-list">
       {rows.map((r) => (
         <li key={r.id}>
-          <button className={`link region-row${r.selected ? ' selected' : ''}${r.absent ? ' absent' : ''}`} title={r.absent} data-menu={menu && menuRef(menu, r.id)} onClick={() => onPick(r.id)}>
+          <button className={`link region-row${r.selected ? ' selected' : ''}${r.absent ? ' absent' : ''}${flagClass(flagged.has(r.id))}`} title={r.absent} data-menu={menu && menuRef(menu, r.id)} onClick={() => onPick(r.id)}>
             <Swatch color={r.color} />
             {r.name}
           </button>

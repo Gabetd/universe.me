@@ -481,11 +481,13 @@ Each milestone ends with something you can launch and demo.
 - [x] API: `list_power_systems(worldId, at?)`, `create_power_system`, `update_power_system`, `describe_power_age` (answers by question, eras by name); powers in the world snapshot, the bible and `write_scene`.
 - [x] Tests: core do/undo and reading at a moment, the operations and the bible, `e2e/powers.spec.ts`.
 
-### M10 — Inconsistency detector (1 week) — *active*
-- Findings as records; `report_inconsistency`, `list_inconsistencies`, `resolve_inconsistency` and the `review_consistency` prompt; the Warnings panel with the app's own checks and Claude's findings; amber marks on what they're about.
-- Tests: the operations and prompt, e2e with a stand-in client reporting findings.
+### M10 — Inconsistency detector (1 week) — *done*
+- [x] Findings as records (`findings.ts`): a contradiction, something unlikely or a question, what it's about, why, a suggested fix, open, resolved or dismissed.
+- [x] `report_inconsistency` (checks that what it's about is on the world; one already open or dismissed isn't reported twice), `list_inconsistencies`, `resolve_inconsistency`, and the `review_consistency` prompt (the world bible, the ids to refer to, the app's own checks and what's been reported). Findings are advice, so review mode lets them through.
+- [x] **The Warnings page** on a world (`WarningsView.tsx`): a request to copy for Claude, its findings with what they're about (to open or right-click), resolve, dismiss and reopen, and the app's own checks (history, structures, food web); a count on the tab and amber marks in the tree, the timeline and the lists.
+- [x] Tests: the operations and the prompt in `packages/api`, `e2e/warnings.spec.ts` with an MCP client reporting through the app.
 
-### M11 — Phone app (2 weeks)
+### M11 — Phone app (2 weeks) — *active*
 - The renderer served at `/app/` with the web bridge; `tailscale serve` on the tailnet; sign-in with a code and device sessions; the phone layout and touch controls.
 - Tests: the bridge against the real main process; e2e of the whole app in a phone-sized browser through the bridge.
 
