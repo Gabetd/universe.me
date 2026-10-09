@@ -5,6 +5,7 @@ import {
   MemoryStore,
   StampedStore,
   SyncClock,
+  bytesToBase64,
   createRootUniverse,
   emptyLayer,
   fromParts,
@@ -48,14 +49,14 @@ function pull(from: Device, to: Device): number {
 
 const run = (d: Device, type: string, payload: object) => d.bus.execute({ type, payload } as Command)
 
-/** Everything a device has, as comparable data. */
+/** Everything a device has, as comparable data (terrain as base64: comparing its bytes one by one takes about half a second a face). */
 function contents(store: Store) {
   const kinds = ['event', 'era', 'power', 'powerAge', 'finding'] as const
   return {
     nodes: store.nodes.all().map((n) => [n.id, n.name, n.parentId, n.deletedAt]),
     regions: store.regions.all().map((r) => [r.id, r.name]),
     records: Object.fromEntries(kinds.map((k) => [k, store.records(k).all()])),
-    height: store.worlds.getLayer('A-5', 'height', 2)
+    height: bytesToBase64(store.worlds.getLayer('A-5', 'height', 2) ?? new Uint8Array())
   }
 }
 

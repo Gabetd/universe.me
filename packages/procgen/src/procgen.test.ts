@@ -85,9 +85,8 @@ describe('cube-sphere', () => {
 })
 
 describe('generateBase', () => {
-  it('is deterministic per seed', () => {
-    const again = generateBase(12345, DEFAULT_WORLD_SETTINGS.terrain)
-    expect(again.height[2]!.subarray(0, 100)).toEqual(base.height[2]!.subarray(0, 100))
+  // The same seed makes the same terrain: its hash is pinned below (outputs stay the same).
+  it('makes other terrain from another seed', () => {
     const other = generateBase(999, DEFAULT_WORLD_SETTINGS.terrain)
     expect(other.height[2]!.subarray(0, 100)).not.toEqual(base.height[2]!.subarray(0, 100))
   })
@@ -176,7 +175,7 @@ describe('TerrainModel brushes', () => {
     const reloaded = new TerrainModel(DEFAULT_WORLD_SETTINGS, base, {
       height: Array.from({ length: CUBE_FACES }, (_, f) => store.worlds.getLayer(parent, 'height', f) ?? emptyLayer('height'))
     })
-    for (let f = 0; f < CUBE_FACES; f++) expect(reloaded.heightEdits[f]).toEqual(model.heightEdits[f])
+    expect(hash(reloaded.heightEdits)).toBe(hash(model.heightEdits))
   })
 
   it('says where each dab changed cells, and keeps the face colours up to date', () => {
