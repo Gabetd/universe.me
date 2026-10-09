@@ -85,6 +85,14 @@ export const MIGRATIONS: readonly string[] = [
   `,
   /* 5: live records in insertion order, so reading a kind needs no sort */ `
   CREATE INDEX records_live ON records(kind) WHERE deleted_at IS NULL;
+  `,
+  /* 6: each row's sync stamp, and when this copy got it (PLAN.md §6.7) */ `
+  CREATE TABLE row_stamps (
+    key   TEXT PRIMARY KEY,
+    stamp TEXT NOT NULL,
+    seq   INTEGER NOT NULL
+  );
+  CREATE INDEX row_stamps_seq ON row_stamps(seq);
   `
 ]
 

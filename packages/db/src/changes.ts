@@ -51,6 +51,11 @@ export class TrackedStore implements Store {
   private pending: Changes | undefined
   private readonly recordRepos = new Map<RecordKind, RecordRepository<unknown>>()
 
+  /** Whatever stamps the inner store keeps for sync. */
+  get sync() {
+    return this.inner.sync
+  }
+
   constructor(private readonly inner: Store) {
     const { nodes, regions, worlds } = inner
     this.nodes = { get: (id) => nodes.get(id), children: (id) => nodes.children(id), all: () => nodes.all(), root: () => nodes.root(), ...this.noteWrites(nodes, (c) => c.nodes) }

@@ -1,17 +1,24 @@
 import { existsSync } from 'node:fs'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
-import { CUBE_FACES, CommandBus, createRootUniverse, findRoot, type CommandBusOptions, type Store, type TerrainLayerName, type TerrainLayers } from '@universe/core'
+import { randomBytes } from 'node:crypto'
+import { CUBE_FACES, CommandBus, StampedStore, SyncClock, createRootUniverse, findRoot, type CommandBusOptions, type Store, type SyncRow, type TerrainLayerName, type TerrainLayers } from '@universe/core'
 import { TrackedStore } from './changes'
 import { SqliteHistoryLog } from './history-log'
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations'
 import { SnapshotCache, type Snapshot } from './snapshot'
 import { SqliteStore } from './sqlite-store'
+import { SqliteStampTable, stampExisting } from './stamps'
 import { vacuumInto } from './vacuum'
 
 const FORMAT = 'universe.me'
 
 export class ProjectError extends Error {
   override name = 'ProjectError'
+}
+
+export type ProjectOptions = Omit<CommandBusOptions, 'log'> & {
+  /** This computer, in the stamps of what it writes (PLAN.md §6.7); one of its own for each install. */
+  device?: string
 }
 
 export interface ProjectInfo {
@@ -33,6 +40,9 @@ export class Project {
   private saving = 0
   private readonly meta: { get: StatementSync; set: StatementSync }
   private readonly snapshots: SnapshotCache
+  private readonly stamped: StampedStore
+  private readonly stamps: SqliteStampTable
+  private readonly clock: SyncClock
   /** Read once: the name only changes through `setMeta` and the root is never deleted. */
   private name: string | undefined
   private rootId = ''
@@ -40,11 +50,14 @@ export class Project {
   private constructor(
     readonly path: string,
     private readonly db: DatabaseSync,
-    busOptions: Omit<CommandBusOptions, 'log'>
+    { device, ...busOptions }: ProjectOptions
   ) {
-    // Every write goes through the tracked store, so a snapshot reloads only what changed; reads go straight to SQLite.
+    // Every write goes through the tracked store, so a snapshot reloads only what changed, and is stamped for sync; reads go straight to SQLite.
     const sqlite = new SqliteStore(db)
-    const tracked = new TrackedStore(sqlite)
+    this.stamps = new SqliteStampTable(db)
+    this.clock = new SyncClock(device ?? randomBytes(9).toString('base64url'))
+    this.stamped = new StampedStore(sqlite, this.stamps, this.clock)
+    const tracked = new TrackedStore(this.stamped)
     this.store = tracked
     this.snapshots = new SnapshotCache(sqlite, () => tracked.takeChanges())
     this.bus = new CommandBus(this.store, { ...busOptions, log: new SqliteHistoryLog(db) })
@@ -55,19 +68,25 @@ export class Project {
     this.name = this.getMeta('name')
   }
 
-  /** Creates a new project file. Fails if `path` already exists. */
-  static create(path: string, name: string, busOptions: Omit<CommandBusOptions, 'log'> = {}): Project {
+  /**
+   * Creates a new project file. Fails if `path` already exists. `copyOf` makes
+   * an empty one, without a universe of its own, for one coming from another
+   * device (with that one's sync id): its rows arrive with `merge`.
+   */
+  static create(path: string, name: string, options: ProjectOptions & { copyOf?: string } = {}): Project {
     if (existsSync(path)) throw new ProjectError(`A file already exists at ${path}`)
     const db = openDb(path)
     try {
       migrate(db)
-      const project = new Project(path, db, busOptions)
+      const { copyOf, ...rest } = options
+      const project = new Project(path, db, rest)
       project.store.transaction(() => {
         project.setMeta('format', FORMAT)
         project.setMeta('createdAt', new Date().toISOString())
         project.setMeta('name', name)
+        if (copyOf) project.setMeta('syncId', copyOf)
       })
-      project.rootId = createRootUniverse(project.store, name).id
+      if (!copyOf) project.rootId = createRootUniverse(project.store, name).id
       return project
     } catch (err) {
       db.close()
@@ -75,14 +94,15 @@ export class Project {
     }
   }
 
-  static open(path: string, busOptions: Omit<CommandBusOptions, 'log'> = {}): Project {
+  static open(path: string, options: ProjectOptions = {}): Project {
     if (!existsSync(path)) throw new ProjectError(`No project found at ${path}`)
     let db: DatabaseSync | undefined
     try {
       checkProjectFile(path)
       db = openDb(path)
       migrate(db)
-      const project = new Project(path, db, busOptions)
+      const project = new Project(path, db, options)
+      stampExisting(db, project.stamps, project.clock)
       const root = findRoot(project.store)
       if (!root) throw new ProjectError(`${path} has no universe root`)
       project.rootId = root.id
@@ -113,6 +133,30 @@ export class Project {
     const { worlds } = this.store
     const layer = (name: TerrainLayerName) => Array.from({ length: CUBE_FACES }, (_, face) => worlds.getLayer(worldId, name, face))
     return { revision: worlds.terrainRevision(worldId), height: layer('height'), biome: layer('biome') }
+  }
+
+  /** The universe's id across devices: the same in every copy of it (made the first time it's asked for). */
+  syncId(): string {
+    let id = this.getMeta('syncId')
+    if (!id) this.setMeta('syncId', (id = randomBytes(12).toString('base64url')))
+    return id
+  }
+
+  /** This computer, as its writes are stamped. */
+  get device(): string {
+    return this.clock.device
+  }
+
+  /** What another device asks for: the rows this copy got after `since`, but its own (see StampedStore). */
+  changesSince(since: number, options: { limit?: number; from?: string } = {}): { rows: SyncRow[]; upTo: number; more: boolean } {
+    return this.stamped.changesSince(since, options)
+  }
+
+  /** Rows from another device, merged (the later write wins, row by row); a copy gets its universe this way. */
+  merge(rows: SyncRow[]): void {
+    if (!rows.length) return
+    this.bus.merge({ type: 'sync.merge', payload: { rows } })
+    if (!this.rootId) this.rootId = findRoot(this.store)?.id ?? ''
   }
 
   getMeta(key: string): string | undefined {
