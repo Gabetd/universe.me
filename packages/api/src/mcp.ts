@@ -215,6 +215,7 @@ export class McpServer {
                 `Write a scene set on ${snapshot.world} on ${snapshot.date}${args.place ? `, at ${args.place}` : ''}.`,
                 snapshot.theme ? `The age's tone: ${snapshot.theme.dominant.name}${snapshot.theme.dominant.mood.length ? ` (${snapshot.theme.dominant.mood.join(', ')})` : ''}.` : '',
                 style ? `Write it this way: ${style}` : '',
+                snapshot.powers.length ? 'Powers (magic, faith, technology, politics…) work only as `powers` says they do in this age.' : '',
                 'Stay true to what is there at that moment (only these structures stand, only these people are alive):',
                 JSON.stringify(snapshot, null, 2)
               ]

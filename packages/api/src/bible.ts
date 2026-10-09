@@ -1,4 +1,4 @@
-import { biomeName, describeCalendar, describeCharacter, describeEvent, describeStructure, nodePath } from './describe'
+import { biomeName, describeCalendar, describeCharacter, describeEvent, describePowerSystem, describeStructure, nodePath } from './describe'
 import type { ApiContext } from './operation'
 import { htmlToText } from './text'
 
@@ -45,6 +45,7 @@ async function bibleData({ models: m }: ApiContext, worldId: string) {
       eats: t.ecolinks.filter((l) => l.type === 'eats' && l.fromId === s.id).map((l) => name(l.toId)),
       notes: htmlToText(s.notes)
     })),
+    powers: t.powers.map((p) => describePowerSystem(m, view, p)),
     themes: t.themeSpans
       .map((sp) => ({ span: sp, theme: t.themes.find((x) => x.id === sp.themeId) }))
       .filter((x) => x.theme)
@@ -76,6 +77,9 @@ const mdText = (text: string) =>
     // A line of dashes would make the one above a heading (or draw a rule).
     .map((line) => line.replace(SPECIAL, '\\$&').replace(/^(\s*)(#|>|=|\d+[.)]|-{2,}\s*$)/, '$1\\$2'))
     .join('\n')
+
+/** A power system's answers, each question in bold. */
+const answerLines = (answers: Record<string, string>) => Object.entries(answers).flatMap(([q, a]) => [`**${md(q)}:** ${mdText(a)}`, ''])
 
 function markdown(b: BibleData): string {
   const out: string[] = [`# ${md(b.world)}`, '', `*${md(b.path)}* · as of ${md(b.now)}`, '']
@@ -119,6 +123,22 @@ function markdown(b: BibleData): string {
   section(
     'Ages and their tone',
     b.themes.flatMap((th) => [`### ${md(th.name)}, ${md(th.when)}${th.region ? ` (${md(th.region)})` : ''}`, '', ...(th.mood.length ? [`*${th.mood.map(md).join(' · ')}*`, ''] : []), ...para(th.style)])
+  )
+  section(
+    'Power systems',
+    b.powers.flatMap((p) => [
+      `### ${md(p.name)}`,
+      '',
+      ...(p.summary ? [`*${md(p.summary)}*`, ''] : []),
+      ...answerLines(p.always),
+      ...p.ages.flatMap((a) => [
+        `#### In ${md(a.era)} (${md(a.when)})${a.strength === undefined ? '' : `, ${Math.round(a.strength * 100)}% strength`}`,
+        '',
+        ...(a.summary ? [`*${md(a.summary)}*`, ''] : []),
+        ...answerLines(a.changes)
+      ]),
+      ...(p.notes ? para(p.notes) : [])
+    ])
   )
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
 }

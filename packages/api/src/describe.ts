@@ -4,6 +4,8 @@ import {
   STAGES,
   ageAt,
   characterAt,
+  erasInOrder,
+  powerAt,
   findBlueprint,
   polygonTester,
   isActiveAt,
@@ -13,6 +15,8 @@ import {
   type Character,
   type ConditionCurve,
   type LatLon,
+  type AspectValues,
+  type PowerSystem,
   type Region,
   type SpatialNode,
   type Structure,
@@ -136,6 +140,41 @@ export function describeTheme(view: WorldView, t: number, regionId?: string) {
   }
 }
 
+/** A system's answers by question, leaving out what isn't answered. */
+const answers = (system: PowerSystem, values: AspectValues) => Object.fromEntries(system.aspects.flatMap((a) => (values[a.id] ? [[a.label, values[a.id]!]] : [])))
+
+/** A power system as a whole: what it is, what holds in every age, and each age that's different (in time order) with how strong it is then. */
+export function describePowerSystem(m: ProjectModels, view: WorldView, system: PowerSystem) {
+  const ages = view.timeline.powerAges.filter((a) => a.systemId === system.id)
+  return {
+    id: system.id,
+    name: system.name,
+    kind: system.template,
+    ...(system.summary && { summary: system.summary }),
+    questions: system.aspects.map((a) => a.label),
+    always: answers(system, system.values),
+    ages: erasInOrder(view.timeline.eras).flatMap((e) => {
+      const age = ages.find((a) => a.eraId === e.id)
+      if (!age) return []
+      return [{ era: e.name, eraId: e.id, when: m.spanDates(view.node.id, e), ...(age.summary && { summary: age.summary }), ...(age.strength !== null && { strength: round(age.strength) }), changes: answers(system, age.values) }]
+    }),
+    ...(system.notes && { notes: htmlToText(system.notes) })
+  }
+}
+
+/** A power system as it stands at `t`: the age it's in, and each answer then (that age's, or what always holds). */
+export function describePowerAt(view: WorldView, system: PowerSystem, t: number) {
+  const p = powerAt(system, view.timeline.powerAges, view.timeline.eras, t)
+  return {
+    system: system.name,
+    kind: system.template,
+    age: p.era?.name ?? null,
+    ...(p.summary && { summary: p.summary }),
+    ...(p.strength !== null && { strength: round(p.strength) }),
+    howItWorks: Object.fromEntries(p.aspects.flatMap((a) => (a.value ? [[a.label, a.value]] : [])))
+  }
+}
+
 /** The moons over a world at `t`: each one's phase and how much of it is lit. */
 export function describeMoons(m: ProjectModels, worldId: string, t: number) {
   const world = m.node(worldId)
@@ -149,7 +188,7 @@ export function describeMoons(m: ProjectModels, worldId: string, t: number) {
   })
 }
 
-/** Everything on a world at `t`: the date, what's happening, which regions exist, what stands, who's alive, the theme and the moons. */
+/** Everything on a world at `t`: the date, what's happening, which regions exist, what stands, who's alive, the theme, how its powers work then and the moons. */
 export async function worldSnapshot(m: ProjectModels, worldId: string, t: number) {
   const view = m.world(worldId)
   const regions = m.regionsAt(worldId, t)
@@ -164,6 +203,7 @@ export async function worldSnapshot(m: ProjectModels, worldId: string, t: number
     structures,
     characters: view.timeline.characters.map((c) => describeCharacter(m, c, t, regions)).filter((c) => c.alive),
     theme: describeTheme(view, t),
+    powers: view.timeline.powers.map((p) => describePowerAt(view, p, t)),
     moons: describeMoons(m, worldId, t)
   }
 }

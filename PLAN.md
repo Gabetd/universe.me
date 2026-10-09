@@ -475,12 +475,13 @@ Each milestone ends with something you can launch and demo.
 - Not yet tried against claude.ai itself and a real tailnet (the tests stand in for both).
 - Deferred from the audit: signed update manifests (an Ed25519 key kept as a GitHub secret, its public half in the app) and publishing installed copies' updates from `main` only (both the owner's call); Electron fuses (asar integrity, no NODE_OPTIONS or inspect flags; RunAsNode stays for `--mcp`) with code signing in M13; validating every row of a project on load (a crafted project can still break the window, but its colours and links no longer reach anything); the .deb installer's wait between checking and installing; a nonce the stdio server checks before handing the app its token.
 
-### M9 — Power systems (1 week) — *active*
-- `power` and `powerAge` records, commands and templates in core; the Powers page on a world (systems, aspects for Always and each age, strength across the ages, the playhead's age marked); right-click menus; era deletes take their entries.
-- API: `list_power_systems(worldId, at?)`, `create_power_system`, `update_power_system`, `describe_power_age`; in the bible and `write_scene`.
-- Tests: core do/undo, the operations, e2e on the page.
+### M9 — Power systems (1 week) — *done*
+- [x] `power` and `powerAge` records, commands and templates in core (`powers.ts`): magic, divine, psionic, technology, political and other, each with its questions; an entry per system and era, merged as it's edited; era and system deletes take their entries.
+- [x] **The Powers page** on a world (`PowersView.tsx`): systems from a template, what holds in every age, what's different in each era (a blank answer shows what always holds), how strong it is age by age, questions of its own, the playhead's age marked; right-click menus; it keeps still while you write in it.
+- [x] API: `list_power_systems(worldId, at?)`, `create_power_system`, `update_power_system`, `describe_power_age` (answers by question, eras by name); powers in the world snapshot, the bible and `write_scene`.
+- [x] Tests: core do/undo and reading at a moment, the operations and the bible, `e2e/powers.spec.ts`.
 
-### M10 — Inconsistency detector (1 week)
+### M10 — Inconsistency detector (1 week) — *active*
 - Findings as records; `report_inconsistency`, `list_inconsistencies`, `resolve_inconsistency` and the `review_consistency` prompt; the Warnings panel with the app's own checks and Claude's findings; amber marks on what they're about.
 - Tests: the operations and prompt, e2e with a stand-in client reporting findings.
 

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { fromParts } from '@universe/core'
 import { OPERATIONS } from './index'
 import { testProject } from './test-project'
 
@@ -121,6 +122,37 @@ describe('the operations', () => {
     expect(safe).not.toMatch(/(^|[^\\])<img/)
     const json = await p.call<{ history: object[] }>('export_world_bible', { worldId, format: 'json' })
     expect(json.history).toHaveLength(2)
+  })
+
+  it('describe how a world’s powers work, age by age, in the snapshot and the bible too', async () => {
+    const era = (name: string, start: number, end: number) => p.project.bus.execute({ type: 'era.create', payload: { ownerId: p.worldId, name, start: fromParts({ year: start }), end: fromParts({ year: end }) } })
+    era('Age of Wonders', 0, 500)
+    era('Age of Silence', 500, 1000)
+    const { systemId } = await p.call<{ systemId: string }>('create_power_system', {
+      worldId: p.worldId,
+      kind: 'magic',
+      name: 'The Weave',
+      summary: 'Song made into force',
+      always: { source: 'Starlight', 'Price paid': 'A year of life per great working' }
+    })
+    // The age by name, a question it didn't ask yet, and what's left unsaid stays.
+    await p.call('describe_power_age', { systemId, era: 'age of silence', strength: 0.1, changes: { Rules: 'Only the dying can weave', Omens: 'Silver rain' } })
+    await p.call('describe_power_age', { systemId, era: 'Age of Silence', summary: 'Almost forgotten' })
+    await expect(p.call('describe_power_age', { systemId, era: 'Age of Iron' })).rejects.toThrow(/its eras: Age of Wonders, Age of Silence/)
+
+    const { systems } = await p.call<{ systems: { name: string; questions: string[]; always: object; ages: object[]; atThatMoment: object }[] }>('list_power_systems', { worldId: p.worldId, at: '700' })
+    const weave = systems[0]!
+    expect(weave.questions).toEqual(expect.arrayContaining(['Source', 'Rules', 'Price paid', 'Omens']))
+    expect(weave.always).toEqual({ Source: 'Starlight', 'Price paid': 'A year of life per great working' })
+    expect(weave.ages).toEqual([{ era: 'Age of Silence', eraId: expect.any(String), when: '500 – 1000', summary: 'Almost forgotten', strength: 0.1, changes: { Rules: 'Only the dying can weave', Omens: 'Silver rain' } }])
+    expect(weave.atThatMoment).toMatchObject({ age: 'Age of Silence', strength: 0.1, howItWorks: { Source: 'Starlight', Rules: 'Only the dying can weave' } })
+
+    await p.call('update_power_system', { systemId, always: { Source: 'Moonlight', 'Price paid': '' } })
+    const snapshot = await p.call<{ powers: { howItWorks: Record<string, string> }[] }>('get_world_snapshot', { worldId: p.worldId, at: '100' })
+    expect(snapshot.powers[0]!.howItWorks).toEqual({ Source: 'Moonlight' })
+    const md = await p.call<string>('export_world_bible', { worldId: p.worldId })
+    expect(md).toContain('## Power systems\n\n### The Weave\n\n*Song made into force*\n\n**Source:** Moonlight')
+    expect(md).toContain('#### In Age of Silence (500 – 1000), 10% strength\n\n*Almost forgotten*\n\n**Rules:** Only the dying can weave')
   })
 
   it('run any command as one undoable step, and say clearly what’s wrong', async () => {

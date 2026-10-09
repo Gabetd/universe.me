@@ -17,7 +17,7 @@ import {
 import { formatPeriod, deriveCalendar, moonsOf, skyEvents } from '@universe/sim'
 import { z } from 'zod'
 import { exportWorldBible } from './bible'
-import { biomeName, describeCalendar, describeCharacter, describeEvent, describeMoons, describeStructure, describeTheme, kindLabel, nodePath, round, worldSnapshot } from './describe'
+import { biomeName, describeCalendar, describeCharacter, describeEvent, describeMoons, describePowerAt, describePowerSystem, describeStructure, describeTheme, kindLabel, nodePath, round, worldSnapshot } from './describe'
 import { ApiError, notFound } from './host'
 import { QueryList, QueryNumber, When, operation, type ApiContext } from './operation'
 import { htmlToText } from './text'
@@ -236,6 +236,22 @@ export const READS = [
           .filter((s) => s.themeId === th.id)
           .map((s) => ({ world: data.nodes.find((n) => n.id === s.ownerId)?.name, when: m.spanDates(s.ownerId, s) }))
       }))
+    }
+  }),
+  operation({
+    name: 'list_power_systems',
+    title: 'Power systems',
+    description:
+      'How a world’s powers work (magic, divine gifts, psionics, technology, politics…): for each system, the questions it answers, what holds in every age, and each age (era) where it’s different, with how strong it is then. With `at`, also how each stands at that moment. Keep what you write true to them.',
+    input: z.object({ worldId: WorldId, at: When.optional() }),
+    route: { method: 'GET', path: '/worlds/:worldId/powers' },
+    run: ({ models: m }, { worldId, at }) => {
+      const view = m.world(worldId)
+      const t = at === undefined ? undefined : m.when(worldId, at)
+      return {
+        ...(t !== undefined && { date: m.date(worldId, t) }),
+        systems: view.timeline.powers.map((p) => ({ ...describePowerSystem(m, view, p), ...(t !== undefined && { atThatMoment: describePowerAt(view, p, t) }) }))
+      }
     }
   }),
   operation({

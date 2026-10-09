@@ -58,8 +58,15 @@ Lay them on the timeline's theme band over any span of time, for the whole
 world or one region, fading in and out; where they overlap, priorities decide
 what shows. As the playhead moves the globe, the map and the ground blend
 from one theme into the next (light, sky, haze, sea and land), and the app's
-accent and title type follow. Everything can be undone, and everything stays
-on your computer.
+accent and title type follow.
+
+Describe how a world's powers work on its **Powers** page: magic, divine
+gifts, psionics, technology, politics or anything else, each started from a
+template with the questions it should answer (its source, rules, costs, who
+can use it…). Answer them once for every age, then again for any era where
+things are different, and say how strong it is in each; the age under the
+playhead is marked. Everything can be undone, and everything stays on your
+computer.
 
 ## Connect Claude Code
 
@@ -78,8 +85,9 @@ claude mcp add universe -- "<path to the Universe executable>" --mcp --project "
 
 Claude can then read your worlds (a world at any moment, its history and
 causes, structures' condition and why, the theme and prose style of an age, the
-sky, the food web), add to them (events, links, structures, characters,
-species, themes, regions, notes) and check them for mistakes. Every change it
+sky, the food web, how its powers work in each age), add to them (events,
+links, structures, characters, species, themes, power systems, regions, notes)
+and check them for mistakes. Every change it
 makes is tagged as the AI's: a note shows what it did, **Undo AI** takes its
 latest changes back in one click, and with **Review AI changes** on they wait
 for you to accept or reject them. The same operations are a REST API under

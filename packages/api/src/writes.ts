@@ -8,6 +8,9 @@ import {
   LIGHTING_PRESETS,
   LINK_TYPES,
   MATERIALS,
+  POWER_TEMPLATES,
+  POWER_TEMPLATE_INFO,
+  aspectId,
   PRECISIONS,
   SPECIES_KINDS,
   THEME_PRESETS,
@@ -15,7 +18,9 @@ import {
   secondsPerYear,
   sphericalMean,
   type Command,
-  type LatLon
+  type AspectValues,
+  type LatLon,
+  type PowerAspect
 } from '@universe/core'
 import { readSeed } from '@universe/procgen'
 import { EARTH_ORBIT, luminosityOf } from '@universe/sim'
@@ -50,6 +55,20 @@ function write(ctx: ApiContext, commands: Command[], summary: string, ids: Recor
 
 /** A client's notes and tags as a record has them. */
 const notesAndTags = (p: { notes?: string; tags?: string[] }) => ({ ...(p.notes && { notes: textToHtml(p.notes) }), ...(p.tags && { tags: p.tags }) })
+
+/** Answers by question (label), as a system keeps them: questions it doesn't ask yet are added, and an empty answer clears one. */
+function answered(aspects: readonly PowerAspect[], values: AspectValues, answers: Record<string, string>): { aspects: PowerAspect[]; values: AspectValues } {
+  const out = { aspects: [...aspects], values: { ...values } }
+  for (const [question, answer] of Object.entries(answers)) {
+    let aspect = out.aspects.find((a) => a.label.toLowerCase() === question.trim().toLowerCase())
+    if (!aspect) out.aspects.push((aspect = { id: aspectId(question, out.aspects.map((a) => a.id)), label: question.trim() }))
+    if (answer.trim()) out.values[aspect.id] = answer.trim()
+    else delete out.values[aspect.id]
+  }
+  return out
+}
+
+const Answers = z.record(z.string().min(1).max(200), z.string().max(20_000)).describe('Answers by question ("Source": "…"); a question it doesn’t ask yet is added; an empty answer clears one')
 
 /** The lane called `name` on a world, made (by the returned commands) if it has none; no lane without a name. */
 function laneFor(view: WorldView, name: string | undefined): { laneId: string | null; commands: Command[] } {
@@ -422,6 +441,80 @@ export const WRITES = [
       const [a, b] = [findOr404(all, p.fromId, 'species'), findOr404(all, p.toId, 'species')]
       const id = newId()
       return write(ctx, [{ type: 'ecolink.create', payload: { id, fromId: a.id, toId: b.id, type: p.type } }], `${a.name} ${p.type} ${b.name}`, { linkId: id })
+    }
+  }),
+  operation({
+    name: 'create_power_system',
+    title: 'Create a power system',
+    description: `Adds a power system to a world: how its magic, divine gifts, psionics, technology, politics or anything else works. A kind (${POWER_TEMPLATES.join(', ')}) starts it with questions to answer (magic: ${POWER_TEMPLATE_INFO.magic.aspects.map((a) => a.label).join(', ')}); answer them for every age in \`always\`, and use describe_power_age for what's different in an era.`,
+    input: z.object({
+      worldId: z.string(),
+      kind: z.enum(POWER_TEMPLATES),
+      name: z.string().min(1).max(200).optional(),
+      summary: z.string().max(2000).optional().describe('What it is, in a line'),
+      always: Answers.optional(),
+      notes: Notes.optional()
+    }),
+    route: { method: 'POST', path: '/worlds/:worldId/powers' },
+    write: true,
+    run: (ctx, p) => {
+      const view = ctx.models.world(p.worldId)
+      const { aspects, values } = answered(POWER_TEMPLATE_INFO[p.kind].aspects, {}, p.always ?? {})
+      const id = newId()
+      const name = p.name ?? POWER_TEMPLATE_INFO[p.kind].name
+      const payload = { id, ownerId: view.node.id, template: p.kind, name, aspects, values, ...(p.summary && { summary: p.summary }), ...notesAndTags(p) }
+      return write(ctx, [{ type: 'power.create', payload }], `Added the power system ${name}`, { systemId: id })
+    }
+  }),
+  operation({
+    name: 'update_power_system',
+    title: 'Edit a power system',
+    description: 'Changes a power system’s name, summary, notes, or what holds in every age (answers by question; others stay as they are).',
+    input: z.object({
+      systemId: z.string(),
+      name: z.string().min(1).max(200).optional(),
+      summary: z.string().max(2000).optional(),
+      always: Answers.optional(),
+      notes: Notes.optional()
+    }),
+    route: { method: 'POST', path: '/powers/:systemId' },
+    write: true,
+    run: (ctx, p) => {
+      const system = findOr404(ctx.models.data().timeline.powers, p.systemId, 'power system')
+      const patch = { ...(p.name && { name: p.name }), ...(p.summary !== undefined && { summary: p.summary }), ...(p.always && answered(system.aspects, system.values, p.always)), ...notesAndTags(p) }
+      return write(ctx, [{ type: 'power.update', payload: { id: system.id, patch } }], `Edited the power system ${p.name ?? system.name}`)
+    }
+  }),
+  operation({
+    name: 'describe_power_age',
+    title: 'Describe a power system in an age',
+    description: 'Says how a power system is different in one of its world’s eras (by name or id): a line on how things stand then, how strong or widespread it is (0–1, or null to unsay it), and answers that differ from what always holds (by question). What isn’t said stays as it was.',
+    input: z.object({
+      systemId: z.string(),
+      era: z.string().describe('The era’s name or id'),
+      summary: z.string().max(2000).optional(),
+      strength: z.number().min(0).max(1).nullable().optional(),
+      changes: Answers.optional()
+    }),
+    route: { method: 'POST', path: '/powers/:systemId/ages' },
+    write: true,
+    run: (ctx, p) => {
+      const system = findOr404(ctx.models.data().timeline.powers, p.systemId, 'power system')
+      const eras = ctx.models.world(system.ownerId).timeline.eras
+      const era = eras.find((e) => e.id === p.era) ?? eras.find((e) => e.name.toLowerCase() === p.era.trim().toLowerCase())
+      if (!era) throw new ApiError(404, `There is no era ${p.era} on that world${eras.length ? ` (its eras: ${eras.map((e) => e.name).join(', ')})` : ': add one with run_commands (era.create)'}`)
+      const age = ctx.models.world(system.ownerId).timeline.powerAges.find((a) => a.systemId === system.id && a.eraId === era.id)
+      const commands: Command[] = []
+      let values: AspectValues | undefined
+      if (p.changes) {
+        const next = answered(system.aspects, age?.values ?? {}, p.changes)
+        values = next.values
+        // A question the system didn't ask is one it asks now (with nothing that always holds).
+        if (next.aspects.length !== system.aspects.length) commands.push({ type: 'power.update', payload: { id: system.id, patch: { aspects: next.aspects } } })
+      }
+      const patch = { ...(p.summary !== undefined && { summary: p.summary }), ...(p.strength !== undefined && { strength: p.strength }), ...(values && { values }) }
+      commands.push({ type: 'powerAge.set', payload: { systemId: system.id, eraId: era.id, patch } })
+      return write(ctx, commands, `Described ${system.name} in ${era.name}`)
     }
   }),
   operation({
