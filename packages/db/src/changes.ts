@@ -1,4 +1,4 @@
-import type { AssetRepository, Id, NodeRepository, RecordKind, RecordOf, RecordRepository, RegionRepository, Store, WorldRepository } from '@universe/core'
+import { ObservedStore, type Id, type RecordKind, type SyncRef } from '@universe/core'
 
 /** Rows written to one table (or record kind): every one touched, and which of them were added, in order. */
 export interface TableChanges {
@@ -40,68 +40,10 @@ export class Changes {
  * those rows. Writes in a transaction are noted once it commits: one that
  * rolled back changed nothing.
  */
-export class TrackedStore implements Store {
-  readonly nodes: NodeRepository
-  readonly regions: RegionRepository
-  readonly worlds: WorldRepository
-  /** Assets aren't part of a snapshot, so their writes aren't noted. */
-  readonly assets: AssetRepository
+export class TrackedStore extends ObservedStore {
   private changes = new Changes()
   /** Writes of the open transaction, until it commits. */
-  private pending: Changes | undefined
-  private readonly recordRepos = new Map<RecordKind, RecordRepository<unknown>>()
-
-  /** Whatever stamps the inner store keeps for sync. */
-  get sync() {
-    return this.inner.sync
-  }
-
-  constructor(private readonly inner: Store) {
-    const { nodes, regions, worlds } = inner
-    this.nodes = { get: (id) => nodes.get(id), children: (id) => nodes.children(id), all: () => nodes.all(), root: () => nodes.root(), ...this.noteWrites(nodes, (c) => c.nodes) }
-    this.regions = { get: (id) => regions.get(id), all: () => regions.all(), ...this.noteWrites(regions, (c) => c.regions) }
-    const world = (id: Id) => void this.noting().worlds.add(id)
-    this.worlds = {
-      getSettings: (id) => worlds.getSettings(id),
-      putSettings: (id, settings) => {
-        worlds.putSettings(id, settings)
-        world(id)
-      },
-      getLayer: (id, layer, face) => worlds.getLayer(id, layer, face),
-      putLayer: (id, layer, face, bytes) => {
-        worlds.putLayer(id, layer, face, bytes)
-        world(id)
-      },
-      terrainRevision: (id) => worlds.terrainRevision(id),
-      bumpTerrainRevision: (id) => {
-        worlds.bumpTerrainRevision(id)
-        world(id)
-      }
-    }
-    this.assets = inner.assets
-  }
-
-  records<K extends RecordKind>(kind: K): RecordRepository<RecordOf<K>> {
-    let repo = this.recordRepos.get(kind) as RecordRepository<RecordOf<K>> | undefined
-    if (!repo) {
-      const inner = this.inner.records(kind)
-      repo = { get: (id) => inner.get(id), all: () => inner.all(), byOwner: (ownerId) => inner.byOwner(ownerId), ...this.noteWrites(inner, (c) => c.record(kind)) }
-      this.recordRepos.set(kind, repo as RecordRepository<unknown>)
-    }
-    return repo
-  }
-
-  transaction<T>(fn: () => T): T {
-    if (this.pending) return this.inner.transaction(fn)
-    const pending = (this.pending = new Changes())
-    try {
-      const result = this.inner.transaction(fn)
-      this.changes.merge(pending)
-      return result
-    } finally {
-      this.pending = undefined
-    }
-  }
+  private pending = new Changes()
 
   /** Everything written (and committed) since the last call. */
   takeChanges(): Changes {
@@ -110,23 +52,20 @@ export class TrackedStore implements Store {
     return taken
   }
 
-  private noting(): Changes {
-    return this.pending ?? this.changes
+  /** Assets aren't part of a snapshot, so their writes aren't noted. */
+  protected wrote(ref: SyncRef, inserted: boolean): void {
+    if (ref.t === 'world' || ref.t === 'layer') return void this.pending.worlds.add(ref.id)
+    const table = ref.t === 'node' ? this.pending.nodes : ref.t === 'region' ? this.pending.regions : ref.t === 'record' ? this.pending.record(ref.kind) : undefined
+    table?.touched.add(ref.id)
+    if (inserted) table?.inserted.add(ref.id)
   }
 
-  /** Insert and update that pass the row on, then note it. A write that throws is not noted. */
-  private noteWrites<T extends { id: Id }>(repo: { insert(row: T): void; update(row: T): void }, table: (c: Changes) => TableChanges) {
-    return {
-      insert: (row: T) => {
-        repo.insert(row)
-        const changes = table(this.noting())
-        changes.touched.add(row.id)
-        changes.inserted.add(row.id)
-      },
-      update: (row: T) => {
-        repo.update(row)
-        table(this.noting()).touched.add(row.id)
-      }
-    }
+  protected override bumped(worldId: Id): void {
+    this.pending.worlds.add(worldId)
+  }
+
+  protected override ended(committed: boolean): void {
+    if (committed) this.changes.merge(this.pending)
+    this.pending = new Changes()
   }
 }

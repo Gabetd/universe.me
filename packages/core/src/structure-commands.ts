@@ -10,6 +10,9 @@ import { Time } from './time'
 /** The biggest asset (a 3D model), as base64: about 75 MB. */
 const MAX_ASSET_BASE64 = 100_000_000
 
+/** An asset as it's added (or synced): its bytes as base64. */
+export const AssetFields = z.object({ name: z.string().min(1).max(260), mime: z.string().min(1).max(100), data: z.string().min(1).max(MAX_ASSET_BASE64) })
+
 const BlueprintFields = Blueprint.pick({ name: true, parts: true, model: true, maintainedByDefault: true, tags: true })
 const StructureFields = Structure.pick({
   name: true, blueprintId: true, lat: true, lon: true, rotation: true, scale: true, builtAt: true, maintained: true, neverDecays: true, label: true, notes: true, tags: true
@@ -42,7 +45,7 @@ export const STRUCTURE_COMMANDS = [
   ...maintenances.commands,
 
   /** Keeps a file (an imported model) in the project. `data` is base64. */
-  z.object({ type: z.literal('asset.add'), payload: z.object({ id: Id, name: z.string().min(1).max(260), mime: z.string().min(1).max(100), data: z.string().min(1).max(MAX_ASSET_BASE64) }) }),
+  z.object({ type: z.literal('asset.add'), payload: AssetFields.extend({ id: Id }) }),
   z.object({ type: z.literal('asset.remove'), payload: ById }),
 
   z.object({ type: z.literal('effect.create'), payload: EffectFields.partial().extend({ ...NewId, eventId: Id, type: EventEffect.shape.type, target: EventEffect.shape.target }) }),

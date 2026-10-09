@@ -85,4 +85,27 @@ describe('a project between devices', () => {
     pull(reopened, copy)
     expect(copy.snapshot().nodes.map((n) => n.name)).toEqual(['Old', 'Virgo'])
   })
+
+  it('sends terrain a few faces a page, and logs a merge without what its rows hold', () => {
+    const a = track(Project.create(join(dir, 'a.universe'), 'Shared', { device: 'laptop' }))
+    const make = (parentId: string, kind: string, name: string) => a.bus.execute({ type: 'node.create', payload: { parentId, kind, name } } as Command).targetId!
+    const sol = make(make(make(a.info().rootId, 'galaxy_cluster', 'Virgo'), 'galaxy', 'Milky Way'), 'star_system', 'Sol')
+    const worlds = ['Mercury', 'Venus', 'Terra'].map((name) => make(make(sol, 'body', name), 'world', `${name} Surface`))
+    a.store.transaction(() => {
+      for (const world of worlds) for (let face = 0; face < 6; face++) a.store.worlds.putLayer(world, 'height', face, emptyLayer('height'))
+    })
+    // 18 faces of ~170 kB as base64 each: a page stops a little past 2 MB, well before its count of rows.
+    const page = a.changesSince(0)
+    const faces = page.rows.filter((r) => typeof r.data === 'string')
+    expect(page.more).toBe(true)
+    expect(faces.length).toBeGreaterThan(0)
+    expect(faces.length).toBeLessThan(18)
+    expect(faces.reduce((n, r) => n + (r.data as string).length, 0)).toBeLessThan(2_500_000)
+
+    const b = track(Project.create(join(dir, 'b.universe'), 'Shared', { device: 'desktop', copyOf: a.syncId() }))
+    pull(a, b)
+    const logged = new DatabaseSync(join(dir, 'b.universe')).prepare("SELECT length(command) AS n FROM command_log WHERE type = 'sync.merge'").all() as { n: number }[]
+    expect(logged.length).toBeGreaterThan(0)
+    expect(Math.max(...logged.map((r) => r.n))).toBeLessThan(2000)
+  })
 })

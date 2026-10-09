@@ -2,15 +2,19 @@ import { DEFAULT_CONTEXT } from './command-kit'
 import { Command, CommandError, applyCommand, type CommandContext, type HandlerResult, type Target } from './commands'
 import type { CommandSource } from './schema'
 import type { Store } from './store'
+import { SyncMerge, mergeRows, type LoggedMerge } from './sync-commands'
 
 export type HistoryAction = 'do' | 'undo' | 'redo'
+
+/** What the log holds: a command, or which rows a merge from another device brought. */
+export type LoggedCommand = Command | LoggedMerge
 
 export interface HistoryRecord {
   action: HistoryAction
   source: CommandSource
   at: string
-  command: Command
-  inverse: Command
+  command: LoggedCommand
+  inverse: LoggedCommand
 }
 
 /** Durable audit log of every applied command; `packages/db` writes it to SQLite. */
@@ -82,15 +86,20 @@ export class CommandBus {
   }
 
   /**
-   * Applies rows from another device (a `sync.merge`, PLAN.md §6.7): checked
-   * and logged like any command, but not undone with this device's changes,
-   * which stay on the undo stack around it.
+   * Applies rows from another device (PLAN.md §6.7), checked like any write
+   * and logged, but not undone with this device's changes (which stay on the
+   * undo stack around it), and not told to `onChange`: it's not a change made
+   * here.
    */
-  merge(input: unknown): ExecuteResult {
-    const parsed = Command.safeParse(input)
-    if (!parsed.success || parsed.data.type !== 'sync.merge') throw new CommandError('Only a sync.merge merges')
-    const command = parsed.data
-    return this.finish('do', command, this.apply('do', command, 'system'))
+  merge(input: unknown): void {
+    const parsed = SyncMerge.safeParse(input)
+    if (!parsed.success) throw new CommandError(`Rows from another device: ${parsed.error.issues[0]?.message ?? 'not rows'}`)
+    const { rows } = parsed.data.payload
+    this.store.transaction(() => {
+      mergeRows(this.store, rows)
+      const logged = (rows: { key: string; stamp: string }[]): LoggedMerge => ({ type: 'sync.merge', payload: { rows } })
+      this.options.log?.append({ action: 'do', source: 'system', at: this.ctx.now(), command: logged(rows.map(({ key, stamp }) => ({ key, stamp }))), inverse: logged([]) })
+    })
   }
 
   undo(): ExecuteResult | undefined {

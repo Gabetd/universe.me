@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import { randomBytes } from 'node:crypto'
-import { CUBE_FACES, CommandBus, StampedStore, SyncClock, createRootUniverse, findRoot, type CommandBusOptions, type Store, type SyncRow, type TerrainLayerName, type TerrainLayers } from '@universe/core'
+import { CUBE_FACES, CommandBus, StampedStore, SyncClock, createRootUniverse, findRoot, type CommandBusOptions, type Store, type SyncPage, type SyncRow, type TerrainLayerName, type TerrainLayers } from '@universe/core'
 import { TrackedStore } from './changes'
 import { SqliteHistoryLog } from './history-log'
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations'
@@ -43,8 +43,9 @@ export class Project {
   private readonly stamped: StampedStore
   private readonly stamps: SqliteStampTable
   private readonly clock: SyncClock
-  /** Read once: the name only changes through `setMeta` and the root is never deleted. */
+  /** Read once: the name and sync id only change through `setMeta`, and the root is never deleted. */
   private name: string | undefined
+  private syncIdValue: string | undefined
   private rootId = ''
 
   private constructor(
@@ -102,7 +103,7 @@ export class Project {
       db = openDb(path)
       migrate(db)
       const project = new Project(path, db, options)
-      stampExisting(db, project.stamps, project.clock)
+      stampExisting(db, project.stamps, project.clock, (fn) => project.store.transaction(fn))
       const root = findRoot(project.store)
       if (!root) throw new ProjectError(`${path} has no universe root`)
       project.rootId = root.id
@@ -137,9 +138,14 @@ export class Project {
 
   /** The universe's id across devices: the same in every copy of it (made the first time it's asked for). */
   syncId(): string {
-    let id = this.getMeta('syncId')
-    if (!id) this.setMeta('syncId', (id = randomBytes(12).toString('base64url')))
-    return id
+    this.syncIdValue ??= this.getMeta('syncId')
+    if (!this.syncIdValue) this.setMeta('syncId', randomBytes(12).toString('base64url'))
+    return this.syncIdValue!
+  }
+
+  /** When this copy last got a row: another device that has seen up to here has nothing to ask for. */
+  get changedUpTo(): number {
+    return this.stamps.latest
   }
 
   /** This computer, as its writes are stamped. */
@@ -148,7 +154,7 @@ export class Project {
   }
 
   /** What another device asks for: the rows this copy got after `since`, but its own (see StampedStore). */
-  changesSince(since: number, options: { limit?: number; from?: string } = {}): { rows: SyncRow[]; upTo: number; more: boolean } {
+  changesSince(since: number, options: { limit?: number; from?: string } = {}): SyncPage {
     return this.stamped.changesSince(since, options)
   }
 
@@ -166,6 +172,7 @@ export class Project {
   setMeta(key: string, value: string): void {
     this.meta.set.run(key, value)
     if (key === 'name') this.name = value
+    if (key === 'syncId') this.syncIdValue = value
   }
 
   /** Writes a compacted copy to `path`, off the main thread. The current project stays open at its old path. */

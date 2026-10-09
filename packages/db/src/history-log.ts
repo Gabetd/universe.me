@@ -1,6 +1,6 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite'
 import { deflateSync, inflateSync } from 'node:zlib'
-import type { Command, CommandSource, HistoryAction, HistoryLog, HistoryRecord } from '@universe/core'
+import type { CommandSource, HistoryAction, HistoryLog, HistoryRecord, LoggedCommand } from '@universe/core'
 
 /**
  * Only commands this big are deflated. Smaller ones gain nothing and setting up
@@ -10,16 +10,16 @@ import type { Command, CommandSource, HistoryAction, HistoryLog, HistoryRecord }
 const DEFLATED = { min: 1024, max: 4 * 1024 * 1024 }
 
 /** JSON, deflated (level 1, like terrain layers) when that's worth it. */
-function pack(command: Command): string | Uint8Array {
+function pack(command: LoggedCommand): string | Uint8Array {
   const json = JSON.stringify(command)
   // In bytes, as inflating counts them (text beyond ASCII takes up to three each).
   const bytes = Buffer.byteLength(json)
   return bytes < DEFLATED.min || bytes > DEFLATED.max ? json : deflateSync(json, { level: 1 })
 }
 
-function unpack(value: string | Uint8Array): Command {
+function unpack(value: string | Uint8Array): LoggedCommand {
   // Never more than was packed: a bigger one is damaged, or made to inflate into gigabytes.
-  return JSON.parse(typeof value === 'string' ? value : inflateSync(value, { maxOutputLength: DEFLATED.max }).toString('utf8')) as Command
+  return JSON.parse(typeof value === 'string' ? value : inflateSync(value, { maxOutputLength: DEFLATED.max }).toString('utf8')) as LoggedCommand
 }
 
 interface LogRow {

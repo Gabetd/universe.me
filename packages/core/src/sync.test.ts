@@ -170,6 +170,23 @@ describe('sync', () => {
     expect(merge([{ key: refKey({ t: 'layer', id: 'w', layer: 'height', face: 0 }), stamp, data: 'AAAA' }])).toThrow(/face of a terrain layer/)
     expect(merge([{ key: '["node"]', stamp, data: null }])).toThrow()
     expect(merge([{ key: refKey({ t: 'node', id: 'n1' }), stamp: 'not a stamp', data: null }])).toThrow()
-    expect(() => b.bus.merge({ type: 'node.delete', payload: { id: 'x' } })).toThrow(/Only a sync.merge/)
+    expect(() => b.bus.merge({ type: 'node.delete', payload: { id: 'x' } })).toThrow(/Rows from another device/)
+    // Only sync merges: no client can send rows with stamps of its choosing as a command.
+    expect(() => b.bus.execute({ type: 'sync.merge', payload: { rows: [] } })).toThrow()
+    expect(() => b.bus.execute({ type: 'batch', payload: { commands: [{ type: 'sync.merge', payload: { rows: [] } }] } })).toThrow()
+  })
+
+  it('pages what a device asks for by size, and leaves out its own rows without counting them', () => {
+    const time = { now: Date.UTC(2026, 0, 1) }
+    const a = device('A', time)
+    const b = device('B', time, a)
+    const root = a.store.nodes.root()!.id
+    for (let i = 0; i < 5; i++) a.bus.execute({ type: 'node.create', payload: { parentId: root, kind: 'galaxy_cluster', name: `C${i}` } })
+    const theirs = a.store.changesSince(0, { from: 'B' })
+    b.bus.merge({ type: 'sync.merge', payload: { rows: theirs.rows } })
+    // A has nothing of B's own to send back, even counted a page at a time.
+    const back = b.store.changesSince(0, { from: 'A', limit: 2 })
+    expect(back).toEqual({ rows: [], upTo: b.store.changesSince(0).upTo, more: false })
+    expect(b.store.changesSince(back.upTo, { from: 'A' }).rows).toEqual([])
   })
 })

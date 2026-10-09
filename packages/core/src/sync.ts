@@ -1,8 +1,9 @@
 import { z } from 'zod'
 import { bytesToBase64 } from './encoding'
-import { RECORD_KINDS, type RecordKind, type RecordOf } from './records'
+import { RECORD_KINDS, type RecordKind } from './records'
 import type { Id } from './schema'
-import type { AssetRepository, NodeRepository, RecordRepository, RegionRepository, Store, WorldRepository } from './store'
+import { ObservedStore } from './observed-store'
+import type { Store } from './store'
 import { TerrainLayerName } from './world'
 
 /**
@@ -51,6 +52,10 @@ export function parseRefKey(key: string): SyncRef {
   return { t: parts[0], id: parts[1] }
 }
 
+/** A device's id: in every stamp it makes. */
+export const DEVICE_ID = /^[A-Za-z0-9_-]{1,64}$/
+const STAMP = /^([0-9a-z]{11})\.([0-9a-z]{5})\.[A-Za-z0-9_-]{1,64}$/
+
 /**
  * Stamps that sort as text in the order the writes happened, on any device:
  * milliseconds, then a count for writes in the same millisecond, then the
@@ -66,7 +71,7 @@ export class SyncClock {
     readonly device: string,
     private readonly now: () => number = Date.now
   ) {
-    if (!/^[A-Za-z0-9_-]{1,64}$/.test(device)) throw new Error('A device id is letters, digits, - and _')
+    if (!DEVICE_ID.test(device)) throw new Error('A device id is letters, digits, - and _')
   }
 
   next(): string {
@@ -86,12 +91,12 @@ export class SyncClock {
 const stamp = (ms: number, count: number, device: string) => `${ms.toString(36).padStart(11, '0')}.${count.toString(36).padStart(5, '0')}.${device}`
 
 function readStamp(text: string): [number, number] {
-  const m = /^([0-9a-z]{11})\.([0-9a-z]{5})\.[A-Za-z0-9_-]{1,64}$/.exec(text)
+  const m = STAMP.exec(text)
   if (!m) throw new Error(`${text.slice(0, 40)} is not a sync stamp`)
   return [parseInt(m[1]!, 36), parseInt(m[2]!, 36)]
 }
 
-export const SyncStamp = z.string().regex(/^[0-9a-z]{11}\.[0-9a-z]{5}\.[A-Za-z0-9_-]{1,64}$/)
+export const SyncStamp = z.string().regex(STAMP)
 
 /**
  * Each row's last stamp, by key, and when this copy got it: a count of its
@@ -103,18 +108,20 @@ export interface StampTable {
   get(key: string): string | undefined
   /** Notes a row's stamp, as the latest thing this copy got. */
   put(key: string, stamp: string): void
-  /** Up to `limit` rows got after `since` (0 for all), in the order they came. */
-  since(since: number, limit: number): { key: string; stamp: string; seq: number }[]
+  /** Up to `limit` rows got after `since` (0 for all), in the order they came, but those `skip` (a device) stamped. */
+  since(since: number, limit: number, skip?: string): { key: string; stamp: string; seq: number }[]
+  /** When this copy last got a row (0: never). */
+  readonly latest: number
 }
 
 export class MemoryStampTable implements StampTable {
   private readonly rows = new Map<string, { stamp: string; seq: number }>()
-  private seq = 0
+  latest = 0
   get = (key: string) => this.rows.get(key)?.stamp
-  put = (key: string, stamp: string) => void this.rows.set(key, { stamp, seq: ++this.seq })
-  since = (since: number, limit: number) =>
+  put = (key: string, stamp: string) => void this.rows.set(key, { stamp, seq: ++this.latest })
+  since = (since: number, limit: number, skip?: string) =>
     [...this.rows]
-      .filter(([, r]) => r.seq > since)
+      .filter(([, r]) => r.seq > since && !(skip && r.stamp.endsWith(`.${skip}`)))
       .sort((a, b) => a[1].seq - b[1].seq)
       .slice(0, limit)
       .map(([key, r]) => ({ key, ...r }))
@@ -125,62 +132,30 @@ export interface SyncLedger {
   stampOf(ref: SyncRef): string | undefined
   /** The row `merge` is writing keeps `stamp` rather than getting a new one. */
   adopt(ref: SyncRef, stamp: string): void
-  device: string
 }
+
+/** Rows from another device in one merge, at most: a pull is asked for in pages smaller than this. */
+export const MAX_MERGE_ROWS = 2000
+/** About how much a page of rows holds, at most (a face of terrain is about 170 kB as base64): one more row is sent past it. */
+const PAGE_BYTES = 2_000_000
 
 /**
  * A store that stamps every row written through it (PLAN.md §6.7), when its
  * transaction commits, in the same transaction. Reads go straight through.
  */
-export class StampedStore implements Store {
-  readonly nodes: NodeRepository
-  readonly regions: RegionRepository
-  readonly worlds: WorldRepository
-  readonly assets: AssetRepository
-  readonly sync: SyncLedger
-  private depth = 0
+export class StampedStore extends ObservedStore {
+  private readonly ledger: SyncLedger
   /** Rows written in the open transaction, and the stamps merged ones keep. */
   private readonly touched = new Set<string>()
   private readonly adopted = new Map<string, string>()
-  private readonly recordRepos = new Map<RecordKind, RecordRepository<unknown>>()
 
   constructor(
-    private readonly inner: Store,
+    inner: Store,
     private readonly table: StampTable,
     private readonly clock: SyncClock
   ) {
-    const touch = (ref: SyncRef) => this.touch(ref)
-    const { nodes, regions, worlds, assets } = inner
-    this.nodes = {
-      get: (id) => nodes.get(id),
-      children: (id) => nodes.children(id),
-      all: () => nodes.all(),
-      root: () => nodes.root(),
-      insert: (n) => (nodes.insert(n), touch({ t: 'node', id: n.id })),
-      update: (n) => (nodes.update(n), touch({ t: 'node', id: n.id }))
-    }
-    this.regions = {
-      get: (id) => regions.get(id),
-      all: () => regions.all(),
-      insert: (r) => (regions.insert(r), touch({ t: 'region', id: r.id })),
-      update: (r) => (regions.update(r), touch({ t: 'region', id: r.id }))
-    }
-    this.worlds = {
-      getSettings: (id) => worlds.getSettings(id),
-      putSettings: (id, settings) => (worlds.putSettings(id, settings), touch({ t: 'world', id })),
-      getLayer: (id, layer, face) => worlds.getLayer(id, layer, face),
-      putLayer: (id, layer, face, bytes) => (worlds.putLayer(id, layer, face, bytes), touch({ t: 'layer', id, layer, face })),
-      terrainRevision: (id) => worlds.terrainRevision(id),
-      // Each device counts its own revisions: they tell its views to load the terrain again, and aren't synced.
-      bumpTerrainRevision: (id) => worlds.bumpTerrainRevision(id)
-    }
-    this.assets = {
-      get: (id) => assets.get(id),
-      put: (a) => (assets.put(a), touch({ t: 'asset', id: a.id })),
-      remove: (id) => (assets.remove(id), touch({ t: 'asset', id }))
-    }
-    this.sync = {
-      device: clock.device,
+    super(inner)
+    this.ledger = {
       stampOf: (ref) => this.table.get(refKey(ref)),
       adopt: (ref, s) => {
         this.adopted.set(refKey(ref), s)
@@ -189,36 +164,8 @@ export class StampedStore implements Store {
     }
   }
 
-  records<K extends RecordKind>(kind: K): RecordRepository<RecordOf<K>> {
-    let repo = this.recordRepos.get(kind) as RecordRepository<RecordOf<K>> | undefined
-    if (!repo) {
-      const inner = this.inner.records(kind)
-      repo = {
-        get: (id) => inner.get(id),
-        all: () => inner.all(),
-        byOwner: (ownerId) => inner.byOwner(ownerId),
-        insert: (r) => (inner.insert(r), this.touch({ t: 'record', kind, id: r.id })),
-        update: (r) => (inner.update(r), this.touch({ t: 'record', kind, id: r.id }))
-      }
-      this.recordRepos.set(kind, repo as RecordRepository<unknown>)
-    }
-    return repo
-  }
-
-  transaction<T>(fn: () => T): T {
-    if (this.depth > 0) return fn()
-    return this.inner.transaction(() => {
-      this.depth++
-      try {
-        const result = fn()
-        this.flush()
-        return result
-      } finally {
-        this.depth--
-        this.touched.clear()
-        this.adopted.clear()
-      }
-    })
+  override get sync(): SyncLedger {
+    return this.ledger
   }
 
   /**
@@ -226,34 +173,53 @@ export class StampedStore implements Store {
    * all), as they are now, but those the asking device wrote itself (it has
    * them); where to ask from next, and whether there's more after that.
    */
-  changesSince(since: number, { limit = 500, from }: { limit?: number; from?: string } = {}): { rows: SyncRow[]; upTo: number; more: boolean } {
-    const got = this.table.since(since, limit)
-    const theirs = from && `.${from}`
-    const rows = got.filter(({ stamp: s }) => !theirs || !s.endsWith(theirs)).map(({ key, stamp: s }) => ({ key, stamp: s, data: readRow(this.inner, parseRefKey(key)) }))
-    return { rows, upTo: got.at(-1)?.seq ?? since, more: got.length === limit }
+  changesSince(since: number, { limit = 500, from }: { limit?: number; from?: string } = {}): SyncPage {
+    const got = this.table.since(since, limit, from)
+    const rows: SyncRow[] = []
+    let bytes = 0
+    for (const { key, stamp: s } of got) {
+      if (bytes > PAGE_BYTES) break
+      const data = readRow(this.inner, parseRefKey(key))
+      bytes += sizeOf(data)
+      rows.push({ key, stamp: s, data })
+    }
+    const more = rows.length < got.length || got.length === limit
+    // Everything got up to now has been seen, the asker's own rows too, unless the page ended first.
+    return { rows, upTo: more ? got[rows.length - 1]!.seq : Math.max(since, this.table.latest), more }
   }
 
-  private touch(ref: SyncRef): void {
+  protected wrote(ref: SyncRef): void {
     this.touched.add(refKey(ref))
-    // A write outside a transaction (making a project's universe) is stamped at once.
-    if (this.depth === 0) {
-      this.flush()
-      this.touched.clear()
-    }
   }
 
   /** Each row its own stamp (rows that only share one would tie, and a page could end between them), or the one merged with it. */
-  private flush(): void {
+  protected override committing(): void {
     for (const key of this.touched) this.table.put(key, this.adopted.get(key) ?? this.clock.next())
   }
+
+  protected override ended(): void {
+    this.touched.clear()
+    this.adopted.clear()
+  }
+}
+
+/** About how many bytes a row's data takes as it travels. */
+function sizeOf(data: unknown): number {
+  if (typeof data === 'string') return data.length
+  const asset = data as { data?: unknown } | null
+  return typeof asset?.data === 'string' ? asset.data.length : JSON.stringify(data).length
 }
 
 /** A row as it travels: its key, its stamp, and what it holds (null: nothing, as an asset removed). */
 export const SyncRow = z.object({ key: z.string().min(1).max(2000), stamp: SyncStamp, data: z.unknown() })
 export type SyncRow = z.infer<typeof SyncRow>
 
+/** A page of rows another device asked for: where to ask from next, and whether there's more after it. */
+export const SyncPage = z.object({ rows: z.array(SyncRow).max(MAX_MERGE_ROWS), upTo: z.number().int().min(0), more: z.boolean() })
+export type SyncPage = z.infer<typeof SyncPage>
+
 /** What a row holds now, as it travels: byte arrays as base64, nothing as null. */
-export function readRow(store: Store, ref: SyncRef): unknown {
+function readRow(store: Store, ref: SyncRef): unknown {
   switch (ref.t) {
     case 'node':
       return store.nodes.get(ref.id) ?? null
