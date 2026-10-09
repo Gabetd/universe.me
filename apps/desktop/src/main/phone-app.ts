@@ -65,8 +65,19 @@ export interface PhoneAppPlace {
   login: string
 }
 
+/** What the user's other devices ask (PLAN.md §6.7; device-sync.ts): what's open, its changes, and a nudge to ask for theirs. */
+export interface SyncRoutes {
+  on(): boolean
+  hello(): object
+  changes(body: unknown, device: string | undefined): { ok: true; rows: unknown[]; upTo: number; more: boolean } | { ok: false; status: number; error: string }
+  nudged(body: unknown): void
+}
+
 export interface PhoneAppOptions {
   oauth: OAuth
+  /** Whether the phone app itself is on (the server can be up for sync alone). */
+  appOn(): boolean
+  sync: SyncRoutes
   /** The window's built files (index.html and its assets). */
   files: string
   /** Where it's answered, while it's on. */
@@ -153,6 +164,9 @@ export class PhoneAppServer {
       const url = new URL(req.url ?? '/', at.base)
       // From the page itself only (the sign-in form and the bridge send their Origin).
       if (req.headers.origin !== undefined && req.headers.origin !== at.base) return send(res, 403, { error: 'Requests from other pages are not allowed' })
+      // Another of the user's devices (the tailnet's owner already checked), not a page: never with an Origin.
+      if (url.pathname.startsWith('/sync/')) return await this.syncRoute(req, res, url.pathname)
+      if (!this.options.appOn()) return send(res, 403, { error: 'Universe on your phone is turned off on this computer' })
       if (url.pathname === '/oauth/authorize' && (req.method === 'GET' || req.method === 'POST')) {
         await this.options.oauth.handle(req, res, url, at.base, { remote: true, source: at.source })
         return
@@ -170,6 +184,30 @@ export class PhoneAppServer {
     } catch (err) {
       send(res, 500, { error: (err as Error).message })
     }
+  }
+
+  private async syncRoute(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
+    const { sync } = this.options
+    if (req.headers['x-universe-sync'] !== '1' || req.headers.origin !== undefined) return send(res, 403, { error: 'For Universe on your other devices' })
+    if (!sync.on()) return send(res, 403, { error: 'Sync is off on this computer' })
+    const device = typeof req.headers['x-universe-device'] === 'string' ? req.headers['x-universe-device'] : undefined
+    if (req.method === 'GET' && path === '/sync/hello') return send(res, 200, sync.hello())
+    if (req.method !== 'POST') return send(res, 405, { error: 'Not here' })
+    let body: unknown
+    try {
+      body = JSON.parse(await readText(req, 64 * 1024))
+    } catch {
+      return send(res, 400, { error: 'Send JSON' })
+    }
+    if (path === '/sync/changes') {
+      const answer = sync.changes(body, device)
+      return answer.ok ? send(res, 200, { rows: answer.rows, upTo: answer.upTo, more: answer.more }) : send(res, answer.status, { error: answer.error })
+    }
+    if (path === '/sync/nudge') {
+      sync.nudged(body)
+      return send(res, 202, {})
+    }
+    send(res, 404, { error: 'Not here' })
   }
 
   /** Sends the phone to sign in, holding the PKCE verifier and a state its cookie names. */

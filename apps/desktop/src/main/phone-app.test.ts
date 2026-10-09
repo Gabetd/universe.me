@@ -17,6 +17,9 @@ let oauth: OAuth
 let server: PhoneAppServer
 let port: number
 const asked: string[] = []
+let appOn = true
+let syncOn = true
+const nudges: unknown[] = []
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'universe-phone-'))
@@ -26,8 +29,17 @@ beforeEach(async () => {
   writeFileSync(join(dir, 'secret.txt'), 'not for the phone')
   oauth = new OAuth(memoryStore())
   asked.length = 0
+  nudges.length = 0
+  appOn = syncOn = true
   server = new PhoneAppServer({
     oauth,
+    appOn: () => appOn,
+    sync: {
+      on: () => syncOn,
+      hello: () => ({ device: 'here', project: { syncId: 's1', name: 'Aerth' } }),
+      changes: (body, device) => (device === 'there' ? { ok: true, rows: [], upTo: (body as { since: number }).since + 1, more: false } : { ok: false, status: 400, error: 'Who?' }),
+      nudged: (body) => void nudges.push(body)
+    },
     files: join(dir, 'app'),
     place: () => ({ host: HOST, login: LOGIN }),
     answer: async (method, args) => (asked.push(method), { ok: true, value: { method, args } }),
@@ -128,6 +140,24 @@ describe('the phone app’s server', () => {
     const back = new URL(typed.headers.location as string)
     // Someone else's browser (without the cookie the sign-in set) gets nothing from the code.
     expect((await call(`${back.pathname}${back.search}`)).status).toBe(400)
+  })
+
+  it('answers the user’s other devices about sync, not pages, and only while sync is on', async () => {
+    const sync = { 'x-universe-sync': '1', 'x-universe-device': 'there', 'content-type': 'application/json' }
+    expect(JSON.parse((await call('/sync/hello', { headers: sync })).body)).toEqual({ device: 'here', project: { syncId: 's1', name: 'Aerth' } })
+    expect(JSON.parse((await call('/sync/changes', { method: 'POST', headers: sync, body: JSON.stringify({ syncId: 's1', since: 4 }) })).body)).toEqual({ rows: [], upTo: 5, more: false })
+    expect((await call('/sync/nudge', { method: 'POST', headers: sync, body: JSON.stringify({ host: 'laptop' }) })).status).toBe(202)
+    expect(nudges).toEqual([{ host: 'laptop' }])
+    // A page can't ask (it would send an Origin, and couldn't set the header without asking first); nor anyone else on the tailnet.
+    expect((await call('/sync/hello', { headers: { ...sync, origin: `https://${HOST}` } })).status).toBe(403)
+    expect((await call('/sync/hello')).status).toBe(403)
+    expect((await call('/sync/hello', { headers: { ...sync, 'tailscale-user-login': 'someone@example.com' } })).status).toBe(403)
+    // With the phone app off, sync still answers, and the app doesn't.
+    appOn = false
+    expect((await call('/sync/hello', { headers: sync })).status).toBe(200)
+    expect((await call('/')).status).toBe(403)
+    syncOn = false
+    expect((await call('/sync/hello', { headers: sync })).status).toBe(403)
   })
 
   it('stops a phone removed in Connect AI at once: its requests and its stream of changes', async () => {

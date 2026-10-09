@@ -5,8 +5,22 @@ const HOST = 'studio.tail1234.ts.net'
 
 describe('reading Tailscale', () => {
   it('finds this computer’s name, and whether Tailscale is running', () => {
-    expect(readStatus(JSON.stringify({ BackendState: 'Running', Self: { DNSName: `${HOST}.` } }))).toEqual({ running: true, backend: 'Running', host: HOST })
-    expect(readStatus(JSON.stringify({ BackendState: 'NeedsLogin', Self: {} }))).toEqual({ running: false, backend: 'NeedsLogin' })
+    expect(readStatus(JSON.stringify({ BackendState: 'Running', Self: { DNSName: `${HOST}.` } }))).toEqual({ running: true, backend: 'Running', host: HOST, peers: [] })
+    expect(readStatus(JSON.stringify({ BackendState: 'NeedsLogin', Self: {} }))).toEqual({ running: false, backend: 'NeedsLogin', peers: [] })
+  })
+
+  it('finds who’s signed in, and their own other devices that are on', () => {
+    const status = {
+      BackendState: 'Running',
+      Self: { DNSName: `${HOST}.`, UserID: 7 },
+      User: { 7: { LoginName: 'me@example.com' } },
+      Peer: {
+        a: { DNSName: 'laptop.tail1234.ts.net.', HostName: 'laptop', UserID: 7, Online: true },
+        b: { DNSName: 'old.tail1234.ts.net.', HostName: 'old', UserID: 7, Online: false },
+        c: { DNSName: 'friend.tail1234.ts.net.', HostName: 'friend', UserID: 9, Online: true }
+      }
+    }
+    expect(readStatus(JSON.stringify(status))).toMatchObject({ login: 'me@example.com', peers: [{ host: 'laptop.tail1234.ts.net', name: 'laptop' }] })
   })
 
   it('finds the port Funnel forwards the public address to, only while Funnel is on for it', () => {

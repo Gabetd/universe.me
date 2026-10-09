@@ -8,6 +8,7 @@ import { app } from 'electron'
 import createTerrainWorker from './terrain.worker?nodeWorker'
 import type { AiChange, ApiSettingsPatch, ApiStatus, AppState, PhoneStatus, RemoteEvent, RemoteMethod, TailscaleState } from '../shared/api'
 import { PhoneAppServer, type PhoneAppPlace } from './phone-app'
+import { DeviceSync } from './device-sync'
 import type { Session } from './session'
 import { APP_HTTPS_PORT, offNow, setFunnel, setServe, tailscaleState } from './tailscale'
 
@@ -21,6 +22,8 @@ interface ApiSettings {
   phone: boolean
   /** The phone app (PLAN.md §6.6), off until the user turns it on. */
   phoneApp: boolean
+  /** Sync with the user's other devices (PLAN.md §6.7), off until the user turns it on. */
+  sync: boolean
   token: string
 }
 
@@ -62,6 +65,7 @@ export class ApiController {
   private phoneAppError: string | undefined
   /** Where the app pointed `tailscale serve`, while it does. */
   private serveTo: number | undefined
+  readonly devices: DeviceSync
   private readonly oauth: OAuth
   readonly ctx: ApiContext
 
@@ -75,6 +79,19 @@ export class ApiController {
     this.ctx = apiContext(this.host())
     // Sign-ins and connections show in Connect AI as they come and go.
     this.oauth = new OAuth(fileStore(join(userData, 'api-oauth.json')), () => this.events.status(this.status()))
+    this.devices = new DeviceSync({
+      session,
+      on: () => this.settings.sync && !!this.phoneAppPlace(),
+      tailnet: () => (this.tailscale.kind === 'ready' ? { host: this.tailscale.host, peers: this.tailscale.peers } : undefined),
+      merged: (state) => this.events.state(state),
+      changed: () => this.events.status(this.status())
+    })
+  }
+
+  /** Something changed here (the user, a phone or an AI client): the user's other devices with this universe open are nudged to ask for it. */
+  changedHere(summary: string): void {
+    this.server?.changed({ summary, source: 'user', at: new Date().toISOString() })
+    this.devices.localChange()
   }
 
   /** The project is about to be opened: `--mcp` servers should wait for it rather than open the file too. */
@@ -101,7 +118,7 @@ export class ApiController {
     }
     this.announce()
     // Funnel follows the port, which can change from one start to the next (and goes when nothing listens).
-    if (this.settings.phone || this.funnelTo !== undefined || this.settings.phoneApp) void this.syncPhone()
+    if (this.settings.phone || this.funnelTo !== undefined || this.settings.phoneApp || this.settings.sync) void this.syncPhone()
   }
 
   async stop(): Promise<void> {
@@ -122,9 +139,9 @@ export class ApiController {
   async set(given: ApiSettingsPatch): Promise<ApiStatus> {
     // Only these, and only as true or false: nothing else in the settings (the token) is the window's to set.
     const patch: ApiSettingsPatch = {}
-    for (const key of ['enabled', 'review', 'phone', 'phoneApp'] as const) if (typeof given[key] === 'boolean') patch[key] = given[key]
+    for (const key of ['enabled', 'review', 'phone', 'phoneApp', 'sync'] as const) if (typeof given[key] === 'boolean') patch[key] = given[key]
     const restart = patch.enabled !== undefined && patch.enabled !== this.settings.enabled
-    const phone = (patch.phone !== undefined && patch.phone !== this.settings.phone) || (patch.phoneApp !== undefined && patch.phoneApp !== this.settings.phoneApp)
+    const phone = (['phone', 'phoneApp', 'sync'] as const).some((key) => patch[key] !== undefined && patch[key] !== this.settings[key])
     this.settings = { ...this.settings, ...patch }
     this.save()
     if (restart) await this.start()
@@ -192,18 +209,30 @@ export class ApiController {
     this.events.status(this.status())
   }
 
-  /** With the phone app on, its server running and `tailscale serve` pointed at it; with it off, neither (if the app pointed it here). */
+  /**
+   * With the phone app or sync on, the tailnet server running and `tailscale
+   * serve` pointed at it (and sync asking the other devices); with both off,
+   * neither (if the app pointed it here).
+   */
   private async syncPhoneApp(ts: Extract<TailscaleState, { kind: 'ready' }>): Promise<void> {
     this.phoneAppError = undefined
-    const on = this.settings.phoneApp
-    if (on && !this.bridge) this.phoneAppError = 'The phone app comes with a built copy of Universe (not `pnpm dev`)'
-    else if (on && !ts.login) this.phoneAppError = 'Tailscale didn’t say who’s signed in on this computer'
-    if (on && !this.phoneAppError && !this.phoneApp) {
-      const server = new PhoneAppServer({ oauth: this.oauth, files: this.bridge!.files, place: () => this.phoneAppPlace(), answer: this.bridge!.answer, sessionsFile: join(this.userData, 'phone-sessions.json') })
+    const on = this.settings.phoneApp || this.settings.sync
+    if (this.settings.phoneApp && !this.bridge) this.phoneAppError = 'The phone app comes with a built copy of Universe (not `pnpm dev`)'
+    if (on && !ts.login) this.phoneAppError = 'Tailscale didn’t say who’s signed in on this computer'
+    if (on && ts.login && !this.phoneApp) {
+      const server = new PhoneAppServer({
+        oauth: this.oauth,
+        appOn: () => this.settings.phoneApp && !!this.bridge,
+        files: this.bridge?.files ?? '',
+        place: () => this.phoneAppPlace(),
+        answer: (method, args) => (this.bridge ? this.bridge.answer(method, args) : Promise.reject(new Error('No phone app here'))),
+        sync: { on: () => this.settings.sync, hello: () => this.devices.hello(), changes: (body, device) => this.devices.changes(body, device), nudged: (body) => this.devices.nudged(body) },
+        sessionsFile: join(this.userData, 'phone-sessions.json')
+      })
       this.phoneAppPort = await server.listen()
       this.phoneApp = server
     }
-    const wanted = on && !this.phoneAppError ? this.phoneAppPort! : null
+    const wanted = on && this.phoneApp ? this.phoneAppPort! : null
     const ours = ts.appPort !== null && (ts.appPort === this.phoneAppPort || ts.appPort === this.serveTo)
     if (wanted !== null ? ts.appPort !== wanted : ours) {
       try {
@@ -219,12 +248,19 @@ export class ApiController {
       this.phoneApp = undefined
       this.phoneAppPort = undefined
     }
+    if (this.settings.sync && this.phoneAppPlace()) this.devices.start()
+    else this.devices.stop()
+  }
+
+  /** A copy here of the universe another device has open, in a new file at `path`, opened. */
+  copyFromDevice(host: string, path: string): Promise<AppState> {
+    return this.devices.copyFrom(host, path)
   }
 
   /** Where the phone app answers: the tailnet name `tailscale serve` forwards here, while it's on. */
   private phoneAppPlace(): PhoneAppPlace | undefined {
     const ts = this.tailscale
-    if (!this.settings.phoneApp || ts.kind !== 'ready' || !ts.login || ts.appPort === null || ts.appPort !== this.phoneAppPort) return undefined
+    if (!(this.settings.phoneApp || this.settings.sync) || ts.kind !== 'ready' || !ts.login || ts.appPort === null || ts.appPort !== this.phoneAppPort) return undefined
     return { host: `${ts.host}:${APP_HTTPS_PORT}`, login: ts.login }
   }
 
@@ -245,11 +281,8 @@ export class ApiController {
   projectChanged(): void {
     this.ctx.models.reset()
     this.announce()
-  }
-
-  /** A change made in the app, for the change feed. */
-  changedHere(summary: string): void {
-    this.server?.changed({ summary, source: 'user', at: new Date().toISOString() })
+    // Which devices have this universe open is asked again at once.
+    void this.devices.round()
   }
 
   /** A world's bible as Markdown. */
@@ -280,7 +313,8 @@ export class ApiController {
       ...(this.phoneError && { error: this.phoneError }),
       signIns: this.oauth.pendingSignIns(),
       connections: this.oauth.connections(),
-      app: { on: this.settings.phoneApp, url: this.phoneAppPlace() ? `https://${this.phoneAppPlace()!.host}/` : null, ...(this.phoneAppError && { error: this.phoneAppError }) }
+      app: { on: this.settings.phoneApp, url: this.settings.phoneApp && this.phoneAppPlace() ? `https://${this.phoneAppPlace()!.host}/` : null, ...(this.phoneAppError && { error: this.phoneAppError }) },
+      sync: { on: this.settings.sync, devices: this.devices.status(), ...(this.settings.sync && this.phoneAppError && { error: this.phoneAppError }) }
     }
   }
 
@@ -311,6 +345,7 @@ export class ApiController {
         this.events.state(this.session.execute(command, 'ai'))
         this.events.aiChange({ summary })
         this.server?.changed({ summary, source: 'ai', at: new Date().toISOString() })
+        this.devices.localChange()
         return { status: 'applied' }
       },
       baseTerrain
@@ -324,11 +359,11 @@ export class ApiController {
   private load(): ApiSettings {
     try {
       const saved = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<ApiSettings>
-      if (typeof saved.token === 'string' && saved.token.length >= 32) return { enabled: saved.enabled !== false, review: saved.review === true, phone: saved.phone === true, phoneApp: saved.phoneApp === true, token: saved.token }
+      if (typeof saved.token === 'string' && saved.token.length >= 32) return { enabled: saved.enabled !== false, review: saved.review === true, phone: saved.phone === true, phoneApp: saved.phoneApp === true, sync: saved.sync === true, token: saved.token }
     } catch {
       // First run, or an unreadable file: start over.
     }
-    const fresh = { enabled: true, review: false, phone: false, phoneApp: false, token: newToken() }
+    const fresh = { enabled: true, review: false, phone: false, phoneApp: false, sync: false, token: newToken() }
     this.save(fresh)
     return fresh
   }

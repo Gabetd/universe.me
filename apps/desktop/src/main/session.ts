@@ -1,7 +1,7 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
-import { Command as CommandSchema, CommandError, EMPTY_TIMELINE, type Command, type CommandSource, type ExecuteResult, type Target } from '@universe/core'
+import { Command as CommandSchema, CommandError, EMPTY_TIMELINE, type Command, type CommandSource, type ExecuteResult, type SyncRow, type Target } from '@universe/core'
 import { Project } from '@universe/db'
 import type { AppState, ProposalSummary, WorldTerrain } from '../shared/api'
 
@@ -18,7 +18,12 @@ export class Session {
   /** AI changes held for the user to accept (review mode). Kept for this session only. */
   private proposals: (ProposalSummary & { command: Command; size: number })[] = []
 
-  constructor(private readonly userDataDir: string) {}
+  /** This install, in the stamps of what it writes (PLAN.md §6.7): made once, kept in its own file. */
+  readonly device: string
+
+  constructor(private readonly userDataDir: string) {
+    this.device = loadDevice(join(userDataDir, 'device.json'))
+  }
 
   get isOpen(): boolean {
     return this.project !== null
@@ -39,13 +44,45 @@ export class Session {
 
   create(path: string): AppState {
     const name = basename(path, extname(path))
-    this.replace(Project.create(path, name))
+    this.replace(Project.create(path, name, { device: this.device }))
     return this.state()
   }
 
   open(path: string): AppState {
-    this.replace(Project.open(path))
+    this.replace(Project.open(path, { device: this.device }))
     return this.state()
+  }
+
+  /** A new, empty file for a universe coming from another device (with its sync id), opened: its rows arrive with `merge`. */
+  createCopy(path: string, name: string, syncId: string): void {
+    this.replace(Project.create(path, name, { device: this.device, copyOf: syncId }))
+  }
+
+  /** The open universe as sync sees it (PLAN.md §6.7): its id and name, if one is open (a copy has its id before its rows arrive). */
+  syncInfo(): { syncId: string; name: string } | undefined {
+    const p = this.project
+    return p ? { syncId: p.syncId(), name: p.info().name } : undefined
+  }
+
+  /** What another device asks for: the rows the open universe got after `since`, but that device's own. */
+  changesSince(since: number, from: string, limit: number): { rows: SyncRow[]; upTo: number; more: boolean } {
+    return this.require().changesSince(since, { from, limit })
+  }
+
+  /** Rows from another device, merged into the open universe; the state after, or undefined if nothing came. */
+  merge(rows: SyncRow[]): AppState | undefined {
+    if (!rows.length) return undefined
+    this.require().merge(rows)
+    return this.state()
+  }
+
+  /** Where the open universe last asked a device for its changes from (0: never). */
+  seen(device: string): number {
+    return Number(this.require().getMeta(`syncSeen:${device}`) ?? 0)
+  }
+
+  setSeen(device: string, upTo: number): void {
+    this.require().setMeta(`syncSeen:${device}`, String(upTo))
   }
 
   async saveCopy(path: string): Promise<void> {
@@ -169,4 +206,18 @@ export class Session {
     if (!this.project) throw new Error('No project is open')
     return this.project
   }
+}
+
+/** This install's device id: read from its file, or made (and kept) the first time. */
+function loadDevice(file: string): string {
+  try {
+    const { id } = JSON.parse(readFileSync(file, 'utf8')) as { id?: unknown }
+    if (typeof id === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(id)) return id
+  } catch {
+    // First run, or an unreadable file: a new id.
+  }
+  const id = randomBytes(9).toString('base64url')
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, JSON.stringify({ id }))
+  return id
 }

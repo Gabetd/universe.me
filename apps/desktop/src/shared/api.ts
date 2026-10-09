@@ -59,7 +59,31 @@ export interface ApiStatus {
 }
 
 /** Tailscale on this computer, as phone access needs it: not there, there but not running or signed in, or ready (with where Funnel forwards, if anywhere). */
-export type TailscaleState = { kind: 'missing' } | { kind: 'stopped'; detail: string } | { kind: 'ready'; host: string; login?: string; funnelPort: number | null; appPort: number | null }
+/**
+ * One of the user's other devices, as sync sees it (PLAN.md §6.7): not
+ * answering (Universe isn't running there, or sync is off), with nothing
+ * open, with another universe open, or with the same one (synced then).
+ */
+export interface DeviceStatus {
+  host: string
+  name: string
+  state: 'unreachable' | 'nothing' | 'other' | 'same'
+  device?: string
+  project?: { syncId: string; name: string }
+  lastSync?: number
+  error?: string
+}
+
+/** One of the user's other devices on their tailnet. */
+export interface TailnetPeer {
+  host: string
+  name: string
+}
+
+export type TailscaleState =
+  | { kind: 'missing' }
+  | { kind: 'stopped'; detail: string }
+  | { kind: 'ready'; host: string; login?: string; funnelPort: number | null; appPort: number | null; peers: TailnetPeer[] }
 
 /** Phone access (PLAN.md §6.4): Claude on a phone, through a claude.ai custom connector, Tailscale Funnel and OAuth. */
 export interface PhoneStatus {
@@ -75,6 +99,8 @@ export interface PhoneStatus {
   connections: { id: string; name: string; created: number; lastUsed: number }[]
   /** The phone app (PLAN.md §6.6): this app in the phone's browser, on the tailnet only. */
   app: { on: boolean; url: string | null; error?: string }
+  /** Sync with the user's other devices (PLAN.md §6.7). */
+  sync: { on: boolean; devices: DeviceStatus[]; error?: string }
 }
 
 /** What the user can change about the API. */
@@ -85,6 +111,8 @@ export interface ApiSettingsPatch {
   phone?: boolean
   /** The phone app: this app served on the tailnet, through `tailscale serve`. */
   phoneApp?: boolean
+  /** Sync with the user's other devices, on the same tailnet address. */
+  sync?: boolean
 }
 
 /** A change an AI client made, for the app to show. */
@@ -138,6 +166,8 @@ export interface UniverseApi {
   denySignIn(id: string): Promise<ApiStatus>
   /** Disconnects a client that signed in: its tokens stop working at once. */
   removeConnection(id: string): Promise<ApiStatus>
+  /** Makes a copy here of the universe another device has open (saved where the user picks), and opens it; null if they cancel. */
+  copyFromDevice(host: string): Promise<Result<AppState | null>>
   onApi(listener: (status: ApiStatus) => void): () => void
   onAiChange(listener: (change: AiChange) => void): () => void
   onState(listener: (state: AppState) => void): () => void
@@ -172,6 +202,7 @@ export const INVOKE: Record<InvokeMethod, string> = {
   newApiToken: 'api:new-token',
   denySignIn: 'api:deny-sign-in',
   removeConnection: 'api:remove-connection',
+  copyFromDevice: 'sync:copy',
   getTerrain: 'world:terrain',
   importModel: 'asset:import-model',
   getAsset: 'asset:get',

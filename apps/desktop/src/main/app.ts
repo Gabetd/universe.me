@@ -149,6 +149,22 @@ async function newProject(): Promise<AppState | null> {
   return switchedTo(session.create(path))
 }
 
+/** A copy here of the universe one of the user's other devices has open (PLAN.md §6.7), saved where they pick, and opened. */
+async function copyFromDevice(host: string): Promise<AppState | null> {
+  const device = api.status().phone.sync.devices.find((d) => d.host === host)
+  if (!device?.project) throw new Error('That device has no universe open now')
+  const { canceled, filePath } = await dialog.showSaveDialog(win!, {
+    title: `Copy “${device.project.name}” from ${device.name}`,
+    buttonLabel: 'Copy here',
+    defaultPath: join(app.getPath('documents'), `${device.project.name}.universe`),
+    filters: FILE_FILTERS
+  })
+  if (canceled || !filePath) return null
+  const path = filePath.endsWith('.universe') ? filePath : `${filePath}.universe`
+  api.opening(path)
+  return switchedTo(await api.copyFromDevice(host, path))
+}
+
 async function openProject(path?: string): Promise<AppState | null> {
   if (!path) {
     const { canceled, filePaths } = await dialog.showOpenDialog(win!, {
@@ -382,6 +398,7 @@ function registerIpc(): void {
   handle('newApiToken', () => api.newToken())
   handle('denySignIn', (id) => api.denySignIn(id))
   handle('removeConnection', (id) => api.removeConnection(id))
+  handle('copyFromDevice', (host) => wrap(() => copyFromDevice(host)))
   handle('updateStatus', () => updater.current())
   handle('installUpdate', () => updater.install())
   handle('dismissUpdate', () => updater.dismiss())
