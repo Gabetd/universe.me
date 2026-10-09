@@ -36,6 +36,11 @@ test('Universe on your phone: served on the tailnet, signed in with the code the
   other.server.close()
   const { url, server } = await serveProxy(target)
 
+  // Before signing in, the phone can add it to its home screen: the manifest and its icons, to open as an app of its own.
+  const manifest = (await (await fetch(new URL('manifest.webmanifest', url))).json()) as { display: string; icons: { src: string }[] }
+  expect(manifest.display).toBe('standalone')
+  for (const icon of manifest.icons) expect((await fetch(new URL(icon.src, url))).headers.get('content-type')).toBe('image/png')
+
   const phoneApp = await phone(url)
   try {
     const screen = await phoneApp.firstWindow()

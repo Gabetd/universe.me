@@ -7,6 +7,14 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' data: blob:"
     />
+    <!-- On a phone (Universe on your phone, PLAN.md §6.6): added to the home screen, it opens as an app of its own. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#05070d" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Universe" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <title>Universe</title>
   </head>
   <body>

@@ -44,8 +44,12 @@ const TYPES: Record<string, string> = {
   '.webp': 'image/webp',
   '.woff2': 'font/woff2',
   '.wasm': 'application/wasm',
-  '.ico': 'image/x-icon'
+  '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json'
 }
+
+/** What a phone's browser fetches to add the app to its home screen, without the session (it doesn't send cookies for them): nothing private. */
+const HOME_SCREEN_FILES = new Set(['/manifest.webmanifest', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png'])
 
 /** Only the app's own files and the bridge, from the page itself. */
 const SECURITY = {
@@ -173,6 +177,7 @@ export class PhoneAppServer {
         return
       }
       if (req.method === 'GET' && url.pathname === '/signed-in') return this.signedIn(req, res, url, at.base)
+      if (req.method === 'GET' && HOME_SCREEN_FILES.has(url.pathname)) return await this.file(res, url.pathname)
       const session = this.session(req)
       if (!session) {
         if (req.method === 'GET' && !url.pathname.startsWith('/bridge/')) return this.startSignIn(res, at.base)

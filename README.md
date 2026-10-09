@@ -133,11 +133,16 @@ works on this computer only. The computer has to be on with Universe running.
 The whole app can open in your phone's browser too, from your computer (which
 has to be on), through your own tailnet only: install Tailscale on the phone
 and sign in to the same account. In **Connect AI → From your phone**, turn on
-**Use Universe on my phone** and open the address it shows on the phone (add
-it to the home screen to open it like an app). The first time, type the code
+**Use Universe on my phone** and open the address it shows on the phone. The
+first time, type the code
 the computer shows; the phone then shows the universe open on the computer,
 one panel at a time, and a change on either shows on the other. Remove it from
 the connected list to sign it out.
+
+To keep it on the phone like an app, add it to the home screen: in Safari on
+an iPhone, **Share → Add to Home Screen**; in Chrome on Android, the **⋮** menu
+→ **Add to Home screen** (or **Install app**). It gets Universe's icon and opens
+full screen, without the browser around it, as long as the computer is on.
 
 ### The same universe on your other computers
 

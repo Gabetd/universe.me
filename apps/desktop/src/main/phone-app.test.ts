@@ -26,6 +26,8 @@ beforeEach(async () => {
   mkdirSync(join(dir, 'app', 'assets'), { recursive: true })
   writeFileSync(join(dir, 'app', 'index.html'), '<!doctype html><title>Universe</title>')
   writeFileSync(join(dir, 'app', 'assets', 'app.js'), 'console.log(1)')
+  writeFileSync(join(dir, 'app', 'manifest.webmanifest'), '{"name":"Universe"}')
+  writeFileSync(join(dir, 'app', 'icon-192.png'), 'png')
   writeFileSync(join(dir, 'secret.txt'), 'not for the phone')
   oauth = new OAuth(memoryStore())
   asked.length = 0
@@ -125,6 +127,17 @@ describe('the phone app’s server', () => {
     expect((await bridge(cookie, 'openProject', ['/etc/passwd'])).status).toBe(403)
     expect((await bridge(cookie, 'getState', [], 'https://evil.example')).status).toBe(403)
     expect(asked).toEqual(['execute'])
+  })
+
+  it('lets a phone add the app to its home screen before signing in, and nothing more', async () => {
+    const manifest = await call('/manifest.webmanifest')
+    expect(manifest.status).toBe(200)
+    expect(manifest.headers['content-type']).toBe('application/manifest+json')
+    expect(JSON.parse(manifest.body)).toEqual({ name: 'Universe' })
+    expect((await call('/icon-192.png')).headers['content-type']).toBe('image/png')
+    // Still only for the tailnet's owner, and the rest of the app still needs signing in.
+    expect((await call('/manifest.webmanifest', { headers: { 'tailscale-user-login': 'someone@example.com' } })).status).toBe(403)
+    expect((await call('/assets/app.js')).status).toBe(302)
   })
 
   it('a sign-in comes back only to the browser that started it', async () => {
