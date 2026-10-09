@@ -53,6 +53,15 @@ export interface OAuthClient {
   /** Hashed; none for a public client. */
   secretHash?: string
   created: number
+  /** The app's own (its phone app): kept however long it goes unused. */
+  firstParty?: true
+}
+
+/** Tokens from the token endpoint. */
+export interface Tokens {
+  access_token: string
+  refresh_token: string
+  expires_in: number
 }
 
 /** A connected client: its tokens (hashed) and when it was last used. */
@@ -254,6 +263,27 @@ export class OAuth {
     const before = this.data.grants.length
     this.data.grants = this.data.grants.filter((g) => g.id !== grantId)
     if (this.data.grants.length !== before) this.commit()
+  }
+
+  /**
+   * The app's own client (its phone app, PLAN.md §6.6), with the addresses it
+   * may be sent back to: made, or brought up to date (the tailnet's name can
+   * change). A public client that signs in with PKCE, like any other.
+   */
+  firstParty(id: string, name: string, redirectUris: string[]): void {
+    const existing = this.data.clients.find((c) => c.id === id)
+    if (existing && existing.name === name && existing.redirectUris.join() === redirectUris.join()) return
+    this.data.clients = [...this.data.clients.filter((c) => c.id !== id), { id, name, redirectUris, created: existing?.created ?? this.now(), firstParty: true }]
+    this.store.save(this.data)
+  }
+
+  /** The token endpoint, called by the app itself for its own client (which keeps its tokens on the computer); throws what the endpoint would answer. */
+  exchange(params: Record<string, string>): Tokens {
+    try {
+      return this.token(new URLSearchParams(params), undefined) as Tokens
+    } catch (err) {
+      throw err instanceof OAuthError ? new Error(err.message) : err
+    }
   }
 
   /** Whether an access token is one this server gave and still good. */
@@ -483,12 +513,12 @@ export class OAuth {
     if (grant) this.revoke(grant.id)
   }
 
-  /** Drops expired grants, and clients that never signed in and are a day old. */
+  /** Drops expired grants, and clients that never signed in and are a day old (but the app's own). */
   private prune(): void {
     const now = this.now()
     this.data.grants = this.data.grants.filter((g) => g.refreshExpires > now)
     const used = new Set(this.data.grants.map((g) => g.clientId))
-    this.data.clients = this.data.clients.filter((c) => used.has(c.id) || now - c.created < UNUSED_CLIENT_TTL)
+    this.data.clients = this.data.clients.filter((c) => c.firstParty || used.has(c.id) || now - c.created < UNUSED_CLIENT_TTL)
   }
 
   private commit(): void {

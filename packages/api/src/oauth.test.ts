@@ -244,3 +244,33 @@ describe('OAuth', () => {
     expect((await fetch(`${base}/v1/worlds`, { headers: { Authorization: `Bearer ${TOKEN}` } })).status).toBe(200)
   })
 })
+
+describe('the app’s own client', () => {
+  it('signs in with PKCE and the code the app shows, its tokens exchanged by the app itself, and stays registered however long it goes unused', async () => {
+    const callback = `${base}/signed-in`
+    oauth.firstParty('universe-phone', 'Universe on your phone', [callback])
+    const verifier = 'the-phone-apps-own-verifier-0123456789-abcdefghijklmnop'
+    const challenge = createHash('sha256').update(verifier).digest('base64url')
+    const q = new URLSearchParams({ response_type: 'code', client_id: 'universe-phone', redirect_uri: callback, code_challenge: challenge, code_challenge_method: 'S256', state: 's1' })
+    const page = await (await fetch(`${base}/oauth/authorize?${q}`)).text()
+    expect(page).toContain('Universe on your phone')
+    const [signIn] = oauth.pendingSignIns()
+    const signin = /name="signin" value="([^"]+)"/.exec(page)![1]!
+    const back = new URL((await typeCode(signin, signIn!.code)).headers.get('location')!)
+    expect(back.searchParams.get('state')).toBe('s1')
+
+    const tokens = oauth.exchange({ grant_type: 'authorization_code', client_id: 'universe-phone', code: back.searchParams.get('code')!, code_verifier: verifier, redirect_uri: callback })
+    expect(oauth.verify(tokens.access_token)).toBe(true)
+    expect(oauth.connections().map((c) => c.name)).toEqual(['Universe on your phone'])
+    expect(() => oauth.exchange({ grant_type: 'refresh_token', client_id: 'universe-phone', refresh_token: 'wrong' })).toThrow(/sign in again/)
+    const fresh = oauth.exchange({ grant_type: 'refresh_token', client_id: 'universe-phone', refresh_token: tokens.refresh_token })
+    expect(oauth.verify(fresh.access_token)).toBe(true)
+
+    // Removed in the app: gone; and the client itself stays for next time.
+    oauth.revoke(oauth.connections()[0]!.id)
+    now += 400 * 24 * 60 * 60_000
+    oauth.firstParty('universe-phone', 'Universe on your phone', [callback])
+    expect(() => oauth.exchange({ grant_type: 'refresh_token', client_id: 'universe-phone', refresh_token: fresh.refresh_token })).toThrow(/sign in again/)
+    expect((await fetch(`${base}/oauth/authorize?${q}`)).status).toBe(200)
+  })
+})
