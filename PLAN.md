@@ -506,6 +506,7 @@ Each milestone ends with something you can launch and demo.
 ### M13 — Polish & release (2 weeks) — *active*
 - [x] **Right-click menus** on everything (`contextMenu.ts`): a node in the tree or a claimed one in the cosmos, an event, era, group, link, lane or theme span on the timeline or the canvas, a region, structure, character or event pin on the map, globe or ground, a species in the food web, a row in the inspector's lists. Each gives what its kind can do (open, rename, add to it, go to it, follow a link, move the playhead, delete); the keyboard opens and moves through it too.
 - [x] **Check for updates** on the start screen and in the status bar (as well as the Help menu): it says right there when there's nothing newer.
+- [x] **Eye-catching space** from star systems up (`spaceArt.ts`): skies with nebulae, dust and stars of every colour; a glowing cosmic web and clusters of gas and galaxies; galaxies with gold cores, blue arms and pink star-forming knots, gas clouds among the stars close up; a sun with a corona and turning rays, planets with a rim of air.
 - Onboarding sample universe, keyboard shortcuts, performance pass (LOD, instancing for structures).
 - Signed installers (Windows NSIS, macOS dmg + notarization, Linux AppImage/deb); auto-update already works unsigned (see M0) and should move to signature-checked updates once signed.
 - E2E tests for the main flows.
