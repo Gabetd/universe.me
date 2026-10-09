@@ -6,9 +6,10 @@ import type { TerrainParams } from '@universe/core'
 import type { BaseTerrain } from '@universe/procgen'
 import { app } from 'electron'
 import createTerrainWorker from './terrain.worker?nodeWorker'
-import type { AiChange, ApiSettingsPatch, ApiStatus, AppState, PhoneStatus, TailscaleState } from '../shared/api'
+import type { AiChange, ApiSettingsPatch, ApiStatus, AppState, PhoneStatus, RemoteEvent, RemoteMethod, TailscaleState } from '../shared/api'
+import { PhoneAppServer, type PhoneAppPlace } from './phone-app'
 import type { Session } from './session'
-import { funnelOffNow, setFunnel, tailscaleState } from './tailscale'
+import { APP_HTTPS_PORT, offNow, setFunnel, setServe, tailscaleState } from './tailscale'
 
 /** Where the API listens unless that's taken (then the next few ports are tried). */
 const DEFAULT_PORT = 47615
@@ -18,7 +19,15 @@ interface ApiSettings {
   review: boolean
   /** Phone access (PLAN.md §6.4), off until the user turns it on. */
   phone: boolean
+  /** The phone app (PLAN.md §6.6), off until the user turns it on. */
+  phoneApp: boolean
   token: string
+}
+
+/** What the phone app serves: the window's files, and the window's methods to answer. */
+export interface PhoneBridge {
+  files: string
+  answer(method: RemoteMethod, args: unknown[]): Promise<unknown>
 }
 
 /** What the controller tells the window. */
@@ -47,6 +56,12 @@ export class ApiController {
   private next: Promise<void> | undefined
   /** Where the app pointed Funnel, while it does. */
   private funnelTo: number | undefined
+  private bridge: PhoneBridge | undefined
+  private phoneApp: PhoneAppServer | undefined
+  private phoneAppPort: number | undefined
+  private phoneAppError: string | undefined
+  /** Where the app pointed `tailscale serve`, while it does. */
+  private serveTo: number | undefined
   private readonly oauth: OAuth
   readonly ctx: ApiContext
 
@@ -86,7 +101,7 @@ export class ApiController {
     }
     this.announce()
     // Funnel follows the port, which can change from one start to the next (and goes when nothing listens).
-    if (this.settings.phone || this.funnelTo !== undefined) void this.syncPhone()
+    if (this.settings.phone || this.funnelTo !== undefined || this.settings.phoneApp) void this.syncPhone()
   }
 
   async stop(): Promise<void> {
@@ -98,23 +113,35 @@ export class ApiController {
   /** At quit: no `--mcp` server is pointed here any more (at once: the process may end before anything async finishes), and nothing is left listening. */
   close(): void {
     clearDiscovery()
-    // Nor anything left on the internet: a Funnel to a port nothing listens on, which another program could take.
-    if (this.funnelTo !== undefined) funnelOffNow()
+    // Nor anything left on the internet (or the tailnet): a Funnel or Serve to a port nothing listens on, which another program could take.
+    offNow({ funnel: this.funnelTo !== undefined, serve: this.serveTo !== undefined })
     void this.stop()
+    void this.phoneApp?.close()
   }
 
   async set(given: ApiSettingsPatch): Promise<ApiStatus> {
     // Only these, and only as true or false: nothing else in the settings (the token) is the window's to set.
     const patch: ApiSettingsPatch = {}
-    for (const key of ['enabled', 'review', 'phone'] as const) if (typeof given[key] === 'boolean') patch[key] = given[key]
+    for (const key of ['enabled', 'review', 'phone', 'phoneApp'] as const) if (typeof given[key] === 'boolean') patch[key] = given[key]
     const restart = patch.enabled !== undefined && patch.enabled !== this.settings.enabled
-    const phone = patch.phone !== undefined && patch.phone !== this.settings.phone
+    const phone = (patch.phone !== undefined && patch.phone !== this.settings.phone) || (patch.phoneApp !== undefined && patch.phoneApp !== this.settings.phoneApp)
     this.settings = { ...this.settings, ...patch }
     this.save()
     if (restart) await this.start()
     else if (phone) await this.syncPhone()
     else this.announce()
     return this.status()
+  }
+
+  /** What the phone app serves; until it's given, the phone app can't be turned on. */
+  useBridge(bridge: PhoneBridge): void {
+    this.bridge = bridge
+    if (this.settings.phoneApp) void this.syncPhone()
+  }
+
+  /** Tells phone apps what the window heard. */
+  toPhones(event: RemoteEvent, value: unknown): void {
+    this.phoneApp?.push(event, value)
   }
 
   denySignIn(id: string): ApiStatus {
@@ -160,8 +187,45 @@ export class ApiController {
           this.phoneError = (err as Error).message
         }
       }
+      await this.syncPhoneApp(ts)
     }
     this.events.status(this.status())
+  }
+
+  /** With the phone app on, its server running and `tailscale serve` pointed at it; with it off, neither (if the app pointed it here). */
+  private async syncPhoneApp(ts: Extract<TailscaleState, { kind: 'ready' }>): Promise<void> {
+    this.phoneAppError = undefined
+    const on = this.settings.phoneApp
+    if (on && !this.bridge) this.phoneAppError = 'The phone app comes with a built copy of Universe (not `pnpm dev`)'
+    else if (on && !ts.login) this.phoneAppError = 'Tailscale didn’t say who’s signed in on this computer'
+    if (on && !this.phoneAppError && !this.phoneApp) {
+      const server = new PhoneAppServer({ oauth: this.oauth, files: this.bridge!.files, place: () => this.phoneAppPlace(), answer: this.bridge!.answer, sessionsFile: join(this.userData, 'phone-sessions.json') })
+      this.phoneAppPort = await server.listen()
+      this.phoneApp = server
+    }
+    const wanted = on && !this.phoneAppError ? this.phoneAppPort! : null
+    const ours = ts.appPort !== null && (ts.appPort === this.phoneAppPort || ts.appPort === this.serveTo)
+    if (wanted !== null ? ts.appPort !== wanted : ours) {
+      try {
+        await setServe(wanted)
+        this.serveTo = wanted ?? undefined
+        this.tailscale = await tailscaleState()
+      } catch (err) {
+        this.phoneAppError = (err as Error).message
+      }
+    }
+    if (wanted === null && this.phoneApp) {
+      await this.phoneApp.close()
+      this.phoneApp = undefined
+      this.phoneAppPort = undefined
+    }
+  }
+
+  /** Where the phone app answers: the tailnet name `tailscale serve` forwards here, while it's on. */
+  private phoneAppPlace(): PhoneAppPlace | undefined {
+    const ts = this.tailscale
+    if (!this.settings.phoneApp || ts.kind !== 'ready' || !ts.login || ts.appPort === null || ts.appPort !== this.phoneAppPort) return undefined
+    return { host: `${ts.host}:${APP_HTTPS_PORT}`, login: ts.login }
   }
 
   /** The public host while phone access is on and Funnel forwards it here; requests for any other host are turned away. */
@@ -215,7 +279,8 @@ export class ApiController {
       url: host ? `https://${host}/mcp` : null,
       ...(this.phoneError && { error: this.phoneError }),
       signIns: this.oauth.pendingSignIns(),
-      connections: this.oauth.connections()
+      connections: this.oauth.connections(),
+      app: { on: this.settings.phoneApp, url: this.phoneAppPlace() ? `https://${this.phoneAppPlace()!.host}/` : null, ...(this.phoneAppError && { error: this.phoneAppError }) }
     }
   }
 
@@ -259,11 +324,11 @@ export class ApiController {
   private load(): ApiSettings {
     try {
       const saved = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<ApiSettings>
-      if (typeof saved.token === 'string' && saved.token.length >= 32) return { enabled: saved.enabled !== false, review: saved.review === true, phone: saved.phone === true, token: saved.token }
+      if (typeof saved.token === 'string' && saved.token.length >= 32) return { enabled: saved.enabled !== false, review: saved.review === true, phone: saved.phone === true, phoneApp: saved.phoneApp === true, token: saved.token }
     } catch {
       // First run, or an unreadable file: start over.
     }
-    const fresh = { enabled: true, review: false, phone: false, token: newToken() }
+    const fresh = { enabled: true, review: false, phone: false, phoneApp: false, token: newToken() }
     this.save(fresh)
     return fresh
   }

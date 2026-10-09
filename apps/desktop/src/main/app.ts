@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { rng } from '@universe/procgen'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session as electronSession, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type WebFrameMain } from 'electron'
 import { appFolder, isAllowedRequest } from '../shared/offline'
-import { EVENTS, INVOKE, type AppState, type BuildInfo, type ImportedModel, type InvokeMethod, type MenuAction, type Result, type UniverseApi } from '../shared/api'
+import { EVENTS, INVOKE, type AppState, type BuildInfo, type ImportedModel, type InvokeMethod, type MenuAction, type RemoteMethod, type Result, type UniverseApi } from '../shared/api'
 import type { ApiController } from './api'
 import type { Session } from './session'
 import { Updater } from './updater'
@@ -111,7 +111,9 @@ async function opened(path: string): Promise<void> {
 
 /** Sends state the renderer didn't ask for: after a menu item, or a file opened from the system. */
 function push(state: AppState | null): void {
-  if (state) win?.webContents.send(EVENTS.state, state)
+  if (!state) return
+  win?.webContents.send(EVENTS.state, state)
+  api?.toPhones('state', state)
 }
 
 const windowTitle = (state: AppState) => (state.project ? `${state.project.name} — Universe` : 'Universe')
@@ -318,12 +320,35 @@ type Answer<M extends InvokeMethod> = (...args: Parameters<UniverseApi[M]>) => R
 const fromApp = (frame: WebFrameMain | null) => !!frame && frame === win?.webContents.mainFrame && isAppPage(frame.url)
 
 /** Answers one API method; its arguments and reply are checked against `UniverseApi`. */
+/** Every method's answer, for the window and (those it may ask) the phone app. */
+const answers = new Map<InvokeMethod, (...args: unknown[]) => unknown>()
+
+/** Methods that answer with the project's new state, which then goes to the others looking at it too. */
+const CHANGES = new Set<InvokeMethod>(['execute', 'undo', 'redo', 'undoAi', 'acceptProposal', 'rejectProposal'])
+const newState = (method: InvokeMethod, result: unknown) => (CHANGES.has(method) && (result as Result<AppState> | undefined)?.ok ? (result as { value: AppState }).value : undefined)
+
 function handle<M extends InvokeMethod>(method: M, answer: Answer<M>): void {
+  answers.set(method, answer as (...args: unknown[]) => unknown)
   ipcMain.handle(INVOKE[method], async (e: IpcMainInvokeEvent, ...args) => {
     if (!fromApp(e.senderFrame)) throw new Error('Only the app’s own page can ask this')
     await loaded
-    return answer(...(args as Parameters<UniverseApi[M]>))
+    const result = await answer(...(args as Parameters<UniverseApi[M]>))
+    const state = newState(method, result)
+    if (state) api.toPhones('state', state)
+    return result
   })
+}
+
+/** A method asked by the phone app: answered as the window's would be, and the window (and other phones) shown what it changed. */
+async function answerPhone(method: RemoteMethod, args: unknown[]): Promise<unknown> {
+  await loaded
+  const result = await answers.get(method)!(...args)
+  const state = newState(method, result)
+  if (state) {
+    win?.webContents.send(EVENTS.state, state)
+    api.toPhones('state', state)
+  }
+  return result
 }
 
 function registerIpc(): void {
@@ -401,10 +426,18 @@ app.whenReady().then(async () => {
   const [{ Session }, { ApiController }] = await Promise.all([import('./session'), import('./api')])
   session = new Session(app.getPath('userData'))
   api = new ApiController(app.getPath('userData'), session, {
-    state: (state) => win?.webContents.send(EVENTS.state, state),
-    aiChange: (change) => win?.webContents.send(EVENTS.aiChange, change),
+    state: (state) => {
+      win?.webContents.send(EVENTS.state, state)
+      api.toPhones('state', state)
+    },
+    aiChange: (change) => {
+      win?.webContents.send(EVENTS.aiChange, change)
+      api.toPhones('aiChange', change)
+    },
     status: (status) => win?.webContents.send(EVENTS.api, status)
   }, __BUILD_INFO__.version)
+  // The phone app serves the window's own built files (in development the window comes from the dev server, and there's no phone app).
+  if (!devServer) api.useBridge({ files: RENDERER_DIR, answer: answerPhone })
   // Without the API the app still works: Connect AI says why it isn't listening.
   await api.start().catch((err: Error) => console.error(`The API didn't start: ${err.message}`))
   markLoaded()

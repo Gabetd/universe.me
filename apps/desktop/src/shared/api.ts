@@ -59,7 +59,7 @@ export interface ApiStatus {
 }
 
 /** Tailscale on this computer, as phone access needs it: not there, there but not running or signed in, or ready (with where Funnel forwards, if anywhere). */
-export type TailscaleState = { kind: 'missing' } | { kind: 'stopped'; detail: string } | { kind: 'ready'; host: string; funnelPort: number | null }
+export type TailscaleState = { kind: 'missing' } | { kind: 'stopped'; detail: string } | { kind: 'ready'; host: string; login?: string; funnelPort: number | null; appPort: number | null }
 
 /** Phone access (PLAN.md §6.4): Claude on a phone, through a claude.ai custom connector, Tailscale Funnel and OAuth. */
 export interface PhoneStatus {
@@ -73,6 +73,8 @@ export interface PhoneStatus {
   signIns: { id: string; client: string; code: string; to: string; expires: number }[]
   /** Clients that have signed in. */
   connections: { id: string; name: string; created: number; lastUsed: number }[]
+  /** The phone app (PLAN.md §6.6): this app in the phone's browser, on the tailnet only. */
+  app: { on: boolean; url: string | null; error?: string }
 }
 
 /** What the user can change about the API. */
@@ -81,6 +83,8 @@ export interface ApiSettingsPatch {
   review?: boolean
   /** Phone access: Funnel to the API's port, and the public address accepted. */
   phone?: boolean
+  /** The phone app: this app served on the tailnet, through `tailscale serve`. */
+  phoneApp?: boolean
 }
 
 /** A change an AI client made, for the app to show. */
@@ -106,6 +110,8 @@ export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
 export type MenuAction = 'undo' | 'redo'
 
 export interface UniverseApi {
+  /** The phone app's bridge (PLAN.md §6.6), rather than the window's: what's only for the computer isn't there. */
+  readonly remote?: true
   getState(): Promise<AppState>
   recentProjects(): Promise<string[]>
   /** Each returns `null` in `value` if the user cancelled the file dialog. */
@@ -146,7 +152,7 @@ export interface UniverseApi {
 }
 
 /** The methods the main process answers; the others listen to what it sends. */
-export type InvokeMethod = Exclude<keyof UniverseApi, 'onState' | 'onMenu' | 'onUpdate' | 'onApi' | 'onAiChange'>
+export type InvokeMethod = Exclude<keyof UniverseApi, 'remote' | 'onState' | 'onMenu' | 'onUpdate' | 'onApi' | 'onAiChange'>
 
 /** The channel behind each method the main process answers. The preload makes those methods from this table. */
 export const INVOKE: Record<InvokeMethod, string> = {
@@ -174,6 +180,19 @@ export const INVOKE: Record<InvokeMethod, string> = {
   dismissUpdate: 'update:dismiss',
   checkForUpdates: 'update:check'
 }
+
+/**
+ * What the phone app may ask (PLAN.md §6.6): working on the open project.
+ * Not opening files or dialogs on the computer, the API's settings and token,
+ * nor updates: those stay with whoever sits at the computer.
+ */
+export const REMOTE_METHODS = ['getState', 'execute', 'undo', 'redo', 'undoAi', 'acceptProposal', 'rejectProposal', 'getTerrain', 'getAsset'] as const satisfies readonly InvokeMethod[]
+export type RemoteMethod = (typeof REMOTE_METHODS)[number]
+export const isRemoteMethod = (name: string): name is RemoteMethod => (REMOTE_METHODS as readonly string[]).includes(name)
+
+/** What the phone app hears as it happens: the project's state, and AI changes. */
+export const REMOTE_EVENTS = ['state', 'aiChange'] as const
+export type RemoteEvent = (typeof REMOTE_EVENTS)[number]
 
 /** Channels the main process sends on, behind `onState`, `onMenu` and `onUpdate`. */
 export const EVENTS = {

@@ -62,31 +62,43 @@ function run(file: string, args: string[], env: Record<string, string> = {}): Pr
   })
 }
 
-/** From `tailscale status --json`: whether it's running, and this computer's name (without the root dot). */
-export function readStatus(json: string): { running: boolean; backend: string; host?: string } {
-  const s = JSON.parse(json) as { BackendState?: string; Self?: { DNSName?: string } }
+/** Where the phone app is on the tailnet: this HTTPS port of the computer's name, forwarded by `tailscale serve` (PLAN.md §6.6). */
+export const APP_HTTPS_PORT = 8443
+
+/** From `tailscale status --json`: whether it's running, this computer's name (without the root dot), and who's signed in. */
+export function readStatus(json: string): { running: boolean; backend: string; host?: string; login?: string } {
+  const s = JSON.parse(json) as { BackendState?: string; Self?: { DNSName?: string; UserID?: number }; User?: Record<string, { LoginName?: string }> }
   const host = s.Self?.DNSName?.replace(/\.$/, '')
-  return { running: s.BackendState === 'Running', backend: s.BackendState ?? 'unknown', ...(host && { host }) }
+  const login = s.Self?.UserID === undefined ? undefined : s.User?.[String(s.Self.UserID)]?.LoginName
+  return { running: s.BackendState === 'Running', backend: s.BackendState ?? 'unknown', ...(host && { host }), ...(login && { login }) }
 }
 
-/** From `tailscale funnel status --json`: the port on this computer Funnel forwards `host`'s public HTTPS address to, if it does. */
-export function funnelPort(json: string, host: string): number | null {
-  const config = JSON.parse(json.trim() || '{}') as { AllowFunnel?: Record<string, boolean>; Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }> }
-  const at = `${host}:443`
-  if (!config.AllowFunnel?.[at]) return null
+type ServeConfig = { AllowFunnel?: Record<string, boolean>; Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }> }
+
+/** From `tailscale serve status --json`: the port on this computer that `host`'s HTTPS port `https` forwards to, if it does (on the internet too, through Funnel, or only the tailnet). */
+function proxiedPort(json: string, host: string, https: number, funnel: boolean): number | null {
+  const config = JSON.parse(json.trim() || '{}') as ServeConfig
+  const at = `${host}:${https}`
+  if (!!config.AllowFunnel?.[at] !== funnel) return null
   const proxy = config.Web?.[at]?.Handlers?.['/']?.Proxy ?? ''
   const port = /^https?:\/\/(?:127\.0\.0\.1|localhost):(\d+)\/?$/.exec(proxy)?.[1]
   return port ? Number(port) : null
 }
 
+/** The port Funnel forwards `host`'s public HTTPS address to, if it does. */
+export const funnelPort = (json: string, host: string) => proxiedPort(json, host, 443, true)
+
+/** The port the phone app's tailnet-only address forwards to, if it does. */
+export const appPort = (json: string, host: string) => proxiedPort(json, host, APP_HTTPS_PORT, false)
+
 /** Tailscale's state on this computer, as phone access needs it. */
 export async function tailscaleState(): Promise<TailscaleState> {
   try {
-    // Both at once; Funnel's answer only counts once Tailscale says it's running.
-    const [statusJson, funnelJson] = await Promise.all([tailscale(['status', '--json']), tailscale(['funnel', 'status', '--json']).catch(() => '')])
+    // Both at once; Serve's (and Funnel's) answer only counts once Tailscale says it's running.
+    const [statusJson, funnelJson] = await Promise.all([tailscale(['status', '--json']), tailscale(['serve', 'status', '--json']).catch(() => '')])
     const status = readStatus(statusJson)
     if (!status.running || !status.host) return { kind: 'stopped', detail: status.backend === 'NeedsLogin' ? 'Tailscale isn’t signed in' : 'Tailscale isn’t running' }
-    return { kind: 'ready', host: status.host, funnelPort: funnelPort(funnelJson, status.host) }
+    return { kind: 'ready', host: status.host, ...(status.login && { login: status.login }), funnelPort: funnelPort(funnelJson, status.host), appPort: appPort(funnelJson, status.host) }
   } catch (err) {
     if (err instanceof TailscaleError && err.missing) return { kind: 'missing' }
     return { kind: 'stopped', detail: (err as Error).message }
@@ -98,14 +110,24 @@ export async function setFunnel(port: number | null): Promise<void> {
   await tailscale(port === null ? ['funnel', '--yes', '--https=443', 'off'] : ['funnel', '--bg', '--yes', String(port)])
 }
 
-/** Turns Funnel off before the app quits: at once, as the process may end before anything async finishes, and only briefly waited for. */
-export function funnelOffNow(): void {
-  for (const c of commands(['funnel', '--yes', '--https=443', 'off'])) {
-    try {
-      execFileSync(c.file, c.args, { timeout: 3000, windowsHide: true, stdio: 'ignore', env: { ...process.env, ...c.env } })
-      return
-    } catch {
-      // Not there, or it didn't answer in time: try the next place, or leave it.
+/** Points the phone app's tailnet address (`APP_HTTPS_PORT`, never on the internet) at `port` on this computer, or turns it off (null). */
+export async function setServe(port: number | null): Promise<void> {
+  await tailscale(port === null ? ['serve', '--yes', `--https=${APP_HTTPS_PORT}`, 'off'] : ['serve', '--bg', '--yes', `--https=${APP_HTTPS_PORT}`, `http://127.0.0.1:${port}`])
+}
+
+const FUNNEL_OFF = ['funnel', '--yes', '--https=443', 'off']
+const SERVE_OFF = ['serve', '--yes', `--https=${APP_HTTPS_PORT}`, 'off']
+
+/** Turns Funnel and the phone app's address off before the app quits: at once, as the process may end before anything async finishes, and only briefly waited for. */
+export function offNow({ funnel, serve }: { funnel: boolean; serve: boolean }): void {
+  for (const args of [...(funnel ? [FUNNEL_OFF] : []), ...(serve ? [SERVE_OFF] : [])]) {
+    for (const c of commands(args)) {
+      try {
+        execFileSync(c.file, c.args, { timeout: 3000, windowsHide: true, stdio: 'ignore', env: { ...process.env, ...c.env } })
+        break
+      } catch {
+        // Not there, or it didn't answer in time: try the next place, or leave it.
+      }
     }
   }
 }
