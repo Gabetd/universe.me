@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AiChange, ApiSettingsPatch, ApiStatus } from '../../../shared/api'
+import type { AiChange, ApiSettingsPatch, ApiStatus, DeviceStatus } from '../../../shared/api'
 import { applyReply, useUi } from '../store'
 import { useSteadyScroll } from '../useSteadyScroll'
 import { CopyButton } from './fields'
@@ -24,13 +24,18 @@ function useApiStatus(): [ApiStatus | undefined, (patch: ApiSettingsPatch) => vo
   }, [])
   const set = (patch: ApiSettingsPatch) => {
     // Shown at once, where the status keeps each one.
-    const { phone, phoneApp, ...rest } = patch
+    const { phone, phoneApp, sync, ...rest } = patch
     setStatus(
       (s) =>
         s && {
           ...s,
           ...rest,
-          phone: { ...s.phone, ...(phone !== undefined && { on: phone }), ...(phoneApp !== undefined && { app: { ...s.phone.app, on: phoneApp } }) }
+          phone: {
+            ...s.phone,
+            ...(phone !== undefined && { on: phone }),
+            ...(phoneApp !== undefined && { app: { ...s.phone.app, on: phoneApp } }),
+            ...(sync !== undefined && { sync: { ...s.phone.sync, on: sync } })
+          }
         }
     )
     changing.current++
@@ -128,6 +133,7 @@ function ConnectPanel({ status, set, onClose }: { status: ApiStatus; set(patch: 
           </>
         )}
         <PhoneAccess status={status} set={set} />
+        <DevicesSection status={status} set={set} />
       </div>
     </section>
   )
@@ -323,4 +329,85 @@ export function AiSuggestions() {
       </ul>
     </section>
   )
+}
+
+/** How long ago, in a few words. */
+function ago(ms: number): string {
+  const s = Math.round((Date.now() - ms) / 1000)
+  return s < 60 ? `${Math.max(s, 1)} s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : new Date(ms).toLocaleTimeString()
+}
+
+/** What sync is doing, in a line. */
+function syncLine({ phone }: ApiStatus): string {
+  const ts = phone.tailscale
+  if (ts.kind === 'missing') return 'Needs Tailscale on each of your computers, signed in to the same account: install it from tailscale.com.'
+  if (ts.kind === 'stopped') return `${ts.detail}. Start it and sign in, then open this panel again.`
+  if (!phone.sync.on) return 'Off.'
+  if (phone.sync.error) return 'It isn’t on yet:'
+  return phone.sync.devices.length ? 'On.' : 'On. None of your other devices on your tailnet is online right now.'
+}
+
+/** What one of the user's devices has, in words. */
+function deviceLine(d: DeviceStatus): string {
+  if (d.state === 'unreachable') return 'not answering (Universe isn’t running there, or its sync is off)'
+  if (d.state === 'nothing') return 'has no universe open'
+  if (d.state === 'other') return `has “${d.project!.name}” open`
+  return `in step${d.lastSync ? `, synced ${ago(d.lastSync)}` : ''}${d.error ? ` (last try: ${d.error})` : ''}`
+}
+
+/**
+ * Sync (PLAN.md §6.7): the same universe on the user's other computers,
+ * kept in step directly over their tailnet; a universe one of them has open
+ * can be copied here.
+ */
+function DevicesSection({ status, set }: { status: ApiStatus; set(patch: ApiSettingsPatch): void }) {
+  const { sync, tailscale } = status.phone
+  const copy = async (host: string) => {
+    const { run, apply } = useUi.getState()
+    const state = await run(window.universe.copyFromDevice(host))
+    if (state) apply(state)
+  }
+  return (
+    <section className="phone-access" aria-label="Your other devices">
+      <h3>Your other devices</h3>
+      <p className="small muted">
+        The same universe on your other computers, kept in step directly over your tailnet (nothing in the cloud). Turn this on on each, open the same universe on both (or copy it from one to the other), and a change on one shows on the
+        others within seconds.
+      </p>
+      <label className="checkbox">
+        <input type="checkbox" checked={sync.on} disabled={tailscale.kind !== 'ready' && !sync.on} onChange={(e) => set({ sync: e.target.checked })} /> Sync with my other devices
+      </label>
+      <p className="small" aria-label="Sync status">
+        {syncLine(status)}
+      </p>
+      {sync.on && sync.error && (
+        <p className="small phone-error" role="alert">
+          {sync.error}
+        </p>
+      )}
+      {sync.on && sync.devices.length > 0 && (
+        <ul className="connections" aria-label="Devices">
+          {sync.devices.map((d) => (
+            <li key={d.host}>
+              <span>
+                {d.name} <span className="muted">· {deviceLine(d)}</span>
+              </span>
+              {d.state === 'other' && (
+                <button className="link small" onClick={() => void copy(d.host)}>
+                  Copy “{d.project!.name}” here
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+/** The devices section on its own (the start screen, where there's no Connect AI): a universe on another computer can be copied here. */
+export function DevicesPanel() {
+  const [status, set] = useApiStatus()
+  if (!status) return null
+  return <DevicesSection status={status} set={set} />
 }

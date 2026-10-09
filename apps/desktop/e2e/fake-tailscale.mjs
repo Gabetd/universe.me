@@ -1,9 +1,11 @@
 // A stand-in for the `tailscale` command in the e2e tests (UNIVERSE_TAILSCALE): signed in as
-// owner@example.com on studio.tail1234.ts.net, with Funnel (`port`, on 443) and Serve (`app`,
-// on 8443, the tailnet only) kept in FAKE_TAILSCALE_STATE.
+// owner@example.com on studio.tail1234.ts.net (or FAKE_TAILSCALE_HOST), with the owner's other
+// devices in FAKE_TAILSCALE_PEERS (names, comma-separated), and Funnel (`port`, on 443) and Serve
+// (`app`, on 8443, the tailnet only) kept in FAKE_TAILSCALE_STATE.
 import { readFileSync, writeFileSync } from 'node:fs'
 
-const HOST = 'studio.tail1234.ts.net'
+const HOST = process.env.FAKE_TAILSCALE_HOST || 'studio.tail1234.ts.net'
+const PEERS = (process.env.FAKE_TAILSCALE_PEERS || '').split(',').filter(Boolean)
 const file = process.env.FAKE_TAILSCALE_STATE
 const read = () => {
   try {
@@ -31,7 +33,8 @@ function config() {
 }
 
 if (has('status', '--json') && !has('funnel') && !has('serve')) {
-  process.stdout.write(JSON.stringify({ BackendState: 'Running', Self: { DNSName: `${HOST}.`, UserID: 7 }, User: { 7: { LoginName: 'owner@example.com' } } }))
+  const Peer = Object.fromEntries(PEERS.map((p) => [p, { DNSName: `${p}.`, HostName: p.split('.')[0], UserID: 7, Online: true }]))
+  process.stdout.write(JSON.stringify({ BackendState: 'Running', Self: { DNSName: `${HOST}.`, UserID: 7 }, User: { 7: { LoginName: 'owner@example.com' } }, Peer }))
 } else if (has('status', '--json')) {
   process.stdout.write(config())
 } else if (has('funnel', 'off')) {

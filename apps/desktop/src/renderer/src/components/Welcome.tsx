@@ -3,6 +3,7 @@ import { ROADMAP } from '../roadmap'
 import { useUi } from '../store'
 import { ErrorBanner } from './ErrorBanner'
 import { CheckForUpdates } from './UpdateBanner'
+import { DevicesPanel } from './AiPanels'
 
 export function Welcome() {
   const [recent, setRecent] = useState<string[]>([])
@@ -50,6 +51,8 @@ export function Welcome() {
               </ul>
             )}
           </section>
+          {/* A universe open on another of the user's computers can be copied here (PLAN.md §6.7). */}
+          <DevicesPanel />
 
           <section>
             <h2>Build progress</h2>
