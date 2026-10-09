@@ -500,10 +500,10 @@ export const WRITES = [
     write: true,
     run: (ctx, p) => {
       const system = findOr404(ctx.models.data().timeline.powers, p.systemId, 'power system')
-      const eras = ctx.models.world(system.ownerId).timeline.eras
+      const { eras, powerAges } = ctx.models.world(system.ownerId).timeline
       const era = eras.find((e) => e.id === p.era) ?? eras.find((e) => e.name.toLowerCase() === p.era.trim().toLowerCase())
       if (!era) throw new ApiError(404, `There is no era ${p.era} on that world${eras.length ? ` (its eras: ${eras.map((e) => e.name).join(', ')})` : ': add one with run_commands (era.create)'}`)
-      const age = ctx.models.world(system.ownerId).timeline.powerAges.find((a) => a.systemId === system.id && a.eraId === era.id)
+      const age = powerAges.find((a) => a.systemId === system.id && a.eraId === era.id)
       const commands: Command[] = []
       let values: AspectValues | undefined
       if (p.changes) {

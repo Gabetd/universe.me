@@ -42,7 +42,7 @@ test('power systems: one from a template, what holds in every age, what changes 
   const rules = powers(page).getByLabel('Rules', { exact: true })
   await rules.fill('Anyone who can sing may weave')
   await rules.blur()
-  await powers(page).getByRole('button', { name: 'Say how strong' }).click()
+  await powers(page).getByRole('button', { name: 'Say how strong it is in Age of Wonders' }).click()
   const strength = powers(page).getByLabel('Strength in Age of Wonders', { exact: true })
   await strength.fill('90')
   await strength.blur()

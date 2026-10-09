@@ -15,7 +15,7 @@ import {
   type PowerTemplate
 } from '@universe/core'
 import { useMemo, useRef, useState } from 'react'
-import { ColorField, DeleteButton, NotesField, SelectField, Swatch, TextAreaField, TextField } from '../components/fields'
+import { ColorField, CommitSlider, DeleteButton, NotesField, SelectField, Swatch, TextAreaField, TextField } from '../components/fields'
 import { openElementMenu } from '../contextMenu'
 import { useUi } from '../store'
 import { usePlayhead } from '../timeline/timelineStore'
@@ -250,21 +250,18 @@ function AgePanel({ system, era, age }: { system: PowerSystem; era: Era; age: Po
   return (
     <div className="powers-age" role="tabpanel" aria-label={era.name}>
       <TextField label={`In ${era.name}`} value={age?.summary ?? ''} placeholder={system.summary || 'In a line: how things stand in this age'} onCommit={(summary) => set({ summary })} />
-      <div className="field">
-        <span className="field-label-row">
-          Strength in {era.name}
-          {strength === null ? (
-            <button className="link accent" onClick={() => set({ strength: 0.5 })}>
-              Say how strong
-            </button>
-          ) : (
-            <button className="link" onClick={() => set({ strength: null })}>
-              Clear
-            </button>
-          )}
-        </span>
-        {strength !== null && <StrengthSlider label={`Strength in ${era.name}`} value={strength} onCommit={(v) => set({ strength: v })} />}
-      </div>
+      {strength === null ? (
+        <button className="link accent power-say-strength" onClick={() => set({ strength: 0.5 })}>
+          Say how strong it is in {era.name}
+        </button>
+      ) : (
+        <div className="power-strength-field">
+          <CommitSlider label={`Strength in ${era.name}`} unit="%" min={0} max={100} step={5} value={Math.round(strength * 100)} onCommit={(v) => set({ strength: v / 100 })} />
+          <button className="link" onClick={() => set({ strength: null })}>
+            Clear
+          </button>
+        </div>
+      )}
       {system.aspects.map((a) => {
         const always = system.values[a.id]
         return (
@@ -283,21 +280,5 @@ function AgePanel({ system, era, age }: { system: PowerSystem; era: Era; age: Po
         </button>
       )}
     </div>
-  )
-}
-
-/** 0–100%, saved once on release. */
-function StrengthSlider({ label, value, onCommit }: { label: string; value: number; onCommit(v: number): void }) {
-  const [draft, setDraft] = useState<number | null>(null)
-  const shown = draft ?? Math.round(value * 100)
-  const commit = () => {
-    if (draft !== null && draft / 100 !== value) onCommit(draft / 100)
-    setDraft(null)
-  }
-  return (
-    <span className="field-row">
-      <input type="range" aria-label={label} min={0} max={100} step={5} value={shown} onChange={(e) => setDraft(Number(e.target.value))} onPointerUp={commit} onKeyUp={commit} onBlur={commit} />
-      <span className="muted small">{shown}%</span>
-    </span>
   )
 }
