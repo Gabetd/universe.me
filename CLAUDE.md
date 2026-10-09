@@ -8,6 +8,7 @@
   2. asynchronous opportunities: heavy work off the UI/main thread (Web Workers, async IPC), independent awaits in parallel,
   3. bad code to refactor: unclear names, long functions, dead code.
   Fix what's found, then run `pnpm ci:local` (the GitHub pipelines replayed locally on a clean checkout of HEAD) and push only when it passes. The pre-push hook runs it too (`git config core.hooksPath .githooks` once per clone).
+- Commits and pushes are the owner's: author and committer `Gabetd <gabetd0904@gmail.com>` (set per clone with `git config user.name`/`user.email`), and no Claude credit in commit messages (no Co-Authored-By or session lines).
 - Keep PLAN.md's milestone checklist and the in-app roadmap (`apps/desktop/src/renderer/src/roadmap.ts`) in sync.
 - After each push that adds features, refresh the **build log** artifact (https://claude.ai/artifact/M6aq3G6qUdXsqonJebk5qk, source `docs/build-log/index.html`): run the e2e suite with pictures (`UNIVERSE_SHOTS=1 xvfb-run -a pnpm test:e2e`), `python3 scripts/build-log-images.py`, add a `LOG` entry (and any new `SHOTS`/`AREAS`) for the new build, then republish it to that URL with the `img/*.webp` files.
 
