@@ -1,11 +1,12 @@
 name: CI
 
-# Lint, typecheck, unit tests and the end-to-end tests on the dev build.
-# Pushes to main and claude/** run build.yml instead, which checks the same and
-# runs the end-to-end tests on the packaged apps (Linux, Windows 11 and 10).
+# Lint, typecheck, unit tests and the end-to-end tests on the dev build, for
+# any other branch and pull requests. Pushes to dev, staging and main run
+# build.yml instead, which checks the same and runs the end-to-end tests on the
+# packaged apps (Linux, Windows 11 and 10).
 on:
   push:
-    branches-ignore: [main, 'claude/**']
+    branches-ignore: [main, staging, dev]
   pull_request:
 
 # Read-only unless a job says otherwise (only publishing writes).

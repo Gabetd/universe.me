@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, generateKeyPairSync, sign, type KeyObject } from 'node:crypto'
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -23,6 +23,15 @@ let server: Server
 let manifestUrl: string
 let body: Buffer
 
+/** The test's own signing key, as CI's is (scripts/sign-update.mjs), and another one. */
+const signer = generateKeyPairSync('ed25519')
+const forger = generateKeyPairSync('ed25519')
+const PUBLIC_KEY = signer.publicKey.export({ format: 'jwk' }).x!
+const signed = (manifest: object, key: KeyObject = signer.privateKey) => {
+  const text = JSON.stringify(manifest)
+  return JSON.stringify({ manifest: text, signature: sign(null, Buffer.from(text), key).toString('base64') })
+}
+
 test.skip(!platform, 'Self-install is exercised on Linux and Windows')
 
 test.beforeAll(async () => {
@@ -34,8 +43,9 @@ test.beforeAll(async () => {
     files: { [`${platform.kind}-${process.arch}`]: { name: platform.served, sha512: createHash('sha512').update(body).digest('base64'), size: body.length } }
   }
   server = createServer((req, res) => {
-    if (req.url === '/update.json') res.end(JSON.stringify(manifest))
-    else if (req.url === '/old.json') res.end(JSON.stringify({ ...manifest, version: '0.0.1' }))
+    if (req.url === '/update.json') res.end(signed(manifest))
+    else if (req.url === '/old.json') res.end(signed({ ...manifest, version: '0.0.1' }))
+    else if (req.url === '/forged.json') res.end(signed(manifest, forger.privateKey))
     else if (req.url === `/${platform.served}`) res.end(body)
     else res.writeHead(404).end()
   })
@@ -48,6 +58,7 @@ test('offers a newer build, can be dismissed, and upgrades itself with one click
   const { kind, file, env } = platform!
   const { app, page, dir } = await launch((dir) => ({
     UNIVERSE_UPDATE_URL: manifestUrl,
+    UNIVERSE_UPDATE_PUBLIC_KEY: PUBLIC_KEY,
     UNIVERSE_UPDATE_KIND: kind,
     [env]: join(dir, file),
     UNIVERSE_E2E_MARKER: join(dir, 'started')
@@ -83,17 +94,31 @@ test('offers a newer build, can be dismissed, and upgrades itself with one click
 })
 
 test('Check for updates says when there is nothing to install, and why', async () => {
+  /** A copy started with `env` (and the test's key), asked to check. */
+  const check = async (env: Record<string, string>) => {
+    const launched = await launch(() => ({ UNIVERSE_UPDATE_PUBLIC_KEY: PUBLIC_KEY, ...env }))
+    await launched.page.getByRole('button', { name: 'Check for updates' }).click()
+    return launched
+  }
   // Already the latest build.
-  let { app, page } = await launch(() => ({ UNIVERSE_UPDATE_URL: manifestUrl.replace('update.json', 'old.json'), UNIVERSE_UPDATE_KIND: platform!.kind }))
-  await page.getByRole('button', { name: 'Check for updates' }).click()
+  let { app, page } = await check({ UNIVERSE_UPDATE_URL: manifestUrl.replace('update.json', 'old.json'), UNIVERSE_UPDATE_KIND: platform!.kind })
   await expect(page.getByRole('status', { name: 'Update check' })).toHaveText(/^Universe [\d.]+ is the latest version\.$/)
   await shot(page, '141-check-for-updates')
   await expect(page.getByRole('status', { name: 'Update', exact: true })).toHaveCount(0)
   await app.close()
 
   // A newer one, for a copy that can't replace itself (this test build isn't installed, or, packaged on Windows, is a kind the build has no file for).
-  ;({ app, page } = await launch(() => ({ UNIVERSE_UPDATE_URL: manifestUrl })))
-  await page.getByRole('button', { name: 'Check for updates' }).click()
+  ;({ app, page } = await check({ UNIVERSE_UPDATE_URL: manifestUrl }))
   await expect(page.getByRole('status', { name: 'Update check' })).toContainText('Universe 99.0.0 is out. This copy can’t install it itself')
+  await app.close()
+
+  // One not signed with the app's key (someone else's release, or a changed one) isn't offered, nor is anything to a copy that can't check.
+  ;({ app, page } = await check({ UNIVERSE_UPDATE_URL: manifestUrl.replace('update.json', 'forged.json'), UNIVERSE_UPDATE_KIND: platform!.kind }))
+  await expect(page.getByRole('status', { name: 'Update check' })).toHaveText('The latest build isn’t signed with Universe’s key, so this copy won’t install it.')
+  await expect(page.getByRole('status', { name: 'Update', exact: true })).toHaveCount(0)
+  await app.close()
+  ;({ app, page } = await check({ UNIVERSE_UPDATE_URL: manifestUrl, UNIVERSE_UPDATE_PUBLIC_KEY: '', UNIVERSE_UPDATE_KIND: platform!.kind }))
+  await expect(page.getByRole('status', { name: 'Update check' })).toContainText('This copy can’t check that an update is genuine')
+  await expect(page.getByRole('status', { name: 'Update', exact: true })).toHaveCount(0)
   await app.close()
 })

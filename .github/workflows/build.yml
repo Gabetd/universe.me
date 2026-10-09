@@ -1,11 +1,13 @@
 name: Build executables
 
-# Builds installable apps for Windows, macOS and Linux on every push to main or
-# the development branch, tests the packaged apps, then publishes them as the
-# rolling "latest-build" pre-release so the newest build is always one download away.
+# Builds installable apps for Windows, macOS and Linux on every push to dev,
+# staging and main, and tests the packaged apps. New work goes to dev; what's
+# ready goes on to staging, which also publishes the "staging-build" pre-release
+# to try by hand; then to main, which publishes "latest-build", the release
+# installed copies update themselves from. Both are signed (scripts/sign-update.mjs).
 on:
   push:
-    branches: [main, 'claude/**']
+    branches: [main, staging, dev]
   workflow_dispatch:
 
 # Read-only unless a job says otherwise (only publishing writes).
@@ -116,34 +118,45 @@ jobs:
           path: apps/desktop/test-results
 
   publish:
-    name: Publish latest build
+    name: Publish ${{ github.ref_name }} build
     needs: [check, package, test]
+    if: github.ref_name == 'main' || github.ref_name == 'staging'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
       contents: write
-    # Every branch publishes to the one release: one at a time, so none deletes another's files mid-upload.
+    env:
+      # main's is the one installed copies update from; staging's is to try by hand first.
+      TAG: ${{ github.ref_name == 'main' && 'latest-build' || 'staging-build' }}
+    # One publish to a release at a time, so none deletes another's files mid-upload.
     concurrency:
-      group: publish-latest-build
+      group: publish-${{ github.ref_name }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: scripts
+          # The scripts, and the public key the signing key must match.
+          sparse-checkout: |
+            scripts
+            apps/desktop/src/main/update-key.ts
+          sparse-checkout-cone-mode: false
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           pattern: universe-*
           path: dist
           merge-multiple: true
-      - name: Replace the latest-build pre-release
+      - name: Replace the ${{ env.TAG }} release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: |
           short=$(echo "$GITHUB_SHA" | cut -c1-7)
-          # Fails, before anything is replaced, if an installer is missing or not stamped with this version.
+          # Each fails, before anything is replaced, if an installer is missing or not stamped with this
+          # version, or without the signing key (or with one the app doesn't check with).
           node scripts/update-manifest.mjs dist "0.1.${{ github.run_number }}" "$short" > update.json
+          node scripts/sign-update.mjs update.json > update.signed.json
           cat > notes.md <<NOTES
           Automatic build of \`${GITHUB_REF_NAME}\` at ${short}.
 
@@ -155,27 +168,28 @@ jobs:
           | Linux | \`.AppImage\` (\`chmod +x\`, then run) or \`.deb\` |
 
           Version 0.1.${{ github.run_number }}. Installed copies offer to upgrade themselves when a newer build is published
-          (the \`.zip\` files and \`update.json\` are for that).
+          on main (the \`.zip\` files and the signed \`update.signed.json\` are for that).
 
           These builds are not code-signed yet. Windows SmartScreen: click **More info → Run anyway**.
           macOS: open the app once, then **System Settings → Privacy & Security → Open Anyway**.
           NOTES
-          title="Latest build (${GITHUB_REF_NAME} @ ${short})"
+          if [[ $GITHUB_REF_NAME == main ]]; then title="Latest build (${short})"; else title="Staging build (${short}): to try before it goes to main"; fi
           # Update the rolling release in place: deleting and recreating it races
           # with GitHub's tag cleanup and fails on transient API errors. The new
           # files go up before the old ones come down (each version's files have
           # their own names), so a download never finds the release empty.
-          if gh release view latest-build >/dev/null 2>&1; then
-            old=$(gh release view latest-build --json assets -q '.assets[].name')
-            gh api -X PATCH "repos/$GH_REPO/git/refs/tags/latest-build" -f sha="$GITHUB_SHA" -F force=true
-            gh release edit latest-build --prerelease --title "$title" --notes-file notes.md
-            gh release upload latest-build dist/* --clobber
-            # Then the manifest, so apps never see one that points at files not uploaded yet.
-            gh release upload latest-build update.json --clobber
+          # (update.json, unsigned, is for copies from before signing: each takes one more update that way.)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            old=$(gh release view "$TAG" --json assets -q '.assets[].name')
+            gh api -X PATCH "repos/$GH_REPO/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true
+            gh release edit "$TAG" --prerelease --title "$title" --notes-file notes.md
+            gh release upload "$TAG" dist/* --clobber
+            # Then the manifests, so apps never see one that points at files not uploaded yet.
+            gh release upload "$TAG" update.json update.signed.json --clobber
             for asset in $old; do
-              [[ -e "dist/$asset" || $asset == update.json ]] || gh release delete-asset latest-build "$asset" --yes
+              [[ -e "dist/$asset" || $asset == update.json || $asset == update.signed.json ]] || gh release delete-asset "$TAG" "$asset" --yes
             done
           else
-            gh release create latest-build dist/* --prerelease --target "$GITHUB_SHA" --title "$title" --notes-file notes.md
-            gh release upload latest-build update.json --clobber
+            gh release create "$TAG" dist/* --prerelease --target "$GITHUB_SHA" --title "$title" --notes-file notes.md
+            gh release upload "$TAG" update.json update.signed.json --clobber
           fi

@@ -1,11 +1,13 @@
 /**
  * Self-update, shared by the main process and the renderer. CI publishes an
- * `update.json` manifest next to the installers on the rolling latest-build
- * release (scripts/update-manifest.mjs); the app compares versions and picks
- * the installer that matches how it was installed.
+ * update manifest next to the installers on the rolling latest-build release
+ * (scripts/update-manifest.mjs), signed (scripts/sign-update.mjs); the app
+ * checks the signature, compares versions and picks the installer that
+ * matches how it was installed.
  */
 
-export const UPDATE_MANIFEST_URL = 'https://github.com/Gabetd/universe.me/releases/download/latest-build/update.json'
+/** The signed manifest. (`update.json` beside it, unsigned, is for copies from before signing: each takes one more update that way.) */
+export const UPDATE_MANIFEST_URL = 'https://github.com/Gabetd/universe.me/releases/download/latest-build/update.signed.json'
 
 /** How this copy of the app was installed, which decides how it replaces itself. */
 export type InstallKind = 'win-nsis' | 'win-portable' | 'mac-zip' | 'linux-appimage' | 'linux-deb'

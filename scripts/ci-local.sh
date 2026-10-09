@@ -111,8 +111,11 @@ if [[ $QUICK == 0 ]]; then
   step "build.yml: end-to-end tests on the packaged Linux app"
   (cd apps/desktop && UNIVERSE_E2E_EXECUTABLE=$PWD/release/linux-unpacked/universe-desktop xvfb-run -a npx playwright test) || fail "packaged app e2e"
 
-  step "build.yml: update manifest (the Linux installers)"
+  step "build.yml: update manifest (the Linux installers), signed with a throwaway key"
   node scripts/update-manifest.mjs apps/desktop/release $VERSION local linux > "$WORK/update.json" || fail "update manifest"
+  key=$(node -e "process.stdout.write(require('node:crypto').generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }))")
+  x=$(UPDATE_SIGNING_KEY=$key node -e "process.stdout.write(require('node:crypto').createPublicKey(process.env.UPDATE_SIGNING_KEY).export({ format: 'jwk' }).x)")
+  UPDATE_SIGNING_KEY=$key node scripts/sign-update.mjs "$WORK/update.json" "$x" > "$WORK/update.signed.json" || fail "signed update manifest"
 fi
 
 # Remembered so the pre-push hook doesn't run a full pass again for this commit.

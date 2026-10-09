@@ -1,6 +1,7 @@
 # Working on universe.me
 
 ## Workflow rules (from the project owner)
+- Branches: all new work is done on `dev`; it's then tested on `staging` (fast-forwarded to `dev`; its build is published as the `staging-build` release to try by hand) and only then pushed to `main` (fast-forwarded to `staging`), which publishes `latest-build`, what installed copies update to. Promote only a commit whose GitHub build is green on the branch before.
 - Commit often: one commit per working step, each passing `pnpm check`.
 - Push only when a milestone (PLAN.md §9) is complete.
 - Before every push, review the unpushed changes for:
@@ -10,7 +11,7 @@
   Fix what's found, then run `pnpm ci:local` (the GitHub pipelines replayed locally on a clean checkout of HEAD) and push only when it passes. The pre-push hook runs it too (`git config core.hooksPath .githooks` once per clone).
 - Commits and pushes are the owner's: author and committer `Gabetd <gabetd0904@gmail.com>` (set per clone with `git config user.name`/`user.email`), and no Claude credit in commit messages (no Co-Authored-By or session lines).
 - Keep PLAN.md's milestone checklist and the in-app roadmap (`apps/desktop/src/renderer/src/roadmap.ts`) in sync.
-- After each push that adds features, refresh the **build log** artifact (https://claude.ai/artifact/M6aq3G6qUdXsqonJebk5qk, source `docs/build-log/index.html`): run the e2e suite with pictures (`UNIVERSE_SHOTS=1 xvfb-run -a pnpm test:e2e`), `python3 scripts/build-log-images.py`, add a `LOG` entry (and any new `SHOTS`/`AREAS`) for the new build, then republish it to that URL with the `img/*.webp` files.
+- After each push to `main` that adds features, refresh the **build log** artifact (https://claude.ai/artifact/M6aq3G6qUdXsqonJebk5qk, source `docs/build-log/index.html`): run the e2e suite with pictures (`UNIVERSE_SHOTS=1 xvfb-run -a pnpm test:e2e`), `python3 scripts/build-log-images.py`, add a `LOG` entry (and any new `SHOTS`/`AREAS`) for the new build (versioned by main's run), then republish it to that URL with the `img/*.webp` files.
 
 ## Commands
 - `pnpm ci:local`: everything CI runs on Linux (actionlint, frozen install, lint/typecheck/unit side by side, dev-build e2e at 1024×768, packaging, packaged-app e2e, update manifest) against committed code. `--quick` skips packaging.

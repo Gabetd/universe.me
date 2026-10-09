@@ -158,8 +158,10 @@ change wins.
 
 ## Download and run
 
-Every push to `main` or the development branch builds the app for every OS.
-Get the newest build from the
+Every push to `dev`, `staging` or `main` builds and tests the app for every OS.
+New work goes to `dev`, is tried out on `staging` (its builds are on the
+[**staging-build** release](https://github.com/Gabetd/universe.me/releases/tag/staging-build)),
+then goes on to `main`. Get the newest released build from the
 [**latest-build** release](https://github.com/Gabetd/universe.me/releases/tag/latest-build):
 
 | OS | File | How to run |
@@ -171,6 +173,9 @@ Get the newest build from the
 | Linux | `Universe-…-linux-x86_64.AppImage` | `chmod +x` it, then run it. Or install the `.deb`. |
 
 The builds aren't code-signed yet, which is why the OS asks for confirmation.
+Once installed, Universe updates itself from `main`'s builds, and only installs
+one whose manifest is signed with the project's key (an Ed25519 key kept as a
+GitHub secret; the app has its public half).
 
 ## Develop
 

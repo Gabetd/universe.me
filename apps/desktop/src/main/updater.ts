@@ -7,7 +7,9 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { app, net } from 'electron'
-import { UPDATE_MANIFEST_URL, compareVersions, pickUpdate, type InstallKind, type UpdateFile, type UpdateManifest, type UpdateStatus } from '../shared/update'
+import { UPDATE_MANIFEST_URL, compareVersions, pickUpdate, type InstallKind, type UpdateFile, type UpdateStatus } from '../shared/update'
+import { UPDATE_PUBLIC_KEY } from './update-key'
+import { UntrustedUpdate, readSignedManifest } from './update-signature'
 
 const run = promisify(execFile)
 const CHECK_EVERY_MS = 60 * 60 * 1000
@@ -16,10 +18,13 @@ const FIRST_CHECK_MS = 5000
 /**
  * Checks the latest-build release for a newer version and, on request,
  * downloads it, verifies it and replaces this copy of the app without asking
- * anything (except the system password for a .deb, which needs root).
+ * anything (except the system password for a .deb, which needs root). Only a
+ * manifest signed with the key in update-key.ts is believed (see
+ * update-signature.ts); a copy without that key installs nothing.
  *
  * UNIVERSE_UPDATE_URL points at another manifest ("off" disables checks);
- * UNIVERSE_UPDATE_KIND forces an install kind. Both are for tests.
+ * UNIVERSE_UPDATE_KIND forces an install kind; UNIVERSE_UPDATE_PUBLIC_KEY is
+ * another key to check it with. All three are for tests.
  */
 export class Updater {
   private status: UpdateStatus = { state: 'none' }
@@ -27,11 +32,12 @@ export class Updater {
   private dismissed: string | undefined
   private readonly manifestUrl = process.env.UNIVERSE_UPDATE_URL ?? UPDATE_MANIFEST_URL
   private readonly kind = installKind()
+  private readonly publicKey = process.env.UNIVERSE_UPDATE_PUBLIC_KEY ?? UPDATE_PUBLIC_KEY
 
   constructor(private readonly onStatus: (status: UpdateStatus) => void) {}
 
   start(): void {
-    if (!this.kind || this.manifestUrl === 'off') return
+    if (!this.kind || this.manifestUrl === 'off' || !this.publicKey) return
     setTimeout(() => void this.check(), FIRST_CHECK_MS).unref()
     setInterval(() => void this.check(), CHECK_EVERY_MS).unref()
   }
@@ -53,13 +59,14 @@ export class Updater {
    */
   async check(manual = false): Promise<string | null> {
     if (this.manifestUrl === 'off') return 'Checking for updates is turned off.'
+    if (!this.publicKey) return 'This copy can’t check that an update is genuine, so it doesn’t look for them: download the latest from the project’s releases on GitHub.'
     if (this.status.state === 'downloading' || this.status.state === 'installing') return null
     if (manual) this.dismissed = undefined
     try {
       const res = await net.fetch(this.manifestUrl, { cache: 'no-store' })
       // Missing while CI swaps the release's files; try again next time.
       if (!res.ok) return 'The latest build is being published right now. Try again in a few minutes.'
-      const manifest = (await res.json()) as UpdateManifest
+      const manifest = readSignedManifest(await res.text(), this.publicKey)
       const latest = `Universe ${app.getVersion()} is the latest version.`
       if (compareVersions(manifest.version, app.getVersion()) <= 0) return latest
       // A copy that can't replace itself (a development build, one unpacked by hand, or a kind of install the build has no file for) can still say what's new.
@@ -69,8 +76,8 @@ export class Updater {
       this.file = file
       this.set({ state: 'available', version: manifest.version, needsPassword: this.kind === 'linux-deb' })
       return null
-    } catch {
-      return "Couldn't reach GitHub to check for updates."
+    } catch (err) {
+      return err instanceof UntrustedUpdate ? err.message : "Couldn't reach GitHub to check for updates."
     }
   }
 
