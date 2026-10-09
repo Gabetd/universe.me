@@ -28,10 +28,11 @@ function pull(from: Project, to: Project, since = 0): number {
   }
 }
 
-/** Everything in a project, as comparable data. */
+/** Everything in a project, as comparable data (terrain as base64: comparing its bytes one by one takes about half a second a face). */
 function contents(p: Project) {
   const s = p.snapshot()
-  return { nodes: s.nodes, worlds: s.worlds.map((w) => w.settings), regions: s.regions, timeline: s.timeline, terrain: s.worlds.map((w) => p.terrain(w.id).height) }
+  const terrain = s.worlds.map((w) => p.terrain(w.id).height?.map((face) => face && Buffer.from(face).toString('base64')))
+  return { nodes: s.nodes, worlds: s.worlds.map((w) => w.settings), regions: s.regions, timeline: s.timeline, terrain }
 }
 
 describe('a project between devices', () => {
