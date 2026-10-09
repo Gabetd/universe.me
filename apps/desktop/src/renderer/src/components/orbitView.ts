@@ -2,6 +2,7 @@ import { AU_KM } from '@universe/core'
 import { hueOf } from '@universe/procgen'
 import { formatPeriod, moonPhase, moonsOf, orbitPath, orbitPosition, positionFromStar, type BodyOrbit, type GeneratedPlanet, type SystemModel, type Vec3 } from '@universe/sim'
 import { label, ring, starGlow, sublabel, type CanvasTarget } from './canvasDraw'
+import { drawAtmosphere, drawSun, hslRgb } from './spaceArt'
 import { drawTexturedPlanet, type PlanetTexture } from './planetSprite'
 
 /**
@@ -76,9 +77,12 @@ export function drawOrbits(ctx: CanvasRenderingContext2D, w: number, h: number, 
     ctx.beginPath()
     ctx.ellipse(cx, cy, outer!, outer! * SLANT, 0, 0, Math.PI * 2)
     ctx.ellipse(cx, cy, inner!, inner! * SLANT, 0, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(110, 210, 140, 0.08)'
+    ctx.fillStyle = 'rgba(110, 210, 140, 0.1)'
     ctx.fill('evenodd')
-    starGlow(ctx, cx, cy, size * 0.03 * system.star.radiusSun ** 0.4, system.star.color)
+    ctx.strokeStyle = 'rgba(130, 225, 160, 0.22)'
+    ctx.lineWidth = 1
+    ctx.stroke()
+    drawSun(ctx, cx, cy, size * 0.024 * system.star.radiusSun ** 0.4, system.star.color, d.spin)
   } else {
     // A small sun at the edge shows which way the light comes from.
     const angle = Math.atan2(starDir[1] - cy, starDir[0] - cx)
@@ -133,8 +137,11 @@ function bodyLabel(ctx: CanvasRenderingContext2D, name: string, summary: string,
 function drawBody(ctx: CanvasRenderingContext2D, d: OrbitDrawing, o: BodyOrbit, x: number, y: number, r: number, light: number, targets: CanvasTarget[], labelled: boolean) {
   const world = d.worlds.get(o.bodyId)
   const surface = world && d.textures.get(world.id)
+  const hue = d.bodies.get(o.bodyId)?.hue ?? 0
   if (surface) drawTexturedPlanet(ctx, x, y, r, surface, d.spin / 90 + (o.phaseDeg % 360) / 360, light)
-  else plainBody(ctx, x, y, r, d.bodies.get(o.bodyId)?.hue ?? 0, light)
+  else plainBody(ctx, x, y, r, hue, light)
+  // A world has air (blue, as from space); a bare body a faint haze of its own colour.
+  drawAtmosphere(ctx, x, y, r, world ? [120, 185, 255] : hslRgb(hue, 0.5, 0.65), light)
   if (world) ring(ctx, x, y, r + 2, 'rgba(140,200,255,0.5)', 2)
   targets.push({ id: o.bodyId, x, y, r: r + 4 })
   if (labelled) bodyLabel(ctx, d.bodies.get(o.bodyId)?.name ?? '', orbitSummary(d.system, o, d.t), x, y + r, o.bodyId === d.hoverId)

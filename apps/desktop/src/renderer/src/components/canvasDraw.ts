@@ -1,4 +1,3 @@
-import { rng } from '@universe/procgen'
 import { useEffect, useRef, type RefObject } from 'react'
 
 /** Canvas drawing shared by the viewport's levels. */
@@ -53,36 +52,6 @@ export function useCanvasLoop(ref: RefObject<HTMLCanvasElement | null>, draw: (c
     frame = requestAnimationFrame(render)
     return () => cancelAnimationFrame(frame)
   }, [ref])
-}
-
-/** Background stars of each seed and size, drawn once. */
-const fields = new Map<string, HTMLCanvasElement>()
-
-/** Faint background stars, the same for a seed. */
-export function starfield(ctx: CanvasRenderingContext2D, w: number, h: number, seed: number, count: number) {
-  // A view with no size (hidden, as behind another panel on a phone) has no sky to draw.
-  if (w < 1 || h < 1) return
-  const dpr = window.devicePixelRatio || 1
-  const key = `${seed}:${count}:${w}x${h}@${dpr}`
-  let field = fields.get(key)
-  if (!field) {
-    field = document.createElement('canvas')
-    field.width = Math.round(w * dpr)
-    field.height = Math.round(h * dpr)
-    const c = field.getContext('2d')!
-    c.scale(dpr, dpr)
-    const r = rng(seed ^ 0x51ed27)
-    for (let i = 0; i < count; i++) {
-      const x = r() * w
-      const y = r() * h
-      const s = r() * r() * 1.6 + 0.2
-      c.fillStyle = `rgba(220,230,255,${0.15 + r() * 0.55})`
-      c.fillRect(x, y, s, s)
-    }
-    if (fields.size >= 8) fields.delete(fields.keys().next().value!)
-    fields.set(key, field)
-  }
-  ctx.drawImage(field, 0, 0, w, h)
 }
 
 /** A name under something on the canvas. */

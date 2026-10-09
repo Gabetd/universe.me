@@ -7,12 +7,12 @@ import { playheadOf } from '../timeline/timelineStore'
 import { useSystem } from '../world/useSky'
 import type { GeneratedPlanet } from '@universe/sim'
 import { drawOrbits } from './orbitView'
-import { label, starfield, targetAt, useCanvasLoop, type CanvasTarget } from './canvasDraw'
+import { label, targetAt, useCanvasLoop, type CanvasTarget } from './canvasDraw'
+import { spaceBackdrop } from './spaceArt'
 import { CosmosView, isCosmos } from './CosmosView'
 import { EdgePush, zoomOut, zoomTo } from './zoom'
 import { ClaimCard, claimPlanetInto, describePlanet, useUnclaimedPlanets } from './ClaimPlanets'
 import { SkyControls } from './SkyControls'
-import { SPACE_BG } from '../theme'
 import { usePlanetTextures } from './planetSprite'
 
 /**
@@ -60,9 +60,7 @@ function OrbitViewport({ node }: { node: SpatialNode }) {
   const targets = useRef<CanvasTarget[]>([])
 
   useCanvasLoop(canvasRef, (ctx, w, h) => {
-    ctx.fillStyle = SPACE_BG
-    ctx.fillRect(0, 0, w, h)
-    starfield(ctx, w, h, node.seed, 380)
+    spaceBackdrop(ctx, w, h, node.seed, { stars: 380, nebula: isSystem ? 0.45 : 0.3 })
     targets.current = system
       ? drawOrbits(ctx, w, h, {
           system,

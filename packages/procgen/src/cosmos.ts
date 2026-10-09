@@ -177,8 +177,9 @@ export const GLOW_REACH = 1.15
 
 /**
  * A galaxy's stars as a `size`² RGBA image (not premultiplied), from `count`
- * of them scattered as they fall: old yellow stars in the middle, young blue
- * ones out in the arms. The image spans GLOW_REACH radii each way. Pure
+ * of them scattered as they fall: old gold stars in the middle, young blue
+ * ones out in the arms, and in a disc galaxy, pink knots where stars are
+ * being born along the arms. The image spans GLOW_REACH radii each way. Pure
  * arithmetic, so it can be made off the UI thread.
  */
 export function galaxyGlowPixels(shape: GalaxyShape, seed: number, size: number, count: number): Uint8ClampedArray<ArrayBuffer> {
@@ -189,16 +190,11 @@ export function galaxyGlowPixels(shape: GalaxyShape, seed: number, size: number,
   const half = size / 2
   const k = half / (shape.radiusLy * GLOW_REACH)
   const dot = Math.max(1, Math.round(size / 512))
-  const young = shape.hue > 180 ? [160, 192, 238] : [160, 205, 238]
-  for (let n = 0, tries = 0; n < count && tries < count * 30; tries++) {
-    const p = tryStarPoint(shape, density, r, 1.1)
-    if (!p) continue
-    n++
-    const [cr, cg, cb, a] = p.d > 0.6 ? [255, 226, 180, 0.16] : [young[0]!, young[1]!, young[2]!, 0.13]
-    const px = Math.floor(half + p.x * k)
-    const py = Math.floor(half + p.y * k)
-    for (let dy = 0; dy < dot; dy++) {
-      for (let dx = 0; dx < dot; dx++) {
+  const young = shape.hue > 180 ? [120, 168, 255] : [140, 200, 255]
+  const disc = shape.type !== 'elliptical'
+  const add = (px: number, py: number, spread: number, cr: number, cg: number, cb: number, a: number) => {
+    for (let dy = 0; dy < spread; dy++) {
+      for (let dx = 0; dx < spread; dx++) {
         const x = px + dx
         const y = py + dy
         if (x < 0 || y < 0 || x >= size || y >= size) continue
@@ -209,6 +205,17 @@ export function galaxyGlowPixels(shape: GalaxyShape, seed: number, size: number,
         sum[o + 3] = sum[o + 3]! + a
       }
     }
+  }
+  for (let n = 0, tries = 0; n < count && tries < count * 30; tries++) {
+    const p = tryStarPoint(shape, density, r, 1.1)
+    if (!p) continue
+    n++
+    const px = Math.floor(half + p.x * k)
+    const py = Math.floor(half + p.y * k)
+    if (p.d > 0.6) add(px, py, dot, 255, 214, 160, 0.17)
+    // Out in a disc's arms, now and then a knot of newborn stars lit pink by their gas.
+    else if (disc && p.d > 0.25 && r() < 0.03) add(px - dot, py - dot, dot * 3, 255, 120, 175, 0.12)
+    else add(px, py, dot, young[0]!, young[1]!, young[2]!, 0.14)
   }
   const out = new Uint8ClampedArray(size * size * 4)
   for (let o = 0; o < out.length; o += 4) {

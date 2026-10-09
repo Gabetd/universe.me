@@ -1,6 +1,8 @@
 import { ALLOWED_CHILDREN, KIND_LABELS, type SpatialNode } from '@universe/core'
 import {
   GLOW_REACH,
+  STAR_CELL_LY,
+  cellSeed,
   cellStars,
   cellsIn,
   clusterGalaxies,
@@ -19,9 +21,9 @@ import {
 import { claimGenerated, starInfo } from '@universe/sim'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useUi } from '../store'
-import { SPACE_BG } from '../theme'
 import { workerCalls } from '../workerCalls'
-import { label, ring, starGlow, starfield, targetAt, useCanvasLoop } from './canvasDraw'
+import { label, ring, starGlow, targetAt, useCanvasLoop } from './canvasDraw'
+import { clusterGas, clusterSprite, drawFilaments, hexRgb, spaceBackdrop, starCloud, starSpikes } from './spaceArt'
 import { ClaimCard, newId } from './ClaimPlanets'
 import type { GlowRequest } from './galaxy.worker'
 import GalaxyWorker from './galaxy.worker?worker'
@@ -43,7 +45,7 @@ const UNIT: Record<CosmosKind, string> = { universe: 'Mly', galaxy_cluster: 'Mly
 /** Closest each level zooms (units per pixel) before going into what's under the cursor. */
 const MIN_UPP: Record<CosmosKind, number> = { universe: 0.4, galaxy_cluster: 0.0015, galaxy: 2 }
 /** Galaxies are drawn larger than life in a cluster, or they'd be specks. */
-const GALAXY_SCALE = 6
+const GALAXY_SCALE = 8
 
 /** Something on the map: a stored child, or one generated from the seed. */
 interface Item extends Procedural {
@@ -125,7 +127,7 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
     const frame: Frame = { x: c.x, y: c.y, upp: c.upp, w, h, hoverKey: (picked ?? hover)?.item.key ?? null, items, glows: glowsArrived }
     if (!resized && lastFrame.current && sameFrame(lastFrame.current, frame)) return
     lastFrame.current = frame
-    hits.current = drawLevel(ctx, w, h, { kind, node, shape, web, items, claimedSeeds, cam: c, cells: cells.current, hoverKey: frame.hoverKey })
+    hits.current = drawLevel(ctx, w, h, { kind, node, shape, web, extent, items, claimedSeeds, cam: c, cells: cells.current, hoverKey: frame.hoverKey })
     showScale(scaleRef.current, c.upp, UNIT[kind])
   })
 
@@ -372,7 +374,7 @@ function starSprite(massSun: number): HTMLCanvasElement {
     sprite = document.createElement('canvas')
     sprite.width = sprite.height = SPRITE_PX
     // The glow reaches three radii out: the sprite's edge.
-    starGlow(sprite.getContext('2d')!, SPRITE_PX / 2, SPRITE_PX / 2, SPRITE_PX / 6, starInfo({ massSun: 2 ** (step / 4), luminositySun: null }).color)
+    starGlow(sprite.getContext('2d')!, SPRITE_PX / 2, SPRITE_PX / 2, SPRITE_PX / 6, starColour(massSun))
     starSprites.set(step, sprite)
   }
   return sprite
@@ -381,30 +383,19 @@ function starSprite(massSun: number): HTMLCanvasElement {
 /** Stars as points of light: bigger for heavier (brighter) stars, and a little bigger close in. */
 const starRadius = (massSun: number, upp: number) => (0.8 + 0.6 * Math.min(5, massSun ** 0.4)) * (upp < 8 ? 1.5 : 1)
 
-function drawStar(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, massSun: number, hovered: boolean) {
+/** Stars this heavy are bright enough to show spikes: among single stars close up, and among a galaxy's landmark giants. */
+const SPIKED_MASS = 6
+const SPIKED_LANDMARK = 14
+
+function drawStar(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, massSun: number, hovered: boolean, spikeFrom = SPIKED_MASS) {
   const glow = r * 2.6
   ctx.drawImage(starSprite(massSun), x - glow, y - glow, glow * 2, glow * 2)
+  if (massSun >= spikeFrom) starSpikes(ctx, x, y, r * (3 + Math.min(6, massSun / 3)), hexRgb(starColour(massSun)), 0.45)
   if (hovered) ring(ctx, x, y, r + 5, '#ffffff', 1.2)
 }
 
-/** A galaxy cluster from afar: a soft knot of light, speckled with galaxies. */
-function clusterBlob(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, seed: number) {
-  const g = ctx.createRadialGradient(x, y, 0, x, y, r)
-  g.addColorStop(0, 'rgba(225,215,255,0.55)')
-  g.addColorStop(0.4, 'rgba(170,160,240,0.22)')
-  g.addColorStop(1, 'rgba(120,120,220,0)')
-  ctx.fillStyle = g
-  ctx.beginPath()
-  ctx.arc(x, y, r, 0, Math.PI * 2)
-  ctx.fill()
-  const random = rng(seed)
-  ctx.fillStyle = 'rgba(255,245,230,0.8)'
-  for (let i = 0; i < 14; i++) {
-    const a = random() * Math.PI * 2
-    const d = Math.sqrt(random()) * r * 0.8
-    ctx.fillRect(x + Math.cos(a) * d, y + Math.sin(a) * d, 1.4, 1.4)
-  }
-}
+/** A star's colour by its mass (in the same quarter steps as its sprite). */
+const starColour = (massSun: number) => starInfo({ massSun: 2 ** (Math.round(Math.log2(massSun) * 4) / 4), luminositySun: null }).color
 
 interface DrawInput {
   kind: CosmosKind
@@ -412,6 +403,8 @@ interface DrawInput {
   shape: GalaxyShape | undefined
   /** The cosmic web's filaments, for the universe. */
   web: [number, number, number, number][]
+  /** How far the level's things reach from its middle, in its units. */
+  extent: number
   items: Item[]
   claimedSeeds: Set<number>
   cam: Camera
@@ -434,26 +427,13 @@ function drawLevel(ctx: CanvasRenderingContext2D, w: number, h: number, d: DrawI
     sy: (y) => h / 2 + (y - cam.y) / cam.upp,
     onScreen: (x, y, r) => x > -r && x < w + r && y > -r && y < h + r
   }
-  ctx.fillStyle = SPACE_BG
-  ctx.fillRect(0, 0, w, h)
-  starfield(ctx, w, h, d.node.seed, d.kind === 'universe' ? 180 : 320)
+  spaceBackdrop(ctx, w, h, d.node.seed, d.kind === 'universe' ? { stars: 220, nebula: 0.8 } : d.kind === 'galaxy_cluster' ? { stars: 320, nebula: 0.55 } : { stars: 320, nebula: 0.4 })
   const hits: Hit[] = []
-  if (d.kind === 'universe') drawWeb(ctx, d, screen)
+  if (d.kind === 'universe') drawFilaments(ctx, d.web.map(([x0, y0, x1, y1]) => [screen.sx(x0), screen.sy(y0), screen.sx(x1), screen.sy(y1)]), Math.max(1, 25 / cam.upp), d.node.seed)
+  if (d.kind === 'galaxy_cluster') clusterGas(ctx, screen.sx(0), screen.sy(0), (d.extent * 1.1) / cam.upp, d.node.seed)
   if (d.shape) drawGalaxy(ctx, w, h, d, d.shape, screen, hits)
   drawItems(ctx, d, screen, hits)
   return hits
-}
-
-function drawWeb(ctx: CanvasRenderingContext2D, d: DrawInput, { sx, sy }: Screen) {
-  ctx.strokeStyle = 'rgba(120,140,220,0.14)'
-  ctx.lineWidth = Math.max(1, 60 / d.cam.upp)
-  ctx.lineCap = 'round'
-  for (const [x0, y0, x1, y1] of d.web) {
-    ctx.beginPath()
-    ctx.moveTo(sx(x0), sy(y0))
-    ctx.lineTo(sx(x1), sy(y1))
-    ctx.stroke()
-  }
 }
 
 /** The galaxy in view: its glow, and close enough, the single stars of the cells in view. */
@@ -470,10 +450,28 @@ function drawGalaxy(ctx: CanvasRenderingContext2D, w: number, h: number, d: Draw
     ctx.globalAlpha = 1
   }
   if (fade < 1) {
-    ctx.fillStyle = `rgba(150,165,230,${(0.1 * (1 - fade) * galaxyDensity(shape, cam.x, cam.y)).toFixed(3)})`
+    // Where you're looking: gold toward the old middle, blue out in the arms.
+    const dense = galaxyDensity(shape, cam.x, cam.y)
+    const wash = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.hypot(w, h) / 2)
+    const tint = dense > 0.6 ? '255,214,160' : '140,170,255'
+    wash.addColorStop(0, `rgba(${tint},${(0.16 * (1 - fade) * dense).toFixed(3)})`)
+    wash.addColorStop(1, `rgba(${tint},${(0.06 * (1 - fade) * dense).toFixed(3)})`)
+    ctx.fillStyle = wash
     ctx.fillRect(0, 0, w, h)
   }
   const cells = cellsIn(cam.x - (w / 2) * cam.upp, cam.y - (h / 2) * cam.upp, cam.x + (w / 2) * cam.upp, cam.y + (h / 2) * cam.upp, 220)
+  // Clouds where stars are being born, in the arms more than the old middle.
+  if (cells && shape.type !== 'elliptical') {
+    for (const [cx, cy] of cells) {
+      const r = rng(cellSeed(d.node.seed, cx, cy) ^ 0x4e8b)
+      const dense = galaxyDensity(shape, (cx + 0.5) * STAR_CELL_LY, (cy + 0.5) * STAR_CELL_LY)
+      if (r() > dense * (1 - dense) * 0.9) continue
+      const x = sx((cx + r()) * STAR_CELL_LY)
+      const y = sy((cy + r()) * STAR_CELL_LY)
+      const radius = ((120 + r() * 380) / cam.upp) * (1 - fade * 0.5)
+      if (onScreen(x, y, radius)) starCloud(ctx, x, y, radius, r() < 0.7, 0.16)
+    }
+  }
   for (const [cx, cy] of cells ?? []) {
     const key = `${cx}:${cy}`
     let list = d.cells.get(key)
@@ -502,25 +500,25 @@ function drawItems(ctx: CanvasRenderingContext2D, d: DrawInput, { sx, sy, onScre
     const hovered = item.key === d.hoverKey
     let r: number
     if (item.cluster || (d.kind === 'universe' && item.node)) {
-      r = Math.max(5, (item.cluster?.sizeMly ?? 14) / 2 / cam.upp)
+      r = Math.max(7, (item.cluster?.sizeMly ?? 14) / 2 / cam.upp)
       if (!onScreen(x, y, r)) continue
-      clusterBlob(ctx, x, y, r, item.seed)
+      ctx.drawImage(clusterSprite(item.seed), x - r * 1.4, y - r * 1.4, r * 2.8, r * 2.8)
     } else if (item.galaxy) {
-      r = Math.max(4, ((item.galaxy.radiusLy / 1e6) * GALAXY_SCALE) / cam.upp)
+      r = Math.max(6, ((item.galaxy.radiusLy / 1e6) * GALAXY_SCALE) / cam.upp)
       if (!onScreen(x, y, r)) continue
-      // Small on screen, a small image is plenty.
-      const img = glowOf(item.galaxy, item.seed, GLOW_SMALL, r * 2 * GLOW_REACH > 100 ? GLOW_MEDIUM : undefined)
+      // Small on screen, a small image is plenty; a little bigger, enough to show its arms.
+      const img = glowOf(item.galaxy, item.seed, GLOW_SMALL, r * 2 * GLOW_REACH > 36 ? GLOW_MEDIUM : undefined)
       ctx.drawImage(img, x - r * GLOW_REACH, y - r * GLOW_REACH, r * 2 * GLOW_REACH, r * 2 * GLOW_REACH)
     } else {
       // A star system: the star it claimed, or a generated landmark star.
       const mass = item.massSun ?? 1
       r = starRadius(mass, cam.upp) + (item.node ? 1.5 : 0)
       if (!onScreen(x, y, r)) continue
-      drawStar(ctx, x, y, r, mass, hovered)
+      drawStar(ctx, x, y, r, mass, hovered, item.node ? SPIKED_MASS : SPIKED_LANDMARK)
     }
     if (item.node) ring(ctx, x, y, r + 4, 'rgba(140,200,255,0.75)', 1.5)
     // Your own things are always named; generated ones when they're big enough to matter, or under the cursor.
-    if (item.node || hovered || r > 16) label(ctx, item.name, x, y + r + 15, hovered || !!item.node)
+    if (item.node || hovered || r > 30) label(ctx, item.name, x, y + r + 15, hovered || !!item.node)
     hits.push({ item, x, y, r: r + 4 })
   }
 }
