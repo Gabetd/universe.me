@@ -46,6 +46,8 @@ export function useSteadyScroll(contentRef: RefObject<HTMLElement | null>, menu:
       const el = target.closest(CONTROLS) ?? target
       if (!content.contains(el)) return
       anchor = { el, index: controls().indexOf(el), offset: offsetOf(el) }
+      // Where the panel is now is where it was left: a scroll event for it that's only now arriving isn't a new scroll, and mustn't let go.
+      ours = panel.scrollTop
       // Room to stay put if what's below gets shorter.
       content.style.setProperty('min-height', `${content.offsetHeight}px`)
     }
