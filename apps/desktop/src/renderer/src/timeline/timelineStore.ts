@@ -17,12 +17,15 @@ interface TimelineViewState {
 
 const HEIGHT_KEY = 'universe.timelineHeight'
 
+/** Until the user sets one: 260 px, or a third of a short window, so the view above keeps room to work in. */
+const defaultHeight = () => Math.round(Math.max(160, Math.min(260, window.innerHeight / 3)))
+
 function storedHeight(): number {
   try {
     const v = Number(localStorage.getItem(HEIGHT_KEY))
-    return v >= 120 ? v : 260
+    return v >= 120 ? v : defaultHeight()
   } catch {
-    return 260
+    return defaultHeight()
   }
 }
 

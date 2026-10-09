@@ -8,6 +8,41 @@ const worldState = (page: Page) =>
     return { revision: world.terrainRevision, seaLevel: world.settings.seaLevel, regions: s.regions.map((r) => r.name) }
   })
 
+/** Notes the pointer events from here on, to say what a drag that changed nothing met (it did on Windows 11 alone). */
+const notePointers = (page: Page) =>
+  page.evaluate(() => {
+    const seen: string[] = ((window as unknown as { pointersSeen: string[] }).pointersSeen = [])
+    for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'lostpointercapture'])
+      window.addEventListener(
+        type,
+        (e) => {
+          const p = e as PointerEvent
+          const t = p.target as HTMLElement
+          if (seen.length < 20) seen.push(`${type} ${p.pointerType} b${p.button} at ${p.clientX},${p.clientY} on ${t.tagName}.${t.className}`)
+        },
+        true
+      )
+  })
+
+/** What the page looked like to a drag at `[x, y]` of the globe, for the failure's message. */
+const pointerReport = (page: Page, [x, y]: [number, number]) =>
+  page.evaluate(({ fx, fy }) => {
+    const globe = document.querySelector<HTMLElement>('[data-testid="globe"]')!
+    const box = globe.getBoundingClientRect()
+    const canvas = globe.querySelector('canvas')
+    const at = document.elementFromPoint(box.x + box.width * fx, box.y + box.height * fy) as HTMLElement | null
+    return JSON.stringify({
+      window: [innerWidth, innerHeight, devicePixelRatio, screen.width, screen.height],
+      globe: [box.x, box.y, box.width, box.height],
+      canvas: canvas && [canvas.clientWidth, canvas.clientHeight, canvas.width, canvas.height],
+      toolbar: document.querySelector('.world-toolbar')?.getBoundingClientRect().height,
+      under: at && `${at.tagName}.${at.className}`,
+      fonts: document.fonts.status,
+      pressed: Array.from(document.querySelectorAll('.world-toolbar [aria-pressed="true"]')).map((b) => b.getAttribute('title') ?? b.textContent),
+      events: (window as unknown as { pointersSeen: string[] }).pointersSeen
+    })
+  }, { fx: x, fy: y })
+
 test('edit a world: sculpt, paint, undo, draw a region, and keep it after reopening', async ({ h }) => {
   test.slow()
   const { app, page } = h
@@ -20,8 +55,10 @@ test('edit a world: sculpt, paint, undo, draw a region, and keep it after reopen
 
   // Sculpt on the globe (drawn, so the drag lands on it).
   await page.getByRole('button', { name: 'Raise' }).click()
+  await notePointers(page)
   await drag(page, 'globe', [0.45, 0.45], [0.55, 0.5])
-  await expect.poll(async () => (await worldState(page)).revision).toBe(1)
+  const report = await pointerReport(page, [0.45, 0.45]).catch(String)
+  await expect.poll(async () => (await worldState(page)).revision, { message: `the stroke changed nothing: ${report}` }).toBe(1)
 
   // Switch to the map and sculpt there, then undo it.
   await page.getByRole('button', { name: '🗺 Map' }).click()

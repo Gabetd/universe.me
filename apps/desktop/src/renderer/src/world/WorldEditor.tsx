@@ -96,12 +96,12 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
             aria-pressed={activeView === 'globe'}
             disabled={!hasWebGL}
             onClick={() => set({ view: 'globe', surfaceView: 'globe' })}
-            title={hasWebGL ? '' : 'WebGL is not available on this computer'}
+            title={hasWebGL ? 'The world as a globe' : 'WebGL is not available on this computer'}
           >
-            🌐 Globe
+            🌐 <span className="view-label">Globe</span>
           </button>
-          <button aria-pressed={activeView === 'map'} onClick={() => set({ view: 'map', surfaceView: 'map' })}>
-            🗺 Map
+          <button aria-pressed={activeView === 'map'} onClick={() => set({ view: 'map', surfaceView: 'map' })} title="The world as a flat map">
+            🗺 <span className="view-label">Map</span>
           </button>
           <button
             aria-pressed={activeView === 'ground'}
@@ -109,19 +109,19 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
             onClick={() => useEditor.getState().enterGround(...groundTarget(world.id))}
             title="The ground up close: buildings, trees and people at their real size (or scroll all the way in)"
           >
-            🔍 Ground
+            🔍 <span className="view-label">Ground</span>
           </button>
           <button aria-pressed={activeView === 'canvas'} onClick={() => set({ view: 'canvas' })} title="This world's events as cards">
-            🗂 Canvas
+            🗂 <span className="view-label">Canvas</span>
           </button>
           <button aria-pressed={activeView === 'species'} onClick={() => set({ view: 'species' })} title="What lives here, and who eats whom">
-            🦌 Species
+            🦌 <span className="view-label">Species</span>
           </button>
           <button aria-pressed={activeView === 'powers'} onClick={() => set({ view: 'powers' })} title="How magic, faith, technology or politics work here, age by age">
-            ✨ Powers
+            ✨ <span className="view-label">Powers</span>
           </button>
           <button aria-pressed={activeView === 'warnings'} onClick={() => set({ view: 'warnings' })} title="What doesn’t fit: what Claude found, and the app’s own checks">
-            ⚠ Warnings{warnings > 0 && <span className="badge warn">{warnings}</span>}
+            ⚠ <span className="view-label">Warnings</span>{warnings > 0 && <span className="badge warn">{warnings}</span>}
           </button>
         </div>
         {onSurface && (
