@@ -4,9 +4,10 @@ import { readFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { extname, join, normalize, sep } from 'node:path'
-import { readText, send, writePrivate, type OAuth } from '@universe/api'
+import { errorMessage, errorStatus, readJson, readText, send, writePrivate, type OAuth } from '@universe/api'
 import { isRemoteMethod, type RemoteEvent, type RemoteMethod } from '../shared/api'
 import { fromWire, toWire } from '../shared/wire'
+import type { SyncAnswer } from './device-sync'
 
 /**
  * The phone app (PLAN.md §6.6): this app's own window, in the phone's
@@ -69,7 +70,7 @@ export interface PhoneAppPlace {
 export interface SyncRoutes {
   on(): boolean
   hello(): object
-  changes(body: unknown, device: string | undefined): { ok: true; rows: unknown[]; upTo: number; more: boolean } | { ok: false; status: number; error: string }
+  changes(body: unknown, device: string | undefined): SyncAnswer
   nudged(body: unknown): void
 }
 
@@ -182,7 +183,7 @@ export class PhoneAppServer {
       if (req.method === 'GET') return await this.file(res, url.pathname)
       send(res, 405, { error: 'Not here' })
     } catch (err) {
-      send(res, 500, { error: (err as Error).message })
+      send(res, errorStatus(err), { error: errorMessage(err) })
     }
   }
 
@@ -193,15 +194,10 @@ export class PhoneAppServer {
     const device = typeof req.headers['x-universe-device'] === 'string' ? req.headers['x-universe-device'] : undefined
     if (req.method === 'GET' && path === '/sync/hello') return send(res, 200, sync.hello())
     if (req.method !== 'POST') return send(res, 405, { error: 'Not here' })
-    let body: unknown
-    try {
-      body = JSON.parse(await readText(req, 64 * 1024))
-    } catch {
-      return send(res, 400, { error: 'Send JSON' })
-    }
+    const body = await readJson(req, 64 * 1024)
     if (path === '/sync/changes') {
       const answer = sync.changes(body, device)
-      return answer.ok ? send(res, 200, { rows: answer.rows, upTo: answer.upTo, more: answer.more }) : send(res, answer.status, { error: answer.error })
+      return send(res, answer.status, answer.body)
     }
     if (path === '/sync/nudge') {
       sync.nudged(body)

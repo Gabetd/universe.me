@@ -7,6 +7,7 @@ import { appFolder, isAllowedRequest } from '../shared/offline'
 import { EVENTS, INVOKE, type AppState, type BuildInfo, type ImportedModel, type InvokeMethod, type MenuAction, type RemoteMethod, type Result, type UniverseApi } from '../shared/api'
 import type { ApiController } from './api'
 import type { Session } from './session'
+import { TAILNET_URLS } from './tailnet'
 import { Updater } from './updater'
 
 declare const __BUILD_INFO__: BuildInfo
@@ -414,7 +415,7 @@ app.on('open-file', (event, path) => {
 
 /** Nothing leaves this computer: every request but the app's own files (and the update download) is cancelled. */
 function keepOffline(): void {
-  const extra = [devServer?.href, process.env.UNIVERSE_UPDATE_URL]
+  const extra = [devServer?.href, process.env.UNIVERSE_UPDATE_URL, ...Object.values(TAILNET_URLS)]
     .filter((u): u is string => !!u && u !== 'off')
     .map((u) => new URL(u).origin + '/')
   // Dev server hot reload uses a websocket on the same host.

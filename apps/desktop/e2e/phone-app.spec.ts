@@ -1,37 +1,17 @@
-import { readFileSync } from 'node:fs'
-import { createServer, request, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import type { Server } from 'node:http'
 import { join } from 'node:path'
 import { _electron as electron, type ElectronApplication } from '@playwright/test'
-import { expect, inspector, newWorld, row, shot, test, type AppHandle } from './helpers'
+import { expect, inspector, newWorld, row, servedTo, shot, tailnetProxy, test } from './helpers'
 
 /** The stand-in Tailscale's name for this computer and its owner (e2e/fake-tailscale.mjs). */
 const HOST = 'studio.tail1234.ts.net:8443'
 const LOGIN = 'owner@example.com'
 
-/**
- * What `tailscale serve` does for a phone on the tailnet: forwards its
- * requests to the app's port, adding who it is (which a phone can't fake)
- * and the tailnet name it asked for. The phone here is at localhost (a
- * browser keeps secure cookies there), so the name is put back on the way in
- * and taken off the way out.
- */
-function serveProxy(target: string, login = LOGIN): Promise<{ url: string; server: Server }> {
-  const server = createServer((req, res) => {
-    const local = `http://${req.headers.host}`
-    const headers = { ...req.headers, host: HOST, 'x-forwarded-for': '100.101.102.103', 'tailscale-user-login': login, ...(req.headers.origin && { origin: `https://${HOST}` }) }
-    const forward = request(new URL(req.url ?? '/', target), { method: req.method, headers }, (answer) => {
-      const location = answer.headers.location?.replace(`https://${HOST}`, local)
-      res.writeHead(answer.statusCode!, { ...answer.headers, ...(location && { location }) })
-      answer.pipe(res)
-    })
-    req.pipe(forward)
-  })
-  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ url: `http://localhost:${(server.address() as AddressInfo).port}/`, server })))
+/** The stand-in `tailscale serve` for a phone, at localhost (a browser keeps secure cookies there). */
+async function serveProxy(target: string, login = LOGIN): Promise<{ url: string; server: Server }> {
+  const { port, server } = await tailnetProxy(HOST, () => target, login)
+  return { url: `http://localhost:${port}/`, server }
 }
-
-/** Where the app pointed the stand-in `tailscale serve`, once it has. */
-const servedTo = (h: AppHandle) => (JSON.parse(readFileSync(join(h.dir, 'tailscale.json'), 'utf8')) as { app?: string }).app
 
 async function phone(url: string): Promise<ElectronApplication> {
   return electron.launch({ args: [join(__dirname, 'phone-browser.mjs')], env: { ...process.env, PHONE_URL: url } })
@@ -47,8 +27,8 @@ test('Universe on your phone: served on the tailnet, signed in with the code the
   await panel.getByLabel('Use Universe on my phone').check()
   await expect(panel.getByLabel('Open this on your phone')).toHaveValue(`https://${HOST}/`)
   await page.getByRole('button', { name: 'Close connect AI' }).click()
-  await expect.poll(() => servedTo(h)).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
-  const target = servedTo(h)!
+  await expect.poll(() => servedTo(h.dir)).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+  const target = servedTo(h.dir)!
 
   // Someone else on the tailnet is turned away; so is the internet (a Funnel request).
   const other = await serveProxy(target, 'someone@example.com')
@@ -103,5 +83,5 @@ test('Universe on your phone: served on the tailnet, signed in with the code the
 
   // Off: Serve is turned off.
   await panel.getByLabel('Use Universe on my phone').uncheck()
-  await expect.poll(() => servedTo(h)).toBeUndefined()
+  await expect.poll(() => servedTo(h.dir)).toBeUndefined()
 })

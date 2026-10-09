@@ -1,22 +1,16 @@
 import { useEffect, useState } from 'react'
 import { ROADMAP } from '../roadmap'
-import { useUi } from '../store'
+import { applyReply } from '../store'
 import { ErrorBanner } from './ErrorBanner'
 import { CheckForUpdates } from './UpdateBanner'
 import { DevicesPanel } from './AiPanels'
 
 export function Welcome() {
   const [recent, setRecent] = useState<string[]>([])
-  const { run, apply } = useUi.getState()
 
   useEffect(() => {
     void window.universe.recentProjects().then(setRecent)
   }, [])
-
-  const openWith = async (call: ReturnType<typeof window.universe.openProject>) => {
-    const state = await run(call)
-    if (state) apply(state)
-  }
 
   return (
     <div className="welcome">
@@ -26,10 +20,10 @@ export function Welcome() {
           <h1>Universe</h1>
           <p>Build worlds, their skies, and their histories.</p>
           <div className="welcome-actions">
-            <button className="primary" onClick={() => void openWith(window.universe.newProject())}>
+            <button className="primary" onClick={() => void applyReply(window.universe.newProject())}>
               New Universe…
             </button>
-            <button onClick={() => void openWith(window.universe.openProject())}>Open…</button>
+            <button onClick={() => void applyReply(window.universe.openProject())}>Open…</button>
           </div>
         </header>
 
@@ -42,7 +36,7 @@ export function Welcome() {
               <ul className="recent-list">
                 {recent.map((path) => (
                   <li key={path}>
-                    <button className="link" title={path} onClick={() => void openWith(window.universe.openProject(path))}>
+                    <button className="link" title={path} onClick={() => void applyReply(window.universe.openProject(path))}>
                       <span className="recent-name">{fileName(path)}</span>
                       <span className="recent-path">{path}</span>
                     </button>

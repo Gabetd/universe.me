@@ -83,12 +83,12 @@ export const useUi = create<UiState>((set, get) => ({
   execute: (command) => applyReply(window.universe.execute(command))
 }))
 
-/** Runs a bridge call that replies with the project's new state, and shows that state (or the error). */
-export async function applyReply(call: Promise<Result<AppState>>): Promise<AppState | undefined> {
+/** Runs a bridge call that replies with the project's new state, and shows that state (or the error; nothing if a dialog was cancelled). */
+export async function applyReply(call: Promise<Result<AppState | null>>): Promise<AppState | undefined> {
   const { run, apply } = useUi.getState()
   const state = await run(call)
   if (state) apply(state)
-  return state
+  return state ?? undefined
 }
 
 /** Nothing selected on the world surface or its timeline. */

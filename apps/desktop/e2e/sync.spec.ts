@@ -1,38 +1,16 @@
-import { readFileSync } from 'node:fs'
-import { createServer, request, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import type { Server } from 'node:http'
 import { join } from 'node:path'
-import { expect, inspector, launch, newWorld, row, shot, SLOW, stubSaveDialog, test, type AppHandle } from './helpers'
+import { expect, inspector, launch, newWorld, row, servedTo, shot, SLOW, stubSaveDialog, tailnetProxy, test, type AppHandle } from './helpers'
 
 /** The two computers on the stand-in tailnet (e2e/fake-tailscale.mjs), both the same owner's. */
 const STUDIO = 'studio.tail1234.ts.net'
 const LAPTOP = 'laptop.tail1234.ts.net'
 
-/**
- * What `tailscale serve` does for the other computer: forwards to where the
- * app pointed it (read from its stand-in Tailscale's state each time),
- * adding the owner's login and the name it was asked for.
- */
-function serve(host: string): { url: Promise<string>; server: Server; app: { dir?: string } } {
+/** The stand-in `tailscale serve` of one of the computers: to wherever its app pointed it. */
+function serve(host: string): { url: Promise<string>; server: Promise<Server>; app: { dir?: string } } {
   const app: { dir?: string } = {}
-  const server = createServer((req, res) => {
-    let target: string | undefined
-    try {
-      target = app.dir && (JSON.parse(readFileSync(join(app.dir, 'tailscale.json'), 'utf8')) as { app?: string }).app
-    } catch {
-      // Not served yet.
-    }
-    if (!target) return void res.writeHead(502).end()
-    const headers = { ...req.headers, host: `${host}:8443`, 'x-forwarded-for': '100.64.0.9', 'tailscale-user-login': 'owner@example.com' }
-    const forward = request(new URL(req.url ?? '/', target), { method: req.method, headers }, (answer) => {
-      res.writeHead(answer.statusCode!, answer.headers)
-      answer.pipe(res)
-    })
-    forward.on('error', () => res.writeHead(502).end())
-    req.pipe(forward)
-  })
-  const url = new Promise<string>((resolve) => server.listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${(server.address() as AddressInfo).port}`)))
-  return { url, server, app }
+  const proxy = tailnetProxy(`${host}:8443`, () => app.dir && servedTo(app.dir))
+  return { url: proxy.then(({ port }) => `http://127.0.0.1:${port}`), server: proxy.then(({ server }) => server), app }
 }
 
 /** A computer on the tailnet: its own Tailscale, which sees the other as its owner's device. */
@@ -82,7 +60,6 @@ test('sync: a universe copied from one computer to another, then kept in step bo
     await shot(laptop.page, '180-sync')
   } finally {
     await Promise.all([studio.app.close(), laptop.app.close()])
-    toStudio.server.close()
-    toLaptop.server.close()
+    for (const proxy of [toStudio, toLaptop]) (await proxy.server).close()
   }
 })

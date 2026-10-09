@@ -1,4 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process'
+import { APP_HTTPS_PORT } from './tailnet'
 import type { TailnetPeer, TailscaleState } from '../shared/api'
 
 /**
@@ -62,9 +63,6 @@ function run(file: string, args: string[], env: Record<string, string> = {}): Pr
   })
 }
 
-/** Where the phone app is on the tailnet: this HTTPS port of the computer's name, forwarded by `tailscale serve` (PLAN.md §6.6). */
-export const APP_HTTPS_PORT = 8443
-
 type Node = { DNSName?: string; HostName?: string; UserID?: number; Online?: boolean }
 
 /**
@@ -99,6 +97,8 @@ function proxiedPort(json: string, host: string, https: number, funnel: boolean)
 export const funnelPort = (json: string, host: string) => proxiedPort(json, host, 443, true)
 
 /** The port the phone app's tailnet-only address forwards to, if it does. */
+export { APP_HTTPS_PORT }
+
 export const appPort = (json: string, host: string) => proxiedPort(json, host, APP_HTTPS_PORT, false)
 
 /** Tailscale's state on this computer, as phone access needs it. */

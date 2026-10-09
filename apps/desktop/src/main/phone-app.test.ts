@@ -37,7 +37,7 @@ beforeEach(async () => {
     sync: {
       on: () => syncOn,
       hello: () => ({ device: 'here', project: { syncId: 's1', name: 'Aerth' } }),
-      changes: (body, device) => (device === 'there' ? { ok: true, rows: [], upTo: (body as { since: number }).since + 1, more: false } : { ok: false, status: 400, error: 'Who?' }),
+      changes: (body, device) => (device === 'there' ? { status: 200, body: { rows: [], upTo: (body as { since: number }).since + 1, more: false } } : { status: 400, body: { error: 'Who?' } }),
       nudged: (body) => void nudges.push(body)
     },
     files: join(dir, 'app'),

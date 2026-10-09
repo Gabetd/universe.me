@@ -19,8 +19,8 @@
 - `pnpm dev`: run the app with hot reload
 
 ## Architecture
-- Everything stays local: projects are SQLite files on disk, no accounts, no telemetry. `src/main/index.ts` (`keepOffline`) cancels every network request except the app's own files and the updater's GitHub release downloads (`src/shared/offline.ts`); `e2e/offline.spec.ts` checks it. Don't add remote services, CDNs, web fonts or analytics.
+- Everything stays local: projects are SQLite files on disk, no accounts, no telemetry. `src/main/index.ts` (`keepOffline`) cancels every network request except the app's own files, the updater's GitHub release downloads and sync's questions to the user's other devices (`src/shared/offline.ts`); `e2e/offline.spec.ts` checks it. Don't add remote services, CDNs, web fonts or analytics.
 - Every write goes through the command bus in `packages/core` (validated, undoable, logged). Don't write to storage directly from the UI or main process.
 - The local API and MCP server (`packages/api`) are one table of operations served as REST, MCP over HTTP (in the app, `src/main/api.ts`) and MCP over stdio (`Universe --mcp`). They listen on 127.0.0.1 only, behind a token (or, for phone access through Tailscale Funnel, OAuth tokens approved in the app; PLAN.md §6.4); add a capability as an operation, not as a route or a tool.
-- Sync (PLAN.md §6.7) talks only to the user's own devices on their tailnet, through the phone app's `tailscale serve` server (`src/main/device-sync.ts`); it merges rows with the `sync.merge` command, never by writing to storage.
+- Sync (PLAN.md §6.7) talks only to the user's own devices on their tailnet, through the phone app's `tailscale serve` server (`src/main/device-sync.ts`), asking them with Electron's `net.fetch` so `keepOffline` sees it (only `https://*.ts.net:8443/sync/` gets through); it merges rows through the bus's `merge`, never by writing to storage.
 - `packages/core` has no Node or DOM dependencies. `packages/db` is Node-only (`node:sqlite`). `packages/procgen` is pure TS used by both the renderer and main.

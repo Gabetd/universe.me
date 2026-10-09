@@ -139,12 +139,25 @@ function ConnectPanel({ status, set, onClose }: { status: ApiStatus; set(patch: 
   )
 }
 
+/** Tailscale is there but not running or signed in: what to do. */
+const stoppedLine = (ts: { detail: string }) => `${ts.detail}. Start it and sign in, then open this panel again.`
+
+/** What's in the way of a section's switch, if anything. */
+function SectionError({ error }: { error: string | undefined }) {
+  if (!error) return null
+  return (
+    <p className="small phone-error" role="alert">
+      {error}
+    </p>
+  )
+}
+
 /** What phone access is doing, in a line. */
 function phoneLine({ enabled, phone }: ApiStatus): string {
   const ts = phone.tailscale
   if (!enabled) return 'Turn on “Let AI connect” first.'
   if (ts.kind === 'missing') return 'Needs Tailscale: install it from tailscale.com and sign in, then open this panel again.'
-  if (ts.kind === 'stopped') return `${ts.detail}. Start it and sign in, then open this panel again.`
+  if (ts.kind === 'stopped') return stoppedLine(ts)
   if (!phone.on) return `Off. Tailscale is ready on ${ts.host}.`
   if (phone.url) return `On, through Tailscale Funnel at https://${ts.host}.`
   return phone.error ? 'Funnel isn’t on yet:' : 'Turning on Funnel…'
@@ -154,7 +167,7 @@ function phoneLine({ enabled, phone }: ApiStatus): string {
 function appLine({ phone }: ApiStatus): string {
   const ts = phone.tailscale
   if (ts.kind === 'missing') return 'Needs Tailscale on this computer and the phone: install it from tailscale.com and sign in to the same account on both.'
-  if (ts.kind === 'stopped') return `${ts.detail}. Start it and sign in, then open this panel again.`
+  if (ts.kind === 'stopped') return stoppedLine(ts)
   if (!phone.app.on) return 'Off.'
   if (phone.app.url) return 'On, for your own devices on your tailnet (nothing on the internet). Open the address on your phone with Tailscale on, and sign in with the code shown here.'
   return phone.app.error ? 'It isn’t on yet:' : 'Turning it on…'
@@ -181,11 +194,7 @@ function PhoneAccess({ status, set }: { status: ApiStatus; set(patch: ApiSetting
       <p className="small" aria-label="Phone access status">
         {phoneLine(status)}
       </p>
-      {phone.error && (
-        <p className="small phone-error" role="alert">
-          {phone.error}
-        </p>
-      )}
+      <SectionError error={phone.error} />
       {phone.url && <CopyField label="Add it on claude.ai as a custom connector (Settings → Connectors), then use it from the Claude app" value={phone.url} />}
       <h4>Universe on your phone</h4>
       <p className="small muted">This app in your phone’s browser, from this computer (which has to be on), through your tailnet only. Add it to the home screen to open it like an app.</p>
@@ -195,11 +204,7 @@ function PhoneAccess({ status, set }: { status: ApiStatus; set(patch: ApiSetting
       <p className="small" aria-label="Phone app status">
         {appLine(status)}
       </p>
-      {phone.app.error && (
-        <p className="small phone-error" role="alert">
-          {phone.app.error}
-        </p>
-      )}
+      <SectionError error={phone.app.error} />
       {phone.app.url && <CopyField label="Open this on your phone" value={phone.app.url} />}
       {phone.signIns.length > 0 && <SignInCodes signIns={phone.signIns} />}
       {phone.connections.length > 0 && (
@@ -341,7 +346,7 @@ function ago(ms: number): string {
 function syncLine({ phone }: ApiStatus): string {
   const ts = phone.tailscale
   if (ts.kind === 'missing') return 'Needs Tailscale on each of your computers, signed in to the same account: install it from tailscale.com.'
-  if (ts.kind === 'stopped') return `${ts.detail}. Start it and sign in, then open this panel again.`
+  if (ts.kind === 'stopped') return stoppedLine(ts)
   if (!phone.sync.on) return 'Off.'
   if (phone.sync.error) return 'It isn’t on yet:'
   return phone.sync.devices.length ? 'On.' : 'On. None of your other devices on your tailnet is online right now.'
@@ -362,11 +367,6 @@ function deviceLine(d: DeviceStatus): string {
  */
 function DevicesSection({ status, set }: { status: ApiStatus; set(patch: ApiSettingsPatch): void }) {
   const { sync, tailscale } = status.phone
-  const copy = async (host: string) => {
-    const { run, apply } = useUi.getState()
-    const state = await run(window.universe.copyFromDevice(host))
-    if (state) apply(state)
-  }
   return (
     <section className="phone-access" aria-label="Your other devices">
       <h3>Your other devices</h3>
@@ -380,11 +380,7 @@ function DevicesSection({ status, set }: { status: ApiStatus; set(patch: ApiSett
       <p className="small" aria-label="Sync status">
         {syncLine(status)}
       </p>
-      {sync.on && sync.error && (
-        <p className="small phone-error" role="alert">
-          {sync.error}
-        </p>
-      )}
+      <SectionError error={sync.on ? sync.error : undefined} />
       {sync.on && sync.devices.length > 0 && (
         <ul className="connections" aria-label="Devices">
           {sync.devices.map((d) => (
@@ -393,7 +389,7 @@ function DevicesSection({ status, set }: { status: ApiStatus; set(patch: ApiSett
                 {d.name} <span className="muted">· {deviceLine(d)}</span>
               </span>
               {d.state === 'other' && (
-                <button className="link small" onClick={() => void copy(d.host)}>
+                <button className="link small" onClick={() => void applyReply(window.universe.copyFromDevice(d.host))}>
                   Copy “{d.project!.name}” here
                 </button>
               )}

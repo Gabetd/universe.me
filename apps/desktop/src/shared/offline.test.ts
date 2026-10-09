@@ -16,6 +16,14 @@ describe('isAllowedRequest', () => {
     expect(isAllowedRequest('file:///c:/Program%20Files/Universe/resources/app.asar/out/renderer/index.html', true, [], appFolder('file:///C:/Program%20Files/Universe/resources/app.asar/out/renderer/'))).toBe(true)
   })
 
+  it('lets the main process ask Universe on the user’s other devices for sync, and nothing else on the tailnet', () => {
+    expect(isAllowedRequest('https://laptop.tail1234.ts.net:8443/sync/changes', false)).toBe(true)
+    expect(isAllowedRequest('https://laptop.tail1234.ts.net:8443/sync/changes', true)).toBe(false)
+    expect(isAllowedRequest('https://laptop.tail1234.ts.net:8443/bridge/getState', false)).toBe(false)
+    expect(isAllowedRequest('https://laptop.tail1234.ts.net/sync/hello', false)).toBe(false)
+    expect(isAllowedRequest('https://laptop.ts.net.example.com:8443/sync/hello', false)).toBe(false)
+  })
+
   it('blocks the pages from reaching the internet, even the update hosts', () => {
     expect(isAllowedRequest('https://example.com/collect', true)).toBe(false)
     expect(isAllowedRequest('https://github.com/Gabetd/universe.me/releases/download/latest-build/update.json', true)).toBe(false)

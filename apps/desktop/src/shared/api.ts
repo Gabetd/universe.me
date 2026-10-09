@@ -58,7 +58,6 @@ export interface ApiStatus {
   phone: PhoneStatus
 }
 
-/** Tailscale on this computer, as phone access needs it: not there, there but not running or signed in, or ready (with where Funnel forwards, if anywhere). */
 /**
  * One of the user's other devices, as sync sees it (PLAN.md §6.7): not
  * answering (Universe isn't running there, or sync is off), with nothing
@@ -68,7 +67,6 @@ export interface DeviceStatus {
   host: string
   name: string
   state: 'unreachable' | 'nothing' | 'other' | 'same'
-  device?: string
   project?: { syncId: string; name: string }
   lastSync?: number
   error?: string
@@ -80,6 +78,7 @@ export interface TailnetPeer {
   name: string
 }
 
+/** Tailscale on this computer, as phone access needs it: not there, there but not running or signed in, or ready (with where Funnel forwards, if anywhere). */
 export type TailscaleState =
   | { kind: 'missing' }
   | { kind: 'stopped'; detail: string }

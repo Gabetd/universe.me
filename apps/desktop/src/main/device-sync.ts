@@ -1,8 +1,9 @@
-import { MAX_MERGE_ROWS, SyncRow } from '@universe/core'
+import { DEVICE_ID, SyncPage } from '@universe/core'
+import { net } from 'electron'
 import { z } from 'zod'
 import type { AppState, DeviceStatus, TailnetPeer } from '../shared/api'
 import type { Session } from './session'
-import { APP_HTTPS_PORT } from './tailscale'
+import { tailnetBase } from './tailnet'
 
 /**
  * Sync with the user's other devices (PLAN.md §6.7), directly over their
@@ -19,12 +20,14 @@ const EVERY_MS = 10_000
 /** How long after a change the other devices are nudged (a burst of changes is one nudge). */
 const NUDGE_MS = 800
 const TIMEOUT_MS = 10_000
-/** Rows asked for at once: a page of terrain faces is a few MB. */
+/** Rows asked for at once, at most (a page also stops at about 2 MB: see StampedStore). */
 const PAGE = 100
 
-const Hello = z.object({ device: z.string().min(1).max(64), project: z.object({ syncId: z.string().min(1).max(100), name: z.string().max(200) }).nullable() })
+const Hello = z.object({
+  device: z.string().regex(DEVICE_ID),
+  project: z.object({ syncId: z.string().min(1).max(100), name: z.string().max(200), upTo: z.number().int().min(0) }).nullable()
+})
 type Hello = z.infer<typeof Hello>
-const Page = z.object({ rows: z.array(SyncRow).max(MAX_MERGE_ROWS), upTo: z.number().int().min(0), more: z.boolean() })
 
 export interface DeviceSyncOptions {
   session: Session
@@ -38,8 +41,11 @@ export interface DeviceSyncOptions {
   changed(): void
 }
 
-/** The page of rows another device asks for, or why there's none. */
-export type ChangesAnswer = { ok: true; rows: SyncRow[]; upTo: number; more: boolean } | { ok: false; status: number; error: string }
+/** An answer to another device: its status and body. */
+export interface SyncAnswer {
+  status: number
+  body: object
+}
 
 export class DeviceSync {
   private readonly devices = new Map<string, DeviceStatus>()
@@ -73,22 +79,22 @@ export class DeviceSync {
   // Answering the other devices.
 
   hello(): Hello {
-    return { device: this.o.session.device, project: this.o.session.syncInfo() ?? null }
+    const open = this.o.session.syncInfo()
+    return { device: this.o.session.device, project: open ?? null }
   }
 
-  changes(body: unknown, device: string | undefined): ChangesAnswer {
+  changes(body: unknown, device: string | undefined): SyncAnswer {
     const ask = z.object({ syncId: z.string(), since: z.number().int().min(0) }).safeParse(body)
-    if (!ask.success || !device) return { ok: false, status: 400, error: 'Ask with a sync id and where from' }
-    const open = this.o.session.syncInfo()
-    if (open?.syncId !== ask.data.syncId) return { ok: false, status: 409, error: 'That universe isn’t open here' }
-    return { ok: true, ...this.o.session.changesSince(ask.data.since, device, PAGE) }
+    if (!ask.success || !device) return { status: 400, body: { error: 'Ask with a sync id and where from' } }
+    if (this.o.session.syncInfo()?.syncId !== ask.data.syncId) return { status: 409, body: { error: 'That universe isn’t open here' } }
+    return { status: 200, body: this.o.session.changesSince(ask.data.since, device, PAGE) }
   }
 
   /** Another device says it has changes: asked at once (if it's one of the user's). */
   nudged(body: unknown): void {
     const host = z.object({ host: z.string() }).safeParse(body)
     const peer = host.success ? this.o.tailnet()?.peers.find((p) => p.host === host.data.host) : undefined
-    if (peer && this.o.on()) void this.visit(peer)
+    if (peer && this.o.on()) void this.visit(peer).then(() => this.o.changed())
   }
 
   // Asking them.
@@ -98,13 +104,11 @@ export class DeviceSync {
     if (!this.o.on()) return
     clearTimeout(this.nudging)
     this.nudging = setTimeout(() => {
-      const me = this.o.tailnet()
-      const same = this.status().filter((d) => d.state === 'same')
-      for (const d of same) void call(d.host, '/sync/nudge', this.o.session.device, { host: me?.host }).catch(() => {})
+      for (const d of this.status()) if (d.state === 'same') this.nudge(d.host)
     }, NUDGE_MS)
   }
 
-  /** Every device online now, at once. */
+  /** Every device online now, at once; what they're doing is told once they've all answered. */
   async round(): Promise<void> {
     if (!this.o.on()) return
     const peers = this.o.tailnet()?.peers ?? []
@@ -124,65 +128,68 @@ export class DeviceSync {
   /** What a device has open; if it's the universe open here, everything it got since it was last asked. */
   private async pull(peer: TailnetPeer): Promise<void> {
     const before = this.devices.get(peer.host)
-    const set = (status: Omit<DeviceStatus, 'host' | 'name'>) => {
-      this.devices.set(peer.host, { host: peer.host, name: peer.name, ...status })
-      this.o.changed()
-    }
+    const set = (status: Omit<DeviceStatus, 'host' | 'name'>) => void this.devices.set(peer.host, { host: peer.host, name: peer.name, ...status })
     let hello: Hello
     try {
-      hello = Hello.parse(await call(peer.host, '/sync/hello', this.o.session.device))
+      hello = await this.hi(peer.host)
     } catch (err) {
       return set({ state: 'unreachable', error: (err as Error).message })
     }
     const here = this.o.session.syncInfo()
-    if (!hello.project) return set({ state: 'nothing', device: hello.device })
-    if (hello.project.syncId !== here?.syncId) return set({ state: 'other', device: hello.device, project: hello.project })
+    if (!hello.project) return set({ state: 'nothing' })
+    const project = { syncId: hello.project.syncId, name: hello.project.name }
+    if (project.syncId !== here?.syncId) return set({ state: 'other', project })
     try {
-      await this.take(peer.host, hello.device, hello.project.syncId)
-      set({ state: 'same', device: hello.device, project: hello.project, lastSync: Date.now() })
+      await this.take(peer.host, hello.device, project.syncId, hello.project.upTo)
+      set({ state: 'same', project, lastSync: Date.now() })
     } catch (err) {
-      set({ state: 'same', device: hello.device, project: hello.project, ...(before?.lastSync && { lastSync: before.lastSync }), error: (err as Error).message })
+      set({ state: 'same', project, ...(before?.lastSync && { lastSync: before.lastSync }), error: (err as Error).message })
     }
   }
 
-  /** Every page of rows `host` got since it was last asked, merged here. */
-  private async take(host: string, device: string, syncId: string): Promise<void> {
+  /** Every page of rows `host` got since it was last asked (none if it's got nothing since: `upTo`), merged here; the window is told once. */
+  private async take(host: string, device: string, syncId: string, upTo = Infinity): Promise<void> {
     const { session } = this.o
-    for (;;) {
-      const since = session.seen(device)
-      const page = Page.parse(await call(host, '/sync/changes', session.device, { syncId, since }))
-      // The universe here changed while asking (another was opened): the rows aren't its.
-      if (session.syncInfo()?.syncId !== syncId) return
-      const state = session.merge(page.rows)
-      session.setSeen(device, page.upTo)
-      if (state) this.o.merged(state)
-      if (!page.more) return
+    let merged = false
+    try {
+      for (let since = session.seen(device); since < upTo; ) {
+        const page = SyncPage.parse(await call(host, '/sync/changes', session.device, { syncId, since }))
+        // The universe here changed while asking (another was opened): the rows aren't its.
+        if (session.syncInfo()?.syncId !== syncId) return
+        merged = session.merge(page.rows) || merged
+        if (page.upTo !== since) session.setSeen(device, (since = page.upTo))
+        if (!page.more) return
+      }
+    } finally {
+      if (merged) this.o.merged(session.state())
     }
   }
 
   /** Makes a copy here of the universe a device has open, in a new file at `path`, and opens it. */
   async copyFrom(host: string, path: string): Promise<AppState> {
-    const hello = Hello.parse(await call(host, '/sync/hello', this.o.session.device))
+    const hello = await this.hi(host)
     if (!hello.project) throw new Error('That device has no universe open now')
     this.o.session.createCopy(path, hello.project.name, hello.project.syncId)
     await this.take(host, hello.device, hello.project.syncId)
-    const state = this.o.session.state()
-    this.o.merged(state)
     // The device it came from learns at once that this one has it too.
-    void call(host, '/sync/nudge', this.o.session.device, { host: this.o.tailnet()?.host }).catch(() => {})
+    this.nudge(host)
     void this.round()
-    return state
+    return this.o.session.state()
+  }
+
+  private async hi(host: string): Promise<Hello> {
+    return Hello.parse(await call(host, '/sync/hello', this.o.session.device))
+  }
+
+  /** Tells a device there's something new here. */
+  private nudge(host: string): void {
+    void call(host, '/sync/nudge', this.o.session.device, { host: this.o.tailnet()?.host }).catch(() => {})
   }
 }
 
-/** Where a device's Universe answers: its tailnet name's HTTPS (or, for tests, UNIVERSE_TAILNET_URLS's address for it). */
-function baseOf(host: string): string {
-  const overrides = process.env.UNIVERSE_TAILNET_URLS ? (JSON.parse(process.env.UNIVERSE_TAILNET_URLS) as Record<string, string>) : {}
-  return overrides[host] ?? `https://${host}:${APP_HTTPS_PORT}`
-}
-
+/** Asks a device's Universe, through Electron's network stack (where keepOffline lets only this through). */
 async function call(host: string, path: string, device: string, body?: object): Promise<unknown> {
-  const res = await fetch(`${baseOf(host)}${path}`, {
+  const res = await net.fetch(`${tailnetBase(host)}${path}`, {
     method: body ? 'POST' : 'GET',
     headers: { 'X-Universe-Sync': '1', 'X-Universe-Device': device, ...(body && { 'Content-Type': 'application/json' }) },
     body: body && JSON.stringify(body),

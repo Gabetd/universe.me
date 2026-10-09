@@ -33,7 +33,8 @@ function isAppFile(url: string, files?: string): boolean {
 
 /**
  * Whether a request may go out. Pages (`fromPage`) only load the app itself
- * (`files`: its folder, from `appFolder`); the main process may also reach the update hosts.
+ * (`files`: its folder, from `appFolder`); the main process may also reach the update hosts
+ * and Universe on the user's other devices, for sync.
  * `extra` adds origins for development (the Vite dev server) and tests (a
  * local update server).
  */
@@ -41,5 +42,8 @@ export function isAllowedRequest(url: string, fromPage: boolean, extra: string[]
   if (url.startsWith('file:')) return isAppFile(url, files)
   if (LOCAL.some((scheme) => url.startsWith(scheme))) return true
   if (extra.some((prefix) => url.startsWith(prefix))) return true
-  return !fromPage && UPDATE_HOSTS.some((prefix) => url.startsWith(prefix))
+  return !fromPage && (UPDATE_HOSTS.some((prefix) => url.startsWith(prefix)) || TAILNET_SYNC.test(url))
 }
+
+/** Sync's questions to the user's other devices (PLAN.md §6.7): Universe on their tailnet names, on its own port and paths. */
+const TAILNET_SYNC = /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net:8443\/sync\//i

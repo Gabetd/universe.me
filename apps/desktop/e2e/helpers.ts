@@ -1,4 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { createServer, request, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _electron as electron, test as base, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test'
@@ -373,3 +375,36 @@ export type Rpc = (method: string, params?: object) => Promise<{ result: { conte
 
 /** A tool's answer, read as JSON, from either kind of client. */
 export const tool = async (call: Rpc, name: string, args: object) => JSON.parse((await call('tools/call', { name, arguments: args })).result.content[0]!.text)
+
+/** Where an app pointed its stand-in `tailscale serve` (e2e/fake-tailscale.mjs), once it has. */
+export function servedTo(dir: string): string | undefined {
+  try {
+    return (JSON.parse(readFileSync(join(dir, 'tailscale.json'), 'utf8')) as { app?: string }).app
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * What `tailscale serve` does for a device on the tailnet: forwards its
+ * requests to where the app pointed it (`target`, asked each time), adding
+ * who it is (which a device can't fake) and the tailnet name it asked for
+ * (`host`, with its port). A browser here is at localhost, so the name is put
+ * back on the way in and taken off the way out. Listens on a free port.
+ */
+export function tailnetProxy(host: string, target: () => string | undefined, login = 'owner@example.com'): Promise<{ port: number; server: Server }> {
+  const server = createServer((req, res) => {
+    const to = target()
+    if (!to) return void res.writeHead(502).end()
+    const local = `http://${req.headers.host}`
+    const headers = { ...req.headers, host, 'x-forwarded-for': '100.101.102.103', 'tailscale-user-login': login, ...(req.headers.origin && { origin: `https://${host}` }) }
+    const forward = request(new URL(req.url ?? '/', to), { method: req.method, headers }, (answer) => {
+      const location = answer.headers.location?.replace(`https://${host}`, local)
+      res.writeHead(answer.statusCode!, { ...answer.headers, ...(location && { location }) })
+      answer.pipe(res)
+    })
+    forward.on('error', () => res.writeHead(502).end())
+    req.pipe(forward)
+  })
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ port: (server.address() as AddressInfo).port, server })))
+}
