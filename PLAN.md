@@ -369,7 +369,7 @@ Keep it simple and deterministic:
 ### 6.6 The phone app (a web app from the computer)
 
 The app the computer runs, in the phone's browser (installable to the home screen), through Tailscale. The computer has to be on.
-- **Served by the app**: the renderer's own build at `/app/` on the API server, with a web bridge in place of Electron's: the same `UniverseApi` methods as HTTP calls and its events as a server-sent stream. Nothing loads from elsewhere; the page's Content-Security-Policy allows only itself.
+- **Served by the app**: the renderer's own build, from a server of its own in the app (not the API's), with a web bridge in place of Electron's: the same `UniverseApi` methods as HTTP calls and its events as a server-sent stream. Nothing loads from elsewhere; the page's Content-Security-Policy allows only itself.
 - **Tailnet only**: `tailscale serve` (not Funnel) on its own port, so only devices signed in to the user's tailnet can reach it; requests must carry Tailscale's `Tailscale-User-Login` of the tailnet's owner. Funnel stays for claude.ai alone.
 - **Signed in once per device** with a code the computer shows (as for Claude), then a session cookie (HttpOnly, Secure, SameSite=Strict, 90 days unused); each phone is listed with the connected clients and can be removed.
 - **Phone layout**: below 700 px the workspace becomes tabs (Tree, View, Details, Timeline) with touch controls: drag to turn the globe and pan the map, pinch to zoom, long-press for the right-click menu.
@@ -487,11 +487,14 @@ Each milestone ends with something you can launch and demo.
 - [x] **The Warnings page** on a world (`WarningsView.tsx`): a request to copy for Claude, its findings with what they're about (to open or right-click), resolve, dismiss and reopen, and the app's own checks (history, structures, food web); a count on the tab and amber marks in the tree, the timeline and the lists.
 - [x] Tests: the operations and the prompt in `packages/api`, `e2e/warnings.spec.ts` with an MCP client reporting through the app.
 
-### M11 — Phone app (2 weeks) — *active*
-- The renderer served at `/app/` with the web bridge; `tailscale serve` on the tailnet; sign-in with a code and device sessions; the phone layout and touch controls.
-- Tests: the bridge against the real main process; e2e of the whole app in a phone-sized browser through the bridge.
+### M11 — Phone app (2 weeks) — *done*
+- [x] **The server** (`src/main/phone-app.ts`): the window's own built files and a bridge for the methods a phone may ask (`REMOTE_METHODS`: the open project's state, commands, undo, AI suggestions, terrain and assets; not files, dialogs, the API's settings or updates), with byte arrays carried in its JSON (`shared/wire.ts`) and the window's events as a stream. On 127.0.0.1, behind `tailscale serve` on port 8443 (the tailnet only, never Funnel), and only for requests carrying the tailnet owner's login.
+- [x] **Sign-in**: the API's OAuth with the app as its own client; the phone types the code the computer shows, the app keeps the tokens and gives the phone a cookie (HttpOnly, Secure, SameSite=Strict, 90 days); it shows with the connected clients, and removing it ends its requests and its stream at once.
+- [x] **On the phone** (`webBridge.ts`): the same app, one panel at a time with tabs below 700 px, a long press for the right-click menu, pinch to zoom the map (the globe and ground already turn and zoom by touch), and nothing that's only for the computer. A change on either shows on the other.
+- [x] Tests: the server (who's turned away, the methods, paths, signing out) in `phone-app.test.ts`; `e2e/phone-app.spec.ts` with a phone-sized Electron window as the phone and the test playing `tailscale serve`.
+- Not yet tried on a real phone and tailnet (the tests stand in for both). The phone gets the whole project state after each change; a large universe may want changes sent as differences.
 
-### M12 — Sync (2–3 weeks)
+### M12 — Sync (2–3 weeks) — *active*
 - Clock stamps on every row (a migration), the changed-rows exchange, pairing over the tailnet, last-writer-wins merge, sync status.
 - Tests: two projects edited apart then synced (every kind of row, deletes, terrain), convergence in any order; e2e of two app instances syncing.
 

@@ -128,6 +128,17 @@ client is listed under **From your phone**, where **Remove** disconnects it
 at once. From outside, only signed-in clients get in: the app's own token
 works on this computer only. The computer has to be on with Universe running.
 
+### Universe on your phone
+
+The whole app can open in your phone's browser too, from your computer (which
+has to be on), through your own tailnet only: install Tailscale on the phone
+and sign in to the same account. In **Connect AI → From your phone**, turn on
+**Use Universe on my phone** and open the address it shows on the phone (add
+it to the home screen to open it like an app). The first time, type the code
+the computer shows; the phone then shows the universe open on the computer,
+one panel at a time, and a change on either shows on the other. Remove it from
+the connected list to sign it out.
+
 ## Download and run
 
 Every push to `main` or the development branch builds the app for every OS.

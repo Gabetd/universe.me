@@ -125,8 +125,8 @@ export class PhoneAppServer {
 
   private toFeeds(text: string): void {
     for (const feed of this.feeds) {
-      // A phone signed out (removed in Connect AI) hears nothing more.
-      if (this.sessions.has(feed.session)) feed.res.write(text)
+      // A phone signed out (removed in Connect AI) hears nothing more: checked each time, heartbeats included.
+      if (this.alive(feed.session)) feed.res.write(text)
       else {
         this.feeds.delete(feed)
         feed.res.end()
@@ -209,23 +209,27 @@ export class PhoneAppServer {
     }
   }
 
-  /** The phone's session (by its cookie's hash), its access renewed when it runs out; none once it's been removed in Connect AI. */
+  /** The phone's session (by its cookie's hash), if it's still signed in. */
   private session(req: IncomingMessage): string | undefined {
     const id = readCookie(req, SESSION_COOKIE)
-    if (!id) return undefined
-    const key = hash(id)
+    const key = id && hash(id)
+    return key && this.alive(key) ? key : undefined
+  }
+
+  /** Whether a session is still signed in, its access renewed when it runs out; it ends once the phone is removed in Connect AI. */
+  private alive(key: string): boolean {
     const session = this.sessions.get(key)
-    if (!session) return undefined
-    if (this.options.oauth.verify(session.access)) return key
+    if (!session) return false
+    if (this.options.oauth.verify(session.access)) return true
     try {
       const tokens = this.options.oauth.exchange({ grant_type: 'refresh_token', client_id: PHONE_CLIENT_ID, refresh_token: session.refresh })
       this.sessions.set(key, { access: tokens.access_token, refresh: tokens.refresh_token })
       this.save()
-      return key
+      return true
     } catch {
       this.sessions.delete(key)
       this.save()
-      return undefined
+      return false
     }
   }
 
