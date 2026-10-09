@@ -24,6 +24,7 @@ import type { Store } from './store'
 import { findBlueprint } from './builtin-blueprints'
 import type { Blueprint } from './structures'
 import { stripUndefined } from './util'
+import { powerValidators } from './power-validators'
 import { themeValidators } from './theme-validators'
 import { worldSimValidators } from './world-sim-validators'
 
@@ -112,7 +113,8 @@ const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>, check
     if (c.died !== null && c.died < c.born) throw new CommandError('A character cannot die before they are born')
   },
   ...worldSimValidators,
-  ...themeValidators
+  ...themeValidators,
+  ...powerValidators
 }
 
 /** A blueprint by id: a built-in one or one in the project's library. */

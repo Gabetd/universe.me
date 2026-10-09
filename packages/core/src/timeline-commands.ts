@@ -108,7 +108,8 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
   'era.create': (store, { id, ownerId, ...p }, ctx) =>
     create(store, 'era', ctx, ownerId, id, { name: p.name ?? 'New era', start: p.start, end: p.end, color: p.color ?? pickColor(ctx), notes: p.notes ?? '' }),
   'era.update': eras.update,
-  'era.delete': eras.delete,
+  // Power systems' entries for the era go with it.
+  'era.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'era', id }, ({ ownerId }) => ({ remove: refsWhere(store, 'powerAge', ownerId, (a) => a.eraId === id) })),
 
   'lane.create': (store, { id, ownerId, name, order }, ctx) => {
     const last = Math.max(0, ...store.records('lane').byOwner(ownerId).map((l) => l.order))
