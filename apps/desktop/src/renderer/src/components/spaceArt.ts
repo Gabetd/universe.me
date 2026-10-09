@@ -12,6 +12,16 @@ const rgba = ([r, g, b]: Rgb, a: number) => `rgba(${r},${g},${b},${a.toFixed(3)}
 /** `#rrggbb` as numbers. */
 export const hexRgb = (hex: string): Rgb => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]
 
+/** A disc of light: a radial gradient through `stops` (from `inner` px out to `radius`), filled. */
+function glow(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, stops: [number, string][], inner = 0): void {
+  const g = ctx.createRadialGradient(x, y, inner, x, y, radius)
+  for (const [at, colour] of stops) g.addColorStop(at, colour)
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.arc(x, y, radius, 0, Math.PI * 2)
+  ctx.fill()
+}
+
 /** A hue (degrees) at the given saturation and lightness (0–1), as numbers. */
 export function hslRgb(hue: number, sat: number, light: number): Rgb {
   const f = (n: number) => {
@@ -119,14 +129,11 @@ function paintSky(w: number, h: number, dpr: number, seed: number, stars: number
     const y = r() * h
     const colour = starColour(r())
     const size = 0.8 + r() * 1.4
-    const halo = c.createRadialGradient(x, y, 0, x, y, size * 5)
-    halo.addColorStop(0, rgba([255, 255, 255], 0.9))
-    halo.addColorStop(0.25, rgba(colour, 0.35))
-    halo.addColorStop(1, rgba(colour, 0))
-    c.fillStyle = halo
-    c.beginPath()
-    c.arc(x, y, size * 5, 0, Math.PI * 2)
-    c.fill()
+    glow(c, x, y, size * 5, [
+      [0, rgba([255, 255, 255], 0.9)],
+      [0.25, rgba(colour, 0.35)],
+      [1, rgba(colour, 0)]
+    ])
     starSpikes(c, x, y, size * (7 + r() * 6), colour, 0.5)
   }
   return sky
@@ -149,15 +156,11 @@ function paintNebula(w: number, h: number, r: () => number, strength: number): H
   const [ax, ay] = [Math.cos(angle), Math.sin(angle)]
   const reach = Math.hypot(w, h) / 2
   const along = (t: number, off: number): [number, number] => [w / 2 + ax * t * reach - ay * off, h / 2 + ay * t * reach + ax * off]
-  const blob = (x: number, y: number, radius: number, colour: string, edge: string) => {
-    const g = c.createRadialGradient(x, y, 0, x, y, radius)
-    g.addColorStop(0, colour)
-    g.addColorStop(1, edge)
-    c.fillStyle = g
-    c.beginPath()
-    c.arc(x, y, radius, 0, Math.PI * 2)
-    c.fill()
-  }
+  const blob = (x: number, y: number, radius: number, colour: string, edge: string) =>
+    glow(c, x, y, radius, [
+      [0, colour],
+      [1, edge]
+    ])
   c.globalCompositeOperation = 'lighter'
   const size = Math.max(w, h)
   for (let i = 0; i < 64; i++) {
@@ -209,14 +212,18 @@ export function drawSun(ctx: CanvasRenderingContext2D, x: number, y: number, rad
   const colour = hexRgb(hex)
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
-  const corona = ctx.createRadialGradient(x, y, radius * 0.5, x, y, radius * 12)
-  corona.addColorStop(0, rgba(colour, 0.32))
-  corona.addColorStop(0.25, rgba(colour, 0.1))
-  corona.addColorStop(1, rgba(colour, 0))
-  ctx.fillStyle = corona
-  ctx.beginPath()
-  ctx.arc(x, y, radius * 12, 0, Math.PI * 2)
-  ctx.fill()
+  glow(
+    ctx,
+    x,
+    y,
+    radius * 12,
+    [
+      [0, rgba(colour, 0.32)],
+      [0.25, rgba(colour, 0.1)],
+      [1, rgba(colour, 0)]
+    ],
+    radius * 0.5
+  )
   // Rays of uneven length, turning slowly the other way to each other.
   const r = rng(0x5a17)
   for (let i = 0; i < 16; i++) {
@@ -234,15 +241,12 @@ export function drawSun(ctx: CanvasRenderingContext2D, x: number, y: number, rad
     ctx.fill()
   }
   ctx.restore()
-  const core = ctx.createRadialGradient(x, y, 0, x, y, radius * 3)
-  core.addColorStop(0, '#ffffff')
-  core.addColorStop(0.18, '#fffbf0')
-  core.addColorStop(0.35, rgba(colour, 0.9))
-  core.addColorStop(1, rgba(colour, 0))
-  ctx.fillStyle = core
-  ctx.beginPath()
-  ctx.arc(x, y, radius * 3, 0, Math.PI * 2)
-  ctx.fill()
+  glow(ctx, x, y, radius * 3, [
+    [0, '#ffffff'],
+    [0.18, '#fffbf0'],
+    [0.35, rgba(colour, 0.9)],
+    [1, rgba(colour, 0)]
+  ])
   starSpikes(ctx, x, y, radius * 7, colour, 0.55, Math.PI / 12)
 }
 
@@ -287,13 +291,12 @@ export function clusterSprite(seed: number): HTMLCanvasElement {
   const r = rng(seed ^ 0xc1a5)
   const gas = CLUSTER_GAS[Math.floor(r() * CLUSTER_GAS.length)]!
   c.globalCompositeOperation = 'lighter'
-  const halo = c.createRadialGradient(half, half, 0, half, half, half)
-  halo.addColorStop(0, rgba([255, 235, 250], 0.55))
-  halo.addColorStop(0.18, rgba(gas, 0.32))
-  halo.addColorStop(0.55, rgba(gas, 0.1))
-  halo.addColorStop(1, rgba(gas, 0))
-  c.fillStyle = halo
-  c.fillRect(0, 0, CLUSTER_PX, CLUSTER_PX)
+  glow(c, half, half, half, [
+    [0, rgba([255, 235, 250], 0.55)],
+    [0.18, rgba(gas, 0.32)],
+    [0.55, rgba(gas, 0.1)],
+    [1, rgba(gas, 0)]
+  ])
   for (let i = 0; i < 34; i++) {
     const a = r() * Math.PI * 2
     const d = r() ** 1.5 * half * 0.78
@@ -364,15 +367,11 @@ export function drawFilaments(ctx: CanvasRenderingContext2D, segments: [number, 
   for (const [x0, y0, x1, y1] of segments) for (const [x, y] of [[x0, y0], [x1, y1]] as const) knots.add(`${x},${y}`)
   for (const k of knots) {
     const [x, y] = k.split(',').map(Number) as [number, number]
-    const radius = Math.max(8, width * 12)
-    const g = ctx.createRadialGradient(x, y, 0, x, y, radius)
-    g.addColorStop(0, 'rgba(235,220,255,0.35)')
-    g.addColorStop(0.4, 'rgba(150,120,255,0.12)')
-    g.addColorStop(1, 'rgba(150,120,255,0)')
-    ctx.fillStyle = g
-    ctx.beginPath()
-    ctx.arc(x, y, radius, 0, Math.PI * 2)
-    ctx.fill()
+    glow(ctx, x, y, Math.max(8, width * 12), [
+      [0, 'rgba(235,220,255,0.35)'],
+      [0.4, 'rgba(150,120,255,0.12)'],
+      [1, 'rgba(150,120,255,0)']
+    ])
   }
   ctx.restore()
 }
@@ -386,29 +385,23 @@ export function clusterGas(ctx: CanvasRenderingContext2D, x: number, y: number, 
   const tint: Rgb = r() < 0.5 ? [150, 110, 255] : [110, 150, 255]
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
-  const g = ctx.createRadialGradient(x, y, 0, x, y, radius)
-  g.addColorStop(0, rgba(tint, 0.16))
-  g.addColorStop(0.45, rgba(tint, 0.06))
-  g.addColorStop(1, rgba(tint, 0))
-  ctx.fillStyle = g
-  ctx.beginPath()
-  ctx.arc(x, y, radius, 0, Math.PI * 2)
-  ctx.fill()
+  glow(ctx, x, y, radius, [
+    [0, rgba(tint, 0.16)],
+    [0.45, rgba(tint, 0.06)],
+    [1, rgba(tint, 0)]
+  ])
   ctx.restore()
 }
 
 /** A glowing cloud of gas where stars are being born, pink or teal, in a galaxy seen close up. */
 export function starCloud(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, pink: boolean, alpha: number): void {
   const colour: Rgb = pink ? [255, 110, 170] : [90, 200, 220]
-  const g = ctx.createRadialGradient(x, y, 0, x, y, radius)
-  g.addColorStop(0, rgba(colour, alpha))
-  g.addColorStop(0.5, rgba(colour, alpha * 0.4))
-  g.addColorStop(1, rgba(colour, 0))
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
-  ctx.fillStyle = g
-  ctx.beginPath()
-  ctx.arc(x, y, radius, 0, Math.PI * 2)
-  ctx.fill()
+  glow(ctx, x, y, radius, [
+    [0, rgba(colour, alpha)],
+    [0.5, rgba(colour, alpha * 0.4)],
+    [1, rgba(colour, 0)]
+  ])
   ctx.restore()
 }
