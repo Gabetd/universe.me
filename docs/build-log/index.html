@@ -182,11 +182,24 @@
     aiSuggestions: ['122-ai-suggestions', 'Review mode: AI changes wait to be accepted or rejected'],
     phoneSignIn: ['130-phone-sign-in', 'Claude on a phone signing in: the code to type, shown on the computer'],
     phoneConnected: ['131-phone-connected', 'From your phone: Tailscale Funnel on, and the connected client to remove'],
-    contextMenu: ['140-context-menu', 'Right-clicking a star system in the tree: open it, rename it, add a planet, or delete it']
+    contextMenu: ['140-context-menu', 'Right-clicking a star system in the tree: open it, rename it, add a planet, or delete it'],
+    checkUpdates: ['141-check-for-updates', 'Check for updates on the start screen, saying right there that this is the latest build'],
+    powers: ['150-powers', 'A world’s magic, age by age: its strength in each era, the one at the playhead marked, and what’s different in the Age of Wonders']
   }
 
   // One entry per published build, newest first.
   const LOG = [
+    {
+      ver: '0.1.31', date: '9 Oct 2026', tag: 'M9 done',
+      title: 'Power systems, age by age',
+      points: [
+        'A Powers page on every world: describe how its magic, divine gifts, psionics, technology or politics work, each started from a template with the questions it should answer (its source, rules, costs, who can use it…), or questions of your own.',
+        'Answer them once for every age, then again for any era where things are different (a blank answer shows what always holds), and say how strong it is in each: the ages line up with a bar for each, and the one under the playhead is marked.',
+        'Claude can read and write them too (as a whole, or as they stand at any moment), and they go into the world bible and every scene it writes, so magic is only used the way that age allows.',
+        'A Check for updates button on the start screen and in the status bar, which says right there when you already have the latest build.'
+      ],
+      shots: ['powers', 'checkUpdates']
+    },
     {
       ver: '0.1.29', date: '8 Oct 2026', tag: 'M9 started',
       title: 'Right-click menus on everything',
@@ -291,7 +304,7 @@
 
   const AREAS = [
     { title: 'The universe', shots: ['contextMenu', 'universe', 'cluster', 'galaxy', 'galaxyStars', 'systemPlanets', 'claimedPlanet'] },
-    { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom'] },
+    { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom', 'powers'] },
     { title: 'Star systems and sky', shots: ['starSystem', 'planetMoons', 'moonTrack', 'colder', 'orbit'] },
     { title: 'Ecosystem', shots: ['foodWeb', 'speciesEditor'] },
     { title: 'AI and the API', shots: ['connectAi', 'aiChange', 'aiSuggestions', 'phoneSignIn', 'phoneConnected'] },
@@ -300,7 +313,7 @@
     { title: 'Structures', shots: ['structGlobe', 'structPanel', 'weathering', 'effects', 'pins', 'builder', 'builderRuin', 'model', 'blueprints'] },
     { title: 'On the ground', shots: ['ground', 'groundClose', 'charGround'] },
     { title: 'Characters', shots: ['charMap', 'charGround'] },
-    { title: 'Updates and the start', shots: ['update', 'welcome'] }
+    { title: 'Updates and the start', shots: ['update', 'checkUpdates', 'welcome'] }
   ]
 
   const viewer = document.getElementById('viewer')
