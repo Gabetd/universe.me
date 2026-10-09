@@ -378,10 +378,11 @@ The app the computer runs, in the phone's browser (installable to the home scree
 ### 6.7 Sync between devices (over Tailscale)
 
 The same universe on several computers (and through them, phones), with no cloud: devices on the user's tailnet sync with each other directly.
-- **Pairing**: Sync in the app finds other Universe apps on the tailnet (`tailscale status` peers answering on the sync port) and pairs one with a code shown on the other. A project is shared by choosing it on one device; the other gets a copy.
-- **What syncs**: rows, not commands. Every row (nodes, records, regions, terrain tiles, assets) carries a hybrid logical clock stamp and the device that wrote it; deletes are soft, so they sync too. Each side sends the rows changed since the other's last-seen clock; the later stamp wins, per row (per field for nodes and world settings). Undo stays per device and works on what it sees.
-- **When**: while both are online, changes go across within seconds; otherwise the next time they meet. The status bar says when a project last synced and with what.
-- **Conflicts** that matter (two devices rewrite the same event's text) keep the losing version as a note in history, so nothing is lost.
+- **Who**: the user's own devices only. With **Sync with my other devices** on (Connect AI, or the start screen), Universe asks each online peer in `tailscale status` that belongs to the same tailnet user, at its tailnet name on the phone app's `tailscale serve` port. That server answers sync only for requests that `tailscale serve` marks as the owner's (and never Funnel's), with a sync header no web page can send. No pairing step: the tailnet login is the proof.
+- **Sharing a universe**: each device says what it has open (a sync id made when the universe was created, and its name). **Copy here** on another device makes a new file and pulls every row into it; from then on the two have the same sync id and keep each other up to date while both have it open.
+- **What syncs**: rows, not commands. Every row (nodes, records, regions, world settings, terrain tiles, assets) carries a hybrid logical clock stamp from the device that last wrote it (`StampedStore`, stamped as a transaction commits), and each copy numbers the rows as it gets them, so a device asks another for the rows it got since it last asked (but its own). The later stamp wins, per row; deletes are soft, so they sync too. A merge is one `sync.merge` command: checked like any write and logged, but not on the undo stack, so undo stays per device and works on what it sees.
+- **When**: every 10 seconds while both are online, and at once after a change (the changed device nudges the others); otherwise the next time they meet. Connect AI lists each device, what it has open and when they last synced.
+- Not done (yet): merging per field (two devices changing different fields of the same row in the same moment keep only the later row), and keeping the losing version of a conflict as a note.
 
 ## 8. Persistence
 
@@ -494,11 +495,15 @@ Each milestone ends with something you can launch and demo.
 - [x] Tests: the server (who's turned away, the methods, paths, signing out) in `phone-app.test.ts`; `e2e/phone-app.spec.ts` with a phone-sized Electron window as the phone and the test playing `tailscale serve`.
 - Not yet tried on a real phone and tailnet (the tests stand in for both). The phone gets the whole project state after each change; a large universe may want changes sent as differences.
 
-### M12 — Sync (2–3 weeks) — *active*
-- Clock stamps on every row (a migration), the changed-rows exchange, pairing over the tailnet, last-writer-wins merge, sync status.
-- Tests: two projects edited apart then synced (every kind of row, deletes, terrain), convergence in any order; e2e of two app instances syncing.
+### M12 — Sync (2–3 weeks) — *done*
+- [x] **Stamps** (`packages/core/src/sync.ts`): a hybrid logical clock, a stamp on every row as its transaction commits, and the rows a device got since a given point; `sync.merge` keeps each row whose stamp is later, parents before children, logged but not undone with this device's changes.
+- [x] **In the project file** (migration 6): each row's stamp and when this copy got it, stamped once for a project from before sync; a device id per install and a sync id per universe.
+- [x] **Between devices** (`src/main/device-sync.ts`): the owner's other devices found in `tailscale status`, asked on the phone app's tailnet server (owner only, never a page), every 10 s and at once when nudged after a change; a universe open on another device copied here to a new file.
+- [x] **In the app**: Sync with my other devices in Connect AI and on the start screen, each device with what it has open and when it last synced, and Copy here.
+- [x] Tests: stamps, merges and three devices converging in `sync.test.ts` (core and db), the sync routes in `phone-app.test.ts`, and `e2e/sync.spec.ts` with two app instances on a stand-in tailnet copying a universe and syncing both ways.
+- Row-level last-writer-wins only (see §6.7); not yet tried on two real computers.
 
-### M13 — Polish & release (2 weeks)
+### M13 — Polish & release (2 weeks) — *active*
 - [x] **Right-click menus** on everything (`contextMenu.ts`): a node in the tree or a claimed one in the cosmos, an event, era, group, link, lane or theme span on the timeline or the canvas, a region, structure, character or event pin on the map, globe or ground, a species in the food web, a row in the inspector's lists. Each gives what its kind can do (open, rename, add to it, go to it, follow a link, move the playhead, delete); the keyboard opens and moves through it too.
 - [x] **Check for updates** on the start screen and in the status bar (as well as the Help menu): it says right there when there's nothing newer.
 - Onboarding sample universe, keyboard shortcuts, performance pass (LOD, instancing for structures).

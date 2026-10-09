@@ -139,6 +139,18 @@ the computer shows; the phone then shows the universe open on the computer,
 one panel at a time, and a change on either shows on the other. Remove it from
 the connected list to sign it out.
 
+### The same universe on your other computers
+
+Universe can keep a universe in step across your own computers, directly over
+your tailnet (no cloud): install Tailscale on each, signed in to the same
+account, and turn on **Sync with my other devices** on each (in **Connect AI**,
+or on the start screen). Each lists your other devices online and what they
+have open. To start, open the universe on one, and on the other choose **Copy
+“…” here**: it makes a copy in a new file. From then on, while both have it
+open, a change on either shows on the other within seconds; a device that was
+off catches up when it's back. When both changed the same thing, the later
+change wins.
+
 ## Download and run
 
 Every push to `main` or the development branch builds the app for every OS.
