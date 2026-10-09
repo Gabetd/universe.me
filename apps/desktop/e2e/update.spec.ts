@@ -91,7 +91,7 @@ test('Check for updates says when there is nothing to install, and why', async (
   await expect(page.getByRole('status', { name: 'Update', exact: true })).toHaveCount(0)
   await app.close()
 
-  // A newer one, for a copy that can't replace itself (this test build isn't an installed one).
+  // A newer one, for a copy that can't replace itself (this test build isn't installed, or, packaged on Windows, is a kind the build has no file for).
   ;({ app, page } = await launch(() => ({ UNIVERSE_UPDATE_URL: manifestUrl })))
   await page.getByRole('button', { name: 'Check for updates' }).click()
   await expect(page.getByRole('status', { name: 'Update check' })).toContainText('Universe 99.0.0 is out. This copy can’t install it itself')

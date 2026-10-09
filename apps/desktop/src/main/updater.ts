@@ -61,11 +61,10 @@ export class Updater {
       if (!res.ok) return 'The latest build is being published right now. Try again in a few minutes.'
       const manifest = (await res.json()) as UpdateManifest
       const latest = `Universe ${app.getVersion()} is the latest version.`
-      // A copy that can't replace itself (a development build, or one unpacked by hand) can still say what's new.
-      const newer = compareVersions(manifest.version, app.getVersion()) > 0
-      if (!this.kind) return newer ? `Universe ${manifest.version} is out. This copy can’t install it itself: download it from the project’s releases on GitHub.` : latest
-      const file = pickUpdate(manifest, app.getVersion(), this.kind, process.arch)
-      if (!file) return latest
+      if (compareVersions(manifest.version, app.getVersion()) <= 0) return latest
+      // A copy that can't replace itself (a development build, one unpacked by hand, or a kind of install the build has no file for) can still say what's new.
+      const file = this.kind && pickUpdate(manifest, app.getVersion(), this.kind, process.arch)
+      if (!file) return `Universe ${manifest.version} is out. This copy can’t install it itself: download it from the project’s releases on GitHub.`
       if (manifest.version === this.dismissed) return null
       this.file = file
       this.set({ state: 'available', version: manifest.version, needsPassword: this.kind === 'linux-deb' })

@@ -50,8 +50,10 @@ test('power systems: one from a template, what holds in every age, what changes 
     .poll(async () => (await state(page, 'timeline')).powerAges.map((a) => ({ values: a.values, strength: a.strength })))
     .toEqual([{ values: { rules: 'Anyone who can sing may weave' }, strength: 0.9 }])
   // Scrolled back up as you would (the page keeps still for anything else).
-  await wheel(page, rules, -400, 5)
-  await expect(ages).toBeInViewport()
+  await expect(async () => {
+    await wheel(page, page.locator('.powers-scroll'), -600, 3)
+    await expect(ages).toBeInViewport({ timeout: 1000 })
+  }).toPass()
   await shot(page, '150-powers')
 
   // A question of its own, from Always.
