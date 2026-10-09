@@ -43,6 +43,22 @@ export function TextField(props: { label: string; value: string; placeholder?: s
   )
 }
 
+/** Several lines of plain text, saved when the field is left (Enter makes a new line). */
+export function TextAreaField(props: { label: string; value: string; placeholder?: string; rows?: number; onCommit(v: string): void }) {
+  const [text, setText] = useDraft(props.value)
+  const commit = () => {
+    const v = text.trim()
+    if (v !== props.value) props.onCommit(v)
+  }
+  return (
+    <label className="field">
+      <span>{props.label}</span>
+      {/* Named on its own too: a label's text includes a textarea's, which would rename it as it's typed in. */}
+      <textarea aria-label={props.label} value={text} placeholder={props.placeholder} rows={props.rows ?? 3} onChange={(e) => setText(e.target.value)} onBlur={commit} />
+    </label>
+  )
+}
+
 /**
  * A color picker that saves once, when the picker closes, rather than for
  * every color passed over while dragging (each save is an undo step).

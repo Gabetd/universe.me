@@ -8,6 +8,7 @@ import { useUi, useWorld } from '../store'
 import { isBrushTool, showsSurface, useEditor, type EditorTool, type EditorView } from './editorStore'
 import { EcosystemView } from './EcosystemView'
 import { EventCanvas } from './EventCanvas'
+import { PowersView } from './PowersView'
 import { GlobeView } from './GlobeView'
 import { GroundView } from './GroundView'
 import { MapView } from './MapView'
@@ -114,6 +115,9 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
           <button aria-pressed={activeView === 'species'} onClick={() => set({ view: 'species' })} title="What lives here, and who eats whom">
             🦌 Species
           </button>
+          <button aria-pressed={activeView === 'powers'} onClick={() => set({ view: 'powers' })} title="How magic, faith, technology or politics work here, age by age">
+            ✨ Powers
+          </button>
         </div>
         {onSurface && (
           <div className="segmented" role="group" aria-label="Tool">
@@ -130,6 +134,8 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
         <ToolOptions view={activeView} />
         {activeView === 'species' ? (
           <EcosystemView worldId={world.id} model={model} change={change} error={error} />
+        ) : activeView === 'powers' ? (
+          <PowersView worldId={world.id} />
         ) : activeView === 'canvas' ? (
           <EventCanvas worldId={world.id} regions={allRegions} />
         ) : viewProps ? (

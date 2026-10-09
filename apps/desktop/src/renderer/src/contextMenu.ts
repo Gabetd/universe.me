@@ -14,7 +14,7 @@ import { goToEvent } from './world/goToEvent'
  */
 
 /** What can be right-clicked: a node, or a record a world or timeline holds. */
-export type ElementKind = 'node' | 'region' | 'structure' | 'character' | 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan' | 'species' | 'lane'
+export type ElementKind = 'node' | 'region' | 'structure' | 'character' | 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan' | 'species' | 'lane' | 'power'
 
 export interface ElementRef {
   kind: ElementKind
@@ -120,7 +120,8 @@ const KINDS: Record<ElementKind, { label: string; nameField?: string; inspector:
   theme: { label: 'Theme', nameField: 'Theme name', inspector: true },
   themeSpan: { label: 'Theme span', inspector: true },
   species: { label: 'Species', nameField: 'Species name', inspector: false },
-  lane: { label: 'Lane', inspector: false }
+  lane: { label: 'Lane', inspector: false },
+  power: { label: 'Power system', nameField: 'Power system name', inspector: false }
 }
 
 /** An element's name, as the menu's title shows it; undefined if it no longer exists. */
@@ -149,6 +150,8 @@ function nameOf({ kind, id }: ElementRef): string | undefined {
       return find(t.lifeforms)?.name
     case 'lane':
       return find(t.lanes)?.name
+    case 'power':
+      return find(t.powers)?.name
     case 'link': {
       const link = find(t.links)
       const title = (eventId: string) => t.events.find((e) => e.id === eventId)?.title ?? '?'
@@ -168,7 +171,7 @@ export function openElement({ kind, id }: ElementRef): void {
   else if (kind === 'region') ui.selectRegion(id)
   else if (kind === 'structure') ui.selectStructure(id)
   else if (kind === 'character') ui.selectCharacter(id)
-  else if (kind !== 'species' && kind !== 'lane') ui.selectTimeline({ kind, ids: [id] })
+  else if (kind !== 'species' && kind !== 'lane' && kind !== 'power') ui.selectTimeline({ kind, ids: [id] })
 }
 
 /** How long a request for a name field waits for its panel to appear. */

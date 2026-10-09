@@ -87,12 +87,15 @@ export function useSteadyScroll(contentRef: RefObject<HTMLElement | null>, menu:
     const using = ['pointerdown', 'keydown', 'focusin'] as const
     for (const type of using) panel.addEventListener(type, hold)
     panel.addEventListener('scroll', onScroll, { passive: true })
+    // The wheel lets go at once: its scroll event comes a frame later, and a redraw before then would put the control back.
+    panel.addEventListener('wheel', release, { passive: true })
     return () => {
       cancelAnimationFrame(frame)
       changes.disconnect()
       sizes.disconnect()
       for (const type of using) panel.removeEventListener(type, hold)
       panel.removeEventListener('scroll', onScroll)
+      panel.removeEventListener('wheel', release)
       release()
     }
   }, [contentRef, menu])

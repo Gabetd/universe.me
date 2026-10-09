@@ -9,8 +9,8 @@ import { create } from 'zustand'
  */
 export type EditorTool = 'navigate' | BrushTool | 'region' | 'locate' | 'place' | 'move' | 'travel'
 export type SurfaceView = 'globe' | 'map'
-/** The canvas shows the world's events as cards and `species` its food web, rather than its surface; the ground is the surface up close. */
-export type EditorView = SurfaceView | 'canvas' | 'ground' | 'species'
+/** The canvas shows the world's events as cards, `species` its food web and `powers` its power systems, rather than its surface; the ground is the surface up close. */
+export type EditorView = SurfaceView | 'canvas' | 'ground' | 'species' | 'powers'
 
 interface EditorState {
   view: EditorView
@@ -77,4 +77,4 @@ export const useEditor = create<EditorState>((set) => ({
 export const isBrushTool = (tool: EditorTool): tool is BrushTool => !['navigate', 'region', 'locate', 'place', 'move', 'travel'].includes(tool)
 
 /** Whether a view shows the world's surface (the canvas and species views don't). */
-export const showsSurface = (view: EditorView) => view !== 'canvas' && view !== 'species'
+export const showsSurface = (view: EditorView) => view !== 'canvas' && view !== 'species' && view !== 'powers'
