@@ -114,7 +114,7 @@
 
   <section aria-labelledby="next-title">
     <div class="next">
-      <h2 id="next-title">Next up: M9</h2>
+      <h2 id="next-title">Next up: M13, polish and release</h2>
       <ul>
         <li>A sample universe to start from, and keyboard shortcuts</li>
         <li>A performance pass: detail by distance and instanced structures</li>
@@ -184,13 +184,46 @@
     phoneConnected: ['131-phone-connected', 'From your phone: Tailscale Funnel on, and the connected client to remove'],
     contextMenu: ['140-context-menu', 'Right-clicking a star system in the tree: open it, rename it, add a planet, or delete it'],
     checkUpdates: ['141-check-for-updates', 'Check for updates on the start screen, saying right there that this is the latest build'],
-    powers: ['150-powers', 'A world’s magic, age by age: its strength in each era, the one at the playhead marked, and what’s different in the Age of Wonders']
+    powers: ['150-powers', 'A world’s magic, age by age: its strength in each era, the one at the playhead marked, and what’s different in the Age of Wonders'],
+    warnings: ['160-warnings', 'Warnings: what Claude found that doesn’t fit, marked on what it’s about, to resolve or dismiss'],
+    phoneApp: ['170-phone-app', 'The whole app in a phone’s browser, from the computer over the tailnet, one panel at a time'],
+    sync: ['180-sync', 'Your other devices: the studio computer in step with this laptop, synced seconds ago']
   }
 
   // One entry per published build, newest first.
   const LOG = [
     {
-      ver: '0.1.31', date: '9 Oct 2026', tag: 'M9 done',
+      ver: '0.1.36', date: '9 Oct 2026', tag: 'M12 done',
+      title: 'The same universe on your other computers',
+      points: [
+        'Turn on Sync with my other devices (in Connect AI, or on the start screen) on each of your computers, with Tailscale signed in to the same account: each lists your other devices online and what they have open.',
+        'Copy “…” here makes a copy of the universe another computer has open; from then on, while both have it open, a change on either shows on the other within seconds, and a computer that was off catches up when it’s back. When both changed the same thing, the later change wins.',
+        'It goes directly between your own devices over your tailnet, nothing in the cloud: the app may only reach Universe on your devices, and only you (the tailnet’s owner) can ask it anything.',
+        'Small windows leave the world more room: the views show as icons when the editor is narrow, and the timeline starts shorter on a short screen.'
+      ],
+      shots: ['sync']
+    },
+    {
+      ver: '0.1.36', date: '9 Oct 2026', tag: 'M11 done',
+      title: 'Universe on your phone',
+      points: [
+        'The whole app in your phone’s browser, served by your computer over your own tailnet (never the internet): turn on Use Universe on my phone in Connect AI and open the address it shows.',
+        'The phone signs in with the code the computer shows, then has the universe open on the computer, one panel at a time with tabs; a long press is a right-click, and two fingers zoom the map. A change on either shows on the other.',
+        'Each phone shows with the connected clients, and Remove signs it out at once.'
+      ],
+      shots: ['phoneApp']
+    },
+    {
+      ver: '0.1.36', date: '9 Oct 2026', tag: 'M10 done',
+      title: 'An inconsistency detector',
+      points: [
+        'Ask Claude (connected through Connect AI) to review a world, and it reports what contradicts itself or seems unlikely: a character in two places at once, a city built before its founder was born, magic used the way that age doesn’t allow.',
+        'Each finding shows in a new Warnings tab with the app’s own checks, with a mark on the events, characters or places it’s about; resolve it, or dismiss it, and it isn’t reported again.'
+      ],
+      shots: ['warnings']
+    },
+    {
+      ver: '0.1.36', date: '9 Oct 2026', tag: 'M9 done',
       title: 'Power systems, age by age',
       points: [
         'A Powers page on every world: describe how its magic, divine gifts, psionics, technology or politics work, each started from a template with the questions it should answer (its source, rules, costs, who can use it…), or questions of your own.',
@@ -304,10 +337,11 @@
 
   const AREAS = [
     { title: 'The universe', shots: ['contextMenu', 'universe', 'cluster', 'galaxy', 'galaxyStars', 'systemPlanets', 'claimedPlanet'] },
-    { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom', 'powers'] },
+    { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom', 'powers', 'warnings'] },
     { title: 'Star systems and sky', shots: ['starSystem', 'planetMoons', 'moonTrack', 'colder', 'orbit'] },
     { title: 'Ecosystem', shots: ['foodWeb', 'speciesEditor'] },
-    { title: 'AI and the API', shots: ['connectAi', 'aiChange', 'aiSuggestions', 'phoneSignIn', 'phoneConnected'] },
+    { title: 'AI and the API', shots: ['connectAi', 'aiChange', 'aiSuggestions', 'warnings', 'phoneSignIn', 'phoneConnected'] },
+    { title: 'Your phone and other devices', shots: ['phoneApp', 'sync'] },
     { title: 'Themes', shots: ['themeCrossfade', 'themeEditor', 'themeGlobe', 'themeRegion'] },
     { title: 'Timeline and canvas', shots: ['timeline', 'worldAtTime', 'globeAtTime', 'canvas1', 'canvas2', 'canvas3'] },
     { title: 'Structures', shots: ['structGlobe', 'structPanel', 'weathering', 'effects', 'pins', 'builder', 'builderRuin', 'model', 'blueprints'] },
