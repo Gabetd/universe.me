@@ -236,8 +236,8 @@ export class ApiController {
         return state.project ? { name: state.project.name, rootId: state.project.rootId, data: state } : undefined
       },
       terrainLayers: (worldId) => this.session.terrain(worldId),
-      write: (command, summary) => {
-        if (this.settings.review) {
+      write: (command, summary, options) => {
+        if (this.settings.review && !options?.advice) {
           const proposalId = this.session.propose(command, summary)
           // The window shows it with the other suggestions.
           this.events.state(this.session.state())

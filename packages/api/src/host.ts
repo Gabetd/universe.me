@@ -9,6 +9,10 @@ export interface ProjectData {
   timeline: TimelineData
 }
 
+export interface WriteOptions {
+  advice?: boolean
+}
+
 /** A write from an API client: applied, or (in review mode) waiting for the user. */
 export type WriteOutcome = { status: 'applied'; target?: Target } | { status: 'proposed'; proposalId: string }
 
@@ -22,8 +26,11 @@ export interface ApiHost {
   project(): { name: string; rootId: string; data: ProjectData } | undefined
   /** A world's edit layers, with the revision they're at. */
   terrainLayers(worldId: string): TerrainLayers & { revision: number }
-  /** Applies one command from an API client (tagged as the AI's), or proposes it in review mode. `summary` says what it does, for people. */
-  write(command: Command, summary: string): WriteOutcome
+  /**
+   * Applies one command from an API client (tagged as the AI's), or proposes it in review mode. `summary` says what it does, for people.
+   * `advice` writes (a finding about the world, not a change to it) are applied even in review mode.
+   */
+  write(command: Command, summary: string, options?: WriteOptions): WriteOutcome
   /** A world's generated terrain, worked out off the main thread where the host can; generated in place otherwise. */
   baseTerrain?(seed: number, params: TerrainParams): Promise<BaseTerrain>
 }

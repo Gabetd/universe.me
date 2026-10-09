@@ -155,6 +155,24 @@ describe('the operations', () => {
     expect(md).toContain('#### In Age of Silence (500 – 1000), 10% strength\n\n*Almost forgotten*\n\n**Rules:** Only the dying can weave')
   })
 
+  it('report inconsistencies, once each, about what is really there, and resolve or dismiss them', async () => {
+    const { eventId } = await p.call<{ eventId: string }>('create_event', { worldId: p.worldId, title: 'Mira crowned in Tarn', start: '1204' })
+    const report = { worldId: p.worldId, severity: 'contradiction', title: 'Mira in two places', explanation: 'She is crowned in Tarn while at sea.', about: [{ kind: 'event', id: eventId }], suggestion: 'Move the crowning a year later.' }
+    await expect(p.call('report_inconsistency', { ...report, about: [{ kind: 'character', id: 'nobody' }] })).rejects.toThrow(/Nothing on that world is character nobody/)
+    const { findingId, status } = await p.call<{ findingId: string; status: string }>('report_inconsistency', report)
+    expect(status).toBe('applied')
+    expect((await p.call<{ status: string }>('report_inconsistency', { ...report, title: 'mira in two places ' })).status).toBe('already reported')
+    const { findings } = await p.call<{ findings: { about: object[]; status: string; reportedBy: string; suggestion: string }[] }>('list_inconsistencies', { worldId: p.worldId })
+    expect(findings).toEqual([expect.objectContaining({ status: 'open', reportedBy: 'Claude', suggestion: 'Move the crowning a year later.', about: [{ kind: 'event', id: eventId, name: 'Mira crowned in Tarn' }] })])
+
+    // Dismissed, it isn't raised again; resolved, it can be.
+    await p.call('resolve_inconsistency', { findingId, status: 'dismissed', note: 'She has a double' })
+    expect((await p.call<{ findingStatus: string }>('report_inconsistency', report)).findingStatus).toBe('dismissed')
+    await p.call('resolve_inconsistency', { findingId, status: 'resolved' })
+    expect((await p.call<{ status: string }>('report_inconsistency', report)).status).toBe('applied')
+    expect((await p.call<{ findings: object[] }>('list_inconsistencies', { worldId: p.worldId, status: 'open' })).findings).toHaveLength(1)
+  })
+
   it('run any command as one undoable step, and say clearly what’s wrong', async () => {
     const renamed = await p.call<{ summary: string }>('run_commands', { commands: [{ type: 'node.update', payload: { id: p.worldId, patch: { name: 'Gaia' } } }], summary: 'Renamed the world' })
     // What the commands are, not only what the client says: what a reviewer decides on.

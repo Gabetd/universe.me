@@ -66,6 +66,15 @@ const PROMPTS = [
     ]
   },
   {
+    name: 'review_consistency',
+    title: 'Find inconsistencies',
+    description: 'Reads a world as a whole (its bible, history, people, places and powers age by age) and reports what contradicts itself with report_inconsistency, so it shows in the app’s Warnings.',
+    arguments: [
+      { name: 'worldId', description: 'The world (from list_worlds)', required: true },
+      { name: 'focus', description: 'Something to look at most closely ("the war years", "magic", "Mira")', required: false }
+    ]
+  },
+  {
     name: 'brainstorm_history',
     title: 'Brainstorm history',
     description: 'Ideas for what happens on a world between two dates, from what is already there.',
@@ -221,6 +230,41 @@ export class McpServer {
               ]
                 .filter(Boolean)
                 .join('\n\n')
+            }
+          }
+        ]
+      }
+    }
+    if (name === 'review_consistency') {
+      const view = m.world(worldId)
+      const t = view.timeline
+      const [bible, checks, reported] = await Promise.all([this.run('export_world_bible', { worldId }), this.run('check_consistency', { worldId }), this.run('list_inconsistencies', { worldId })])
+      const index = (list: readonly { id: string; name?: string; title?: string }[]) => list.map((r) => `${r.name ?? r.title} = ${r.id}`)
+      const ids = {
+        event: index(t.events),
+        character: index(t.characters),
+        region: index(view.regions),
+        structure: index(t.structures),
+        era: index(t.eras),
+        power: index(t.powers),
+        species: index(t.lifeforms),
+        group: index(t.groups)
+      }
+      return {
+        description: `Inconsistencies on ${view.node.name}`,
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: [
+                `Read the world ${view.node.name} below as a careful editor would, and find what doesn't fit together${args.focus ? `, looking most closely at ${args.focus}` : ''}: people in two places at once or acting before they're born or after they die, events out of order with their causes, places used before they exist, powers (magic, faith, technology, politics) used in ways their age doesn't allow, dates the calendar can't have, notes that contradict the history, names spelled two ways.`,
+                'Report each one with report_inconsistency (worldId, severity: contradiction, unlikely or question; a one-line title; why, in a few sentences; what it is about, by the ids below; a fix if there is one). Leave alone what is already reported or was dismissed (listed below), and what the app’s own checks already say. Report only real problems; if there are none, say so.',
+                `The world bible:\n\n${text(bible)}`,
+                `Ids, by kind (name = id):\n${text(ids)}`,
+                `The app's own checks:\n${text(checks)}`,
+                `Already reported:\n${text(reported)}`
+              ].join('\n\n')
             }
           }
         ]

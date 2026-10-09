@@ -1,6 +1,7 @@
 import {
   AU_KM,
   Command,
+  FINDING_STATUSES,
   ECO_LINK_TYPES,
   STAGES,
   causalChain,
@@ -17,7 +18,7 @@ import {
 import { formatPeriod, deriveCalendar, moonsOf, skyEvents } from '@universe/sim'
 import { z } from 'zod'
 import { exportWorldBible } from './bible'
-import { biomeName, describeCalendar, describeCharacter, describeEvent, describeMoons, describePowerAt, describePowerSystem, describeStructure, describeTheme, kindLabel, nodePath, round, worldSnapshot } from './describe'
+import { biomeName, describeCalendar, describeCharacter, describeEvent, describeFinding, describeMoons, describePowerAt, describePowerSystem, describeStructure, describeTheme, kindLabel, nodePath, round, worldSnapshot } from './describe'
 import { ApiError, notFound } from './host'
 import { QueryList, QueryNumber, When, operation, type ApiContext } from './operation'
 import { htmlToText } from './text'
@@ -439,6 +440,18 @@ export const READS = [
         ...ecosystemWarnings(view.timeline.lifeforms, view.timeline.ecolinks).map((w) => ({ area: 'ecosystem', message: w.message, refs: w.ids.map((id) => ({ kind: 'species', id })) }))
       ]
       return { ok: warnings.length === 0, warnings }
+    }
+  }),
+  operation({
+    name: 'list_inconsistencies',
+    title: 'Inconsistencies found',
+    description:
+      'What’s been reported as inconsistent on a world (with report_inconsistency): open ones, resolved ones (fixed), and dismissed ones (not a problem: don’t raise them again). Read it before reviewing a world, so nothing is reported twice.',
+    input: z.object({ worldId: WorldId, status: z.enum(FINDING_STATUSES).optional() }),
+    route: { method: 'GET', path: '/worlds/:worldId/inconsistencies' },
+    run: ({ models: m }, { worldId, status }) => {
+      const view = m.world(worldId)
+      return { findings: view.timeline.findings.filter((f) => !status || f.status === status).map((f) => describeFinding(m, view, f)) }
     }
   }),
   operation({

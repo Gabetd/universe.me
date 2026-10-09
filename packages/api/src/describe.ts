@@ -16,6 +16,8 @@ import {
   type ConditionCurve,
   type LatLon,
   type AspectValues,
+  type Finding,
+  type FindingRef,
   type PowerSystem,
   type Region,
   type SpatialNode,
@@ -172,6 +174,59 @@ export function describePowerAt(view: WorldView, system: PowerSystem, t: number)
     ...(p.summary && { summary: p.summary }),
     ...(p.strength !== null && { strength: round(p.strength) }),
     howItWorks: Object.fromEntries(p.aspects.flatMap((a) => (a.value ? [[a.label, a.value]] : [])))
+  }
+}
+
+/** What a finding (or anything on a world) refers to, by name; undefined if there's no such thing there. */
+export function refName(m: ProjectModels, view: WorldView, { kind, id }: FindingRef): string | undefined {
+  const t = view.timeline
+  const find = <T extends { id: string }>(list: readonly T[]) => list.find((r) => r.id === id)
+  const title = (eventId: string) => find(t.events)?.title ?? t.events.find((e) => e.id === eventId)?.title ?? '?'
+  switch (kind) {
+    case 'node':
+      return find(m.data().nodes)?.name
+    case 'region':
+      return find(view.regions)?.name
+    case 'event':
+      return find(t.events)?.title
+    case 'era':
+      return find(t.eras)?.name
+    case 'group':
+      return find(t.groups)?.title
+    case 'link': {
+      const link = find(t.links)
+      return link && `${title(link.fromId)} → ${title(link.toId)}`
+    }
+    case 'structure':
+      return find(t.structures)?.name
+    case 'character':
+      return find(t.characters)?.name
+    case 'species':
+      return find(t.lifeforms)?.name
+    case 'theme':
+      return find(t.themes)?.name
+    case 'themeSpan': {
+      const span = find(t.themeSpans)
+      return span && (t.themes.find((x) => x.id === span.themeId)?.name ?? 'A theme span')
+    }
+    case 'power':
+      return find(t.powers)?.name
+  }
+}
+
+/** A finding as a client reads it: what it's about by name (what's since been deleted says so). */
+export function describeFinding(m: ProjectModels, view: WorldView, f: Finding) {
+  return {
+    id: f.id,
+    severity: f.severity,
+    title: f.title,
+    explanation: f.explanation,
+    ...(f.suggestion && { suggestion: f.suggestion }),
+    about: f.refs.map((r) => ({ ...r, name: refName(m, view, r) ?? '(deleted)' })),
+    status: f.status,
+    ...(f.note && { note: f.note }),
+    ...(f.reporter && { reportedBy: f.reporter }),
+    reportedAt: f.createdAt
   }
 }
 

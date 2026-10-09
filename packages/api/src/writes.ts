@@ -7,7 +7,10 @@ import {
   HexColor,
   LIGHTING_PRESETS,
   LINK_TYPES,
+  FINDING_KINDS,
+  FINDING_SEVERITIES,
   MATERIALS,
+  sameFinding,
   POWER_TEMPLATES,
   POWER_TEMPLATE_INFO,
   aspectId,
@@ -25,8 +28,8 @@ import {
 import { readSeed } from '@universe/procgen'
 import { EARTH_ORBIT, luminosityOf } from '@universe/sim'
 import { z } from 'zod'
-import { biomeIds } from './describe'
-import { ApiError, findOr404 } from './host'
+import { biomeIds, refName } from './describe'
+import { ApiError, findOr404, type WriteOptions } from './host'
 import { When, operation, written, type ApiContext } from './operation'
 import type { WorldView } from './model'
 import { textToHtml } from './text'
@@ -45,9 +48,9 @@ function commandTypes(commands: readonly unknown[]): string[] {
 }
 
 /** Applies (or proposes) commands as one undoable step, and says what was done. */
-function write(ctx: ApiContext, commands: Command[], summary: string, ids: Record<string, string> = {}) {
+function write(ctx: ApiContext, commands: Command[], summary: string, ids: Record<string, string> = {}, options?: WriteOptions) {
   const command: Command = commands.length === 1 ? commands[0]! : { type: 'batch', payload: { commands } }
-  const outcome = ctx.host.write(command, summary)
+  const outcome = ctx.host.write(command, summary, options)
   // What's read next sees the change.
   ctx.models.forget()
   return written(outcome, summary, ids)
@@ -515,6 +518,45 @@ export const WRITES = [
       const patch = { ...(p.summary !== undefined && { summary: p.summary }), ...(p.strength !== undefined && { strength: p.strength }), ...(values && { values }) }
       commands.push({ type: 'powerAge.set', payload: { systemId: system.id, eraId: era.id, patch } })
       return write(ctx, commands, `Described ${system.name} in ${era.name}`)
+    }
+  }),
+  operation({
+    name: 'report_inconsistency',
+    title: 'Report an inconsistency',
+    description:
+      'Flags something on a world that doesn’t fit with the rest: a contradiction (two things that can’t both be true), something unlikely (possible, but at odds with how the world works: its powers in that age, its calendar, its geography), or a question for the author. Say what it’s about (the ids of the events, characters, regions, structures, power systems… involved), explain why in a few sentences, and suggest a fix if there is one. It shows in the app’s Warnings with marks on what it’s about; it doesn’t change the world. One already reported (open, or dismissed as not a problem) isn’t reported again.',
+    input: z.object({
+      worldId: z.string(),
+      severity: z.enum(FINDING_SEVERITIES),
+      title: z.string().min(1).max(200).describe('What’s wrong, in a line ("Mira is in Tarn and Vel on the same day")'),
+      explanation: z.string().min(1).max(20_000),
+      about: z.array(z.object({ kind: z.enum(FINDING_KINDS), id: z.string() })).max(20).describe('What it’s about'),
+      suggestion: z.string().max(20_000).optional()
+    }),
+    route: { method: 'POST', path: '/worlds/:worldId/inconsistencies' },
+    write: true,
+    run: (ctx, p) => {
+      const view = ctx.models.world(p.worldId)
+      const missing = p.about.filter((r) => refName(ctx.models, view, r) === undefined)
+      if (missing.length) throw new ApiError(404, `Nothing on that world is ${missing.map((r) => `${r.kind} ${r.id}`).join(', ')}`)
+      const before = sameFinding(view.timeline.findings, p.title)
+      if (before) return { status: 'already reported', findingId: before.id, findingStatus: before.status, summary: before.status === 'dismissed' ? 'The author dismissed this as not a problem' : 'This is already open in Warnings' }
+      const id = newId()
+      const payload = { id, ownerId: view.node.id, severity: p.severity, title: p.title, explanation: p.explanation, refs: p.about, reporter: 'Claude', ...(p.suggestion && { suggestion: p.suggestion }) }
+      return write(ctx, [{ type: 'finding.create', payload }], `Flagged: ${p.title}`, { findingId: id }, { advice: true })
+    }
+  }),
+  operation({
+    name: 'resolve_inconsistency',
+    title: 'Resolve an inconsistency',
+    description: 'Marks a reported inconsistency as resolved (fixed: say how), dismissed (not a problem after all), or open again.',
+    input: z.object({ findingId: z.string(), status: z.enum(['resolved', 'dismissed', 'open']), note: z.string().max(2000).optional() }),
+    route: { method: 'POST', path: '/inconsistencies/:findingId' },
+    write: true,
+    run: (ctx, p) => {
+      const f = findOr404(ctx.models.data().timeline.findings, p.findingId, 'reported inconsistency')
+      const patch = { status: p.status, ...(p.note !== undefined && { note: p.note }) }
+      return write(ctx, [{ type: 'finding.update', payload: { id: f.id, patch } }], `${p.status === 'open' ? 'Reopened' : p.status === 'resolved' ? 'Resolved' : 'Dismissed'}: ${f.title}`, {}, { advice: true })
     }
   }),
   operation({

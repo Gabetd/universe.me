@@ -88,9 +88,13 @@ describe('the MCP server', () => {
     expect((read.contents[0] as { text: string }).text).toContain('The long night')
 
     const { prompts } = await client.listPrompts()
-    expect(prompts.map((x) => x.name)).toEqual(['write_scene', 'brainstorm_history'])
+    expect(prompts.map((x) => x.name)).toEqual(['write_scene', 'review_consistency', 'brainstorm_history'])
     const scene = await client.getPrompt({ name: 'write_scene', arguments: { worldId: p.worldId, at: '800' } })
     expect((scene.messages[0]!.content as { text: string }).text).toContain('Terra Surface')
+    const review = (await client.getPrompt({ name: 'review_consistency', arguments: { worldId: p.worldId, focus: 'the night' } })).messages[0]!.content as { text: string }
+    expect(review.text).toContain('looking most closely at the night')
+    expect(review.text).toContain('report_inconsistency')
+    expect(review.text).toMatch(/The long night = [\w-]+/)
     await client.close()
   })
 
