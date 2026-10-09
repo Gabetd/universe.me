@@ -6,6 +6,7 @@ import { CommandError, batchOf, liveNode, liveRegion, liveWorld, newNode, patchR
 import { CHARACTER_COMMANDS, characterHandlers } from './character-commands'
 import { FINDING_COMMANDS, findingHandlers } from './finding-commands'
 import { POWER_COMMANDS, powerHandlers } from './power-commands'
+import { SYNC_COMMANDS, syncHandlers } from './sync-commands'
 import { THEME_COMMANDS, themeHandlers } from './theme-commands'
 import { WORLD_SIM_COMMANDS, worldSimHandlers } from './world-sim-commands'
 import { STRUCTURE_COMMANDS, structureHandlers } from './structure-commands'
@@ -77,6 +78,7 @@ export const Command = z.discriminatedUnion('type', [
   ...THEME_COMMANDS,
   ...POWER_COMMANDS,
   ...FINDING_COMMANDS,
+  ...SYNC_COMMANDS,
   /** Several commands applied together; each is validated when it runs. The batch focuses `focusId`, or what its last command did. */
   z.object({ type: z.literal('batch'), payload: z.object({ commands: z.array(z.unknown()).min(1), focusId: Id.optional() }) })
 ])
@@ -97,6 +99,7 @@ export const handlers: Handlers = {
   ...themeHandlers,
   ...powerHandlers,
   ...findingHandlers,
+  ...syncHandlers,
 
   batch(store, { commands, focusId }, ctx) {
     const results = commands.map((input) => {

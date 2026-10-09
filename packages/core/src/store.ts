@@ -1,5 +1,6 @@
 import type { Id, SpatialNode } from './schema'
 import { RECORD_KINDS, type RecordKind, type RecordOf } from './records'
+import type { SyncLedger } from './sync'
 import type { Region, TerrainLayerName, WorldSettings } from './world'
 
 /** Storage the domain layer needs. `packages/db` implements it on SQLite; tests use `MemoryStore`. */
@@ -70,6 +71,8 @@ export interface Store {
   records<K extends RecordKind>(kind: K): RecordRepository<RecordOf<K>>
   /** Runs `fn` atomically: all of its writes land, or none do. */
   transaction<T>(fn: () => T): T
+  /** Rows' sync stamps, for a store that syncs (PLAN.md §6.7; see StampedStore). */
+  readonly sync?: SyncLedger
 }
 
 /** A soft-deletable record kept in a Map; shared by MemoryStore's repositories. */

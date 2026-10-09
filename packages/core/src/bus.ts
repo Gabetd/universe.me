@@ -81,6 +81,18 @@ export class CommandBus {
     return this.finish('do', command, result)
   }
 
+  /**
+   * Applies rows from another device (a `sync.merge`, PLAN.md §6.7): checked
+   * and logged like any command, but not undone with this device's changes,
+   * which stay on the undo stack around it.
+   */
+  merge(input: unknown): ExecuteResult {
+    const parsed = Command.safeParse(input)
+    if (!parsed.success || parsed.data.type !== 'sync.merge') throw new CommandError('Only a sync.merge merges')
+    const command = parsed.data
+    return this.finish('do', command, this.apply('do', command, 'system'))
+  }
+
   undo(): ExecuteResult | undefined {
     const entry = this.undoStack.pop()
     if (!entry) return undefined
