@@ -273,10 +273,10 @@ const SHOTS = process.env.UNIVERSE_SHOTS === '1'
  * for what nothing signals (a texture made in a worker, the camera easing to a stop). A picture
  * that can't be taken only warns: it isn't what the test checks.
  */
-export async function shot(page: Page, name: string, { wait = 0 }: { wait?: number } = {}): Promise<void> {
+export async function shot(page: Page, name: string, { wait = 0, views = true }: { wait?: number; views?: boolean } = {}): Promise<void> {
   if (!SHOTS) return
   try {
-    await viewReady(page)
+    if (views) await viewReady(page)
     await page.evaluate(async () => {
       const finite = document.getAnimations().filter((a) => a.effect?.getComputedTiming().endTime !== Infinity)
       const ended = Promise.all(finite.map((a) => a.finished.catch(() => undefined)))
