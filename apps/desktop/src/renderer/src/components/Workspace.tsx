@@ -11,6 +11,7 @@ import { ZoomStage } from './ZoomOverlay'
 import { AiNotes, AiSuggestions, ConnectAiButton, UndoAiButton } from './AiPanels'
 import { ThemedWorkspace } from './ThemedWorkspace'
 import { ContextMenuHost } from './ContextMenu'
+import { CheckForUpdates } from './UpdateBanner'
 import { zoomOut, zoomTo } from './zoom'
 import { Timeline } from '../timeline/Timeline'
 import { useTimelineView } from '../timeline/timelineStore'
@@ -101,8 +102,8 @@ export function Workspace() {
       <footer className="statusbar">
         <span title={project.path}>{project.path}</span>
         <span>All changes saved</span>
-        <span>
-          v{__BUILD_INFO__.version} · {__BUILD_INFO__.commit}
+        <span className="statusbar-version">
+          <CheckForUpdates />v{__BUILD_INFO__.version} · {__BUILD_INFO__.commit}
         </span>
       </footer>
     </ThemedWorkspace>

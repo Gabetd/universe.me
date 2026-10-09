@@ -35,6 +35,7 @@ test.beforeAll(async () => {
   }
   server = createServer((req, res) => {
     if (req.url === '/update.json') res.end(JSON.stringify(manifest))
+    else if (req.url === '/old.json') res.end(JSON.stringify({ ...manifest, version: '0.0.1' }))
     else if (req.url === `/${platform.served}`) res.end(body)
     else res.writeHead(404).end()
   })
@@ -54,15 +55,19 @@ test('offers a newer build, can be dismissed, and upgrades itself with one click
   const installed = join(dir, file)
   writeFileSync(installed, 'the old version')
 
-  const banner = page.getByRole('status', { name: 'Update' })
+  const banner = page.getByRole('status', { name: 'Update', exact: true })
   await expect(banner).toContainText('Universe 99.0.0 is available', { timeout: SLOW })
   await shot(page, 'update-banner')
 
-  // Dismissed, it stays away until asked for again.
+  // Dismissed, it stays away until asked for again: from the Help menu, or the button on the start screen (and in a project's status bar).
   await banner.getByRole('button', { name: 'Dismiss update' }).click()
   await expect(banner).toBeHidden()
   await menu(app, 'Help', 'Check for Updates…')
   await expect(banner).toBeVisible()
+  await banner.getByRole('button', { name: 'Dismiss update' }).click()
+  await page.getByRole('button', { name: 'Check for updates' }).click()
+  await expect(banner).toBeVisible()
+  await expect(page.getByRole('status', { name: 'Update check' })).toHaveCount(0)
 
   // One click: download, verify, swap in the new version, restart into it.
   const closed = app.waitForEvent('close')
@@ -75,4 +80,20 @@ test('offers a newer build, can be dismissed, and upgrades itself with one click
   }
   // The restarted copy may still hold the file for a moment on Windows.
   await expect.poll(() => (rmSync(dir, { recursive: true, force: true }), true), { timeout: 10_000 }).toBe(true)
+})
+
+test('Check for updates says when there is nothing to install, and why', async () => {
+  // Already the latest build.
+  let { app, page } = await launch(() => ({ UNIVERSE_UPDATE_URL: manifestUrl.replace('update.json', 'old.json'), UNIVERSE_UPDATE_KIND: platform!.kind }))
+  await page.getByRole('button', { name: 'Check for updates' }).click()
+  await expect(page.getByRole('status', { name: 'Update check' })).toHaveText(/^Universe [\d.]+ is the latest version\.$/)
+  await shot(page, '141-check-for-updates')
+  await expect(page.getByRole('status', { name: 'Update', exact: true })).toHaveCount(0)
+  await app.close()
+
+  // A newer one, for a copy that can't replace itself (this test build isn't an installed one).
+  ;({ app, page } = await launch(() => ({ UNIVERSE_UPDATE_URL: manifestUrl })))
+  await page.getByRole('button', { name: 'Check for updates' }).click()
+  await expect(page.getByRole('status', { name: 'Update check' })).toContainText('Universe 99.0.0 is out. This copy can’t install it itself')
+  await app.close()
 })

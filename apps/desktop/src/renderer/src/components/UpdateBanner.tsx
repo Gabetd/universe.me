@@ -52,3 +52,39 @@ export function UpdateBanner() {
     </div>
   )
 }
+
+/** How long the answer to a check stays next to its button. */
+const ANSWER_MS = 8000
+
+/** Looks on GitHub for a newer build: one found shows in the update banner; otherwise the answer shows here for a moment. */
+export function CheckForUpdates() {
+  const [checking, setChecking] = useState(false)
+  const [answer, setAnswer] = useState<string | null>(null)
+  useEffect(() => {
+    if (!answer) return
+    const timer = setTimeout(() => setAnswer(null), ANSWER_MS)
+    return () => clearTimeout(timer)
+  }, [answer])
+
+  const check = async () => {
+    setChecking(true)
+    setAnswer(null)
+    try {
+      setAnswer(await window.universe.checkForUpdates())
+    } finally {
+      setChecking(false)
+    }
+  }
+  return (
+    <span className="update-check">
+      {answer && (
+        <span role="status" aria-label="Update check">
+          {answer}
+        </span>
+      )}
+      <button className="link" disabled={checking} onClick={() => void check()}>
+        {checking ? 'Checking for updates…' : 'Check for updates'}
+      </button>
+    </span>
+  )
+}

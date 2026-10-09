@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { app, net } from 'electron'
-import { UPDATE_MANIFEST_URL, pickUpdate, type InstallKind, type UpdateFile, type UpdateManifest, type UpdateStatus } from '../shared/update'
+import { UPDATE_MANIFEST_URL, compareVersions, pickUpdate, type InstallKind, type UpdateFile, type UpdateManifest, type UpdateStatus } from '../shared/update'
 
 const run = promisify(execFile)
 const CHECK_EVERY_MS = 60 * 60 * 1000
@@ -52,7 +52,7 @@ export class Updater {
    * or null if the banner is showing. `manual` re-offers a dismissed version.
    */
   async check(manual = false): Promise<string | null> {
-    if (!this.kind) return 'Updates install themselves only in downloaded builds of Universe.'
+    if (this.manifestUrl === 'off') return 'Checking for updates is turned off.'
     if (this.status.state === 'downloading' || this.status.state === 'installing') return null
     if (manual) this.dismissed = undefined
     try {
@@ -60,8 +60,12 @@ export class Updater {
       // Missing while CI swaps the release's files; try again next time.
       if (!res.ok) return 'The latest build is being published right now. Try again in a few minutes.'
       const manifest = (await res.json()) as UpdateManifest
+      const latest = `Universe ${app.getVersion()} is the latest version.`
+      // A copy that can't replace itself (a development build, or one unpacked by hand) can still say what's new.
+      const newer = compareVersions(manifest.version, app.getVersion()) > 0
+      if (!this.kind) return newer ? `Universe ${manifest.version} is out. This copy can’t install it itself: download it from the project’s releases on GitHub.` : latest
       const file = pickUpdate(manifest, app.getVersion(), this.kind, process.arch)
-      if (!file) return `Universe ${app.getVersion()} is the latest version.`
+      if (!file) return latest
       if (manifest.version === this.dismissed) return null
       this.file = file
       this.set({ state: 'available', version: manifest.version, needsPassword: this.kind === 'linux-deb' })

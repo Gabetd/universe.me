@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ROADMAP } from '../roadmap'
 import { useUi } from '../store'
 import { ErrorBanner } from './ErrorBanner'
+import { CheckForUpdates } from './UpdateBanner'
 
 export function Welcome() {
   const [recent, setRecent] = useState<string[]>([])
@@ -70,8 +71,9 @@ export function Welcome() {
           </section>
         </div>
 
-        <footer className="muted small">
+        <footer className="muted small welcome-footer">
           Version {__BUILD_INFO__.version} · build {__BUILD_INFO__.commit}
+          <CheckForUpdates />
         </footer>
       </div>
     </div>

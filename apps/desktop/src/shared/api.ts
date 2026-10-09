@@ -140,6 +140,8 @@ export interface UniverseApi {
   /** Downloads and installs the offered update, then restarts the app into it. */
   installUpdate(): Promise<void>
   dismissUpdate(): Promise<void>
+  /** Looks on GitHub for a newer build now (offering again one that was dismissed): null if the update banner shows it, otherwise why there's nothing to install. */
+  checkForUpdates(): Promise<string | null>
   onUpdate(listener: (status: UpdateStatus) => void): () => void
 }
 
@@ -169,7 +171,8 @@ export const INVOKE: Record<InvokeMethod, string> = {
   getAsset: 'asset:get',
   updateStatus: 'update:status',
   installUpdate: 'update:install',
-  dismissUpdate: 'update:dismiss'
+  dismissUpdate: 'update:dismiss',
+  checkForUpdates: 'update:check'
 }
 
 /** Channels the main process sends on, behind `onState`, `onMenu` and `onUpdate`. */

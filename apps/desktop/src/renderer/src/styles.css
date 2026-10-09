@@ -886,9 +886,33 @@ input.invalid {
   border-top: 1px solid var(--border);
   white-space: nowrap;
 }
-.statusbar span:first-child {
+.statusbar > span:first-child {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.statusbar-version {
+  display: flex;
+  gap: 12px;
+}
+/* Check for updates: a quiet link, with its answer beside it. */
+.update-check {
+  display: inline-flex;
+  gap: 12px;
+}
+.update-check button {
+  color: var(--accent);
+}
+.update-check button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.update-check [role='status'] {
+  color: var(--text);
+}
+.welcome-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
 /* Inspector sections */

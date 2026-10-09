@@ -360,6 +360,7 @@ function registerIpc(): void {
   handle('updateStatus', () => updater.current())
   handle('installUpdate', () => updater.install())
   handle('dismissUpdate', () => updater.dismiss())
+  handle('checkForUpdates', () => updater.check(true))
 }
 
 // macOS delivers double-clicked files through this event, possibly before `ready`.
