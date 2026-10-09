@@ -1,7 +1,7 @@
 import { SEVERITY_LABELS, ecosystemWarnings, structureWarnings, timelineWarnings, type Finding, type FindingStatus } from '@universe/core'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { menuRef, nameOf, openElement, parseMenuRef, type ElementKind } from '../contextMenu'
-import { useUi } from '../store'
+import { useOwnRecords, useUi } from '../store'
 import { useSteadyScroll } from '../useSteadyScroll'
 import { useEditor } from './editorStore'
 import { useConditionCurves } from './useStructures'
@@ -13,8 +13,6 @@ import { useConditionCurves } from './useStructures'
  * request is copied, to paste into Claude wherever it's connected.
  */
 
-const byOwner = <T extends { ownerId: string }>(list: T[], worldId: string) => list.filter((r) => r.ownerId === worldId)
-
 /** Shows what a warning is about: in the inspector, or the world view that has it (species, powers). */
 function show(ref: { kind: string; id: string }) {
   if (ref.kind === 'species' || ref.kind === 'power') return useEditor.getState().set({ view: ref.kind === 'power' ? 'powers' : 'species' })
@@ -24,14 +22,13 @@ function show(ref: { kind: string; id: string }) {
 
 /** What a world's open findings and the app's checks come to, for the tab's count. */
 export function useWarningCount(worldId: string): number {
-  const findings = useUi((s) => s.timeline.findings)
-  return useMemo(() => findings.filter((f) => f.ownerId === worldId && f.status === 'open').length, [findings, worldId])
+  return useOwnRecords('findings', worldId).filter((f) => f.status === 'open').length
 }
 
 export function WarningsView({ worldId }: { worldId: string }) {
   const name = useUi((s) => s.nodes.find((n) => n.id === worldId)?.name ?? 'this world')
-  const all = useUi((s) => s.timeline.findings)
-  const findings = useMemo(() => byOwner(all, worldId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [all, worldId])
+  const own = useOwnRecords('findings', worldId)
+  const findings = useMemo(() => [...own].sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [own])
   const open = findings.filter((f) => f.status === 'open')
   const closed = findings.filter((f) => f.status !== 'open')
   const checks = useAppChecks(worldId)
@@ -93,17 +90,21 @@ export function WarningsView({ worldId }: { worldId: string }) {
 
 /** The app's own checks on a world: its history, its structures and its food web. */
 function useAppChecks(worldId: string) {
-  const timeline = useUi((s) => s.timeline)
+  const events = useOwnRecords('events', worldId)
+  const links = useOwnRecords('links', worldId)
+  const changes = useOwnRecords('changes', worldId)
+  const species = useOwnRecords('lifeforms', worldId)
+  const ecolinks = useOwnRecords('ecolinks', worldId)
   const regions = useUi((s) => s.regions)
   const { world, curves } = useConditionCurves(worldId)
-  return useMemo(() => {
-    const own = <T extends { ownerId: string }>(list: T[]) => byOwner(list, worldId)
-    return [
-      ...timelineWarnings({ events: own(timeline.events), links: own(timeline.links), changes: own(timeline.changes) }, regions),
+  return useMemo(
+    () => [
+      ...timelineWarnings({ events, links, changes }, regions),
       ...structureWarnings(world, curves),
-      ...ecosystemWarnings(own(timeline.lifeforms), own(timeline.ecolinks)).map((w) => ({ message: w.message, refs: w.ids.map((id) => ({ kind: 'species' as const, id })) }))
-    ]
-  }, [timeline, regions, world, curves, worldId])
+      ...ecosystemWarnings(species, ecolinks).map((w) => ({ message: w.message, refs: w.ids.map((id) => ({ kind: 'species' as const, id })) }))
+    ],
+    [events, links, changes, species, ecolinks, regions, world, curves]
+  )
 }
 
 /** Copies a request to paste into Claude (on this computer, or the phone): check this world, and report what's wrong. */

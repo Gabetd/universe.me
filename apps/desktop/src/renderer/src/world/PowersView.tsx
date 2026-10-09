@@ -17,7 +17,7 @@ import {
 import { useMemo, useRef, useState } from 'react'
 import { ColorField, CommitSlider, DeleteButton, NotesField, SelectField, Swatch, TextAreaField, TextField } from '../components/fields'
 import { openElementMenu } from '../contextMenu'
-import { useUi } from '../store'
+import { useOwnRecords, useUi } from '../store'
 import { usePlayhead } from '../timeline/timelineStore'
 import { useSteadyScroll } from '../useSteadyScroll'
 import { flagClass, useFlaggedIds } from '../flags'
@@ -34,7 +34,6 @@ const TEMPLATE_LABELS = Object.fromEntries(POWER_TEMPLATES.map((t) => [t, POWER_
 /** The "Always" tab: what holds in every age. */
 const ALWAYS = 'always'
 
-const byOwner = <T extends { ownerId: string }>(list: T[], worldId: string) => list.filter((r) => r.ownerId === worldId)
 const execute = (command: Parameters<ReturnType<typeof useUi.getState>['execute']>[0]) => useUi.getState().execute(command)
 
 /** Answers with one changed: an empty answer is dropped rather than kept as "". */
@@ -44,12 +43,10 @@ function withValue(values: AspectValues, id: string, value: string): AspectValue
 }
 
 export function PowersView({ worldId }: { worldId: string }) {
-  const allSystems = useUi((s) => s.timeline.powers)
-  const allAges = useUi((s) => s.timeline.powerAges)
-  const allEras = useUi((s) => s.timeline.eras)
-  const systems = useMemo(() => byOwner(allSystems, worldId), [allSystems, worldId])
-  const ages = useMemo(() => byOwner(allAges, worldId), [allAges, worldId])
-  const eras = useMemo(() => erasInOrder(byOwner(allEras, worldId)), [allEras, worldId])
+  const systems = useOwnRecords('powers', worldId)
+  const ages = useOwnRecords('powerAges', worldId)
+  const ownEras = useOwnRecords('eras', worldId)
+  const eras = useMemo(() => erasInOrder(ownEras), [ownEras])
   const playhead = usePlayhead(worldId)
   const nowEra = eraAt(eras, playhead)
   const [selectedId, setSelectedId] = useState<string | null>(null)
