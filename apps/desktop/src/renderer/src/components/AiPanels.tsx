@@ -23,8 +23,16 @@ function useApiStatus(): [ApiStatus | undefined, (patch: ApiSettingsPatch) => vo
     return window.universe.onApi(take)
   }, [])
   const set = (patch: ApiSettingsPatch) => {
-    const { phone, ...rest } = patch
-    setStatus((s) => s && { ...s, ...rest, phone: phone === undefined ? s.phone : { ...s.phone, on: phone } })
+    // Shown at once, where the status keeps each one.
+    const { phone, phoneApp, ...rest } = patch
+    setStatus(
+      (s) =>
+        s && {
+          ...s,
+          ...rest,
+          phone: { ...s.phone, ...(phone !== undefined && { on: phone }), ...(phoneApp !== undefined && { app: { ...s.phone.app, on: phoneApp } }) }
+        }
+    )
     changing.current++
     void window.universe.setApi(patch).then((answer) => --changing.current === 0 && setStatus(answer))
   }
@@ -136,6 +144,16 @@ function phoneLine({ enabled, phone }: ApiStatus): string {
   return phone.error ? 'Funnel isn’t on yet:' : 'Turning on Funnel…'
 }
 
+/** What the phone app is doing, in a line. */
+function appLine({ phone }: ApiStatus): string {
+  const ts = phone.tailscale
+  if (ts.kind === 'missing') return 'Needs Tailscale on this computer and the phone: install it from tailscale.com and sign in to the same account on both.'
+  if (ts.kind === 'stopped') return `${ts.detail}. Start it and sign in, then open this panel again.`
+  if (!phone.app.on) return 'Off.'
+  if (phone.app.url) return 'On, for your own devices on your tailnet (nothing on the internet). Open the address on your phone with Tailscale on, and sign in with the code shown here.'
+  return phone.app.error ? 'It isn’t on yet:' : 'Turning it on…'
+}
+
 /**
  * Phone access (PLAN.md §6.4): Claude on a phone, or claude.ai anywhere,
  * reaching this app through Tailscale Funnel; a client signs in with a code
@@ -147,6 +165,7 @@ function PhoneAccess({ status, set }: { status: ApiStatus; set(patch: ApiSetting
   return (
     <section className="phone-access" aria-label="From your phone">
       <h3>From your phone</h3>
+      <h4>Claude on your phone</h4>
       <p className="small muted">
         Claude on your phone reaches this app through Tailscale Funnel, a public address for this computer that forwards here. A client signs in with a code shown here, then can do what Claude Code can.
       </p>
@@ -162,6 +181,20 @@ function PhoneAccess({ status, set }: { status: ApiStatus; set(patch: ApiSetting
         </p>
       )}
       {phone.url && <CopyField label="Add it on claude.ai as a custom connector (Settings → Connectors), then use it from the Claude app" value={phone.url} />}
+      <h4>Universe on your phone</h4>
+      <p className="small muted">This app in your phone’s browser, from this computer (which has to be on), through your tailnet only. Add it to the home screen to open it like an app.</p>
+      <label className="checkbox">
+        <input type="checkbox" checked={phone.app.on} disabled={phone.tailscale.kind !== 'ready' && !phone.app.on} onChange={(e) => set({ phoneApp: e.target.checked })} /> Use Universe on my phone
+      </label>
+      <p className="small" aria-label="Phone app status">
+        {appLine(status)}
+      </p>
+      {phone.app.error && (
+        <p className="small phone-error" role="alert">
+          {phone.app.error}
+        </p>
+      )}
+      {phone.app.url && <CopyField label="Open this on your phone" value={phone.app.url} />}
       {phone.signIns.length > 0 && <SignInCodes signIns={phone.signIns} />}
       {phone.connections.length > 0 && (
         <div className="field">

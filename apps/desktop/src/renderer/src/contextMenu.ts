@@ -66,6 +66,57 @@ window.addEventListener(
   true
 )
 
+/**
+ * A finger held still on something is its right-click: a touch screen has no
+ * right button, and iOS never sends one. Where the system does (Android, on
+ * a long press), that one is used and this one isn't sent.
+ */
+const LONG_PRESS_MS = 550
+let press: { timer: ReturnType<typeof setTimeout>; x: number; y: number } | undefined
+/** When a long press last sent its right-click: the system's own, if one follows, is dropped. */
+let pressedAt = -Infinity
+const letGo = () => {
+  clearTimeout(press?.timer)
+  press = undefined
+}
+window.addEventListener(
+  'pointerdown',
+  (e) => {
+    letGo()
+    if (e.pointerType !== 'touch' || !e.isPrimary) return
+    const target = e.target as Element
+    const { clientX, clientY } = e
+    press = {
+      x: clientX,
+      y: clientY,
+      timer: setTimeout(() => {
+        press = undefined
+        // A press, not a key (the menu opens under the finger), nor the end of a right-drag.
+        pressedAt = right.at = performance.now()
+        right.moved = false
+        target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX, clientY, button: 2 }))
+      }, LONG_PRESS_MS)
+    }
+  },
+  true
+)
+window.addEventListener('pointermove', (e) => press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 2 * DRAG_PX && letGo(), true)
+window.addEventListener('pointerup', letGo, true)
+window.addEventListener('pointercancel', letGo, true)
+window.addEventListener(
+  'contextmenu',
+  (e) => {
+    if (!e.isTrusted) return
+    // The system's own long-press menu came first: it's the one.
+    letGo()
+    if (performance.now() - pressedAt < 1000) {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+    }
+  },
+  true
+)
+
 /** Whether a menu asked for now comes from the keyboard (the menu key, Shift+F10) rather than a right-click. */
 export const fromKeyboard = () => !right.down && performance.now() - right.at > 1000
 

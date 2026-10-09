@@ -13,6 +13,7 @@ import { EROSION_SPEED, isAlive, stateAt } from '@universe/core'
 import { STAGE_COLORS } from '../world/structureLook'
 import { useConditionCurves } from '../world/useStructures'
 import { useEditor } from '../world/editorStore'
+import { isPhoneApp } from '../webBridge'
 import { usePlayhead } from '../timeline/timelineStore'
 
 /** Inspector section for a world: generation settings, terrain resets, and regions. */
@@ -53,7 +54,8 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
       <BlueprintLibrary />
 
       <RegionList worldId={world.id} regions={regions} selectedId={selectedRegion?.id} onPick={selectRegion} />
-      <ExportBible worldId={world.id} />
+      {/* Saved where the user picks, on the computer. */}
+      {!isPhoneApp() && <ExportBible worldId={world.id} />}
     </>
   )
 }

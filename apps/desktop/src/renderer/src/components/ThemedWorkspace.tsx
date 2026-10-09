@@ -17,7 +17,7 @@ export const FONT_STACKS: Record<Typography, string> = {
  * few dozen times rather than every frame), and titles over the views take
  * its type. They're the workspace's own styles, so they go when it does.
  */
-export function ThemedWorkspace({ ref, children }: { ref: Ref<HTMLDivElement>; children: ReactNode }) {
+export function ThemedWorkspace({ ref, children, phoneTab }: { ref: Ref<HTMLDivElement>; children: ReactNode; phoneTab?: string }) {
   const owner = useTimelineOwner()
   const look = useThemeLook(owner?.kind === 'world' ? owner.id : undefined)
   const style = look && {
@@ -26,7 +26,7 @@ export function ThemedWorkspace({ ref, children }: { ref: Ref<HTMLDivElement>; c
     ...(look.strength > 0.5 && { '--theme-font': FONT_STACKS[look.dominant.typography] })
   }
   return (
-    <div className={look ? 'workspace themed' : 'workspace'} ref={ref} style={style as CSSProperties | undefined}>
+    <div className={look ? 'workspace themed' : 'workspace'} ref={ref} style={style as CSSProperties | undefined} data-phone-tab={phoneTab}>
       {children}
     </div>
   )

@@ -60,6 +60,8 @@ const fields = new Map<string, HTMLCanvasElement>()
 
 /** Faint background stars, the same for a seed. */
 export function starfield(ctx: CanvasRenderingContext2D, w: number, h: number, seed: number, count: number) {
+  // A view with no size (hidden, as behind another panel on a phone) has no sky to draw.
+  if (w < 1 || h < 1) return
   const dpr = window.devicePixelRatio || 1
   const key = `${seed}:${count}:${w}x${h}@${dpr}`
   let field = fields.get(key)

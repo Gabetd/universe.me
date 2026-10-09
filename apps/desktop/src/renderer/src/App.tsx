@@ -3,6 +3,7 @@ import { UpdateBanner } from './components/UpdateBanner'
 import { Welcome } from './components/Welcome'
 import { Workspace } from './components/Workspace'
 import { routeHistory } from './input'
+import { isPhoneApp } from './webBridge'
 import { useUi } from './store'
 
 export function App() {
@@ -23,8 +24,22 @@ export function App() {
   if (!ready) return null
   return (
     <div className="app-shell">
-      <UpdateBanner />
-      <div className="app-main">{hasProject ? <Workspace /> : <Welcome />}</div>
+      {!isPhoneApp() && <UpdateBanner />}
+      <div className="app-main">{hasProject ? <Workspace /> : isPhoneApp() ? <NothingOpen /> : <Welcome />}</div>
+    </div>
+  )
+}
+
+/** The phone app with no project open on the computer: what's open there shows here. */
+function NothingOpen() {
+  return (
+    <div className="welcome">
+      <div className="welcome-inner">
+        <header className="welcome-hero">
+          <h1>Universe</h1>
+          <p>Open a universe on your computer, and it shows here.</p>
+        </header>
+      </div>
     </div>
   )
 }

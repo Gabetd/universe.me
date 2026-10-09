@@ -1,5 +1,5 @@
 import { ancestry } from '@universe/core'
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { KIND_ICONS } from '../kinds'
 import { isEditingText } from '../input'
 import { deleteCommand, redo, selectNode, undo, useUi } from '../store'
@@ -15,9 +15,20 @@ import { CheckForUpdates } from './UpdateBanner'
 import { zoomOut, zoomTo } from './zoom'
 import { Timeline } from '../timeline/Timeline'
 import { useTimelineView } from '../timeline/timelineStore'
+import { isPhoneApp } from '../webBridge'
 import { WorldEditor } from '../world/WorldEditor'
 
+/** On a phone-sized screen one panel shows at a time; these pick which. */
+const PHONE_TABS = [
+  { id: 'tree', icon: '🌌', label: 'Universe' },
+  { id: 'view', icon: '🌍', label: 'View' },
+  { id: 'details', icon: '📝', label: 'Details' },
+  { id: 'timeline', icon: '⏳', label: 'Timeline' }
+] as const
+type PhoneTab = (typeof PHONE_TABS)[number]['id']
+
 export function Workspace() {
+  const [phoneTab, setPhoneTab] = useState<PhoneTab>('view')
   const selected = useUi(selectNode)
   const canUndo = useUi((s) => s.canUndo)
   const canRedo = useUi((s) => s.canRedo)
@@ -67,7 +78,7 @@ export function Workspace() {
   }, [])
 
   return (
-    <ThemedWorkspace ref={shell}>
+    <ThemedWorkspace ref={shell} phoneTab={phoneTab}>
       <header className="topbar">
         <Breadcrumb />
         <div className="topbar-actions">
@@ -78,7 +89,8 @@ export function Workspace() {
           <button onClick={() => void redo()} disabled={!canRedo} title="Redo (Ctrl+Y / Cmd+Shift+Z)">
             ↷ Redo
           </button>
-          <ConnectAiButton />
+          {/* Connecting AI clients and phones is done at the computer. */}
+          {!isPhoneApp() && <ConnectAiButton />}
         </div>
       </header>
       <ErrorBanner />
@@ -99,11 +111,18 @@ export function Workspace() {
         <TimelineResizer />
         <Timeline />
       </section>
+      <nav className="phone-tabs" aria-label="Panels">
+        {PHONE_TABS.map((t) => (
+          <button key={t.id} aria-pressed={phoneTab === t.id} onClick={() => setPhoneTab(t.id)}>
+            <span aria-hidden>{t.icon}</span> {t.label}
+          </button>
+        ))}
+      </nav>
       <footer className="statusbar">
         <span title={project.path}>{project.path}</span>
         <span>All changes saved</span>
         <span className="statusbar-version">
-          <CheckForUpdates />v{__BUILD_INFO__.version} · {__BUILD_INFO__.commit}
+          {!isPhoneApp() && <CheckForUpdates />}v{__BUILD_INFO__.version} · {__BUILD_INFO__.commit}
         </span>
       </footer>
     </ThemedWorkspace>

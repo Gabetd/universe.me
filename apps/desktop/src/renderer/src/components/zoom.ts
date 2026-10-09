@@ -48,7 +48,8 @@ let armed: { still: HTMLCanvasElement; at: Point } | null = null
 /** Freezes `canvas` (the view's own by default) as it is now, for the next change of level to zoom at `at` (its middle by default). */
 function arm(canvas: HTMLCanvasElement | null | undefined, at?: Point) {
   const source = canvas ?? viewCanvas()
-  if (!source || matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  // A view with no size (hidden, as behind another panel on a phone) has nothing to show.
+  if (!source?.width || !source.height || matchMedia('(prefers-reduced-motion: reduce)').matches) return
   const still = document.createElement('canvas')
   still.width = source.width
   still.height = source.height

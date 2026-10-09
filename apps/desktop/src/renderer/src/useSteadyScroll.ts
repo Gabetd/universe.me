@@ -60,8 +60,11 @@ export function useSteadyScroll(contentRef: RefObject<HTMLElement | null>, menu:
       if (was) scrollTo(panel.scrollTop - was)
     }
     const put = () => {
+      // Hidden (behind another panel on a phone): nothing shows, so nothing to keep still. Measured anyway, everything is at 0,
+      // and keeping the control "still" would change the panel, which would ask again, without end.
+      if (!panel.getClientRects().length) return
       if (anchor && !anchor.el.isConnected && anchor.index >= 0) anchor.el = controls()[anchor.index] ?? anchor.el
-      if (!anchor?.el.isConnected) return
+      if (!anchor?.el.isConnected || !anchor.el.getClientRects().length) return
       let drift = offsetOf(anchor.el) - anchor.offset
       if (Math.abs(drift) < 1) return
       // Moved down: take back space added before, then scroll. Moved up beyond the top: add space.

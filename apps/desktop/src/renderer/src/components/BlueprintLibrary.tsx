@@ -2,6 +2,7 @@ import { BUILTIN_BLUEPRINTS, type Blueprint } from '@universe/core'
 import { useState } from 'react'
 import { useUi } from '../store'
 import { useEditor } from '../world/editorStore'
+import { isPhoneApp } from '../webBridge'
 import { BlueprintBuilder, newPart, type BlueprintDraft } from './BlueprintBuilder'
 
 const draftOf = ({ name, parts, model, maintainedByDefault, tags }: Blueprint): BlueprintDraft => ({ name, parts, model, maintainedByDefault, tags })
@@ -57,7 +58,8 @@ export function BlueprintLibrary() {
         <button onClick={() => setEditing({ name: 'New blueprint', parts: [newPart()], model: null, maintainedByDefault: true, tags: [] })}>
           + New blueprint
         </button>
-        <button onClick={() => void importModel()}>Import 3D model…</button>
+        {/* A file on the computer, picked there. */}
+        {!isPhoneApp() && <button onClick={() => void importModel()}>Import 3D model…</button>}
       </div>
       {editing && <BlueprintBuilder initial={editing} onClose={() => setEditing(null)} />}
     </section>

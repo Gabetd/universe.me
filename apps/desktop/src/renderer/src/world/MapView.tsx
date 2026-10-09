@@ -129,6 +129,31 @@ export const MapView = memo(function MapView({
   const view = useRef<View | null>(null)
   const hover = useRef<[number, number] | null>(null)
   const pan = useRef<{ x: number; y: number } | null>(null)
+  /** Fingers on the map, for a pinch: two of them zoom it around their middle. */
+  const fingers = useRef(new Map<number, { x: number; y: number }>())
+  const pinch = useRef<number | null>(null)
+  const spread = () => {
+    const [a, b] = [...fingers.current.values()]
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0
+  }
+  /** Zooms by `factor` around a point on screen (the cursor, or a pinch's middle). */
+  const zoomAt = (clientX: number, clientY: number, factor: number) => {
+    const v = view.current
+    if (!v) return
+    const rect = canvasRef.current!.getBoundingClientRect()
+    const sx = clientX - rect.left
+    const sy = clientY - rect.top
+    const next = Math.max(0.3, Math.min(MAX_SCALE, v.scale * factor))
+    v.ox = sx - ((sx - v.ox) * next) / v.scale
+    v.oy = sy - ((sy - v.oy) * next) / v.scale
+    v.scale = next
+    dirty.current = true
+  }
+  const lift = (e: React.PointerEvent) => {
+    fingers.current.delete(e.pointerId)
+    if (fingers.current.size < 2) pinch.current = null
+    pan.current = null
+  }
   const groundEdge = useMemo(() => new EdgePush(), [])
   const dirty = useRef(true)
   /** For tests: "true" once the map has been drawn. */
@@ -394,6 +419,13 @@ export const MapView = memo(function MapView({
         else useContextMenu.getState().close()
       }}
       onPointerDown={(e) => {
+        if (e.pointerType === 'touch') fingers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+        // A second finger: a pinch, not a pan or a tool.
+        if (fingers.current.size === 2) {
+          pan.current = null
+          pinch.current = spread()
+          return
+        }
         const p = mapPoint(e)
         const tool = useEditor.getState().tool
         if (e.button === 0 && p && onPointerDown(dirAt(p))) return
@@ -408,6 +440,14 @@ export const MapView = memo(function MapView({
         e.currentTarget.setPointerCapture(e.pointerId)
       }}
       onPointerMove={(e) => {
+        if (fingers.current.has(e.pointerId)) fingers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+        if (pinch.current !== null && fingers.current.size === 2) {
+          const now = spread()
+          const [a, b] = [...fingers.current.values()]
+          if (pinch.current > 0 && now > 0) zoomAt((a!.x + b!.x) / 2, (a!.y + b!.y) / 2, now / pinch.current)
+          pinch.current = now
+          return
+        }
         const p = mapPoint(e)
         hover.current = p
         dirty.current = true
@@ -417,24 +457,17 @@ export const MapView = memo(function MapView({
           pan.current = { x: e.clientX, y: e.clientY }
         } else if (p) onPointerMove(dirAt(p))
       }}
-      onPointerUp={() => (pan.current = null)}
+      onPointerUp={lift}
+      onPointerCancel={lift}
       onPointerLeave={() => ((hover.current = null), (dirty.current = true))}
       onDoubleClick={onDoubleClick}
       onWheel={(e) => {
         const v = view.current
         if (!v) return
-        const rect = canvasRef.current!.getBoundingClientRect()
-        const sx = e.clientX - rect.left
-        const sy = e.clientY - rect.top
         // Scrolling in at the closest zoom goes down to the ground under the cursor.
         const p = mapPoint(e)
         if (groundEdge.push(e.deltaY < 0 && v.scale >= MAX_SCALE ? -1 : 0) && p) return useEditor.getState().enterGround(pixelToLatLon(p[0], p[1], W, H))
-        const next = Math.max(0.3, Math.min(MAX_SCALE, v.scale * Math.exp(-e.deltaY * 0.0015)))
-        // Zoom around the cursor.
-        v.ox = sx - ((sx - v.ox) * next) / v.scale
-        v.oy = sy - ((sy - v.oy) * next) / v.scale
-        v.scale = next
-        dirty.current = true
+        zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015))
       }}
     />
   )
