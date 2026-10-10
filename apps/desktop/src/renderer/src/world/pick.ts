@@ -16,22 +16,31 @@ import { useEditor } from './editorStore'
  * and the right button gives its options.
  */
 export function usePick(onPick: (id: string) => void, id: string, kind: ElementKind) {
-  return useMemo(
-    () => ({
-      onPointerDown: (e: ThreeEvent<PointerEvent>) => {
-        if (e.button !== 0 || useEditor.getState().tool !== 'navigate') return
-        e.stopPropagation()
-        onPick(id)
-      },
-      onContextMenu: (e: ThreeEvent<MouseEvent>) => {
-        // The nearest object only, and the page's own menu doesn't open as well.
-        e.stopPropagation()
-        e.nativeEvent.preventDefault()
-        openElementMenu({ kind, id }, e.nativeEvent.clientX, e.nativeEvent.clientY)
-      }
-    }),
-    [onPick, id, kind]
-  )
+  return useMemo(() => pickHandlers(onPick, () => id, kind), [onPick, id, kind])
+}
+
+/** The same for many things drawn as one instanced mesh: `ids[i]` is instance i's. */
+export function usePickInstances(onPick: (id: string) => void, ids: readonly string[], kind: ElementKind) {
+  return useMemo(() => pickHandlers(onPick, (e) => (e.instanceId === undefined ? undefined : ids[e.instanceId]), kind), [onPick, ids, kind])
+}
+
+function pickHandlers(onPick: (id: string) => void, idOf: (e: ThreeEvent<MouseEvent>) => string | undefined, kind: ElementKind) {
+  return {
+    onPointerDown: (e: ThreeEvent<PointerEvent>) => {
+      const id = idOf(e)
+      if (!id || e.button !== 0 || useEditor.getState().tool !== 'navigate') return
+      e.stopPropagation()
+      onPick(id)
+    },
+    onContextMenu: (e: ThreeEvent<MouseEvent>) => {
+      const id = idOf(e)
+      if (!id) return
+      // The nearest object only, and the page's own menu doesn't open as well.
+      e.stopPropagation()
+      e.nativeEvent.preventDefault()
+      openElementMenu({ kind, id }, e.nativeEvent.clientX, e.nativeEvent.clientY)
+    }
+  }
 }
 
 /** For objects that aren't picked: clicks go through to what's behind. */

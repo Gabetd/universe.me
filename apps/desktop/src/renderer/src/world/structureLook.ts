@@ -19,6 +19,46 @@ export function blueprintExtent(b: Blueprint): number {
   return extent
 }
 
+/** The colour a structure's own colours fade toward as it ages. */
+export const WEATHERED_COLOR = '#6b6455'
+/** How far toward that a structure at `condition` (0–100) has faded: 0 new, about 0.65 a ruin. */
+export const weatheringOf = (condition: number) => Math.min(0.65, (1 - condition / 100) * 0.8)
+/** How tall a structure at `condition` stands, of its full height: ruins and remnants slump. */
+export const slumpOf = (condition: number) => (condition < 20 ? 0.45 + 0.55 * (condition / 20) : 1)
+
+/** A blueprint seen from far off: the box around it, in its own metres, in the colour of most of it. */
+export interface Massing {
+  width: number
+  depth: number
+  height: number
+  color: string
+}
+
+const massings = new WeakMap<Blueprint, Massing>()
+
+/** A blueprint's massing (worked out once per blueprint). */
+export function blueprintMassing(b: Blueprint): Massing {
+  let m = massings.get(b)
+  if (m) return m
+  if (b.model) m = { width: b.model.heightM * 0.5, depth: b.model.heightM * 0.5, height: b.model.heightM, color: '#7a7268' }
+  else {
+    let [x0, x1, z0, z1, top, most, color] = [0, 0, 0, 0, 1, -1, '#8a8278']
+    for (const p of b.parts) {
+      const [w, h, d] = p.size
+      x0 = Math.min(x0, p.at[0] - w / 2)
+      x1 = Math.max(x1, p.at[0] + w / 2)
+      z0 = Math.min(z0, p.at[2] - d / 2)
+      z1 = Math.max(z1, p.at[2] + d / 2)
+      top = Math.max(top, p.at[1] + h)
+      if (w * h * d > most) [most, color] = [w * h * d, p.color]
+    }
+    // About its middle, as the structure stands about its origin.
+    m = { width: Math.max(1, 2 * Math.max(-x0, x1)), depth: Math.max(1, 2 * Math.max(-z0, z1)), height: top, color }
+  }
+  massings.set(b, m)
+  return m
+}
+
 /** How far back to stand to see a whole structure up close, in metres. */
 export const viewingDistance = (b: Blueprint, scale: number) => Math.max(40, blueprintExtent(b) * scale * 1.4)
 

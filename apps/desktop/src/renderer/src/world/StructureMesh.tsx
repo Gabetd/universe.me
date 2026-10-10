@@ -2,8 +2,9 @@ import type { Blueprint, BlueprintModel, BlueprintPart, Material, Shape } from '
 import { useThree } from '@react-three/fiber'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useModel } from './models'
+import { usePickInstances } from './pick'
 import * as THREE from 'three'
-import { standingParts } from './structureLook'
+import { WEATHERED_COLOR, slumpOf, standingParts, weatheringOf } from './structureLook'
 
 /** Unit geometries with their base at y = 0, scaled per part. */
 const GEOMETRIES: Record<Shape, THREE.BufferGeometry> = {
@@ -17,7 +18,7 @@ const GEOMETRIES: Record<Shape, THREE.BufferGeometry> = {
   wedge: new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(-0.5, 0), new THREE.Vector2(0.5, 0), new THREE.Vector2(0, 1)]), { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5)
 }
 
-const WEATHERED = new THREE.Color('#6b6455')
+const WEATHERED = new THREE.Color(WEATHERED_COLOR)
 const WEATHERING_KEY = () => 'weathering-v1'
 
 /**
@@ -47,19 +48,11 @@ function PrimitiveParts({ blueprint, condition, materials, ghost }: { blueprint:
   const whole = Math.floor(condition)
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` and `whole` stand for `materials` and `condition`
   const parts = useMemo(() => (ghost ? blueprint.parts : standingParts(blueprint.parts, condition, materials)), [blueprint.parts, whole, key, ghost])
-  // Parts of the same shape and colour are drawn as one instanced mesh, so a city of thousands of parts stays fast.
-  const groups = useMemo(() => {
-    const byLook = new Map<string, BlueprintPart[]>()
-    for (const p of parts) {
-      const key = `${p.shape}|${p.color}`
-      byLook.set(key, [...(byLook.get(key) ?? []), p])
-    }
-    return [...byLook.values()]
-  }, [parts])
+  const groups = useMemo(() => byLook(parts), [parts])
   // Ruins and remnants are lower than the building was.
-  const slump = condition < 20 && !ghost ? 0.45 + 0.55 * (condition / 20) : 1
+  const slump = ghost ? 1 : slumpOf(condition)
   // In steps of 1%, so scrubbing the playhead doesn't recolour every part on every frame.
-  const age = ghost ? 0 : Math.round(Math.min(0.65, (1 - condition / 100) * 0.8) * 100) / 100
+  const age = ghost ? 0 : Math.round(weatheringOf(condition) * 100) / 100
   return (
     <group scale={[1, slump, 1]}>
       {groups.map((list) => (
@@ -69,7 +62,38 @@ function PrimitiveParts({ blueprint, condition, materials, ghost }: { blueprint:
   )
 }
 
+/** Parts of the same shape and colour, drawn as one instanced mesh, so a city of thousands of parts stays fast. */
+function byLook(parts: BlueprintPart[]): BlueprintPart[][] {
+  const groups = new Map<string, BlueprintPart[]>()
+  for (const p of parts) {
+    const key = `${p.shape}|${p.color}`
+    groups.set(key, [...(groups.get(key) ?? []), p])
+  }
+  return [...groups.values()]
+}
+
+/**
+ * Many structures that look alike (one blueprint, the same parts standing,
+ * about as weathered) at once: each kind of part is one instanced mesh for
+ * all of them, so a town of a hundred houses is a few draws, not hundreds.
+ * `placements[i]` puts structure `ids[i]` in the scene (slumped as a ruin
+ * already); each is still picked by itself.
+ */
+export function BlueprintBatch({ parts, age, placements, ids, onPick }: { parts: BlueprintPart[]; age: number; placements: THREE.Matrix4[]; ids: string[]; onPick(id: string): void }) {
+  const groups = useMemo(() => byLook(parts), [parts])
+  return (
+    <>
+      {groups.map((list) => (
+        <PartInstances key={`${list[0]!.shape}|${list[0]!.color}|${list.length}|${placements.length}`} parts={list} age={age} ghost={false} placements={placements} ids={ids} onPick={onPick} />
+      ))}
+    </>
+  )
+}
+
 const UP = new THREE.Vector3(0, 1, 0)
+const ONE = [new THREE.Matrix4()]
+const NO_IDS: string[] = []
+const noPick = () => {}
 
 /**
  * Weathering in the shader (PLAN.md §4.7): with age, moss gathers on the
@@ -110,8 +134,26 @@ function setAge(material: THREE.Material | THREE.Material[], age: number) {
   for (const m of Array.isArray(material) ? material : [material]) (m.userData.uAge ??= { value: 0 }).value = age
 }
 
-function PartInstances({ parts, age, ghost }: { parts: BlueprintPart[]; age: number; ghost: boolean }) {
+/** Parts of one look, for one structure (in its own group) or, with `placements`, for each of several. */
+function PartInstances({
+  parts,
+  age,
+  ghost,
+  placements = ONE,
+  ids = NO_IDS,
+  onPick = noPick
+}: {
+  parts: BlueprintPart[]
+  age: number
+  ghost: boolean
+  placements?: THREE.Matrix4[]
+  ids?: string[]
+  onPick?(id: string): void
+}) {
   const mesh = useRef<THREE.InstancedMesh>(null)
+  // Instance i is part i % parts of structure i / parts.
+  const instanceIds = useMemo(() => ids.flatMap((id) => parts.map(() => id)), [ids, parts])
+  const pick = usePickInstances(onPick, instanceIds, 'structure')
   const invalidate = useThree((s) => s.invalidate)
   const { shape, color } = parts[0]!
   const tinted = useMemo(() => new THREE.Color(color).lerp(WEATHERED, age), [color, age])
@@ -122,21 +164,23 @@ function PartInstances({ parts, age, ghost }: { parts: BlueprintPart[]; age: num
   useLayoutEffect(() => {
     const m = mesh.current
     if (!m) return
-    const matrix = new THREE.Matrix4()
+    const [matrix, placed] = [new THREE.Matrix4(), new THREE.Matrix4()]
     const position = new THREE.Vector3()
     const rotation = new THREE.Quaternion()
     const size = new THREE.Vector3()
-    parts.forEach((p, i) => {
-      rotation.setFromAxisAngle(UP, (p.rotation * Math.PI) / 180)
-      m.setMatrixAt(i, matrix.compose(position.fromArray(p.at), rotation, size.fromArray(p.size)))
-    })
+    placements.forEach((at, s) =>
+      parts.forEach((p, i) => {
+        rotation.setFromAxisAngle(UP, (p.rotation * Math.PI) / 180)
+        m.setMatrixAt(s * parts.length + i, placed.multiplyMatrices(at, matrix.compose(position.fromArray(p.at), rotation, size.fromArray(p.size))))
+      })
+    )
     m.instanceMatrix.needsUpdate = true
     // Clicks and culling use the bounds of all instances.
     m.computeBoundingSphere()
     invalidate()
-  }, [parts, invalidate])
+  }, [parts, placements, invalidate])
   return (
-    <instancedMesh ref={mesh} args={[GEOMETRIES[shape], undefined, parts.length]}>
+    <instancedMesh ref={mesh} args={[GEOMETRIES[shape], undefined, parts.length * placements.length]} {...(ids.length > 0 && pick)}>
       <meshStandardMaterial
         color={tinted}
         roughness={0.85}
@@ -154,7 +198,7 @@ function PartInstances({ parts, age, ghost }: { parts: BlueprintPart[]; age: num
 function ModelMesh({ model, condition, ghost }: { model: BlueprintModel; condition: number; ghost: boolean }) {
   const object = useModel(model.assetId)
   const invalidate = useThree((s) => s.invalidate)
-  const age = ghost ? 0 : Math.min(0.65, (1 - condition / 100) * 0.8)
+  const age = ghost ? 0 : weatheringOf(condition)
   useEffect(() => {
     object?.traverse((o) => {
       const mesh = o as THREE.Mesh
@@ -168,7 +212,7 @@ function ModelMesh({ model, condition, ghost }: { model: BlueprintModel; conditi
     })
     invalidate()
   }, [object, age, ghost, invalidate])
-  const slump = condition < 20 && !ghost ? 0.45 + 0.55 * (condition / 20) : 1
+  const slump = ghost ? 1 : slumpOf(condition)
   if (!object) {
     // A placeholder block until the model loads.
     return (

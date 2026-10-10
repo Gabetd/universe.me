@@ -1,4 +1,4 @@
-import { findBlueprint, insidePolygon, type LatLon } from '@universe/core'
+import { findBlueprint, insidePolygon, type Blueprint, type BlueprintPart, type LatLon } from '@universe/core'
 import {
   CHUNK_M,
   CHUNK_SEGMENTS,
@@ -24,11 +24,11 @@ import { EdgePush } from '../components/zoom'
 import { useUi } from '../store'
 import { useByValue } from '../useByValue'
 import { useEditor } from './editorStore'
-import { noRaycast, toolPress, usePick } from './pick'
+import { noRaycast, toolPress, usePick, usePickInstances } from './pick'
 import { viewLabels, type ViewLabel } from './labels'
 import { NEAR_ONLY, instanceTint, plantGeometry } from './plants'
-import { blueprintExtent } from './structureLook'
-import { BlueprintParts } from './StructureMesh'
+import { WEATHERED_COLOR, blueprintExtent, blueprintMassing, slumpOf, standingParts, weatheringOf } from './structureLook'
+import { BlueprintBatch, BlueprintParts } from './StructureMesh'
 import { SelectionRing } from './SelectionRing'
 import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
 import { useLandTint, useThemeName } from './ThemeTint'
@@ -161,9 +161,7 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
       <GroundLook worldId={worldId} regionIds={here} water={model.settings.terrain.waterColor} land={land} />
       <Rig ground={ground} onRebase={setOrigin} onCenter={setCenter} />
       <Chunks {...props} ground={ground} center={center} land={land[0]!} onLoaded={setLoaded} onFailed={setFailed} />
-      {props.structures.map((p) => (
-        <GroundStructure key={p.structure.id} placed={p} ground={ground} onClick={props.onStructureClick} />
-      ))}
+      <GroundStructures structures={props.structures} ground={ground} onClick={props.onStructureClick} />
       {props.characters.map((c) => (
         <Figure key={c.character.id} id={c.character.id} at={c.place} color={c.character.color} selected={c.selected} ground={ground} onClick={props.onCharacterClick} />
       ))}
@@ -501,6 +499,139 @@ function PlantInstances({
   return (
     <instancedMesh key={kept.length} ref={mesh} args={[plants.get(plant), undefined, kept.length]} raycast={noRaycast}>
       <meshStandardMaterial vertexColors roughness={0.95} metalness={0} flatShading />
+    </instancedMesh>
+  )
+}
+
+/** Structures are drawn in full while they're big on screen: within this many times their size of the camera (a house, some 240 m; a castle, 1.5 km), and never closer than `MIN_DETAIL_M`; farther, as their massing. */
+const DETAIL_SIZES = 20
+const MIN_DETAIL_M = 120
+/** How far the camera moves before what's near is worked out again. */
+const RELOD_M = 25
+const MASS_BOX = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)
+const UP = new THREE.Vector3(0, 1, 0)
+const WEATHERED = new THREE.Color(WEATHERED_COLOR)
+
+interface GroundPlaced {
+  placed: PlacedStructure
+  x: number
+  y: number
+  z: number
+  /** Within how far of the camera it's drawn in full. */
+  detail: number
+}
+
+/**
+ * The structures on the ground, with a level of detail: near the camera (and
+ * the selected one, and any the selected event reaches) each with all its
+ * parts; the rest, which are a few pixels across, as plain blocks of their
+ * size and colour, all of them in one instanced mesh, so a town of hundreds
+ * draws as fast as a house.
+ */
+function GroundStructures({ structures, ground, onClick }: { structures: PlacedStructure[]; ground: Ground; onClick(id: string): void }) {
+  const get = useThree((s) => s.get)
+  const all = useMemo(
+    () =>
+      structures.flatMap((placed): GroundPlaced[] => {
+        const [x, z] = toLocal(ground.frame, placed.structure)
+        if (!inView(x, z)) return []
+        return [{ placed, x, y: ground.standAt(x, z), z, detail: Math.max(MIN_DETAIL_M, blueprintExtent(placed.blueprint) * placed.structure.scale * DETAIL_SIZES) }]
+      }),
+    [structures, ground]
+  )
+  const [near, setNear] = useState<ReadonlySet<string>>(() => new Set())
+  // Worked out again for the frame after the structures change, or once the camera has moved a little.
+  const last = useRef<{ look: THREE.Vector3; all: GroundPlaced[] } | null>(null)
+  useFrame(() => {
+    const at = get().camera.position
+    if (last.current && last.current.all === all && last.current.look.distanceTo(at) <= RELOD_M) return
+    last.current = { look: at.clone(), all }
+    const next = new Set(all.filter((s) => s.placed.selected || s.placed.hit !== undefined || at.distanceTo(new THREE.Vector3(s.x, s.y, s.z)) < s.detail).map((s) => s.placed.structure.id))
+    setNear((prev) => (prev.size === next.size && [...next].every((id) => prev.has(id)) ? prev : next))
+  })
+  const { alone, batches, far } = useMemo(() => {
+    const alone: GroundPlaced[] = []
+    const far: GroundPlaced[] = []
+    const batches = new Map<string, Batch>()
+    for (const s of all) {
+      if (!near.has(s.placed.structure.id)) far.push(s)
+      else if (!batchable(s.placed)) alone.push(s)
+      else addToBatch(batches, s)
+    }
+    return { alone, batches: [...batches.values()], far }
+  }, [all, near])
+  return (
+    <>
+      {alone.map((s) => (
+        <GroundStructure key={s.placed.structure.id} placed={s.placed} ground={ground} onClick={onClick} />
+      ))}
+      {batches.map((b) => (
+        <BlueprintBatch key={b.key} parts={b.parts} age={b.age} placements={b.placements} ids={b.ids} onPick={onClick} />
+      ))}
+      {far.length > 0 && <FarStructures key={far.length} items={far} onClick={onClick} />}
+    </>
+  )
+}
+
+/** Near structures that look alike, drawn together. */
+interface Batch {
+  key: string
+  parts: BlueprintPart[]
+  age: number
+  placements: THREE.Matrix4[]
+  ids: string[]
+}
+
+/** What's drawn alone: the selected structure and any the selected event reaches (they have rings), ruins or plans shown faintly, and imported models. */
+const batchable = ({ selected, hit, state, blueprint }: PlacedStructure) => !selected && hit === undefined && state.exists && !blueprint.model
+
+/** Puts a near structure with the others that look like it: the same blueprint, the same parts standing, weathered to within 5%. */
+function addToBatch(batches: Map<string, Batch>, { placed: { structure, state, blueprint }, x, y, z }: GroundPlaced): void {
+  const parts = standingParts(blueprint.parts, state.condition, state.materials)
+  const age = Math.round(weatheringOf(state.condition) * 20) / 20
+  const index = partIndex(blueprint)
+  const key = `${blueprint.id}|${age}|${parts.length === blueprint.parts.length ? 'all' : parts.map((p) => index.get(p)).join()}`
+  let batch = batches.get(key)
+  if (!batch) batches.set(key, (batch = { key, parts, age, placements: [], ids: [] }))
+  const scale = structure.scale
+  const at = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(UP, (-structure.rotation * Math.PI) / 180), new THREE.Vector3(scale, scale * slumpOf(state.condition), scale))
+  batch.placements.push(at)
+  batch.ids.push(structure.id)
+}
+
+const partIndexes = new WeakMap<Blueprint, Map<BlueprintPart, number>>()
+/** Each of a blueprint's parts' place in it, to tell which are standing. */
+function partIndex(b: Blueprint): Map<BlueprintPart, number> {
+  let index = partIndexes.get(b)
+  if (!index) partIndexes.set(b, (index = new Map(b.parts.map((p, i) => [p, i]))))
+  return index
+}
+
+/** Structures far off, each a block of its massing, aged and slumped like the structure: one draw for all of them, each still picked by itself. */
+function FarStructures({ items, onClick }: { items: GroundPlaced[]; onClick(id: string): void }) {
+  const mesh = useRef<THREE.InstancedMesh>(null)
+  const invalidate = useThree((s) => s.invalidate)
+  const ids = useMemo(() => items.map((s) => s.placed.structure.id), [items])
+  const pick = usePickInstances(onClick, ids, 'structure')
+  useLayoutEffect(() => {
+    const m = mesh.current
+    if (!m) return
+    const [matrix, position, rotation, size, color] = [new THREE.Matrix4(), new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3(), new THREE.Color()]
+    items.forEach(({ placed: { structure, state, blueprint }, x, y, z }, i) => {
+      const mass = blueprintMassing(blueprint)
+      rotation.setFromAxisAngle(UP, (-structure.rotation * Math.PI) / 180)
+      size.set(mass.width, mass.height * slumpOf(state.condition), mass.depth).multiplyScalar(structure.scale)
+      m.setMatrixAt(i, matrix.compose(position.set(x, y, z), rotation, size))
+      m.setColorAt(i, color.set(mass.color).lerp(WEATHERED, weatheringOf(state.condition)))
+    })
+    m.instanceMatrix.needsUpdate = true
+    if (m.instanceColor) m.instanceColor.needsUpdate = true
+    m.computeBoundingSphere()
+    invalidate()
+  }, [items, invalidate])
+  return (
+    <instancedMesh ref={mesh} args={[MASS_BOX, undefined, items.length]} {...pick}>
+      <meshStandardMaterial roughness={0.9} />
     </instancedMesh>
   )
 }
