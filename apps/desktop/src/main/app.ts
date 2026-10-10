@@ -8,6 +8,7 @@ import { EVENTS, INVOKE, type AppState, type BuildInfo, type ImportedModel, type
 import type { ApiController } from './api'
 import type { Session } from './session'
 import { TAILNET_URLS } from './tailnet'
+import { CHANNELS } from '../shared/update'
 import { Updater } from './updater'
 
 declare const __BUILD_INFO__: BuildInfo
@@ -15,8 +16,12 @@ declare const __BUILD_INFO__: BuildInfo
 const isMac = process.platform === 'darwin'
 const FILE_FILTERS = [{ name: 'Universe Project', extensions: ['universe'] }]
 
-// Lets tests (and power users) keep app data somewhere other than the default profile.
+/** "Universe", or "Universe (dev)" and "Universe (staging)" for those branches' builds: apps of their own. */
+const APP_NAME = CHANNELS[__BUILD_INFO__.channel].name
+
+// Lets tests (and power users) keep app data somewhere other than the default profile; otherwise each channel keeps its own.
 if (process.env.UNIVERSE_USER_DATA) app.setPath('userData', process.env.UNIVERSE_USER_DATA)
+else if (app.getName() !== APP_NAME) app.setPath('userData', join(app.getPath('appData'), APP_NAME))
 
 // One app per profile: a second one (a .universe file double-clicked) hands its file to this one and quits, so two never serve or write the same project.
 const primary = app.requestSingleInstanceLock()
@@ -38,7 +43,7 @@ let session: Session
 let api: ApiController
 let markLoaded!: () => void
 const loaded = new Promise<void>((resolve) => (markLoaded = resolve))
-const updater = new Updater((status) => win?.webContents.send(EVENTS.update, status))
+const updater = new Updater(__BUILD_INFO__.channel, (status) => win?.webContents.send(EVENTS.update, status))
 /** A .universe file passed on the command line or via Finder before the window was ready. */
 let pendingOpen: string | undefined = process.argv.find((a) => a.endsWith('.universe'))
 
@@ -67,7 +72,7 @@ function createWindow(): void {
     show: false,
     backgroundColor: '#0b0e17',
     // Only a window made again (macOS) has a project to name.
-    title: session ? windowTitle(session.state()) : 'Universe',
+    title: session ? windowTitle(session.state()) : APP_NAME,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -117,7 +122,7 @@ function push(state: AppState | null): void {
   api?.toPhones('state', state)
 }
 
-const windowTitle = (state: AppState) => (state.project ? `${state.project.name} — Universe` : 'Universe')
+const windowTitle = (state: AppState) => (state.project ? `${state.project.name} — ${APP_NAME}` : APP_NAME)
 
 /**
  * The title and the menu (recent files, what's enabled) only change when a
@@ -309,10 +314,10 @@ function buildMenu(): void {
       label: 'Help',
       submenu: [
         {
-          label: 'About Universe',
+          label: `About ${APP_NAME}`,
           click: () =>
             void dialog.showMessageBox(win!, {
-              message: `Universe ${__BUILD_INFO__.version}`,
+              message: `${APP_NAME} ${__BUILD_INFO__.version}`,
               detail: `Build ${__BUILD_INFO__.commit} (${__BUILD_INFO__.builtAt})\nElectron ${process.versions.electron}`
             })
         },

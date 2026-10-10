@@ -1,13 +1,25 @@
 /**
  * Self-update, shared by the main process and the renderer. CI publishes an
- * update manifest next to the installers on the rolling latest-build release
+ * update manifest next to the installers on each channel's rolling release
  * (scripts/update-manifest.mjs), signed (scripts/sign-update.mjs); the app
  * checks the signature, compares versions and picks the installer that
  * matches how it was installed.
  */
 
-/** The signed manifest. (`update.json` beside it, unsigned, is for copies from before signing: each takes one more update that way.) */
-export const UPDATE_MANIFEST_URL = 'https://github.com/Gabetd/universe.me/releases/download/latest-build/update.signed.json'
+/**
+ * The branches builds come from, each an app of its own (electron-builder.cjs):
+ * its name, and the rolling release it's published to and updates from.
+ */
+export const CHANNELS = {
+  main: { name: 'Universe', release: 'latest-build' },
+  staging: { name: 'Universe (staging)', release: 'staging-build' },
+  dev: { name: 'Universe (dev)', release: 'dev-build' }
+} as const
+export type Channel = keyof typeof CHANNELS
+
+/** A channel's signed manifest. (`update.json` beside it, unsigned, is for copies from before signing: each takes one more update that way.) */
+export const manifestUrl = (channel: Channel) => `https://github.com/Gabetd/universe.me/releases/download/${CHANNELS[channel].release}/update.signed.json`
+
 
 /** How this copy of the app was installed, which decides how it replaces itself. */
 export type InstallKind = 'win-nsis' | 'win-portable' | 'mac-zip' | 'linux-appimage' | 'linux-deb'

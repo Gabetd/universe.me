@@ -1,10 +1,12 @@
 name: Build executables
 
 # Builds installable apps for Windows, macOS and Linux on every push to dev,
-# staging and main, and tests the packaged apps. New work goes to dev; what's
-# ready goes on to staging, which also publishes the "staging-build" pre-release
-# to try by hand; then to main, which publishes "latest-build", the release
-# installed copies update themselves from. Both are signed (scripts/sign-update.mjs).
+# staging and main, tests the packaged apps, and publishes each branch's as a
+# rolling pre-release: dev's "dev-build" and staging's "staging-build" (apps of
+# their own, "Universe (dev)" and "Universe (staging)", that install beside
+# Universe and update from their own release), and main's "latest-build",
+# Universe itself. New work goes to dev, then staging, then main. Every
+# release's update manifest is signed (scripts/sign-update.mjs).
 on:
   push:
     branches: [main, staging, dev]
@@ -17,6 +19,10 @@ permissions:
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # Which app this branch builds (electron-builder.cjs, shared/update.ts): main's is Universe.
+  UNIVERSE_CHANNEL: ${{ (github.ref_name == 'dev' || github.ref_name == 'staging') && github.ref_name || 'main' }}
 
 jobs:
   # Alongside packaging rather than before it, so it adds nothing to the wait;
@@ -110,7 +116,8 @@ jobs:
       - name: Run the packaged app's end-to-end tests
         working-directory: apps/desktop
         shell: bash
-        run: UNIVERSE_E2E_EXECUTABLE="$PWD/release/${{ matrix.app }}" ${{ matrix.display }} npx playwright test
+        # Linux's executable is named for the channel (universe-desktop, universe-desktop-dev…).
+        run: UNIVERSE_E2E_EXECUTABLE="$PWD/release/${{ matrix.app }}${{ matrix.id == 'linux' && env.UNIVERSE_CHANNEL != 'main' && format('-{0}', env.UNIVERSE_CHANNEL) || '' }}" ${{ matrix.display }} npx playwright test
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -120,14 +127,14 @@ jobs:
   publish:
     name: Publish ${{ github.ref_name }} build
     needs: [check, package, test]
-    if: github.ref_name == 'main' || github.ref_name == 'staging'
+    if: github.ref_name == 'main' || github.ref_name == 'staging' || github.ref_name == 'dev'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
       contents: write
     env:
-      # main's is the one installed copies update from; staging's is to try by hand first.
-      TAG: ${{ github.ref_name == 'main' && 'latest-build' || 'staging-build' }}
+      # main's is Universe's; staging's and dev's are Universe (staging)'s and Universe (dev)'s, each updating from its own.
+      TAG: ${{ github.ref_name == 'main' && 'latest-build' || format('{0}-build', github.ref_name) }}
     # One publish to a release at a time, so none deletes another's files mid-upload.
     concurrency:
       group: publish-${{ github.ref_name }}
@@ -153,6 +160,10 @@ jobs:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: |
           short=$(echo "$GITHUB_SHA" | cut -c1-7)
+          if [[ $GITHUB_REF_NAME == main ]]; then APP_NAME=Universe; CHANNEL_NOTE=''; else
+            APP_NAME="Universe ($GITHUB_REF_NAME)"
+            CHANNEL_NOTE=" It installs beside Universe, with its own data, and only updates to newer $GITHUB_REF_NAME builds."
+          fi
           # Each fails, before anything is replaced, if an installer is missing or not stamped with this
           # version, or without the signing key (or with one the app doesn't check with).
           node scripts/update-manifest.mjs dist "0.1.${{ github.run_number }}" "$short" > update.json
@@ -167,13 +178,17 @@ jobs:
           | macOS (Intel) | \`Universe-*-mac-x64.dmg\` |
           | Linux | \`.AppImage\` (\`chmod +x\`, then run) or \`.deb\` |
 
-          Version 0.1.${{ github.run_number }}. Installed copies offer to upgrade themselves when a newer build is published
-          on main (the \`.zip\` files and the signed \`update.signed.json\` are for that).
+          Version 0.1.${{ github.run_number }} of **${APP_NAME}**. Installed copies offer to upgrade themselves when a newer build
+          is published here (the \`.zip\` files and the signed \`update.signed.json\` are for that).${CHANNEL_NOTE}
 
           These builds are not code-signed yet. Windows SmartScreen: click **More info → Run anyway**.
           macOS: open the app once, then **System Settings → Privacy & Security → Open Anyway**.
           NOTES
-          if [[ $GITHUB_REF_NAME == main ]]; then title="Latest build (${short})"; else title="Staging build (${short}): to try before it goes to main"; fi
+          case $GITHUB_REF_NAME in
+            main) title="Latest build (${short})" ;;
+            staging) title="Staging build (${short}): to try before it goes to main" ;;
+            *) title="Dev build (${short}): what's being worked on" ;;
+          esac
           # Update the rolling release in place: deleting and recreating it races
           # with GitHub's tag cleanup and fails on transient API errors. The new
           # files go up before the old ones come down (each version's files have

@@ -77,6 +77,7 @@ export function Welcome() {
 
         <footer className="muted small welcome-footer">
           Version {__BUILD_INFO__.version} · build {__BUILD_INFO__.commit}
+          {__BUILD_INFO__.channel !== 'main' && ` · ${__BUILD_INFO__.channel} build`}
           <CheckForUpdates />
         </footer>
       </div>

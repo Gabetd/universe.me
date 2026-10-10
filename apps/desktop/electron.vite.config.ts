@@ -13,7 +13,11 @@ function commit(): string {
   }
 }
 
-const buildInfo = JSON.stringify({ version: pkg.version, commit: commit(), builtAt: new Date().toISOString() })
+/** The branch it's built from (build.yml sets it): main, staging or dev. */
+const channel = process.env.UNIVERSE_CHANNEL || 'main'
+if (!['main', 'staging', 'dev'].includes(channel)) throw new Error(`UNIVERSE_CHANNEL is ${channel}: it's main, staging or dev`)
+
+const buildInfo = JSON.stringify({ version: pkg.version, commit: commit(), builtAt: new Date().toISOString(), channel })
 
 // Workspace packages are TypeScript sources, so they must be bundled, not externalized.
 const workspace = ['@universe/api', '@universe/core', '@universe/db', '@universe/procgen', '@universe/sim']

@@ -1,3 +1,4 @@
+import type { Channel } from './update'
 import type { UpdateStatus } from './update'
 import type { Region, SpatialNode, Target, TerrainLayers, TimelineData, WorldInfo } from '@universe/core'
 
@@ -7,6 +8,8 @@ export interface BuildInfo {
   version: string
   commit: string
   builtAt: string
+  /** The branch it was built from (shared/update.ts `CHANNELS`): main's builds are "Universe", the others' "Universe (dev)" and "Universe (staging)". */
+  channel: Channel
 }
 
 export interface ProjectSummary {

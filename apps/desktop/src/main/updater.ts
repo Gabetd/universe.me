@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { app, net } from 'electron'
-import { UPDATE_MANIFEST_URL, compareVersions, pickUpdate, type InstallKind, type UpdateFile, type UpdateStatus } from '../shared/update'
+import { manifestUrl, compareVersions, pickUpdate, type Channel, type InstallKind, type UpdateFile, type UpdateStatus } from '../shared/update'
 import { UPDATE_PUBLIC_KEY } from './update-key'
 import { UntrustedUpdate, readSignedManifest } from './update-signature'
 
@@ -30,11 +30,17 @@ export class Updater {
   private status: UpdateStatus = { state: 'none' }
   private file: UpdateFile | undefined
   private dismissed: string | undefined
-  private readonly manifestUrl = process.env.UNIVERSE_UPDATE_URL ?? UPDATE_MANIFEST_URL
+  private readonly manifestUrl: string
   private readonly kind = installKind()
   private readonly publicKey = process.env.UNIVERSE_UPDATE_PUBLIC_KEY ?? UPDATE_PUBLIC_KEY
 
-  constructor(private readonly onStatus: (status: UpdateStatus) => void) {}
+  /** Updates come from `channel`'s release: a dev copy only ever becomes a newer dev build. */
+  constructor(
+    channel: Channel,
+    private readonly onStatus: (status: UpdateStatus) => void
+  ) {
+    this.manifestUrl = process.env.UNIVERSE_UPDATE_URL ?? manifestUrl(channel)
+  }
 
   start(): void {
     if (!this.kind || this.manifestUrl === 'off' || !this.publicKey) return

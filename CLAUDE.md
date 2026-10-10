@@ -1,7 +1,7 @@
 # Working on universe.me
 
 ## Workflow rules (from the project owner)
-- Branches: all new work is done on `dev`; it's then tested on `staging` (fast-forwarded to `dev`; its build is published as the `staging-build` release to try by hand) and only then pushed to `main` (fast-forwarded to `staging`), which publishes `latest-build`, what installed copies update to. Promote only a commit whose GitHub build is green on the branch before.
+- Branches: all new work is done on `dev` (its build is published as the `dev-build` release, the app "Universe (dev)"); it's then tested on `staging` (fast-forwarded to `dev`; published as `staging-build`, "Universe (staging)", to try by hand) and only then pushed to `main` (fast-forwarded to `staging`), which publishes `latest-build`, Universe itself. Each channel is its own app (`electron-builder.cjs`, `CHANNELS` in `src/shared/update.ts`) and updates only from its own release. Promote only a commit whose GitHub build is green on the branch before.
 - Commit often: one commit per working step, each passing `pnpm check`.
 - Push only when a milestone (PLAN.md §9) is complete.
 - Before every push, review the unpushed changes for:

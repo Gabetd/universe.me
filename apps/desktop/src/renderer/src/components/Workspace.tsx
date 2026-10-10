@@ -123,6 +123,7 @@ export function Workspace() {
         <span>All changes saved</span>
         <span className="statusbar-version">
           {!isPhoneApp() && <CheckForUpdates />}v{__BUILD_INFO__.version} · {__BUILD_INFO__.commit}
+          {__BUILD_INFO__.channel !== 'main' && ` · ${__BUILD_INFO__.channel}`}
         </span>
       </footer>
     </ThemedWorkspace>

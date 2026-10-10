@@ -161,11 +161,18 @@ change wins.
 
 ## Download and run
 
-Every push to `dev`, `staging` or `main` builds and tests the app for every OS.
-New work goes to `dev`, is tried out on `staging` (its builds are on the
-[**staging-build** release](https://github.com/Gabetd/universe.me/releases/tag/staging-build)),
-then goes on to `main`. Get the newest released build from the
-[**latest-build** release](https://github.com/Gabetd/universe.me/releases/tag/latest-build):
+Every push to `dev`, `staging` or `main` builds and tests the app for every OS,
+and publishes it. New work goes to `dev`, is tried out on `staging`, then goes
+on to `main`. Get Universe, the newest released build, from the
+[**latest-build** release](https://github.com/Gabetd/universe.me/releases/tag/latest-build).
+
+To try what's coming, **Universe (dev)** is on the
+[**dev-build** release](https://github.com/Gabetd/universe.me/releases/tag/dev-build)
+and **Universe (staging)** on the
+[**staging-build** release](https://github.com/Gabetd/universe.me/releases/tag/staging-build).
+Each is an app of its own: it installs beside Universe, keeps its own settings
+and recent projects, and only updates to newer builds of its own branch. (Open
+a project in one at a time: they're the same files.)
 
 | OS | File | How to run |
 |---|---|---|

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { compareVersions, pickUpdate, type UpdateManifest } from './update'
+import { isAllowedRequest } from './offline'
+import { CHANNELS, compareVersions, manifestUrl, pickUpdate, type UpdateManifest } from './update'
 
 describe('compareVersions', () => {
   it('compares numerically, part by part', () => {
@@ -24,5 +25,15 @@ describe('pickUpdate', () => {
     for (const ok of ['Universe-0.1.5-mac-arm64.zip', 'Universe-0.1.5-windows-portable.exe', 'Universe-0.1.5-linux-x86_64.AppImage', 'Universe-0.1.5-linux-amd64.deb']) expect(named(ok)).toBeDefined()
     for (const bad of ['../../evil.zip', 'https://evil.example/Universe-0.1.5-mac-arm64.zip', 'Universe-0.1.5-x" & calc & ".exe', 'Universe-0.1.5-mac-arm64.zip\\..\\x', 'evil.zip', 'Universe-0.1.5-mac-arm64.sh'])
       expect(named(bad), bad).toBeUndefined()
+  })
+})
+
+describe('channels', () => {
+  it('each update from their own release, which the offline guard lets the updater reach', () => {
+    expect(manifestUrl('main')).toBe('https://github.com/Gabetd/universe.me/releases/download/latest-build/update.signed.json')
+    expect(manifestUrl('staging')).toContain('/staging-build/')
+    expect(manifestUrl('dev')).toContain('/dev-build/')
+    expect(Object.values(CHANNELS).map((c) => c.name)).toEqual(['Universe', 'Universe (staging)', 'Universe (dev)'])
+    for (const channel of ['main', 'staging', 'dev'] as const) expect(isAllowedRequest(manifestUrl(channel), false)).toBe(true)
   })
 })
