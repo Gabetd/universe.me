@@ -4,6 +4,7 @@ import { Canvas, useThree } from '@react-three/fiber'
 import { memo, useCallback, useEffect, useState } from 'react'
 import { SPACE_BG } from '../theme'
 import { useUi } from '../store'
+import { LAYOUT_SIZE } from '../world/SurfaceCanvas'
 import { blueprintExtent } from '../world/structureLook'
 import { BlueprintParts } from '../world/StructureMesh'
 import { parseTags } from './fields'
@@ -55,7 +56,7 @@ export function BlueprintBuilder({ initial, onClose }: { initial: BlueprintDraft
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal blueprint-builder" role="dialog" aria-label="Blueprint builder">
         <div className="blueprint-preview">
-          <Canvas camera={{ position: [extent * 1.1, extent * 0.8, extent * 1.4], fov: 40, near: 0.1, far: extent * 50 }} data-testid="blueprint-preview">
+          <Canvas camera={{ position: [extent * 1.1, extent * 0.8, extent * 1.4], fov: 40, near: 0.1, far: extent * 50 }} data-testid="blueprint-preview" resize={LAYOUT_SIZE}>
             <color attach="background" args={[SPACE_BG]} />
             <ambientLight intensity={0.6} />
             <directionalLight position={[extent, extent * 2, extent * 0.8]} intensity={2} />

@@ -8,6 +8,13 @@ import { WEBGL } from './webgl'
 
 /** Kept for screenshots and the zoom's still of the view; antialiasing only with a GPU. */
 const GL = { preserveDrawingBuffer: true, antialias: !WEBGL.software }
+/**
+ * Sized by its box's layout size, not its size on screen: a view that opens
+ * while the zoom between levels is still scaling it in would otherwise keep
+ * the scaled size (half its box, say) once the zoom is over, as nothing then
+ * resizes it.
+ */
+export const LAYOUT_SIZE = { offsetSize: true }
 
 /** Sets the view's `data-ready`. */
 const ReadyContext = createContext<(ready: boolean) => void>(() => {})
@@ -50,7 +57,7 @@ export function SurfaceCanvas({
   )
   return (
     <div className="globe-wrap" {...wrap}>
-      <Canvas camera={camera} data-testid={testId} data-ready={ready} frameloop="demand" gl={GL}>
+      <Canvas camera={camera} data-testid={testId} data-ready={ready} frameloop="demand" gl={GL} resize={LAYOUT_SIZE}>
         <ReadyContext value={setReady}>
           <Scene>{children}</Scene>
         </ReadyContext>
