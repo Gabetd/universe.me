@@ -187,11 +187,25 @@
     powers: ['150-powers', 'A world’s magic, age by age: its strength in each era, the one at the playhead marked, and what’s different in the Age of Wonders'],
     warnings: ['160-warnings', 'Warnings: what Claude found that doesn’t fit, marked on what it’s about, to resolve or dismiss'],
     phoneApp: ['170-phone-app', 'The whole app in a phone’s browser, from the computer over the tailnet, one panel at a time'],
-    sync: ['180-sync', 'Your other devices: the studio computer in step with this laptop, synced seconds ago']
+    sync: ['180-sync', 'Your other devices: the studio computer in step with this laptop, synced seconds ago'],
+    sample: ['190-sample-universe', 'The sample universe: Calder, its kingdoms marked on the globe and fifteen hundred years of history on the timeline'],
+    shortcuts: ['200-shortcuts', 'Keyboard shortcuts: press ? for all of them, from the world’s views to the timeline'],
+    mainFlow: ['210-main-flow', 'A castle built in 1000, a siege that leads to its fall in 1210, an Age of War over those years; at 1220 the castle is gone']
   }
 
   // One entry per published build, newest first.
   const LOG = [
+    {
+      ver: '0.1.58', date: '10 Oct 2026', tag: 'M13',
+      title: 'A sample universe, keyboard shortcuts, and a faster ground',
+      points: [
+        'New to Universe? Explore a sample universe (on the start screen, or Help → Explore a Sample Universe…) opens Calder: a world with four kingdoms, castles and a lighthouse, its people, its magic and fifteen hundred years of history, to look around and change.',
+        'Press ? (or Help → Keyboard Shortcuts) for every shortcut: 1–7 for a world’s views, a letter for each tool (R raise, B paint, P place…), N for a new event at the playhead, [ and ] to step from event to event, 0 to fit the timeline. Buttons say their key, and nothing happens while you’re typing.',
+        'The ground stays smooth with a whole town on it: faraway buildings are drawn as simple shapes all at once, and buildings that look alike nearby are drawn together. Clicking the globe finds the spot faster too.',
+        'The whole main flow, from painting a world to watching a castle fall, is now tested from end to end on every build.'
+      ],
+      shots: ['sample', 'shortcuts', 'mainFlow']
+    },
     {
       ver: '0.1.50', date: '10 Oct 2026', tag: 'M13',
       title: 'Signed updates, released from main',
@@ -374,11 +388,11 @@
     { title: 'AI and the API', shots: ['connectAi', 'aiChange', 'aiSuggestions', 'warnings', 'phoneSignIn', 'phoneConnected'] },
     { title: 'Your phone and other devices', shots: ['phoneApp', 'sync'] },
     { title: 'Themes', shots: ['themeCrossfade', 'themeEditor', 'themeGlobe', 'themeRegion'] },
-    { title: 'Timeline and canvas', shots: ['timeline', 'worldAtTime', 'globeAtTime', 'canvas1', 'canvas2', 'canvas3'] },
+    { title: 'Timeline and canvas', shots: ['mainFlow', 'timeline', 'worldAtTime', 'globeAtTime', 'canvas1', 'canvas2', 'canvas3'] },
     { title: 'Structures', shots: ['structGlobe', 'structPanel', 'weathering', 'effects', 'pins', 'builder', 'builderRuin', 'model', 'blueprints'] },
     { title: 'On the ground', shots: ['ground', 'groundClose', 'charGround'] },
     { title: 'Characters', shots: ['charMap', 'charGround'] },
-    { title: 'Updates and the start', shots: ['update', 'checkUpdates', 'welcome'] }
+    { title: 'Updates and the start', shots: ['update', 'checkUpdates', 'welcome', 'sample', 'shortcuts'] }
   ]
 
   const viewer = document.getElementById('viewer')
