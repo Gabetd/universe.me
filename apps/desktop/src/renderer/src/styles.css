@@ -903,19 +903,44 @@ input.invalid {
   display: flex;
   gap: 12px;
 }
-/* Check for updates: a quiet link, with its answer beside it. */
-.update-check {
-  display: inline-flex;
-  gap: 12px;
-}
-.update-check button {
+/* Change version: a quiet link that opens the list of versions. */
+.change-version {
   color: var(--accent);
 }
-.update-check button:hover:not(:disabled) {
+.change-version:hover {
   text-decoration: underline;
 }
-.update-check [role='status'] {
-  color: var(--text);
+.versions-dialog {
+  width: min(640px, 94vw);
+  max-height: 86vh;
+  overflow: auto;
+  padding: 18px 22px;
+}
+.version-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.version-list li.current b {
+  color: var(--accent);
+}
+.version-list .badge {
+  margin-left: 6px;
+}
+.version-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: 260px;
+  text-align: right;
+}
+.version-number {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 .welcome-footer {
   display: flex;

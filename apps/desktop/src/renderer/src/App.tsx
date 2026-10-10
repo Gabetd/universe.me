@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { VersionsDialog, useVersionsDialog } from './components/ChangeVersion'
 import { ShortcutsSheet } from './components/ShortcutsSheet'
 import { UpdateBanner } from './components/UpdateBanner'
 import { Welcome } from './components/Welcome'
@@ -19,7 +20,11 @@ export function App() {
     const { apply } = useUi.getState()
     void window.universe.getState().then(apply)
     const offState = window.universe.onState(apply)
-    const offMenu = window.universe.onMenu((action) => (action === 'shortcuts' ? showShortcuts() : routeHistory(action)))
+    const offMenu = window.universe.onMenu((action) => {
+      if (action === 'shortcuts') showShortcuts()
+      else if (action === 'versions') useVersionsDialog.getState().set(true)
+      else routeHistory(action)
+    })
     window.addEventListener('keydown', onShortcutKey)
     return () => {
       offState()
@@ -34,6 +39,7 @@ export function App() {
       {!isPhoneApp() && <UpdateBanner />}
       <div className="app-main">{hasProject ? <Workspace /> : isPhoneApp() ? <NothingOpen /> : <Welcome />}</div>
       <ShortcutsSheet />
+      {!isPhoneApp() && <VersionsDialog />}
     </div>
   )
 }

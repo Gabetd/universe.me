@@ -44,6 +44,7 @@ test.beforeAll(async () => {
   }
   server = createServer((req, res) => {
     if (req.url === '/update.json') res.end(signed(manifest))
+    else if (req.url === '/dev.json') res.end(signed({ ...manifest, version: '0.1.999' }))
     else if (req.url === '/old.json') res.end(signed({ ...manifest, version: '0.0.1' }))
     else if (req.url === '/forged.json') res.end(signed(manifest, forger.privateKey))
     else if (req.url === `/${platform.served}`) res.end(body)
@@ -70,15 +71,20 @@ test('offers a newer build, can be dismissed, and upgrades itself with one click
   await expect(banner).toContainText('Universe 99.0.0 is available', { timeout: SLOW })
   await shot(page, 'update-banner')
 
-  // Dismissed, it stays away until asked for again: from the Help menu, or the button on the start screen (and in a project's status bar).
+  // Dismissed, it stays away until asked for again: Change version, from the Help menu or the button on the start screen (and in a project's status bar), offers it again.
   await banner.getByRole('button', { name: 'Dismiss update' }).click()
   await expect(banner).toBeHidden()
-  await menu(app, 'Help', 'Check for Updates…')
+  await menu(app, 'Help', 'Change Version…')
+  const versions = page.getByRole('dialog', { name: 'Change version' })
+  await expect(versions.getByRole('listitem', { name: 'Live' }).getByRole('button', { name: 'Update to 99.0.0' })).toBeVisible()
   await expect(banner).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(versions).toBeHidden()
   await banner.getByRole('button', { name: 'Dismiss update' }).click()
-  await page.getByRole('button', { name: 'Check for updates' }).click()
+  await page.getByRole('button', { name: 'Change version' }).click()
   await expect(banner).toBeVisible()
-  await expect(page.getByRole('status', { name: 'Update check' })).toHaveCount(0)
+  await expect(versions.getByRole('status', { name: 'Update check' })).toHaveCount(0)
+  await page.keyboard.press('Escape')
 
   // One click: download, verify, swap in the new version, restart into it.
   const closed = app.waitForEvent('close')
@@ -93,11 +99,11 @@ test('offers a newer build, can be dismissed, and upgrades itself with one click
   await expect.poll(() => (rmSync(dir, { recursive: true, force: true }), true), { timeout: 10_000 }).toBe(true)
 })
 
-test('Check for updates says when there is nothing to install, and why', async () => {
+test('Change version says when this copy has nothing to update to, and why', async () => {
   /** A copy started with `env` (and the test's key), asked to check. */
   const check = async (env: Record<string, string>) => {
     const launched = await launch(() => ({ UNIVERSE_UPDATE_PUBLIC_KEY: PUBLIC_KEY, ...env }))
-    await launched.page.getByRole('button', { name: 'Check for updates' }).click()
+    await launched.page.getByRole('button', { name: 'Change version' }).click()
     return launched
   }
   // Already the latest build.
@@ -120,5 +126,37 @@ test('Check for updates says when there is nothing to install, and why', async (
   ;({ app, page } = await check({ UNIVERSE_UPDATE_URL: manifestUrl, UNIVERSE_UPDATE_PUBLIC_KEY: '', UNIVERSE_UPDATE_KIND: platform!.kind }))
   await expect(page.getByRole('status', { name: 'Update check' })).toContainText('This copy can’t check that an update is genuine')
   await expect(page.getByRole('status', { name: 'Update', exact: true })).toHaveCount(0)
+  await app.close()
+})
+
+test('Change version lists Live, Staging and Dev, and installs another beside this copy, which stays open', async () => {
+  const { kind, file, env } = platform!
+  const base = manifestUrl.replace('/update.json', '')
+  const { app, page, dir } = await launch((dir) => ({
+    UNIVERSE_UPDATE_URL: `${base}/old.json`,
+    UNIVERSE_UPDATE_URLS: JSON.stringify({ dev: `${base}/dev.json`, staging: `${base}/missing.json` }),
+    UNIVERSE_UPDATE_PUBLIC_KEY: PUBLIC_KEY,
+    UNIVERSE_UPDATE_KIND: kind,
+    [env]: join(dir, file),
+    UNIVERSE_E2E_MARKER: join(dir, 'started')
+  }))
+  writeFileSync(join(dir, file), 'this copy')
+  await page.getByRole('button', { name: 'Change version' }).click()
+  const versions = page.getByRole('dialog', { name: 'Change version' })
+  const row = (name: string) => versions.getByRole('listitem', { name })
+  await expect(row('Live')).toContainText('this copy')
+  await expect(row('Live').getByRole('status', { name: 'Update check' })).toHaveText(/is the latest version/)
+  await expect(row('Staging')).toContainText('Being published right now')
+  await expect(row('Dev')).toContainText('0.1.999')
+  await shot(page, '142-change-version', { views: false })
+
+  await row('Dev').getByRole('button', { name: 'Install Universe (dev)' }).click()
+  await expect(row('Dev').getByRole('status', { name: 'Dev install' })).toHaveText('Universe (dev) is installed beside this one, and opening.', { timeout: SLOW })
+  // Beside this one, named for its channel, and started; this copy is untouched and still open.
+  const beside = join(dir, process.platform === 'win32' ? 'Universe (dev).exe' : 'Universe-dev.AppImage')
+  expect(readFileSync(beside).equals(body)).toBe(true)
+  expect(readFileSync(join(dir, file), 'utf8')).toBe('this copy')
+  if (process.platform === 'linux') await expect.poll(() => existsSync(join(dir, 'started')), { timeout: SLOW }).toBe(true)
+  await expect(versions).toBeVisible()
   await app.close()
 })

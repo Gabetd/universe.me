@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { app, net } from 'electron'
-import { manifestUrl, compareVersions, pickUpdate, type Channel, type InstallKind, type UpdateFile, type UpdateStatus } from '../shared/update'
+import { CHANNELS, CHANNEL_ORDER, manifestUrl, compareVersions, pickUpdate, type Channel, type ChannelVersion, type InstallKind, type UpdateFile, type UpdateManifest, type UpdateStatus } from '../shared/update'
 import { UPDATE_PUBLIC_KEY } from './update-key'
 import { UntrustedUpdate, readSignedManifest } from './update-signature'
 
@@ -22,9 +22,13 @@ const FIRST_CHECK_MS = 5000
  * manifest signed with the key in update-key.ts is believed (see
  * update-signature.ts); a copy without that key installs nothing.
  *
- * UNIVERSE_UPDATE_URL points at another manifest ("off" disables checks);
+ * Change version lists every channel's newest build (shared/update.ts
+ * `CHANNELS`) and installs another channel's app beside this one.
+ *
+ * UNIVERSE_UPDATE_URL points at another manifest for this copy's channel
+ * ("off" disables checks), UNIVERSE_UPDATE_URLS (JSON, by channel) at others';
  * UNIVERSE_UPDATE_KIND forces an install kind; UNIVERSE_UPDATE_PUBLIC_KEY is
- * another key to check it with. All three are for tests.
+ * another key to check them with. All are for tests.
  */
 export class Updater {
   private status: UpdateStatus = { state: 'none' }
@@ -34,12 +38,67 @@ export class Updater {
   private readonly kind = installKind()
   private readonly publicKey = process.env.UNIVERSE_UPDATE_PUBLIC_KEY ?? UPDATE_PUBLIC_KEY
 
+  private readonly urls: Partial<Record<Channel, string>> = process.env.UNIVERSE_UPDATE_URLS ? JSON.parse(process.env.UNIVERSE_UPDATE_URLS) : {}
+
   /** Updates come from `channel`'s release: a dev copy only ever becomes a newer dev build. */
   constructor(
-    channel: Channel,
+    private readonly channel: Channel,
     private readonly onStatus: (status: UpdateStatus) => void
   ) {
-    this.manifestUrl = process.env.UNIVERSE_UPDATE_URL ?? manifestUrl(channel)
+    this.manifestUrl = process.env.UNIVERSE_UPDATE_URL ?? this.urls[channel] ?? manifestUrl(channel)
+  }
+
+  private urlOf(channel: Channel): string {
+    return channel === this.channel ? this.manifestUrl : (this.urls[channel] ?? manifestUrl(channel))
+  }
+
+  /** A channel's manifest, if it's there and signed with Universe's key. */
+  private async manifest(channel: Channel): Promise<UpdateManifest> {
+    const res = await net.fetch(this.urlOf(channel), { cache: 'no-store' })
+    // Missing while CI swaps the release's files; try again next time.
+    if (!res.ok) throw new Error('Being published right now: try again in a few minutes.')
+    return readSignedManifest(await res.text(), this.publicKey)
+  }
+
+  /** Every channel's newest build, for Change version, all asked at once. */
+  async versions(): Promise<ChannelVersion[]> {
+    const off = this.manifestUrl === 'off' || !this.publicKey
+    return Promise.all(
+      CHANNEL_ORDER.map(async (channel): Promise<ChannelVersion> => {
+        const base = { channel, current: channel === this.channel }
+        if (off) return { ...base, installable: false, error: 'This copy doesn’t check for versions.' }
+        try {
+          const manifest = await this.manifest(channel)
+          return { ...base, version: manifest.version, installable: !!this.kind && !!pickUpdate(manifest, '0', this.kind, process.arch) }
+        } catch (err) {
+          return { ...base, installable: false, error: err instanceof UntrustedUpdate || (err instanceof Error && err.message.startsWith('Being published')) ? err.message : 'Couldn’t reach GitHub.' }
+        }
+      })
+    )
+  }
+
+  /**
+   * Downloads, verifies and installs another channel's app (Universe (dev),
+   * say) beside this one, and opens it; this copy stays as it is. Resolves to
+   * why it couldn't, or null once it's opening.
+   */
+  async installBeside(channel: Channel): Promise<string | null> {
+    const { kind } = this
+    if (!CHANNEL_ORDER.includes(channel)) return 'There’s no such version.'
+    if (channel === this.channel) return 'That’s this copy: use Update instead.'
+    if (!kind || !this.publicKey) return `This copy can’t install other versions itself: download ${CHANNELS[channel].name} from the project’s releases on GitHub.`
+    try {
+      const manifest = await this.manifest(channel)
+      const file = pickUpdate(manifest, '0', kind, process.arch)
+      if (!file) return `${CHANNELS[channel].name} has no build for this computer yet.`
+      const dir = await mkdtemp(join(tmpdir(), 'universe-version-'))
+      const downloaded = join(dir, file.name)
+      await download(new URL(file.name, this.urlOf(channel)).href, downloaded, file, () => {})
+      await BESIDE[kind](downloaded, dir, channel)
+      return null
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err)
+    }
   }
 
   start(): void {
@@ -107,6 +166,56 @@ export class Updater {
   private set(status: UpdateStatus): void {
     this.status = status
     this.onStatus(status)
+  }
+}
+
+/** Starts a program on its own, not as this app's child, so it outlives it. */
+const startApart = (file: string, args: string[] = []) => spawn(file, args, { detached: true, stdio: 'ignore' }).unref()
+
+/**
+ * Installs another channel's app beside this one, and opens it: the same
+ * kind of install as this copy (an installer, a portable exe or an AppImage
+ * next to this one's, a .app next to this one's bundle, a .deb), as its own
+ * app, which updates from its own release from then on.
+ */
+const BESIDE: Record<InstallKind, (file: string, dir: string, channel: Channel) => Promise<void>> = {
+  // Its own app id and install folder: the installer leaves this one alone, and starts the new one when it's done.
+  'win-nsis': async (file) => void startApart(file, ['/S', '--force-run']),
+
+  'win-portable': async (file, _dir, channel) => {
+    const target = join(dirname(process.env.PORTABLE_EXECUTABLE_FILE!), `${CHANNELS[channel].name}.exe`)
+    await rm(target, { force: true })
+    await rename(file, target).catch(() => run('cmd.exe', ['/c', 'copy', '/y', file, target]))
+    startApart(target)
+  },
+
+  'mac-zip': async (file, dir, channel) => {
+    const bundle = resolve(process.execPath, '../../..')
+    const unpacked = join(dir, 'unpacked')
+    await run('/usr/bin/ditto', ['-x', '-k', file, unpacked])
+    const name = (await readdir(unpacked)).find((n) => n.endsWith('.app'))
+    if (!name) throw new Error('The download has no app in it.')
+    // Next to this one (Applications, usually), replacing an older copy of that channel.
+    const target = join(dirname(bundle), `${CHANNELS[channel].name}.app`)
+    await rm(target, { recursive: true, force: true })
+    await run('/bin/mv', [join(unpacked, name), target])
+    await run('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', target]).catch(() => {})
+    startApart('/usr/bin/open', [target])
+  },
+
+  'linux-appimage': async (file, _dir, channel) => {
+    const target = join(dirname(process.env.APPIMAGE!), `Universe-${channel}.AppImage`)
+    const staged = `${target}.download`
+    await rm(staged, { force: true })
+    await run('cp', [file, staged])
+    await chmod(staged, 0o755)
+    await rename(staged, target)
+    startApart(target)
+  },
+
+  'linux-deb': async (file, _dir, channel) => {
+    await run('pkexec', ['dpkg', '-i', file])
+    startApart(CHANNELS[channel].command)
   }
 }
 

@@ -97,9 +97,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: Linux, id: linux, os: ubuntu-latest, platform: Linux, app: linux-unpacked/universe-desktop, display: xvfb-run -a }
-          - { name: Windows 11 (Server 2025), id: windows-11, os: windows-2025, platform: Windows, app: win-unpacked/Universe.exe, display: '' }
-          - { name: Windows 10 (Server 2022), id: windows-10, os: windows-2022, platform: Windows, app: win-unpacked/Universe.exe, display: '' }
+          - { name: Linux, id: linux, os: ubuntu-latest, platform: Linux, app: linux-unpacked/universe-desktop, ext: '', display: xvfb-run -a }
+          - { name: Windows 11 (Server 2025), id: windows-11, os: windows-2025, platform: Windows, app: win-unpacked/Universe, ext: .exe, display: '' }
+          - { name: Windows 10 (Server 2022), id: windows-10, os: windows-2022, platform: Windows, app: win-unpacked/Universe, ext: .exe, display: '' }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     steps:
@@ -116,8 +116,8 @@ jobs:
       - name: Run the packaged app's end-to-end tests
         working-directory: apps/desktop
         shell: bash
-        # Linux's executable is named for the channel (universe-desktop, universe-desktop-dev…).
-        run: UNIVERSE_E2E_EXECUTABLE="$PWD/release/${{ matrix.app }}${{ matrix.id == 'linux' && env.UNIVERSE_CHANNEL != 'main' && format('-{0}', env.UNIVERSE_CHANNEL) || '' }}" ${{ matrix.display }} npx playwright test
+        # The executable is named for the channel (Universe.exe, Universe-dev.exe; universe-desktop, universe-desktop-dev…).
+        run: UNIVERSE_E2E_EXECUTABLE="$PWD/release/${{ matrix.app }}${{ env.UNIVERSE_CHANNEL != 'main' && format('-{0}', env.UNIVERSE_CHANNEL) || '' }}${{ matrix.ext }}" ${{ matrix.display }} npx playwright test
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

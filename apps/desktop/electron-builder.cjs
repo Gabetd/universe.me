@@ -2,10 +2,13 @@
 // (UNIVERSE_CHANNEL, set by build.yml): main's is "Universe", dev's and
 // staging's are "Universe (dev)" and "Universe (staging)", with their own app
 // ids, so they install, keep their data and update side by side.
+// `exe` (Windows, macOS) and `name` (Linux, the package's too) differ per channel:
+// an installer closes running copies of its app by executable name, and one
+// channel's must never close another's. (Kept in step with CHANNELS in src/shared/update.ts.)
 const CHANNELS = {
-  main: { productName: 'Universe', appId: 'me.universe.app', name: 'universe-desktop' },
-  staging: { productName: 'Universe (staging)', appId: 'me.universe.app.staging', name: 'universe-desktop-staging' },
-  dev: { productName: 'Universe (dev)', appId: 'me.universe.app.dev', name: 'universe-desktop-dev' }
+  main: { productName: 'Universe', appId: 'me.universe.app', exe: 'Universe', name: 'universe-desktop' },
+  staging: { productName: 'Universe (staging)', appId: 'me.universe.app.staging', exe: 'Universe-staging', name: 'universe-desktop-staging' },
+  dev: { productName: 'Universe (dev)', appId: 'me.universe.app.dev', exe: 'Universe-dev', name: 'universe-desktop-dev' }
 }
 const channel = process.env.UNIVERSE_CHANNEL || 'main'
 const app = CHANNELS[channel]
@@ -17,8 +20,7 @@ module.exports = {
   productName: app.productName,
   // The app's own name (its data folder, its window titles) and the Linux package's follow the channel too.
   extraMetadata: { productName: app.productName, name: app.name },
-  // Universe.exe in every channel on Windows, so the tests and the command line find it.
-  executableName: 'Universe',
+  executableName: app.exe,
   artifactName: 'Universe-${version}-${os}-${arch}.${ext}',
   directories: { output: 'release', buildResources: 'build' },
   // Main, preload and renderer are fully bundled by electron-vite, so the

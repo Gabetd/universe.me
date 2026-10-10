@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { ROADMAP } from '../roadmap'
 import { applyReply } from '../store'
 import { ErrorBanner } from './ErrorBanner'
-import { CheckForUpdates } from './UpdateBanner'
+import { ChangeVersion } from './ChangeVersion'
 import { DevicesPanel } from './AiPanels'
 
 export function Welcome() {
@@ -78,7 +78,7 @@ export function Welcome() {
         <footer className="muted small welcome-footer">
           Version {__BUILD_INFO__.version} · build {__BUILD_INFO__.commit}
           {__BUILD_INFO__.channel !== 'main' && ` · ${__BUILD_INFO__.channel} build`}
-          <CheckForUpdates />
+          <ChangeVersion />
         </footer>
       </div>
     </div>

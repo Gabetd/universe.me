@@ -11,11 +11,25 @@
  * its name, and the rolling release it's published to and updates from.
  */
 export const CHANNELS = {
-  main: { name: 'Universe', release: 'latest-build' },
-  staging: { name: 'Universe (staging)', release: 'staging-build' },
-  dev: { name: 'Universe (dev)', release: 'dev-build' }
+  main: { label: 'Live', name: 'Universe', release: 'latest-build', about: 'The released version.', command: 'universe-desktop' },
+  staging: { label: 'Staging', name: 'Universe (staging)', release: 'staging-build', about: 'What’s about to be released, to try first.', command: 'universe-desktop-staging' },
+  dev: { label: 'Dev', name: 'Universe (dev)', release: 'dev-build', about: 'What’s being worked on now; it may break.', command: 'universe-desktop-dev' }
 } as const
 export type Channel = keyof typeof CHANNELS
+export const CHANNEL_ORDER: readonly Channel[] = ['main', 'staging', 'dev']
+
+/** What Change version lists for a channel: its newest build, or why it isn't known. */
+export interface ChannelVersion {
+  channel: Channel
+  /** The newest build published, if its manifest could be read and is genuine. */
+  version?: string
+  /** Why it isn't known (offline, being published, not signed with Universe's key). */
+  error?: string
+  /** It's this copy's channel. */
+  current: boolean
+  /** This copy can install it itself (it's an installed, packaged copy with a file for it). */
+  installable: boolean
+}
 
 /** A channel's signed manifest. (`update.json` beside it, unsigned, is for copies from before signing: each takes one more update that way.) */
 export const manifestUrl = (channel: Channel) => `https://github.com/Gabetd/universe.me/releases/download/${CHANNELS[channel].release}/update.signed.json`

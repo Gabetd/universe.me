@@ -1,5 +1,4 @@
-import type { Channel } from './update'
-import type { UpdateStatus } from './update'
+import type { Channel, ChannelVersion, UpdateStatus } from './update'
 import type { Region, SpatialNode, Target, TerrainLayers, TimelineData, WorldInfo } from '@universe/core'
 
 /** Shared between the main process, the preload bridge and the renderer. Types only. */
@@ -138,7 +137,7 @@ export interface ImportedModel {
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
 
 /** What a menu item asks of the window: undo or redo (whatever has focus takes it), or the shortcuts sheet. */
-export type MenuAction = 'undo' | 'redo' | 'shortcuts'
+export type MenuAction = 'undo' | 'redo' | 'shortcuts' | 'versions'
 
 export interface UniverseApi {
   /** The phone app's bridge (PLAN.md §6.6), rather than the window's: what's only for the computer isn't there. */
@@ -183,6 +182,10 @@ export interface UniverseApi {
   dismissUpdate(): Promise<void>
   /** Looks on GitHub for a newer build now (offering again one that was dismissed): null if the update banner shows it, otherwise why there's nothing to install. */
   checkForUpdates(): Promise<string | null>
+  /** Change version: every channel's newest build (Live, Staging, Dev). */
+  versions(): Promise<ChannelVersion[]>
+  /** Installs another channel's app beside this one and opens it: null once it's opening, otherwise why it couldn't. */
+  installVersion(channel: Channel): Promise<string | null>
   onUpdate(listener: (status: UpdateStatus) => void): () => void
 }
 
@@ -215,7 +218,9 @@ export const INVOKE: Record<InvokeMethod, string> = {
   updateStatus: 'update:status',
   installUpdate: 'update:install',
   dismissUpdate: 'update:dismiss',
-  checkForUpdates: 'update:check'
+  checkForUpdates: 'update:check',
+  versions: 'update:versions',
+  installVersion: 'update:install-version'
 }
 
 /**

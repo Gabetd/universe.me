@@ -321,13 +321,7 @@ function buildMenu(): void {
               detail: `Build ${__BUILD_INFO__.commit} (${__BUILD_INFO__.builtAt})\nElectron ${process.versions.electron}`
             })
         },
-        {
-          label: 'Check for Updates…',
-          click: fromMenu(async () => {
-            const why = await updater.check(true)
-            if (why && win) await dialog.showMessageBox(win, { message: why })
-          })
-        },
+        { label: 'Change Version…', click: sendMenu('versions') },
         { label: 'Keyboard Shortcuts', accelerator: 'CmdOrCtrl+/', click: sendMenu('shortcuts') },
         { label: 'Explore a Sample Universe…', click: fromMenu(async () => push(await newSample())) },
         { label: 'Project on GitHub', click: () => void shell.openExternal('https://github.com/Gabetd/universe.me') }
@@ -412,6 +406,8 @@ function registerIpc(): void {
   handle('installUpdate', () => updater.install())
   handle('dismissUpdate', () => updater.dismiss())
   handle('checkForUpdates', () => updater.check(true))
+  handle('versions', () => updater.versions())
+  handle('installVersion', (channel) => updater.installBeside(channel))
 }
 
 // macOS delivers double-clicked files through this event, possibly before `ready`.
