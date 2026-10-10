@@ -193,6 +193,16 @@
   // One entry per published build, newest first.
   const LOG = [
     {
+      ver: '0.1.50', date: '10 Oct 2026', tag: 'M13',
+      title: 'Signed updates, released from main',
+      points: [
+        'Universe now installs an update only if it’s signed with the project’s own key: each build’s list of files, with their sizes and fingerprints, is signed when it’s published, and a copy refuses anything else, even if someone got into the repository or its releases.',
+        'Builds go dev, then staging, then main. Staging’s build is published separately to try by hand; only main’s is the one installed copies update to.',
+        'Copies from before signing take this one update the old way, and from then on they check every update’s signature.'
+      ],
+      shots: ['update', 'checkUpdates']
+    },
+    {
       ver: '0.1.40', date: '9 Oct 2026', tag: 'M13',
       title: 'Universe on your home screen',
       points: [
