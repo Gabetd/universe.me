@@ -2,8 +2,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { useEffect, useRef } from 'react'
-import type { MenuAction } from '../../../shared/api'
-import { HISTORY_EVENT } from '../input'
+import { HISTORY_EVENT, type HistoryAction } from '../input'
 
 interface Props {
   /** HTML. Plain text from older projects loads as a paragraph. */
@@ -43,7 +42,7 @@ export function NotesEditor({ value, onCommit, placeholder = 'Lore, ideas, anyth
     if (!el || !editor) return
     const onHistory = (e: Event) => {
       e.preventDefault()
-      editor.commands[(e as CustomEvent<MenuAction>).detail]()
+      editor.commands[(e as CustomEvent<HistoryAction>).detail]()
     }
     el.addEventListener(HISTORY_EVENT, onHistory)
     return () => el.removeEventListener(HISTORY_EVENT, onHistory)

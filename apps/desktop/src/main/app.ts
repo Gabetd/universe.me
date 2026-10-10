@@ -323,6 +323,7 @@ function buildMenu(): void {
             if (why && win) await dialog.showMessageBox(win, { message: why })
           })
         },
+        { label: 'Keyboard Shortcuts', accelerator: 'CmdOrCtrl+/', click: sendMenu('shortcuts') },
         { label: 'Explore a Sample Universe…', click: fromMenu(async () => push(await newSample())) },
         { label: 'Project on GitHub', click: () => void shell.openExternal('https://github.com/Gabetd/universe.me') }
       ]

@@ -1502,6 +1502,57 @@ input[type='color'] {
 .vec-row input {
   padding: 4px 6px;
 }
+.shortcuts-sheet {
+  width: min(760px, 94vw);
+  max-height: 86vh;
+  overflow: auto;
+  padding: 18px 22px;
+}
+.shortcuts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.shortcuts-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.shortcuts-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 6px 28px;
+  margin: 10px 0;
+}
+.shortcuts-groups h3 {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.shortcuts-groups dl {
+  margin: 0;
+}
+.shortcut-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: baseline;
+  padding: 3px 0;
+}
+.shortcut-row dd {
+  margin: 0;
+}
+kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  font: 12px/1.5 inherit;
+  text-align: center;
+  background: var(--bg);
+}
 .modal-actions {
   display: flex;
   justify-content: flex-end;

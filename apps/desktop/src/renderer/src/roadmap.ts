@@ -22,5 +22,5 @@ export const ROADMAP: Milestone[] = [
   { id: 'M10', title: 'Inconsistency detector', status: 'done', summary: 'Claude reads a world and flags what contradicts itself; warnings in one panel' },
   { id: 'M11', title: 'Phone app', status: 'done', summary: 'The whole app on your phone, from your computer, through Tailscale' },
   { id: 'M12', title: 'Sync', status: 'done', summary: 'The same universe on several devices, synced directly over Tailscale' },
-  { id: 'M13', title: 'Polish & release', status: 'active', summary: 'Right-click menus, update checks, livelier space, signed updates and a sample universe done; shortcuts, performance, signed installers' }
+  { id: 'M13', title: 'Polish & release', status: 'active', summary: 'Right-click menus, update checks, livelier space, signed updates, a sample universe and shortcuts done; performance, signed installers' }
 ]

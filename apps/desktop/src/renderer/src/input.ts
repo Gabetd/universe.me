@@ -15,9 +15,12 @@ export function isEditingText(): boolean {
  */
 export const HISTORY_EVENT = 'universe:history'
 
-export function routeHistory(action: MenuAction): void {
+/** The menu's history actions, which go to whatever has focus. */
+export type HistoryAction = Extract<MenuAction, 'undo' | 'redo'>
+
+export function routeHistory(action: HistoryAction): void {
   const target = document.activeElement ?? document.body
-  if (!target.dispatchEvent(new CustomEvent<MenuAction>(HISTORY_EVENT, { detail: action, bubbles: true, cancelable: true }))) return
+  if (!target.dispatchEvent(new CustomEvent<HistoryAction>(HISTORY_EVENT, { detail: action, bubbles: true, cancelable: true }))) return
   if (isEditingText()) document.execCommand(action)
   else void (action === 'undo' ? undo() : redo())
 }

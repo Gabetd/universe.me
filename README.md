@@ -7,7 +7,7 @@ a local API and MCP server. See [PLAN.md](PLAN.md) for the full design and roadm
 **Status:** M0 to M12 are done (up to phone access and sync between your
 devices); M13 (Polish & release) is under way. New here? On the start screen,
 **Explore a sample universe** opens Calder, a world with fifteen centuries of
-history to look around in.
+history to look around in. Press `?` for the keyboard shortcuts.
 
 You can create `.universe` project files and build the universe tree
 (cluster → galaxy → star system → planet → moon / world surface). Each world

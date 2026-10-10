@@ -16,6 +16,7 @@ import { MapView } from './MapView'
 import { useSurfaceTools } from './useSurfaceTools'
 import { useTerrain, type SurfaceViewProps } from './useTerrain'
 import { firstLook } from './firstLook'
+import { useShortcuts, withKey } from '../shortcuts'
 import { useStructuresAt } from './useStructures'
 import { useCharactersAt } from './useCharacters'
 import { useWorldAtTime } from './useWorldAtTime'
@@ -39,11 +40,32 @@ const TOOLS: { tool: EditorTool; label: string; icon: string; hint: string }[] =
 
 /** Tools started from the inspector rather than the toolbar. */
 const PICK_TOOLS: EditorTool[] = ['locate', 'move', 'travel']
+/** The rest are in the toolbar, each with a shortcut (`tool-<tool>`). */
+const TOOLBAR_TOOLS = TOOLS.filter((t) => !PICK_TOOLS.includes(t.tool))
 
 const GROUND_HINT = 'Drag to move over the ground, right-drag to look around, scroll to zoom. Scroll all the way out to go back up.'
 
 /** WebGL can be missing (old GPUs, remote desktops); the map still works without it. */
 const hasWebGL = WEBGL.available
+
+/** The world's views, in toolbar order; each has a shortcut (`view-<view>`). */
+const VIEWS: { view: EditorView; icon: string; label: string; title: string; webgl?: true }[] = [
+  { view: 'globe', icon: '🌐', label: 'Globe', title: 'The world as a globe', webgl: true },
+  { view: 'map', icon: '🗺', label: 'Map', title: 'The world as a flat map' },
+  { view: 'ground', icon: '🔍', label: 'Ground', title: 'The ground up close: buildings, trees and people at their real size (or scroll all the way in)', webgl: true },
+  { view: 'canvas', icon: '🗂', label: 'Canvas', title: "This world's events as cards" },
+  { view: 'species', icon: '🦌', label: 'Species', title: 'What lives here, and who eats whom' },
+  { view: 'powers', icon: '✨', label: 'Powers', title: 'How magic, faith, technology or politics work here, age by age' },
+  { view: 'warnings', icon: '⚠', label: 'Warnings', title: 'What doesn’t fit: what Claude found, and the app’s own checks' }
+]
+const OPEN_VIEWS = VIEWS.filter((v) => !v.webgl || hasWebGL)
+
+/** Shows one of a world's views; the globe and the map are also where the canvas and the rest come back to. */
+function openView(view: EditorView, worldId: string): void {
+  const { set, enterGround } = useEditor.getState()
+  if (view === 'ground') enterGround(...groundTarget(worldId))
+  else set(view === 'globe' || view === 'map' ? { view, surfaceView: view } : { view })
+}
 
 /** Picking something in a view selects it. */
 const selectEvent = (eventId: string) => useUi.getState().selectTimeline({ kind: 'event', ids: [eventId] })
@@ -66,6 +88,10 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
   const hint = onSurface ? (activeView === 'ground' && tool === 'navigate' ? GROUND_HINT : TOOLS.find((t) => t.tool === tool)?.hint) : undefined
 
   const onDoubleClick = useCallback(() => void finishRegion(), [finishRegion])
+  useShortcuts({
+    ...Object.fromEntries(OPEN_VIEWS.map((v) => [`view-${v.view}`, () => openView(v.view, world.id)])),
+    ...(onSurface && Object.fromEntries(TOOLBAR_TOOLS.map((t) => [`tool-${t.tool}`, () => set({ tool: t.tool, draft: [] })])))
+  })
   // The same object until something in it changes, so the views don't redraw for nothing.
   const viewProps = useMemo<SurfaceViewProps | undefined>(
     () =>
@@ -93,42 +119,23 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
     <div className="world-editor">
       <div className="world-toolbar" role="toolbar" aria-label="World tools">
         <div className="segmented" role="group" aria-label="View">
-          <button
-            aria-pressed={activeView === 'globe'}
-            disabled={!hasWebGL}
-            onClick={() => set({ view: 'globe', surfaceView: 'globe' })}
-            title={hasWebGL ? 'The world as a globe' : 'WebGL is not available on this computer'}
-          >
-            🌐 <span className="view-label">Globe</span>
-          </button>
-          <button aria-pressed={activeView === 'map'} onClick={() => set({ view: 'map', surfaceView: 'map' })} title="The world as a flat map">
-            🗺 <span className="view-label">Map</span>
-          </button>
-          <button
-            aria-pressed={activeView === 'ground'}
-            disabled={!hasWebGL}
-            onClick={() => useEditor.getState().enterGround(...groundTarget(world.id))}
-            title="The ground up close: buildings, trees and people at their real size (or scroll all the way in)"
-          >
-            🔍 <span className="view-label">Ground</span>
-          </button>
-          <button aria-pressed={activeView === 'canvas'} onClick={() => set({ view: 'canvas' })} title="This world's events as cards">
-            🗂 <span className="view-label">Canvas</span>
-          </button>
-          <button aria-pressed={activeView === 'species'} onClick={() => set({ view: 'species' })} title="What lives here, and who eats whom">
-            🦌 <span className="view-label">Species</span>
-          </button>
-          <button aria-pressed={activeView === 'powers'} onClick={() => set({ view: 'powers' })} title="How magic, faith, technology or politics work here, age by age">
-            ✨ <span className="view-label">Powers</span>
-          </button>
-          <button aria-pressed={activeView === 'warnings'} onClick={() => set({ view: 'warnings' })} title="What doesn’t fit: what Claude found, and the app’s own checks">
-            ⚠ <span className="view-label">Warnings</span>{warnings > 0 && <span className="badge warn">{warnings}</span>}
-          </button>
+          {VIEWS.map((v) => (
+            <button
+              key={v.view}
+              aria-pressed={activeView === v.view}
+              disabled={v.webgl && !hasWebGL}
+              onClick={() => openView(v.view, world.id)}
+              title={v.webgl && !hasWebGL ? 'WebGL is not available on this computer' : withKey(v.title, `view-${v.view}`)}
+            >
+              {v.icon} <span className="view-label">{v.label}</span>
+              {v.view === 'warnings' && warnings > 0 && <span className="badge warn">{warnings}</span>}
+            </button>
+          ))}
         </div>
         {onSurface && (
           <div className="segmented" role="group" aria-label="Tool">
-            {TOOLS.filter((t) => !PICK_TOOLS.includes(t.tool)).map((t) => (
-              <button key={t.tool} aria-pressed={tool === t.tool} title={t.label} aria-label={t.label} onClick={() => set({ tool: t.tool, draft: [] })}>
+            {TOOLBAR_TOOLS.map((t) => (
+              <button key={t.tool} aria-pressed={tool === t.tool} title={withKey(t.label, `tool-${t.tool}`)} aria-label={t.label} onClick={() => set({ tool: t.tool, draft: [] })}>
                 {t.icon}
               </button>
             ))}

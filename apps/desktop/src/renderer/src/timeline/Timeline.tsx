@@ -26,6 +26,7 @@ import { ThemeTrack } from './ThemeTrack'
 import { DerivedTrack } from './DerivedTrack'
 import { useFlagged } from '../flags'
 import { menuRef, openElementMenu } from '../contextMenu'
+import { useShortcuts, withKey } from '../shortcuts'
 
 const LABELS_W = 132
 
@@ -247,6 +248,19 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
   const ticks = timeTicks(range.t0, range.t1, width, cal)
   const groupable = selectedEvents.length >= 2
   const precision = precisionFor(scale)
+  const newEvent = () => run([{ type: 'event.create', payload: { ownerId: owner.id, start: playheadOf(owner.id), precision } }])
+
+  /** The playhead to the next event before or after it, which is selected (so the views turn to it), and in view. */
+  const jump = (direction: -1 | 1) => {
+    const at = playheadOf(owner.id)
+    const byStart = [...events].sort((a, b) => a.start - b.start)
+    const next = direction > 0 ? byStart.find((e) => e.start > at) : byStart.findLast((e) => e.start < at)
+    if (!next) return
+    view.setPlayhead(owner.id, next.start)
+    selectTimeline({ kind: 'event', ids: [next.id] })
+    if (next.start < range.t0 || next.start > range.t1) setRange(panRange(range, next.start - (range.t0 + range.t1) / 2))
+  }
+  useShortcuts({ 'new-event': newEvent, fit, 'prev-event': () => jump(-1), 'next-event': () => jump(1) })
 
   return (
     <div className="timeline" onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
@@ -254,7 +268,9 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
         <span className="timeline-title" title={owner.name}>
           Timeline · {owner.name}
         </span>
-        <button onClick={() => run([{ type: 'event.create', payload: { ownerId: owner.id, start: playheadOf(owner.id), precision } }])}>+ Event</button>
+        <button onClick={newEvent} title={withKey('A new event at the playhead', 'new-event')}>
+          + Event
+        </button>
         <button onClick={() => run([{ type: 'lane.create', payload: { ownerId: owner.id } }])}>+ Lane</button>
         <button
           onClick={() => {
@@ -267,7 +283,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
         <button disabled={!groupable} title="Select two or more events (Shift-click), then group them" onClick={() => run([{ type: 'group.create', payload: { ownerId: owner.id, eventIds: selectedEvents } }])}>
           Group
         </button>
-        <button onClick={fit} title="Show everything on this timeline">
+        <button onClick={fit} title={withKey('Show everything on this timeline', 'fit')}>
           Fit
         </button>
         <span className="toolbar-sep" />

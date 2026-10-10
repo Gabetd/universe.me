@@ -134,7 +134,8 @@ export interface ImportedModel {
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
 
-export type MenuAction = 'undo' | 'redo'
+/** What a menu item asks of the window: undo or redo (whatever has focus takes it), or the shortcuts sheet. */
+export type MenuAction = 'undo' | 'redo' | 'shortcuts'
 
 export interface UniverseApi {
   /** The phone app's bridge (PLAN.md §6.6), rather than the window's: what's only for the computer isn't there. */
