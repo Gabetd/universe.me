@@ -4,4 +4,4 @@
  * writes it here; the private half is the repository's UPDATE_SIGNING_KEY
  * secret. Empty, a copy installs no updates (it can't tell they're genuine).
  */
-export const UPDATE_PUBLIC_KEY = 'xj8j92vA7guxA4c6eQ3usMMjrQ04b-Qu1dJN9ng5dxU'
+export const UPDATE_PUBLIC_KEY = '5qACQNuGePNMkJbDgvOq0J8q0xNCZDeW_D_SAA8FX8o'
