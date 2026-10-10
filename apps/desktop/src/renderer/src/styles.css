@@ -171,6 +171,10 @@ h2 {
 .welcome-actions button {
   padding: 10px 20px;
 }
+.welcome-sample {
+  margin-top: 14px;
+  color: var(--muted);
+}
 .welcome-columns {
   display: grid;
   grid-template-columns: 1fr 1fr;

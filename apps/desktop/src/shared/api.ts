@@ -143,6 +143,8 @@ export interface UniverseApi {
   recentProjects(): Promise<string[]>
   /** Each returns `null` in `value` if the user cancelled the file dialog. */
   newProject(): Promise<Result<AppState | null>>
+  /** A copy of the sample universe, saved where the user picks, and opened on its world. */
+  newSample(): Promise<Result<AppState | null>>
   openProject(path?: string): Promise<Result<AppState | null>>
   execute(command: unknown): Promise<Result<AppState>>
   getTerrain(worldId: string): Promise<Result<WorldTerrain>>
@@ -188,6 +190,7 @@ export const INVOKE: Record<InvokeMethod, string> = {
   getState: 'state:get',
   recentProjects: 'project:recent',
   newProject: 'project:new',
+  newSample: 'project:sample',
   openProject: 'project:open',
   execute: 'cmd:execute',
   undo: 'cmd:undo',

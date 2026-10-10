@@ -25,13 +25,20 @@ export function Welcome() {
             </button>
             <button onClick={() => void applyReply(window.universe.openProject())}>Open…</button>
           </div>
+          <p className="welcome-sample">
+            New here?{' '}
+            <button className="link" onClick={() => void applyReply(window.universe.newSample())}>
+              Explore a sample universe
+            </button>
+            : a world with fifteen centuries of history to look around in.
+          </p>
         </header>
 
         <div className="welcome-columns">
           <section>
             <h2>Recent</h2>
             {recent.length === 0 ? (
-              <p className="muted">Nothing yet. Create a universe to get started.</p>
+              <p className="muted">Nothing yet. Create a universe, or explore the sample, to get started.</p>
             ) : (
               <ul className="recent-list">
                 {recent.map((path) => (

@@ -138,30 +138,30 @@ async function wrap<T>(fn: () => T | Promise<T>): Promise<Result<T>> {
   }
 }
 
-async function newProject(): Promise<AppState | null> {
-  const { canceled, filePath } = await dialog.showSaveDialog(win!, {
-    title: 'Create a new universe',
-    buttonLabel: 'Create',
-    defaultPath: join(app.getPath('documents'), 'My Universe.universe'),
-    filters: FILE_FILTERS
-  })
+/** Where the user saves a new universe file (with the extension added if they left it off), or null if they cancel. */
+async function savePath(title: string, buttonLabel: string, name: string): Promise<string | null> {
+  const { canceled, filePath } = await dialog.showSaveDialog(win!, { title, buttonLabel, defaultPath: join(app.getPath('documents'), `${name}.universe`), filters: FILE_FILTERS })
   if (canceled || !filePath) return null
-  const path = filePath.endsWith('.universe') ? filePath : `${filePath}.universe`
-  return switchedTo(session.create(path))
+  return filePath.endsWith('.universe') ? filePath : `${filePath}.universe`
+}
+
+async function newProject(): Promise<AppState | null> {
+  const path = await savePath('Create a new universe', 'Create', 'My Universe')
+  return path ? switchedTo(session.create(path)) : null
+}
+
+/** The sample universe (packages/api/src/sample.ts), in a new file of the user's. */
+async function newSample(): Promise<AppState | null> {
+  const path = await savePath('Save the sample universe', 'Save and open', 'Calder (sample)')
+  return path ? switchedTo(await session.createSample(path)) : null
 }
 
 /** A copy here of the universe one of the user's other devices has open (PLAN.md §6.7), saved where they pick, and opened. */
 async function copyFromDevice(host: string): Promise<AppState | null> {
   const device = api.status().phone.sync.devices.find((d) => d.host === host)
   if (!device?.project) throw new Error('That device has no universe open now')
-  const { canceled, filePath } = await dialog.showSaveDialog(win!, {
-    title: `Copy “${device.project.name}” from ${device.name}`,
-    buttonLabel: 'Copy here',
-    defaultPath: join(app.getPath('documents'), `${device.project.name}.universe`),
-    filters: FILE_FILTERS
-  })
-  if (canceled || !filePath) return null
-  const path = filePath.endsWith('.universe') ? filePath : `${filePath}.universe`
+  const path = await savePath(`Copy “${device.project.name}” from ${device.name}`, 'Copy here', device.project.name)
+  if (!path) return null
   api.opening(path)
   return switchedTo(await api.copyFromDevice(host, path))
 }
@@ -323,6 +323,7 @@ function buildMenu(): void {
             if (why && win) await dialog.showMessageBox(win, { message: why })
           })
         },
+        { label: 'Explore a Sample Universe…', click: fromMenu(async () => push(await newSample())) },
         { label: 'Project on GitHub', click: () => void shell.openExternal('https://github.com/Gabetd/universe.me') }
       ]
     }
@@ -372,6 +373,7 @@ function registerIpc(): void {
   handle('getState', () => session.state())
   handle('recentProjects', () => session.recent())
   handle('newProject', () => wrap(newProject))
+  handle('newSample', () => wrap(newSample))
   // A path from the window is one from the recent list (anything else is chosen in the system's own dialog).
   handle('openProject', (path) =>
     wrap(() => {

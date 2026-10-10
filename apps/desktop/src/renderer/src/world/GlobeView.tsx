@@ -16,6 +16,7 @@ import { SelectionRing } from './SelectionRing'
 import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
 import { useLandTint, useThemeName } from './ThemeTint'
 import { useViewTheme } from './useThemeLook'
+import { firstLook } from './firstLook'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
@@ -62,7 +63,7 @@ export const GlobeView = memo(function GlobeView(props: SurfaceViewProps) {
       <Stars radius={80} depth={40} count={4000} factor={3} fade speed={0} />
       <Planet {...props} />
       <FocusOn focus={props.focus} />
-      <StartOver />
+      <StartOver worldId={props.worldId} />
       <ZoomToGround />
     </SurfaceCanvas>
   )
@@ -356,14 +357,14 @@ function SurfacePin({
   )
 }
 
-/** Opens facing where the view last looked (e.g. coming back up from the ground), and keeps note of it. */
-function StartOver() {
+/** Opens facing where the view last looked (e.g. coming back up from the ground), or where the world's story is, and keeps note of it. */
+function StartOver({ worldId }: { worldId: string }) {
   const camera = useThree((s) => s.camera)
   const controls = useThree((s) => s.controls) as (THREE.EventDispatcher<{ end: object }> & { update(): void }) | null
   const invalidate = useThree((s) => s.invalidate)
   useEffect(() => {
-    const { lookingAt, lookDistance } = useEditor.getState()
-    if (lookingAt) camera.position.copy(new THREE.Vector3(...latLonToDir(lookingAt.lat, lookingAt.lon)).multiplyScalar(lookDistance))
+    const look = firstLook(worldId)
+    if (look) camera.position.copy(new THREE.Vector3(...latLonToDir(look.lat, look.lon)).multiplyScalar(useEditor.getState().lookDistance))
     controls?.update()
     invalidate()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the view opens

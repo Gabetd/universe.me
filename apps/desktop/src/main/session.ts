@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
-import { writePrivate } from '@universe/api'
+import { buildSample, writePrivate } from '@universe/api'
 import { Command as CommandSchema, CommandError, DEVICE_ID, EMPTY_TIMELINE, type Command, type CommandSource, type ExecuteResult, type SyncPage, type SyncRow, type Target } from '@universe/core'
 import { Project } from '@universe/db'
 import type { AppState, ProposalSummary, WorldTerrain } from '../shared/api'
@@ -54,6 +54,24 @@ export class Session {
 
   open(path: string): AppState {
     this.replace(Project.open(path, this.projectOptions))
+    return this.state()
+  }
+
+  /** A new file at `path` holding the sample universe (built, then opened, so there's nothing to undo), opened on its world. */
+  async createSample(path: string): Promise<AppState> {
+    const made = Project.create(path, basename(path, extname(path)), this.projectOptions)
+    try {
+      await buildSample(made)
+    } catch (err) {
+      // No half-made sample left behind.
+      made.close()
+      for (const file of [path, `${path}-wal`, `${path}-shm`]) rmSync(file, { force: true })
+      throw err
+    }
+    made.close()
+    this.open(path)
+    const world = this.require().snapshot().nodes.find((n) => n.kind === 'world')
+    this.focus = world && { kind: 'node', id: world.id }
     return this.state()
   }
 

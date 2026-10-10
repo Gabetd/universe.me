@@ -157,11 +157,11 @@ test('the views take on the theme in force: its light and colours on the globe, 
   await expect.poll(async () => apart(await inside(), iceInside)).toBeLessThan(3)
   await shot(page, '113-theme-region')
 
-  // On the ground, the light and sky are the theme's where it stands.
+  // On the ground, the light and sky are the theme's where it stands: in the region (where the world's story is, so where the ground opens), its Ice Age.
   await page.getByRole('button', { name: '🔍 Ground' }).click()
   await expect(page.getByTestId('ground')).toBeVisible()
   await viewReady(page)
-  expect(await shows(page, 'ground')).toBe('Age of War')
+  expect(await shows(page, 'ground')).toBe('Ice Age')
   const sky = await patch(page, 'ground', [0.5, 0.03], 0.02)
   await setPlayhead(page, '-50')
   await expect.poll(() => shows(page, 'ground')).toBe('')

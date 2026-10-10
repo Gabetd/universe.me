@@ -15,6 +15,7 @@ import { GroundView } from './GroundView'
 import { MapView } from './MapView'
 import { useSurfaceTools } from './useSurfaceTools'
 import { useTerrain, type SurfaceViewProps } from './useTerrain'
+import { firstLook } from './firstLook'
 import { useStructuresAt } from './useStructures'
 import { useCharactersAt } from './useCharacters'
 import { useWorldAtTime } from './useWorldAtTime'
@@ -176,7 +177,7 @@ function groundTarget(worldId: string): [LatLon, number?] {
   if (structure) return [structure, blueprint && viewingDistance(blueprint, structure.scale)]
   const event = timelineSelection?.kind === 'event' ? timeline.events.find((e) => e.id === timelineSelection.ids[0]) : undefined
   const place = event && eventPlace(event, regions)
-  return [place ?? useEditor.getState().lookingAt ?? { lat: 0, lon: 0 }]
+  return [place ?? firstLook(worldId) ?? { lat: 0, lon: 0 }]
 }
 
 /** Over the view rather than in the toolbar, so picking a tool never moves the map. */
