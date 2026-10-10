@@ -8,13 +8,17 @@ const shownAt = async (target: Locator) => (await target.boundingBox())?.y
 /**
  * Changes a setting part way down the inspector (scrolled, so a jump shows),
  * and checks it's still where it was on screen once the change is saved and
- * whatever shows it has caught up.
+ * whatever shows it has caught up. The control is put in the middle of the
+ * panel first: at its edge, the browser itself scrolls a control into view as
+ * it's focused, which isn't the panel moving.
  */
 async function stays(page: Page, target: Locator, change: () => Promise<unknown>, saved: () => Promise<unknown>): Promise<void> {
-  await target.scrollIntoViewIfNeeded()
+  await target.evaluate((el) => el.scrollIntoView({ block: 'center' }))
   await panel(page).evaluate((el) => el.scrollBy(0, 40))
   expect(await panel(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
   const before = await shownAt(target)
+  const [box, shown] = [await target.boundingBox(), await panel(page).boundingBox()]
+  expect(box!.y >= shown!.y && box!.y + box!.height <= shown!.y + shown!.height, 'the control is in full view before it changes').toBe(true)
   const was = await saved()
   await change()
   await expect.poll(saved).not.toEqual(was)
