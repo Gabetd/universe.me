@@ -217,6 +217,23 @@ export const WRITES = [
     }
   }),
   operation({
+    name: 'create_era',
+    title: 'Create an era',
+    description: 'Adds an era (a named age: "The Long Winter") to a world’s timeline, from one date to another. Power systems can then be described age by age (describe_power_age).',
+    input: z.object({ worldId: z.string(), name: z.string().min(1).max(200), start: When, end: When, color: HexColor.optional(), notes: Notes.optional() }),
+    route: { method: 'POST', path: '/worlds/:worldId/eras' },
+    write: true,
+    run: (ctx, p) => {
+      const m = ctx.models
+      m.world(p.worldId)
+      const [start, end] = [m.when(p.worldId, p.start), m.when(p.worldId, p.end)]
+      if (end < start) throw new ApiError(400, 'The era ends before it starts')
+      const id = newId()
+      const payload = { id, ownerId: p.worldId, name: p.name, start, end, ...(p.color && { color: p.color }), ...notesAndTags(p) }
+      return write(ctx, [{ type: 'era.create', payload }], `Added the era ${p.name} (${m.date(p.worldId, start, 'year')} to ${m.date(p.worldId, end, 'year')})`, { eraId: id })
+    }
+  }),
+  operation({
     name: 'add_event_effect',
     title: 'Give an event an effect',
     description:
@@ -505,7 +522,7 @@ export const WRITES = [
       const system = findOr404(ctx.models.data().timeline.powers, p.systemId, 'power system')
       const { eras, powerAges } = ctx.models.world(system.ownerId).timeline
       const era = eras.find((e) => e.id === p.era) ?? eras.find((e) => e.name.toLowerCase() === p.era.trim().toLowerCase())
-      if (!era) throw new ApiError(404, `There is no era ${p.era} on that world${eras.length ? ` (its eras: ${eras.map((e) => e.name).join(', ')})` : ': add one with run_commands (era.create)'}`)
+      if (!era) throw new ApiError(404, `There is no era ${p.era} on that world${eras.length ? ` (its eras: ${eras.map((e) => e.name).join(', ')})` : ': add one with create_era'}`)
       const age = powerAges.find((a) => a.systemId === system.id && a.eraId === era.id)
       const commands: Command[] = []
       let values: AspectValues | undefined
