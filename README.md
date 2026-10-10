@@ -4,8 +4,8 @@ A desktop worldbuilding app: build universes, galaxies, star systems and
 worlds, give them histories on a timeline, and let Claude Code help through
 a local API and MCP server. See [PLAN.md](PLAN.md) for the full design and roadmap.
 
-**Status:** M0 to M12 are done (up to phone access and sync between your
-devices); M13 (Polish & release) is under way. New here? On the start screen,
+**Status:** M0 to M13 are done (v1: up to phone access, sync between your
+devices, and polish); M14 (Factions & relationships) is under way. New here? On the start screen,
 **Explore a sample universe** opens Calder, a world with fifteen centuries of
 history to look around in. Press `?` for the keyboard shortcuts.
 

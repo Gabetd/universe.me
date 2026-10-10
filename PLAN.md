@@ -403,7 +403,7 @@ Each milestone ends with something you can launch and demo.
 - [x] `core` command bus with undo/redo, Zod schemas, SQLite + migrations, command history log.
 - [x] Create/open/save-a-copy `.universe` project, recent projects. Main layout (breadcrumb, outline, viewport, inspector, timeline placeholder).
 - [x] Universe tree editing (cluster → galaxy → system → planet → moon/world) with a seeded 2D placeholder viewport.
-- [ ] Code signing (Windows certificate, Apple Developer ID). Deferred to M13; builds are unsigned until then.
+- [ ] Code signing (Windows certificate, Apple Developer ID). Deferred to M18, for when the certificates are in hand; builds are unsigned until then.
 - [x] *Added after M2:* self-update. Each CI build is versioned `0.1.<run>` and publishes an `update.json` manifest (file names, sizes, SHA-512) with the installers. The app checks it at launch and hourly (and on request: Help → Check for Updates, or the **Check for updates** button on the start screen and in the status bar, which says right there when there’s nothing newer); a dismissable banner offers the new version, and **Upgrade now** downloads, verifies and installs it, then restarts, with no further input: NSIS installer run silently, portable exe swapped, macOS `.app` replaced from the zip, AppImage replaced in place. A `.deb` install needs the system password (root).
 - [x] *Added after M2:* local only. All data lives in the project's SQLite file (built into the app via `node:sqlite`, no server). The main process cancels every network request except the app's own files and the self-updater's download from this repo's GitHub release; pages can't reach the network at all, and links open in the browser instead of the app window.
 
@@ -433,7 +433,7 @@ Each milestone ends with something you can launch and demo.
 - [x] Consistency warnings: effects that reach nothing, repairs of structures already gone, maintenance changes before a structure is built.
 - [x] *Added after M3:* **ground view** (the Surface level of §5.2, ahead of M5). Scrolling all the way in on the globe or map (or the 🔍 Ground button, or "View up close" on a structure or character) goes down to the ground: terrain in 1 km × 1 km chunks on a global grid, each with metre-scale hills on top of the globe's terrain and the plants of its biome (broadleaf and conifer woods, palms, acacias, bushes, grass, flowers, cacti, reeds, rocks, dead trees), gathered into woods and clearings, all from the world's seed so a spot always looks the same. Chunks are built in a Web Worker, 5 × 5 around the view, thinner farther out; structures stand at their real size (plants keep clear of standing ones, ruins are overgrown), and the view re-centres as you travel. Scrolling all the way out returns to the globe. From afar, structures are pins coloured by condition, not models.
 - [x] *Added after M3:* **planets from orbit** show their world's real surface (rendered from its terrain, turning slowly) in the planet/moon and star-system views.
-- [x] *Added after M3:* **characters** on a world: born and died dates (age at the playhead), and a journey of stops. Send one somewhere with 🧭 (they arrive at the playhead, setting out on foot early enough at 30 km a day) or to an event (a stop at its start and place); in between they walk the great circle. Shown at the playhead as figures on the globe and map and life-size on the ground. Deleting an event unlinks the stops that went to it. (Per-character timelines and relationships stay post-v1, §12.)
+- [x] *Added after M3:* **characters** on a world: born and died dates (age at the playhead), and a journey of stops. Send one somewhere with 🧭 (they arrive at the playhead, setting out on foot early enough at 30 km a day) or to an event (a stop at its start and place); in between they walk the great circle. Shown at the playhead as figures on the globe and map and life-size on the ground. Deleting an event unlinks the stops that went to it. (Per-character timelines and relationships come in M14.)
 
 ### M4 — Star systems & sim (2–3 weeks) — *done*
 - [x] **Star systems** (`packages/sim`): a star per system (mass; brightness, temperature, colour and habitable zone derived, or set) and Keplerian orbits for planets and moons (distance, eccentricity, inclination, start angle, day length, axial tilt, mass). Bodies nobody has edited get seeded defaults (a world's planet starts out Earth-like, a moon Moon-like). The system and planet views draw them where they are at the timeline's playhead, with the habitable zone, each moon's phase, and play controls (a day, month or year a second) that move the playhead.
@@ -474,7 +474,7 @@ Each milestone ends with something you can launch and demo.
   - Data: nothing in a note, a date, a far-off time or a crafted project can stall the app (linear note reading, bounded dates, step-counted moon phases, inflation capped at a layer's size); the world bible escapes everything.
   - Build and release: read-only tokens unless publishing, one publish at a time, the updater takes only an installer's name from the manifest and stops a download that runs long; ci:local checks what it downloads and marks the commit it tested.
 - Not yet tried against claude.ai itself and a real tailnet (the tests stand in for both).
-- Deferred from the audit: signed update manifests and publishing installed copies' updates from `main` only (both done in M13); Electron fuses (asar integrity, no NODE_OPTIONS or inspect flags; RunAsNode stays for `--mcp`) with code signing in M13; validating every row of a project on load (a crafted project can still break the window, but its colours and links no longer reach anything); the .deb installer's wait between checking and installing; a nonce the stdio server checks before handing the app its token.
+- Deferred from the audit: signed update manifests and publishing installed copies' updates from `main` only (both done in M13); Electron fuses (asar integrity, no NODE_OPTIONS or inspect flags; RunAsNode stays for `--mcp`) with code signing in M18; validating every row of a project on load (a crafted project can still break the window, but its colours and links no longer reach anything); the .deb installer's wait between checking and installing; a nonce the stdio server checks before handing the app its token.
 
 ### M9 — Power systems (1 week) — *done*
 - [x] `power` and `powerAge` records, commands and templates in core (`powers.ts`): magic, divine, psionic, technology, political and other, each with its questions; an entry per system and era, merged as it's edited; era and system deletes take their entries.
@@ -504,7 +504,7 @@ Each milestone ends with something you can launch and demo.
 - [x] Tests: stamps, merges and three devices converging in `sync.test.ts` (core and db), the sync routes in `phone-app.test.ts`, and `e2e/sync.spec.ts` with two app instances on a stand-in tailnet copying a universe and syncing both ways.
 - Row-level last-writer-wins only (see §6.7); not yet tried on two real computers.
 
-### M13 — Polish & release (2 weeks) — *active*
+### M13 — Polish & release (2 weeks) — *done*
 - [x] **Right-click menus** on everything (`contextMenu.ts`): a node in the tree or a claimed one in the cosmos, an event, era, group, link, lane or theme span on the timeline or the canvas, a region, structure, character or event pin on the map, globe or ground, a species in the food web, a row in the inspector's lists. Each gives what its kind can do (open, rename, add to it, go to it, follow a link, move the playhead, delete); the keyboard opens and moves through it too.
 - [x] **Check for updates** on the start screen and in the status bar (as well as the Help menu): it says right there when there's nothing newer.
 - [x] **Signed updates, released from main**: CI signs each update manifest with an Ed25519 key kept as the `UPDATE_SIGNING_KEY` secret (`scripts/sign-update.mjs`; `scripts/update-key.mjs` makes the pair once), and the app, which has the public half (`update-key.ts`), installs only what a manifest signed with it names (`update-signature.ts`); copies from before take one more update from the old, unsigned manifest. New work goes to `dev` (built and tested), then `staging` (also published as the `staging-build` release, to try by hand), then `main`, the only branch installed copies update from (`latest-build`).
@@ -512,10 +512,36 @@ Each milestone ends with something you can launch and demo.
 - [x] **A sample universe** to start from (`packages/api/src/sample.ts`): **Explore a sample universe** on the start screen (and in the Help menu) saves Calder, a world with fifteen centuries of history, where the user picks, and opens it on the world. Four eras, events linked and grouped, four regions, seven structures that weather and are fought over, three people, themes for its ages, a small food web and a magic system described age by age. It's written with the API's own operations (so it's checked like any edit), as the app's own changes (not the AI's), and opens with nothing to undo. Its places are all on land (tested against its seed). The API gained `create_era`. With nothing selected, the globe and the ground now open facing where a world's story is (the middle of its regions and structures), not 0°, 0°.
 - [x] **Keyboard shortcuts** (`shortcuts.ts`): one table that both runs the keys and lists them in a sheet (`?`, or Help → Keyboard Shortcuts). `1`–`7` the world's views; letters for the tools (`H` navigate, `R` raise, `L` lower, `S` smooth, `F` flatten, `B` paint, `E` erase, `G` region, `P` place); on the timeline `N` a new event at the playhead, `[` and `]` the playhead to the event before or after (selected, so the views turn to it), `0` fit; and the menu's and the selection's keys. Single keys work while nothing that takes typing has focus and no dialog is open; what's on screen registers what its keys do, and buttons' tooltips say their key.
 - [x] **Performance pass**, measured first (a world with hundreds of structures and thousands of events, frame times and draw calls while dragging each view and scrubbing): the map and the timeline stayed at 60 fps; the cost was structures on the ground and the globe's hit-testing. On the ground, structures now have a level of detail (in full while big on screen, about twenty times their size away; farther, plain blocks of their massing, all in one instanced mesh), and near ones that look alike (one blueprint, the same parts standing, weathered alike) draw together, one instanced mesh per kind of part: a town of 200 houses went from 279 draw calls a frame to 91. The globe finds the point under the pointer on the sphere (refined for the terrain) instead of against its 786,000 triangles: about 7 ms of every pointer move became 0.1 ms.
-- Signed installers (Windows NSIS, macOS dmg + notarization, Linux AppImage/deb); updates are already signature-checked (above).
+- Signed installers (Windows NSIS, macOS dmg + notarization) moved to M18 with Electron fuses, for when there's an Apple Developer ID and a Windows certificate; updates are already signature-checked (above).
 - [x] **E2E tests for the main flows**: each part has its own (`e2e/*.spec.ts`, 34 tests on the dev build and the packaged apps, on Linux and Windows 10 and 11), and `main-flow.spec.ts` runs the whole of §10's flow at once: a world painted, a castle built, a siege that leads to its fall (which destroys it), an age of war over those years, and the views (the map, the inspector, the globe) at moments before and after.
 
-**Rough total: 19–25 weeks** for one full-time developer. M7 (API/MCP) can be pulled earlier, right after M2, if AI assistance is wanted sooner. The core layer makes it cheap to add.
+### M14 — Factions & relationships (3 weeks) — *active*
+- [ ] **Factions** on a world: kingdoms, guilds, orders, houses, each with a colour and an emblem, founded and dissolved (a year or an event), with members (characters, joining and leaving over time) and territory (regions, held from one year to another). One can be part of another (a house in a kingdom). Shown on the map and globe as territory coloured by who holds it at the playhead, in the inspector and on a Factions page per world.
+- [ ] **Relationships** between characters and between factions: kin (parent, child, sibling, spouse), allies, rivals, enemies, mentor, vassal, or a label of one's own, each from one year (or event) to another. A relationship graph on the world (characters and factions as nodes, coloured edges, as of the playhead) and the list in each one's inspector.
+- [ ] **A lane per character** (and per faction) on the timeline, optional: their life from birth to death, the events they're in, the stops of their journey, the factions they belong to and when.
+- [ ] Events can name who took part (characters and factions), and effects gain what factions do: found, dissolve, gain or lose a region, a character joins or leaves, an alliance or a war begins or ends.
+- [ ] **The API and MCP** read and write all of it as operations (`list_factions`, `get_relationships(at)`, `create_faction`, `set_relationship`…); the world bible gains its factions and who's related to whom; the inconsistency detector's prompt asks about them (a character in a faction before it's founded, an enemy who's also a spouse…), and the app's own checks catch the mechanical ones (membership outside a life, territory before founding). The phone app and sync carry them too.
+- [ ] The sample universe gains its factions (the Kingdom of Varn, the Greywood clans…) and who's related to whom.
+- [ ] Tests: commands and undo, territory and membership at a time, the graph at a time, the API and bible; e2e for a faction founded, given territory, a member joining, a relationship, the graph and the lanes.
+
+### M15 — Rivers & erosion (3 weeks) — *planned*
+- Rivers that run downhill from the terrain to the sea or a lake (flow accumulation on the cube-sphere heightmap, in a worker), redrawn as land is sculpted; lakes in basins; named and selectable like regions; on the globe, map and ground.
+- Erosion over time: a world's land wearing down and rivers cutting valleys as the playhead moves (hydraulic and thermal erosion, deterministic from the seed and the world's erosion speed), shown blended like weathering; terrain edits still win.
+- Plate tectonics later, if ever: continents drifting over millions of years.
+
+### M16 — Plugins (3 weeks) — *planned*
+- Plugins as local folders: custom generators (worlds, names, structures) and exporters (a world out to a game engine, a map image, a wiki), run sandboxed (no network, no files but what the user picks), changing the universe only through the command bus like everything else, undoable as one.
+- A plugin manager in the app; a template and docs to write one.
+
+### M17 — Live collaboration (4–6 weeks) — *planned*
+- Several people editing one universe at once over their tailnets: invite someone (Tailscale sharing), see who's in and where, changes appearing as they're made.
+- A real merge story beyond M12's row-level last-writer-wins: field-level merges (or CRDTs) so two people editing one event don't lose each other's work, and per-person undo.
+
+### M18 — Signed installers (1 week, when the certificates are in hand) — *planned*
+- Windows NSIS and portable signed with a code-signing certificate; macOS dmg and zip signed with a Developer ID and notarized; certificates as repository secrets, used only on `main` and `staging`.
+- Electron fuses (asar integrity, no NODE_OPTIONS or inspect flags; RunAsNode stays for `--mcp`).
+
+**Rough total: 19–25 weeks** to v1 (M0–M13); M14–M18 are after it. for one full-time developer. M7 (API/MCP) can be pulled earlier, right after M2, if AI assistance is wanted sooner. The core layer makes it cheap to add.
 
 ---
 
@@ -545,11 +571,8 @@ Each milestone ends with something you can launch and demo.
 ---
 
 ## 12. Post-v1 ideas
-- Factions, relationship graphs between characters, and per-character timeline lanes (characters with lifespans and journeys exist since M3).
-- Rivers/erosion simulation, plate tectonics over time.
-- Live collaboration (several people editing at once, beyond M12's device sync).
-- Image generation for structures/themes via AI; ambient soundscapes per theme.
-- Plugin system for custom generators and exporters (e.g., to game engines).
+- Factions and relationships (M14), rivers and erosion (M15), plugins (M16) and live collaboration (M17) are milestones now.
+- Image generation for structures/themes via AI; ambient soundscapes per theme. (Image generation would need a remote service, against keeping everything local.)
 
 ---
 
