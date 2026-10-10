@@ -1,8 +1,9 @@
-import { eventPlace } from '@universe/core'
+import { eventPlace, type Party } from '@universe/core'
 import { create } from 'zustand'
 import { addChildCommand, addOptions, canDelete, kindLabel } from './kinds'
 import { deleteCommand, useUi } from './store'
 import { useTimelineView } from './timeline/timelineStore'
+import { useEditor } from './world/editorStore'
 import { goToEvent } from './world/goToEvent'
 
 /**
@@ -14,7 +15,7 @@ import { goToEvent } from './world/goToEvent'
  */
 
 /** What can be right-clicked: a node, or a record a world or timeline holds. */
-export type ElementKind = 'node' | 'region' | 'structure' | 'character' | 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan' | 'species' | 'lane' | 'power'
+export type ElementKind = 'node' | 'region' | 'structure' | 'character' | 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan' | 'species' | 'lane' | 'power' | 'faction' | 'relationship'
 
 export interface ElementRef {
   kind: ElementKind
@@ -172,7 +173,9 @@ const KINDS: Record<ElementKind, { label: string; nameField?: string; inspector:
   themeSpan: { label: 'Theme span', inspector: true },
   species: { label: 'Species', nameField: 'Species name', inspector: false },
   lane: { label: 'Lane', inspector: false },
-  power: { label: 'Power system', nameField: 'Power system name', inspector: false }
+  power: { label: 'Power system', nameField: 'Power system name', inspector: false },
+  faction: { label: 'Faction', nameField: 'Faction name', inspector: false },
+  relationship: { label: 'Relationship', inspector: false }
 }
 
 /** An element's name, as the menu's title shows it; undefined if it no longer exists. */
@@ -203,6 +206,13 @@ export function nameOf({ kind, id }: ElementRef): string | undefined {
       return find(t.lanes)?.name
     case 'power':
       return find(t.powers)?.name
+    case 'faction':
+      return find(t.factions)?.name
+    case 'relationship': {
+      const rel = find(t.relationships)
+      const name = (p: Party) => (p.kind === 'faction' ? t.factions : t.characters).find((x) => x.id === p.id)?.name ?? '?'
+      return rel && `${name(rel.from)} and ${name(rel.to)}`
+    }
     case 'link': {
       const link = find(t.links)
       const title = (eventId: string) => t.events.find((e) => e.id === eventId)?.title ?? '?'
@@ -215,15 +225,22 @@ export function nameOf({ kind, id }: ElementRef): string | undefined {
   }
 }
 
-/** Shows an element in the inspector (where `KINDS` says it has a panel), as clicking it does. */
+/** Shows an element in the inspector (where `KINDS` says it has a panel), as clicking it does; a faction on the Factions page, a relationship with its first side. */
 export function openElement({ kind, id }: ElementRef): void {
   const ui = useUi.getState()
   if (kind === 'node') ui.select(id)
   else if (kind === 'region') ui.selectRegion(id)
   else if (kind === 'structure') ui.selectStructure(id)
   else if (kind === 'character') ui.selectCharacter(id)
-  else if (kind !== 'species' && kind !== 'lane' && kind !== 'power') ui.selectTimeline({ kind, ids: [id] })
+  else if (kind === 'faction') showFaction(id)
+  else if (kind === 'relationship') {
+    const rel = ui.timeline.relationships.find((r) => r.id === id)
+    if (rel) openElement(rel.from)
+  } else if (kind !== 'species' && kind !== 'lane' && kind !== 'power') ui.selectTimeline({ kind, ids: [id] })
 }
+
+/** Opens a faction on its world's Factions page. */
+export const showFaction = (id: string) => useEditor.getState().set({ view: 'factions', factionId: id })
 
 /** How long a request for a name field waits for its panel to appear. */
 const FOCUS_WAIT_MS = 3000

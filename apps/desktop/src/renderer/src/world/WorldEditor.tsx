@@ -1,4 +1,4 @@
-import { characterAt, eventPlace, findBlueprint, type LatLon, type SpatialNode } from '@universe/core'
+import { characterAt, eventPlace, findBlueprint, type Faction, type LatLon, type SpatialNode } from '@universe/core'
 import { viewingDistance } from './structureLook'
 import { playheadOf } from '../timeline/timelineStore'
 import { BIOMES } from '@universe/procgen'
@@ -8,6 +8,7 @@ import { useUi, useWorld } from '../store'
 import { isBrushTool, showsSurface, useEditor, type EditorTool, type EditorView } from './editorStore'
 import { EcosystemView } from './EcosystemView'
 import { EventCanvas } from './EventCanvas'
+import { FactionsView } from './FactionsView'
 import { PowersView } from './PowersView'
 import { WarningsView, useWarningCount } from './WarningsView'
 import { GlobeView } from './GlobeView'
@@ -17,6 +18,7 @@ import { useSurfaceTools } from './useSurfaceTools'
 import { useTerrain, type SurfaceViewProps } from './useTerrain'
 import { firstLook } from './firstLook'
 import { useShortcuts, withKey } from '../shortcuts'
+import { showFaction } from '../contextMenu'
 import { useStructuresAt } from './useStructures'
 import { useCharactersAt } from './useCharacters'
 import { useWorldAtTime } from './useWorldAtTime'
@@ -56,6 +58,7 @@ const VIEWS: { view: EditorView; icon: string; label: string; title: string; web
   { view: 'canvas', icon: '🗂', label: 'Canvas', title: "This world's events as cards" },
   { view: 'species', icon: '🦌', label: 'Species', title: 'What lives here, and who eats whom' },
   { view: 'powers', icon: '✨', label: 'Powers', title: 'How magic, faith, technology or politics work here, age by age' },
+  { view: 'factions', icon: '⚑', label: 'Factions', title: 'Kingdoms, houses, guilds and faiths: who belongs, what they hold, and who’s related to whom' },
   { view: 'warnings', icon: '⚠', label: 'Warnings', title: 'What doesn’t fit: what Claude found, and the app’s own checks' }
 ]
 const OPEN_VIEWS = VIEWS.filter((v) => !v.webgl || hasWebGL)
@@ -74,9 +77,10 @@ const selectCharacter = (id: string) => useUi.getState().selectCharacter(id)
 
 export function WorldEditor({ world }: { world: SpatialNode }) {
   const { info, regions: allRegions } = useWorld(world.id)
-  const { regions, pins, highlightRegionIds, focus } = useWorldAtTime(world.id, allRegions)
+  const { regions, holders, pins, highlightRegionIds, focus } = useWorldAtTime(world.id, allRegions)
+  const hasFactions = useUi((s) => s.timeline.factions.some((f) => f.ownerId === world.id))
   // Just what's drawn here: the views and the tool options follow the rest of the editor themselves.
-  const { view, tool, ground, set } = useEditor(useShallow((s) => ({ view: s.view, tool: s.tool, ground: s.ground, set: s.set })))
+  const { view, tool, ground, territory, set } = useEditor(useShallow((s) => ({ view: s.view, tool: s.tool, ground: s.ground, territory: s.territory, set: s.set })))
   const structures = useStructuresAt(world.id)
   const characters = useCharactersAt(world.id)
   const warnings = useWarningCount(world.id)
@@ -132,6 +136,11 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
             </button>
           ))}
         </div>
+        {onSurface && activeView !== 'ground' && hasFactions && (
+          <button className="territory-toggle" aria-pressed={territory} title="Colour the regions by the faction holding them at the playhead" onClick={() => set({ territory: !territory })}>
+            ⚑ <span className="view-label">Territory</span>
+          </button>
+        )}
         {onSurface && (
           <div className="segmented" role="group" aria-label="Tool">
             {TOOLBAR_TOOLS.map((t) => (
@@ -145,10 +154,13 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
 
       <div className="world-canvas">
         <ToolOptions view={activeView} />
+        {territory && onSurface && activeView !== 'ground' && <TerritoryLegend holders={holders} />}
         {activeView === 'species' ? (
           <EcosystemView worldId={world.id} model={model} change={change} error={error} />
         ) : activeView === 'powers' ? (
           <PowersView worldId={world.id} />
+        ) : activeView === 'factions' ? (
+          <FactionsView worldId={world.id} />
         ) : activeView === 'warnings' ? (
           <WarningsView worldId={world.id} />
         ) : activeView === 'canvas' ? (
@@ -185,6 +197,24 @@ function groundTarget(worldId: string): [LatLon, number?] {
   const event = timelineSelection?.kind === 'event' ? timeline.events.find((e) => e.id === timelineSelection.ids[0]) : undefined
   const place = event && eventPlace(event, regions)
   return [place ?? firstLook(worldId) ?? { lat: 0, lon: 0 }]
+}
+
+/** Who holds the regions coloured on the view, at the playhead. */
+function TerritoryLegend({ holders }: { holders: Map<string, Faction> }) {
+  const factions = [...new Map([...holders.values()].map((f) => [f.id, f])).values()]
+  return (
+    <aside className="territory-legend" aria-label="Territory">
+      {factions.length ? (
+        factions.map((f) => (
+          <button key={f.id} className="link" onClick={() => showFaction(f.id)}>
+            <span className="swatch" style={{ background: f.color }} /> {f.emblem} {f.name}
+          </button>
+        ))
+      ) : (
+        <span className="muted small">No faction holds land at the playhead.</span>
+      )}
+    </aside>
+  )
 }
 
 /** Over the view rather than in the toolbar, so picking a tool never moves the map. */

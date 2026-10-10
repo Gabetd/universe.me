@@ -5,6 +5,7 @@ import { usePlayhead, useTimelineView } from '../timeline/timelineStore'
 import { useEditor } from '../world/editorStore'
 import { useCalendar } from '../world/useSky'
 import { sendCharacter } from '../world/sendCharacter'
+import { MembershipList, RelationshipList } from './FactionParts'
 import { ColorField, DeleteButton, NotesField, PanelHeader, Swatch, TagsField, TextField, TimeField } from './fields'
 
 const latLon = (p: { lat: number; lon: number }) => `${Math.abs(p.lat).toFixed(3)}°${p.lat >= 0 ? 'N' : 'S'} ${Math.abs(p.lon).toFixed(3)}°${p.lon >= 0 ? 'E' : 'W'}`
@@ -33,6 +34,7 @@ export function CharacterPanel({ character }: { character: Character }) {
   )
   const eventsById = useEventsById()
   const eventTitle = (id: string) => eventsById.get(id)?.title
+  const self = useMemo(() => ({ kind: 'character' as const, id: character.id }), [character.id])
 
   return (
     <section className="inspector-section region-form" aria-label="Character">
@@ -108,6 +110,8 @@ export function CharacterPanel({ character }: { character: Character }) {
         )}
       </div>
 
+      <MembershipList worldId={character.ownerId} characterId={character.id} />
+      <RelationshipList worldId={character.ownerId} self={self} label="Relationships" />
       <ColorField label="Character color" value={character.color} onCommit={(color) => update({ color })} />
       <TagsField label="Character tags" tags={character.tags} onCommit={(tags) => update({ tags })} />
       <NotesField label="Character notes" value={character.notes} onCommit={(notes) => update({ notes })} />

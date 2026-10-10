@@ -37,7 +37,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'view-canvas', keys: '4', key: '4', label: 'Canvas', group: 'World views' },
   { id: 'view-species', keys: '5', key: '5', label: 'Species', group: 'World views' },
   { id: 'view-powers', keys: '6', key: '6', label: 'Powers', group: 'World views' },
-  { id: 'view-warnings', keys: '7', key: '7', label: 'Warnings', group: 'World views' },
+  { id: 'view-factions', keys: '7', key: '7', label: 'Factions', group: 'World views' },
+  { id: 'view-warnings', keys: '8', key: '8', label: 'Warnings', group: 'World views' },
 
   { id: 'tool-navigate', keys: 'H', key: 'h', label: 'Navigate', group: 'World tools' },
   { id: 'tool-raise', keys: 'R', key: 'r', label: 'Raise land', group: 'World tools' },

@@ -9,8 +9,8 @@ import { create } from 'zustand'
  */
 export type EditorTool = 'navigate' | BrushTool | 'region' | 'locate' | 'place' | 'move' | 'travel'
 export type SurfaceView = 'globe' | 'map'
-/** The canvas shows the world's events as cards, `species` its food web, `powers` its power systems and `warnings` what doesn't fit, rather than its surface; the ground is the surface up close. */
-export type EditorView = SurfaceView | 'canvas' | 'ground' | 'species' | 'powers' | 'warnings'
+/** The canvas shows the world's events as cards, `species` its food web, `powers` its power systems, `factions` its factions and who's related to whom, and `warnings` what doesn't fit, rather than its surface; the ground is the surface up close. */
+export type EditorView = SurfaceView | 'canvas' | 'ground' | 'species' | 'powers' | 'factions' | 'warnings'
 
 interface EditorState {
   view: EditorView
@@ -32,6 +32,10 @@ interface EditorState {
   moveStructureId: string | null
   /** The character the `travel` tool sends somewhere. */
   travelCharacterId: string | null
+  /** The faction the Factions view shows (its first, if this one's gone). */
+  factionId: string | null
+  /** Regions coloured by the faction holding them at the playhead, on the globe and the map. */
+  territory: boolean
   /** Where the ground view is (its middle), once opened. */
   ground: LatLon | null
   /** Where the globe last looked, and from how far (planet radii from the centre). */
@@ -64,6 +68,8 @@ export const useEditor = create<EditorState>((set) => ({
   placeBlueprintId: 'builtin:castle',
   moveStructureId: null,
   travelCharacterId: null,
+  factionId: null,
+  territory: false,
   ground: null,
   lookingAt: null,
   lookDistance: 2.4,

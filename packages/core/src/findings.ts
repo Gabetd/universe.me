@@ -16,7 +16,7 @@ export const FindingSeverity = z.enum(FINDING_SEVERITIES)
 export type FindingSeverity = z.infer<typeof FindingSeverity>
 
 /** What a finding can be about. */
-export const FINDING_KINDS = ['node', 'region', 'event', 'era', 'group', 'link', 'structure', 'character', 'species', 'theme', 'themeSpan', 'power'] as const
+export const FINDING_KINDS = ['node', 'region', 'event', 'era', 'group', 'link', 'structure', 'character', 'species', 'theme', 'themeSpan', 'power', 'faction', 'relationship'] as const
 export const FindingKind = z.enum(FINDING_KINDS)
 export type FindingKind = z.infer<typeof FindingKind>
 
