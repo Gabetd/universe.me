@@ -14,7 +14,7 @@
 - After each push to `main` that adds features, refresh the **build log** artifact (https://claude.ai/artifact/M6aq3G6qUdXsqonJebk5qk, source `docs/build-log/index.html`): run the e2e suite with pictures (`UNIVERSE_SHOTS=1 xvfb-run -a pnpm test:e2e`), `python3 scripts/build-log-images.py`, add a `LOG` entry (and any new `SHOTS`/`AREAS`) for the new build (versioned by main's run), then republish it to that URL with the `img/*.webp` files.
 
 ## Commands
-- `pnpm ci:local`: everything CI runs on Linux (actionlint, frozen install, lint/typecheck/unit side by side, dev-build e2e at 1024×768, packaging, packaged-app e2e, update manifest) against committed code. `--quick` skips packaging.
+- `pnpm ci:local`: everything CI runs on Linux (actionlint, the Node in `.node-version`, frozen install, lint/typecheck/unit side by side, dev-build e2e at 1024×768, packaging, packaged-app e2e, update manifest) against committed code. `--quick` skips packaging.
 - `pnpm check`: lint + typecheck + unit tests
 - `xvfb-run -a pnpm test:e2e`: build, then drive the real Electron app (with `UNIVERSE_SHOTS=1` it also takes the build log's screenshots, into `apps/desktop/test-results/`)
 - `pnpm dev`: run the app with hot reload

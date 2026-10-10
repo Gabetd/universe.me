@@ -182,7 +182,7 @@ GitHub secret; the app has its public half).
 
 ## Develop
 
-Requires Node.js 22.13+ (24 recommended) and pnpm 10 (`corepack enable`).
+Requires the Node.js in `.node-version` (24.21.0; `fnm use`, `nvm use` or `mise install` picks it up) and pnpm 10 (`corepack enable`). `pnpm ci:local` refuses any other Node, as CI installs exactly that one.
 
 ```bash
 pnpm install

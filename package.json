@@ -4,7 +4,7 @@
   "description": "Desktop worldbuilding app: worlds, timelines, themes, and an AI-ready API.",
   "packageManager": "pnpm@10.28.0",
   "engines": {
-    "node": ">=22.13"
+    "node": "^24.21.0"
   },
   "scripts": {
     "dev": "pnpm --filter universe-desktop dev",
