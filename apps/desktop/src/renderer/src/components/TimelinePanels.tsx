@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { updater, useEventsById, useOwnRecords, useUi, type TimelineSelection } from '../store'
 import { locationLabel } from '../timeline/labels'
 import { useEditor } from '../world/editorStore'
+import { Participants } from './FactionParts'
 import { ColorField, DeleteButton, NotesField, PanelHeader, SwatchList, TagsField, TextField, TimeField } from './fields'
 import { EventEffects } from './EventEffects'
 import { ThemePanel, ThemeSpanPanel } from './ThemePanels'
@@ -158,6 +159,7 @@ function EventPanel({ event }: { event: TimelineEvent }) {
         </div>
       )}
 
+      {onWorld && <Participants worldId={event.ownerId} participants={event.participants ?? []} onCommit={(participants) => update({ participants })} />}
       {onWorld && <EventEffects event={event} />}
 
       <div className="field">

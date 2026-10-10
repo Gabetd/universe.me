@@ -2,7 +2,7 @@ import { RELATION_INFO, RELATION_TYPES, holdsAt, otherParty, relationLabel, same
 import { useMemo, useState } from 'react'
 import { menuRef, openElement, showFaction } from '../contextMenu'
 import { useOwnRecords, useUi } from '../store'
-import { usePlayhead } from '../timeline/timelineStore'
+import { usePlayhead, useTimelineView } from '../timeline/timelineStore'
 import { TextField, TimeField } from './fields'
 
 /**
@@ -163,3 +163,56 @@ export function MembershipList({ worldId, characterId }: { worldId: string; char
   )
 }
 
+
+/** Who took part in an event: chips for each character and faction, and a choice to add another. */
+export function Participants({ worldId, participants, onCommit }: { worldId: string; participants: Party[]; onCommit(participants: Party[]): void }) {
+  const { characters, factions, name } = usePartyNames(worldId)
+  const add = (id: string) => {
+    const kind = factions.some((f) => f.id === id) ? 'faction' : 'character'
+    onCommit([...participants, { kind, id }])
+  }
+  const choices = [...factions.map((f) => ({ kind: 'faction' as const, id: f.id })), ...characters.map((c) => ({ kind: 'character' as const, id: c.id }))].filter(
+    (p) => !participants.some((q) => sameParty(p, q))
+  )
+  return (
+    <div className="field">
+      <span>Who took part</span>
+      {participants.length > 0 && (
+        <ul className="chip-list" aria-label="Who took part">
+          {participants.map((p) => (
+            <li key={`${p.kind}:${p.id}`}>
+              <button className="link" onClick={() => openElement(p)}>
+                {name(p)}
+              </button>
+              <button className="link" aria-label={`${name(p)} didn’t take part`} onClick={() => onCommit(participants.filter((q) => !sameParty(p, q)))}>
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {choices.length > 0 ? (
+        <select aria-label="Add who took part" value="" onChange={(e) => e.target.value && add(e.target.value)}>
+          <option value="">+ Who took part…</option>
+          {choices.map((p) => (
+            <option key={p.id} value={p.id}>
+              {name(p)}
+            </option>
+          ))}
+        </select>
+      ) : (
+        participants.length === 0 && <p className="muted small">Add characters or factions to the world to say who took part.</p>
+      )}
+    </div>
+  )
+}
+
+/** Shows or hides a character's or faction's own lane on the timeline. */
+export function LaneToggle({ worldId, id }: { worldId: string; id: string }) {
+  const shown = useTimelineView((s) => s.lives[worldId]?.includes(id) ?? false)
+  return (
+    <label className="checkbox">
+      <input type="checkbox" checked={shown} onChange={() => useTimelineView.getState().toggleLife(worldId, id)} /> A lane of its own on the timeline
+    </label>
+  )
+}

@@ -24,6 +24,7 @@ import { eventDates, spanDates } from './labels'
 import { SkyTrack } from './SkyTrack'
 import { ThemeTrack } from './ThemeTrack'
 import { DerivedTrack } from './DerivedTrack'
+import { LivesTrack } from './LivesTrack'
 import { useFlagged } from '../flags'
 import { menuRef, openElementMenu } from '../contextMenu'
 import { useShortcuts, withKey } from '../shortcuts'
@@ -352,6 +353,7 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
       <ThemeTrack owner={owner} range={range} width={width} cal={cal} labelWidth={LABELS_W} />
       <SkyTrack owner={owner} range={range} width={width} cal={cal} labelWidth={LABELS_W} />
       <DerivedTrack owner={owner} range={range} width={width} cal={cal} labelWidth={LABELS_W} />
+      <LivesTrack owner={owner} range={range} width={width} cal={cal} labelWidth={LABELS_W} />
 
       <div className="tl-scroll">
         <div className="tl-rows" style={{ height: Math.max(layout.height + ROW_H, 0) }}>

@@ -47,6 +47,17 @@ test('factions: founded, part of one another, with members and land over time; p
   await expect(inspector(page).getByRole('list', { name: 'Factions' })).toContainText('The Silver Hand')
   await expect(inspector(page).getByRole('list', { name: 'Relationships' })).toContainText('Aldric of Varn')
   await expect(inspector(page).getByRole('list', { name: 'Relationships' })).toContainText('Parent')
+  // A lane of her own on the timeline: her life, and the event she's in.
+  await inspector(page).getByLabel('A lane of its own on the timeline').check()
+  const lane = page.getByLabel('Edda of Varn’s lane')
+  await expect(lane.getByRole('button', { name: /Edda of Varn, 424/ })).toBeVisible()
+  const coronation = (await state(page, 'timeline')).events.find((e) => e.title === 'Aldric crowned first king of Varn')!
+  await page.locator('.tl-event', { hasText: 'Aldric crowned first king of Varn' }).click()
+  await inspector(page).getByLabel('Add who took part').selectOption({ label: 'Edda of Varn' })
+  await expect(inspector(page).getByRole('list', { name: 'Who took part' })).toContainText('Edda of Varn')
+  expect((await state(page, 'timeline')).events.find((e) => e.id === coronation.id)!.participants).toEqual([{ kind: 'character', id: expect.any(String) }])
+  await expect(lane.getByRole('button', { name: /Aldric crowned first king of Varn, in Edda/ })).toBeVisible()
+  await page.locator('.tl-life-bar').first().click()
 
   // On the map, the regions coloured by who holds them: the kingdom, then the Spine too once silver is struck there.
   await openMap(page)

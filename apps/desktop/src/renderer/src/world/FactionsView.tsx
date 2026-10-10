@@ -12,7 +12,7 @@ import {
   type Party
 } from '@universe/core'
 import { useMemo, useRef, useState } from 'react'
-import { RelationshipList, SpanFields } from '../components/FactionParts'
+import { LaneToggle, RelationshipList, SpanFields } from '../components/FactionParts'
 import { ColorField, DeleteButton, NotesField, SelectField, Swatch, TagsField, TextField } from '../components/fields'
 import { menuRef, openElement, openElementMenu } from '../contextMenu'
 import { flagClass, useFlaggedIds } from '../flags'
@@ -206,6 +206,7 @@ function FactionEditor({ worldId, faction, factions }: { worldId: string; factio
             {exists ? `There at ${formatTime(playhead, 'year', cal)}.` : faction.start !== null && playhead < faction.start ? `Not founded yet at ${formatTime(playhead, 'year', cal)}.` : `Gone by ${formatTime(playhead, 'year', cal)}.`}
           </p>
         </div>
+        <LaneToggle worldId={worldId} id={faction.id} />
         <MemberRows worldId={worldId} factionId={faction.id} />
         <TerritoryRows worldId={worldId} factionId={faction.id} />
         <RelationshipList worldId={worldId} self={{ kind: 'faction', id: faction.id }} label="Stands with" />

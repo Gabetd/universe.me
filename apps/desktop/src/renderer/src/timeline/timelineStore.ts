@@ -8,6 +8,10 @@ interface TimelineViewState {
   playheads: Record<string, number>
   /** Height of the timeline panel in px. */
   height: number
+  /** The characters and factions with a lane of their own, by timeline. */
+  lives: Record<string, string[]>
+  /** Shows or hides a character's or faction's lane. */
+  toggleLife(ownerId: string, id: string): void
   setRange(ownerId: string, range: TimeRange): void
   setPlayhead(ownerId: string, t: number): void
   setHeight(height: number): void
@@ -33,6 +37,12 @@ export const useTimelineView = create<TimelineViewState>((set, get) => ({
   ranges: {},
   playheads: {},
   height: storedHeight(),
+  lives: {},
+  toggleLife: (ownerId, id) =>
+    set((s) => {
+      const shown = s.lives[ownerId] ?? []
+      return { lives: { ...s.lives, [ownerId]: shown.includes(id) ? shown.filter((x) => x !== id) : [...shown, id] } }
+    }),
   setRange: (ownerId, range) => set((s) => ({ ranges: { ...s.ranges, [ownerId]: range } })),
   setPlayhead: (ownerId, t) => set((s) => ({ playheads: { ...s.playheads, [ownerId]: t } })),
   setHeight: (height) => set({ height }),
