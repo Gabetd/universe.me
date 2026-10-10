@@ -1,5 +1,14 @@
 import {
+  FACTION_KIND_LABELS,
+  RELATION_INFO,
   daysPerYear,
+  holdsAt,
+  membersAt,
+  otherParty,
+  relationLabel,
+  relationshipsAt,
+  sameParty,
+  territoryAt,
   KIND_LABELS,
   STAGES,
   ageAt,
@@ -16,7 +25,11 @@ import {
   type ConditionCurve,
   type LatLon,
   type AspectValues,
+  type Faction,
   type Finding,
+  type Party,
+  type Relationship,
+  type Span,
   type FindingRef,
   type PowerSystem,
   type Region,
@@ -66,6 +79,7 @@ export function eventPlaces(e: TimelineEvent, regions: Region[]): string[] {
 export function describeEvent(m: ProjectModels, view: WorldView, e: TimelineEvent, regions: Region[], withNotes = false) {
   const group = e.groupId ? view.timeline.groups.find((g) => g.id === e.groupId)?.title : undefined
   const lane = e.laneId ? view.timeline.lanes.find((l) => l.id === e.laneId)?.name : undefined
+  const who = (e.participants ?? []).flatMap((p) => partyName(view, p) ?? [])
   return {
     id: e.id,
     title: e.title,
@@ -74,6 +88,7 @@ export function describeEvent(m: ProjectModels, view: WorldView, e: TimelineEven
     ...(e.locations.length && { where: eventPlaces(e, regions) }),
     ...(group && { group }),
     ...(lane && { lane }),
+    ...(who.length && { who }),
     ...(withNotes && e.notes && { notes: htmlToText(e.notes) })
   }
 }
@@ -126,6 +141,92 @@ export function describeCharacter(m: ProjectModels, c: Character, t: number, reg
     alive: !!place,
     ...(place && { age: ageAt(c, t, m.calendar(c.ownerId)), place: { lat: round(place.lat), lon: round(place.lon) }, travelling: place.travelling }),
     ...(where.length && { region: where.join(', ') })
+  }
+}
+
+/** "from 1204", "until 1300", "1204–1300", or "always", for a span in a world's calendar. */
+export function spanText(m: ProjectModels, worldId: string, s: Pick<Span, 'start' | 'end'>): string {
+  const d = (t: number) => m.date(worldId, t, 'year')
+  if (s.start !== null && s.end !== null) return `${d(s.start)}–${d(s.end)}`
+  if (s.start !== null) return `from ${d(s.start)}`
+  if (s.end !== null) return `until ${d(s.end)}`
+  return 'always'
+}
+
+/** A character's or faction's name; undefined if it's gone. */
+export function partyName(view: WorldView, p: Party): string | undefined {
+  return (p.kind === 'faction' ? view.timeline.factions : view.timeline.characters).find((x) => x.id === p.id)?.name
+}
+
+/** What a faction is, whenever: its name, kind, founding and dissolution, what it's part of and its parts. */
+function factionBasics(m: ProjectModels, view: WorldView, f: Faction) {
+  const tl = view.timeline
+  const parent = f.parentId ? tl.factions.find((x) => x.id === f.parentId) : undefined
+  const parts = tl.factions.filter((x) => x.parentId === f.id)
+  return {
+    id: f.id,
+    name: f.name,
+    kind: FACTION_KIND_LABELS[f.kind],
+    ...(f.emblem && { emblem: f.emblem }),
+    ...(f.start !== null && { founded: m.date(f.ownerId, f.start, 'year') }),
+    ...(f.end !== null && { dissolved: m.date(f.ownerId, f.end, 'year') }),
+    ...(parent && { partOf: parent.name }),
+    ...(parts.length && { parts: parts.map((x) => x.name) }),
+    ...(f.summary && { summary: f.summary })
+  }
+}
+
+const regionNamed = (view: WorldView, id: string) => view.regions.find((r) => r.id === id)?.name ?? '(a deleted region)'
+const characterNamed = (view: WorldView, id: string) => view.timeline.characters.find((c) => c.id === id)?.name ?? '(deleted)'
+
+/** A faction as of `t`: whether it exists then, who's in it, what it holds (its parts' land too), and how it stands with others. */
+export function describeFactionAt(m: ProjectModels, view: WorldView, f: Faction, t: number) {
+  const tl = view.timeline
+  const self: Party = { kind: 'faction', id: f.id }
+  const exists = holdsAt(f, t)
+  return {
+    ...factionBasics(m, view, f),
+    exists,
+    ...(exists && {
+      members: membersAt(f, tl.memberships, t).map((x) => ({ name: characterNamed(view, x.characterId), characterId: x.characterId, ...(x.role && { role: x.role }) })),
+      territory: territoryAt(f, tl.factions, tl.holdings, t).map((id) => regionNamed(view, id)),
+      relationships: relationshipsAt(tl.relationships, t, self).map((r) => describeRelationFrom(m, view, r, self))
+    })
+  }
+}
+
+/** A faction over its whole history: everyone who was ever in it, everything it held and every relationship, each with when. */
+export function describeFactionHistory(m: ProjectModels, view: WorldView, f: Faction) {
+  const tl = view.timeline
+  const self: Party = { kind: 'faction', id: f.id }
+  return {
+    ...factionBasics(m, view, f),
+    members: tl.memberships.filter((x) => x.factionId === f.id).map((x) => ({ name: characterNamed(view, x.characterId), ...(x.role && { role: x.role }), when: spanText(m, f.ownerId, x) })),
+    territory: tl.holdings.filter((h) => h.factionId === f.id).map((h) => ({ region: regionNamed(view, h.regionId), when: spanText(m, f.ownerId, h) })),
+    relationships: tl.relationships.filter((r) => sameParty(r.from, self) || sameParty(r.to, self)).map((r) => describeRelationFrom(m, view, r, self)),
+    notes: htmlToText(f.notes)
+  }
+}
+
+/** A relationship from one side of it: who with, and what they are to `side` ("Child", "Vassal"). */
+export function describeRelationFrom(m: ProjectModels, view: WorldView, r: Relationship, side: Party) {
+  const when = spanText(m, r.ownerId, r)
+  const other = otherParty(r, side)
+  return { id: r.id, with: partyName(view, other) ?? '(deleted)', [other.kind === 'faction' ? 'factionId' : 'characterId']: other.id, is: relationLabel(r, side), ...(when !== 'always' && { when }), ...(r.note && { note: r.note }) }
+}
+
+/** A relationship as a client reads it: who, and how ("Parent of", "Allies"). */
+export function describeRelationship(m: ProjectModels, view: WorldView, r: Relationship) {
+  const when = spanText(m, r.ownerId, r)
+  const info = RELATION_INFO[r.type]
+  return {
+    id: r.id,
+    from: partyName(view, r.from) ?? '(deleted)',
+    to: partyName(view, r.to) ?? '(deleted)',
+    type: r.type,
+    reads: r.label || (info.from === info.to ? `${info.from}s` : `${info.from} of`),
+    ...(when !== 'always' && { when }),
+    ...(r.note && { note: r.note })
   }
 }
 
@@ -243,7 +344,7 @@ export function describeMoons(m: ProjectModels, worldId: string, t: number) {
   })
 }
 
-/** Everything on a world at `t`: the date, what's happening, which regions exist, what stands, who's alive, the theme, how its powers work then and the moons. */
+/** Everything on a world at `t`: the date, what's happening, which regions exist, what stands, who's alive, its factions and who's related to whom, the theme, how its powers work then and the moons. */
 export async function worldSnapshot(m: ProjectModels, worldId: string, t: number) {
   const view = m.world(worldId)
   const regions = m.regionsAt(worldId, t)
@@ -257,6 +358,8 @@ export async function worldSnapshot(m: ProjectModels, worldId: string, t: number
     regions: regions.map((r) => ({ id: r.id, name: r.name })),
     structures,
     characters: view.timeline.characters.map((c) => describeCharacter(m, c, t, regions)).filter((c) => c.alive),
+    factions: view.timeline.factions.map((f) => describeFactionAt(m, view, f, t)).filter((f) => f.exists),
+    relationships: relationshipsAt(view.timeline.relationships, t).map((r) => describeRelationship(m, view, r)),
     theme: describeTheme(view, t),
     powers: view.timeline.powers.map((p) => describePowerAt(view, p, t)),
     moons: describeMoons(m, worldId, t)

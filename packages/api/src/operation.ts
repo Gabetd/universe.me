@@ -49,6 +49,8 @@ export function written(outcome: WriteOutcome, summary: string, ids: Record<stri
     : { status: 'proposed', summary, proposalId: outcome.proposalId, note: 'Review mode is on: this waits for the user to accept it in Universe. The ids are what it will have once accepted; until then nothing can refer to them.', ...ids }
 }
 
-/** A query-string flag or number: GET inputs arrive as text. */
+/** A query-string number: GET inputs arrive as text. */
 export const QueryNumber = z.coerce.number()
+/** A query-string flag (true or "true"). */
+export const QueryFlag = z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')])
 export const QueryList = z.union([z.array(z.string()), z.string().transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean))])

@@ -155,6 +155,47 @@ describe('the operations', () => {
     expect(md).toContain('#### In Age of Silence (500 – 1000), 10% strength\n\n*Almost forgotten*\n\n**Rules:** Only the dying can weave')
   })
 
+  it('found factions, give them members and land, relate people and factions, and read it all at a moment and in the bible', async () => {
+    const w = { worldId: p.worldId }
+    const person = async (name: string, born: string) => (await p.call<{ characterId: string }>('create_character', { ...w, name, born, place: { lat: 0, lon: 0 } })).characterId
+    const [aldric, edda, maelis] = [await person('Aldric', '390'), await person('Edda', '424'), await person('Maelis', '950')]
+    const { regionId } = await p.call<{ regionId: string }>('create_region', { ...w, name: 'Varn', points: [{ lat: 0, lon: 0 }, { lat: 5, lon: 0 }, { lat: 5, lon: 5 }] })
+    const { eventId: crowned } = await p.call<{ eventId: string }>('create_event', { ...w, title: 'The crowning', start: '421' })
+    const { factionId: kingdom } = await p.call<{ factionId: string }>('create_faction', { ...w, name: 'Varn', kind: 'kingdom', foundedBy: crowned, emblem: '👑' })
+    const { factionId: house } = await p.call<{ factionId: string }>('create_faction', { ...w, name: 'House Aldric', kind: 'house', partOf: 'varn' })
+    const { factionId: clans } = await p.call<{ factionId: string }>('create_faction', { ...w, name: 'Greywood', kind: 'clan' })
+    await p.call('hold_region', { factionId: house, regionId, from: '430' })
+    await p.call('add_member', { factionId: house, characterId: aldric, role: 'king', fromEventId: crowned, until: '452' })
+    await p.call('set_relationship', { fromId: aldric, toId: edda, type: 'parent' })
+    await p.call('set_relationship', { fromId: kingdom, toId: clans, type: 'enemy', from: '980', until: '995' })
+    await p.call('update_event', { eventId: crowned, who: [aldric, kingdom] })
+
+    type Faction = { name: string; exists: boolean; founded?: string; partOf?: string; members?: { name: string; role?: string }[]; territory?: string[]; relationships?: { with: string; is: string }[] }
+    const at = async (when: string) => (await p.call<{ factions: Faction[] }>('list_factions', { ...w, at: when })).factions
+    expect((await at('400')).find((f) => f.name === 'Varn')).toMatchObject({ exists: false, founded: '421' })
+    const in440 = await at('440')
+    expect(in440.find((f) => f.name === 'House Aldric')).toMatchObject({ partOf: 'Varn', members: [{ name: 'Aldric', role: 'king' }], territory: ['Varn'] })
+    // A kingdom holds what its houses hold.
+    expect(in440.find((f) => f.name === 'Varn')!.territory).toEqual(['Varn'])
+    expect((await at('990')).find((f) => f.name === 'Varn')!.relationships).toEqual([expect.objectContaining({ with: 'Greywood', is: 'Enemy' })])
+    const { relationships } = await p.call<{ relationships: { with: string; is: string }[] }>('get_relationships', { ...w, at: '500', of: edda })
+    expect(relationships).toEqual([expect.objectContaining({ with: 'Aldric', is: 'Parent' })])
+    const snapshot = await p.call<{ factions: { name: string }[]; happening: object[] }>('get_world_snapshot', { ...w, at: '440' })
+    expect(snapshot.factions.map((f) => f.name).sort()).toEqual(['Greywood', 'House Aldric', 'Varn'])
+    const { events } = await p.call<{ events: { title: string; who?: string[] }[] }>('list_events', { ...w, from: '400', to: '500' })
+    expect(events[0]!.who).toEqual(['Aldric', 'Varn'])
+    const bible = await p.call<string>('export_world_bible', w)
+    expect(bible).toContain('## Factions')
+    expect(bible).toContain('**Members:** Aldric, king (421–452)')
+    expect(bible).toContain('- Aldric and Edda: Parent of')
+
+    // The app's own checks catch what can't be.
+    await p.call('add_member', { factionId: clans, characterId: maelis, from: '900' })
+    const checks = await p.call<{ warnings: { area: string; message: string }[] }>('check_consistency', w)
+    expect(checks.warnings).toContainEqual(expect.objectContaining({ area: 'factions', message: 'Maelis joins Greywood before they’re born' }))
+    await expect(p.call('set_relationship', { fromId: aldric, toId: 'nobody', type: 'ally' })).rejects.toThrow(/no character or faction/)
+  })
+
   it('report inconsistencies, once each, about what is really there, and resolve or dismiss them', async () => {
     const { eventId } = await p.call<{ eventId: string }>('create_event', { worldId: p.worldId, title: 'Mira crowned in Tarn', start: '1204' })
     const report = { worldId: p.worldId, severity: 'contradiction', title: 'Mira in two places', explanation: 'She is crowned in Tarn while at sea.', about: [{ kind: 'event', id: eventId }], suggestion: 'Move the crowning a year later.' }

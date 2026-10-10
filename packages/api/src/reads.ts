@@ -12,15 +12,17 @@ import {
   structureWarnings,
   timelineWarnings,
   ecosystemWarnings,
+  factionWarnings,
+  relationshipsAt,
   BUILTIN_BLUEPRINTS,
   type SpatialNode
 } from '@universe/core'
 import { formatPeriod, deriveCalendar, moonsOf, skyEvents } from '@universe/sim'
 import { z } from 'zod'
 import { exportWorldBible } from './bible'
-import { biomeName, describeCalendar, describeCharacter, describeEvent, describeFinding, describeMoons, describePowerAt, describePowerSystem, describeStructure, describeTheme, kindLabel, nodePath, round, worldSnapshot } from './describe'
+import { biomeName, describeCalendar, describeCharacter, describeEvent, describeFactionAt, describeFactionHistory, describeFinding, describeRelationFrom, describeRelationship, describeMoons, describePowerAt, describePowerSystem, describeStructure, describeTheme, kindLabel, nodePath, round, worldSnapshot } from './describe'
 import { ApiError, notFound } from './host'
-import { QueryList, QueryNumber, When, operation, type ApiContext } from './operation'
+import { QueryFlag, QueryList, QueryNumber, When, operation, type ApiContext } from './operation'
 import { htmlToText } from './text'
 
 /** Stages as the API names them. */
@@ -37,7 +39,7 @@ function worldSummary({ models: m }: ApiContext, node: SpatialNode) {
     name: node.name,
     path: nodePath(m.data().nodes, node.id),
     now: m.date(node.id, m.now(node.id), 'year'),
-    counts: { events: t.events.length, structures: t.structures.length, characters: t.characters.length, regions: view.regions.length, species: t.lifeforms.length }
+    counts: { events: t.events.length, structures: t.structures.length, characters: t.characters.length, factions: t.factions.length, regions: view.regions.length, species: t.lifeforms.length }
   }
 }
 
@@ -127,7 +129,7 @@ export const READS = [
   operation({
     name: 'search',
     title: 'Search',
-    description: 'Finds anything in the project by name, title, notes or tags: nodes, regions, events, structures, characters, species, themes, eras and event groups.',
+    description: 'Finds anything in the project by name, title, notes or tags: nodes, regions, events, structures, characters, species, themes, eras, event groups and factions.',
     input: z.object({ q: z.string().min(1), limit: QueryNumber.int().min(1).max(200).optional() }),
     route: { method: 'GET', path: '/search' },
     run: ({ models: m }, { q, limit = 50 }) => {
@@ -146,7 +148,8 @@ export const READS = [
         ...t.lifeforms.filter((s) => hit(s, s.name, s.tags)).map((s) => ({ kind: 'Species', id: s.id, name: s.name, worldId: s.ownerId })),
         ...t.themes.filter((th) => hit(th, th.name, th.style, th.mood)).map((th) => ({ kind: 'Theme', id: th.id, name: th.name })),
         ...t.eras.filter((e) => hit(e, e.name)).map((e) => ({ kind: 'Era', id: e.id, name: e.name, worldId: e.ownerId })),
-        ...t.groups.filter((g) => hit(g, g.title)).map((g) => ({ kind: 'Event group', id: g.id, name: g.title, worldId: g.ownerId }))
+        ...t.groups.filter((g) => hit(g, g.title)).map((g) => ({ kind: 'Event group', id: g.id, name: g.title, worldId: g.ownerId })),
+        ...t.factions.filter((f) => hit(f, f.name, f.summary, f.tags)).map((f) => ({ kind: 'Faction', id: f.id, name: f.name, worldId: f.ownerId }))
       ]
       return { count: results.length, results: results.slice(0, limit) }
     }
@@ -264,7 +267,7 @@ export const READS = [
       at: When.optional(),
       regionId: z.string().optional(),
       stage: z.enum(STAGE_LABELS).optional(),
-      includeGone: z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')]).optional()
+      includeGone: QueryFlag.optional()
     }),
     route: { method: 'GET', path: '/worlds/:worldId/structures' },
     run: async (ctx, { worldId, at, regionId, stage, includeGone }) => {
@@ -427,7 +430,7 @@ export const READS = [
   operation({
     name: 'check_consistency',
     title: 'Check consistency',
-    description: 'Things on a world that are allowed but probably mistakes: effects that start before their causes, causal loops, events in regions that don’t exist yet, structure effects that reach nothing, repairs of ruins, maintenance before a structure is built, predators with nothing to eat.',
+    description: 'Things on a world that are allowed but probably mistakes: effects that start before their causes, causal loops, events in regions that don’t exist yet, structure effects that reach nothing, repairs of ruins, maintenance before a structure is built, predators with nothing to eat, people in a faction before they’re born or before it’s founded, a region held by two factions at once, allies who are enemies at the same time.',
     input: z.object({ worldId: WorldId }),
     route: { method: 'GET', path: '/worlds/:worldId/consistency' },
     run: async (ctx, { worldId }) => {
@@ -437,7 +440,8 @@ export const READS = [
       const warnings = [
         ...timelineWarnings(view.timeline, m.world(worldId).regions).map((w) => ({ area: 'timeline', message: w.message, refs: w.refs })),
         ...structureWarnings(world, curves).map((w) => ({ area: 'structures', message: w.message, refs: w.refs })),
-        ...ecosystemWarnings(view.timeline.lifeforms, view.timeline.ecolinks).map((w) => ({ area: 'ecosystem', message: w.message, refs: w.ids.map((id) => ({ kind: 'species', id })) }))
+        ...ecosystemWarnings(view.timeline.lifeforms, view.timeline.ecolinks).map((w) => ({ area: 'ecosystem', message: w.message, refs: w.ids.map((id) => ({ kind: 'species', id })) })),
+        ...factionWarnings(view.timeline, view.regions).map((w) => ({ area: 'factions', message: w.message, refs: w.refs }))
       ]
       return { ok: warnings.length === 0, warnings }
     }
@@ -469,9 +473,41 @@ export const READS = [
     }
   }),
   operation({
+    name: 'list_factions',
+    title: 'List factions',
+    description:
+      'A world’s factions (kingdoms, houses, guilds, faiths…) as of a moment ("now" by default): founded and dissolved when, what they’re part of, whether they exist then, their members (with roles), the regions they hold (their parts’ too) and how they stand with others. With history: true, everything over time instead, each with when.',
+    input: z.object({ worldId: WorldId, at: When.optional(), history: QueryFlag.optional() }),
+    route: { method: 'GET', path: '/worlds/:worldId/factions' },
+    run: ({ models: m }, { worldId, at, history }) => {
+      const view = m.world(worldId)
+      if (history) return { factions: view.timeline.factions.map((f) => describeFactionHistory(m, view, f)) }
+      const t = m.whenOrNow(worldId, at)
+      return { date: m.date(worldId, t), factions: view.timeline.factions.map((f) => describeFactionAt(m, view, f, t)) }
+    }
+  }),
+  operation({
+    name: 'get_relationships',
+    title: 'Who’s related to whom',
+    description:
+      'The relationships on a world in force at a moment ("now" by default): kin (parent, spouse, sibling), friends, allies, rivals, enemies, mentors and students, lieges and vassals, between characters and factions. Of one character or faction (by id) if given, read from their side ("Child", "Vassal").',
+    input: z.object({ worldId: WorldId, at: When.optional(), of: z.string().optional().describe('A character’s or faction’s id') }),
+    route: { method: 'GET', path: '/worlds/:worldId/relationships' },
+    run: ({ models: m }, { worldId, at, of }) => {
+      const view = m.world(worldId)
+      const t = m.whenOrNow(worldId, at)
+      const tl = view.timeline
+      if (!of) return { date: m.date(worldId, t), relationships: relationshipsAt(tl.relationships, t).map((r) => describeRelationship(m, view, r)) }
+      const kind = tl.factions.some((f) => f.id === of) ? 'faction' : tl.characters.some((c) => c.id === of) ? 'character' : undefined
+      if (!kind) throw new ApiError(404, `There is no character or faction ${of} on that world`)
+      const side = { kind, id: of } as const
+      return { date: m.date(worldId, t), relationships: relationshipsAt(tl.relationships, t, side).map((r) => describeRelationFrom(m, view, r, side)) }
+    }
+  }),
+  operation({
     name: 'export_world_bible',
     title: 'World bible',
-    description: 'A whole world written up as one Markdown document (a "world bible"): overview, calendar, regions, history in order, structures, characters, species, themes and style guides. Or as JSON with format "json".',
+    description: 'A whole world written up as one Markdown document (a "world bible"): overview, calendar, regions, history in order, structures, characters, factions and who’s related to whom, species, themes and style guides. Or as JSON with format "json".',
     input: z.object({ worldId: WorldId, format: z.enum(['markdown', 'json']).optional() }),
     route: { method: 'GET', path: '/worlds/:worldId/export' },
     run: (ctx, { worldId, format = 'markdown' }) => exportWorldBible(ctx, worldId, format)

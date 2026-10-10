@@ -71,10 +71,12 @@ export async function buildSample(project: Project): Promise<void> {
   const light = await build('Eastwatch Light', 'Lighthouse', '760', P.eastwatch, 'Guides ships around the eastern cape.', true)
 
   // People.
-  const person = (name: string, born: string, died: string, place: { lat: number; lon: number }, notes: string) => call('create_character', { ...w, name, born, died, place, notes })
-  await person('Aldric of Varn', '390', '452', P.castle, 'First king of Varn. Built the castle his heirs lived in for eight centuries.')
-  await person('Maelis Thorn', '952', '1021', P.greywatch, 'Led the Greywood against the crown, and then made the peace.')
-  await person('Oda the Lampwright', '1371', '1440', P.eastwatch, 'Relit the Eastwatch Light after a hundred and twenty years of dark.')
+  const person = async (name: string, born: string, died: string, place: { lat: number; lon: number }, notes: string) =>
+    (await call<{ characterId: string }>('create_character', { ...w, name, born, died, place, notes })).characterId
+  const aldric = await person('Aldric of Varn', '390', '452', P.castle, 'First king of Varn. Built the castle his heirs lived in for eight centuries.')
+  const edda = await person('Edda of Varn', '424', '498', P.castle, 'Aldric’s daughter, and the first queen to rule Varn in her own name.')
+  const maelis = await person('Maelis Thorn', '952', '1021', P.greywatch, 'Led the Greywood against the crown, and then made the peace.')
+  const oda = await person('Oda the Lampwright', '1371', '1440', P.eastwatch, 'Relit the Eastwatch Light after a hundred and twenty years of dark.')
 
   // History.
   const event = async (title: string, start: string, more: object = {}) => (await call<{ eventId: string }>('create_event', { ...w, title, start, ...more })).eventId
@@ -105,6 +107,29 @@ export async function buildSample(project: Project): Promise<void> {
   await call('add_event_effect', { eventId: relit, type: 'repair', structureIds: [light], amount: 80 })
   await call('set_maintenance', { structureId: light, at: '1402', maintained: true, causeEventId: relit })
   await call('update_note', { id: stones, text: 'Left to weather since they were raised: by the Thaw only a few still stand.', mode: 'append' })
+
+  // Who rules, who belongs, and who stands with whom.
+  const faction = async (input: object) => (await call<{ factionId: string }>('create_faction', { ...w, ...input })).factionId
+  const kingdom = await faction({ name: 'The Kingdom of Varn', kind: 'kingdom', emblem: '👑', color: '#c9a227', foundedBy: crowned, summary: 'The lowland crown, from Aldric’s day to now.' })
+  const house = await faction({ name: 'House Aldric', kind: 'house', emblem: '🦌', color: '#b5523b', partOf: kingdom, founded: '421', dissolved: '1215', dissolvedBy: abandoned, summary: 'Aldric’s line, who held the crown until the castle was given up to the snow.' })
+  const clans = await faction({ name: 'The Greywood clans', kind: 'clan', emblem: '🌲', color: '#4f7a4a', summary: 'The forest folk past the Spine, who answer to their own war-chiefs.' })
+  const lampwrights = await faction({ name: 'The Lampwrights’ Guild', kind: 'guild', emblem: '🏮', color: '#e8b04a', founded: '760', summary: 'Keepers of the Lamplight, and of the Eastwatch Light.' })
+  await call('hold_region', { factionId: kingdom, regionId: varn, fromEventId: crowned })
+  await call('hold_region', { factionId: kingdom, regionId: spine, fromEventId: silver })
+  await call('hold_region', { factionId: clans, regionId: greywood })
+  const member = (factionId: string, characterId: string, role: string, more: object = {}) => call('add_member', { factionId, characterId, role, ...more })
+  await member(house, aldric, 'king', { fromEventId: crowned, until: '452' })
+  await member(house, edda, 'queen', { from: '452', until: '498' })
+  await member(clans, maelis, 'war-chief', { from: '975' })
+  await member(lampwrights, oda, 'master', { from: '1395' })
+  const relate = (fromId: string, toId: string, type: string, more: object = {}) => call('set_relationship', { fromId, toId, type, ...more })
+  await relate(aldric, edda, 'parent')
+  await relate(kingdom, clans, 'enemy', { fromEventId: rebellion, untilEventId: peace })
+  await relate(kingdom, clans, 'liege', { fromEventId: peace, note: 'The clans keep their own law, and send timber and a tithe of oak to the crown.' })
+  await relate(lampwrights, kingdom, 'ally', { from: '760', until: '1180', untilEventId: ash })
+  await call('update_event', { eventId: rebellion, who: [clans, maelis] })
+  await call('update_event', { eventId: peace, who: [kingdom, clans, maelis] })
+  await call('update_event', { eventId: relit, who: [oda, lampwrights] })
 
   // The look of each age.
   const theme = async (name: string, preset: string, style: string) => (await call<{ themeId: string }>('create_theme', { name, preset, style })).themeId

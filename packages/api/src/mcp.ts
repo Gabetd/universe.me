@@ -24,7 +24,7 @@ export interface JsonRpcMessage {
 /** Protocol versions this server speaks, newest first; a client asking for another gets the newest. */
 const VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05']
 
-const INSTRUCTIONS = `Universe is a worldbuilding app: a universe of galaxies, star systems and worlds, each world with a timeline of events, regions, structures that weather over time, characters, species and themes (the look and tone of an age).
+const INSTRUCTIONS = `Universe is a worldbuilding app: a universe of galaxies, star systems and worlds, each world with a timeline of events, regions, structures that weather over time, characters, factions (who belongs, what they hold) and their relationships, species and themes (the look and tone of an age).
 Start with list_worlds, then get_world for its calendar: every date is written in that world's calendar ("1204", "15 Mar 1204", "c. 1200"). get_world_snapshot shows a world at a moment; get_theme_at gives the tone and prose style guide to write in.
 Every change you make is tagged as yours in the app and can be undone in one click; with review mode on, changes wait for the user to accept them.`
 
@@ -225,7 +225,7 @@ export class McpServer {
                 snapshot.theme ? `The age's tone: ${snapshot.theme.dominant.name}${snapshot.theme.dominant.mood.length ? ` (${snapshot.theme.dominant.mood.join(', ')})` : ''}.` : '',
                 style ? `Write it this way: ${style}` : '',
                 snapshot.powers.length ? 'Powers (magic, faith, technology, politics…) work only as `powers` says they do in this age.' : '',
-                'Stay true to what is there at that moment (only these structures stand, only these people are alive):',
+                'Stay true to what is there at that moment (only these structures stand, only these people are alive, these factions hold these lands, and people stand with each other as `relationships` says):',
                 JSON.stringify(snapshot, null, 2)
               ]
                 .filter(Boolean)
@@ -248,7 +248,8 @@ export class McpServer {
         era: index(t.eras),
         power: index(t.powers),
         species: index(t.lifeforms),
-        group: index(t.groups)
+        group: index(t.groups),
+        faction: index(t.factions)
       }
       return {
         description: `Inconsistencies on ${view.node.name}`,
@@ -258,7 +259,7 @@ export class McpServer {
             content: {
               type: 'text',
               text: [
-                `Read the world ${view.node.name} below as a careful editor would, and find what doesn't fit together${args.focus ? `, looking most closely at ${args.focus}` : ''}: people in two places at once or acting before they're born or after they die, events out of order with their causes, places used before they exist, powers (magic, faith, technology, politics) used in ways their age doesn't allow, dates the calendar can't have, notes that contradict the history, names spelled two ways.`,
+                `Read the world ${view.node.name} below as a careful editor would, and find what doesn't fit together${args.focus ? `, looking most closely at ${args.focus}` : ''}: people in two places at once or acting before they're born or after they die, people serving two rival factions at once or married to their enemies, land held by a faction that's gone, events out of order with their causes, places used before they exist, powers (magic, faith, technology, politics) used in ways their age doesn't allow, dates the calendar can't have, notes that contradict the history, names spelled two ways.`,
                 'Report each one with report_inconsistency (worldId, severity: contradiction, unlikely or question; a one-line title; why, in a few sentences; what it is about, by the ids below; a fix if there is one). Leave alone what is already reported or was dismissed (listed below), and what the app’s own checks already say. Report only real problems; if there are none, say so.',
                 `The world bible:\n\n${text(bible)}`,
                 `Ids, by kind (name = id):\n${text(ids)}`,

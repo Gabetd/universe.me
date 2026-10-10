@@ -29,7 +29,8 @@ describe('the sample universe', () => {
       expect(s.regions).toHaveLength(4)
       const t = s.timeline
       expect([t.eras.length, t.events.length, t.links.length, t.groups.length]).toEqual([4, 11, 5, 1])
-      expect([t.structures.length, t.characters.length, t.themes.length, t.themeSpans.length]).toEqual([7, 3, 3, 3])
+      expect([t.structures.length, t.characters.length, t.themes.length, t.themeSpans.length]).toEqual([7, 4, 3, 3])
+      expect([t.factions.length, t.memberships.length, t.holdings.length, t.relationships.length]).toEqual([4, 4, 3, 4])
       expect([t.lifeforms.length, t.powers.length, t.powerAges.length]).toEqual([5, 1, 2])
       expect(t.effects.length).toBeGreaterThanOrEqual(2)
       // Its present day is after the Thaw.

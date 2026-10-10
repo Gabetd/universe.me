@@ -3,6 +3,8 @@ import {
   BUILTIN_BLUEPRINTS,
   DIETS,
   EFFECT_TYPES,
+  FACTION_KINDS,
+  RELATION_TYPES,
   ECO_LINK_TYPES,
   HexColor,
   LIGHTING_PRESETS,
@@ -23,12 +25,13 @@ import {
   type Command,
   type AspectValues,
   type LatLon,
+  type Party,
   type PowerAspect
 } from '@universe/core'
 import { readSeed } from '@universe/procgen'
 import { EARTH_ORBIT, luminosityOf } from '@universe/sim'
 import { z } from 'zod'
-import { biomeIds, refName } from './describe'
+import { biomeIds, partyName, refName } from './describe'
 import { ApiError, findOr404, type WriteOptions } from './host'
 import { When, operation, written, type ApiContext } from './operation'
 import type { WorldView } from './model'
@@ -97,6 +100,46 @@ function blueprintId(ctx: ApiContext, nameOrId: string): string {
   return b.id
 }
 
+/** A character or faction on a world, by id. */
+function partyOf(view: WorldView, id: string): Party {
+  if (view.timeline.characters.some((c) => c.id === id)) return { kind: 'character', id }
+  if (view.timeline.factions.some((f) => f.id === id)) return { kind: 'faction', id }
+  throw new ApiError(404, `There is no character or faction ${id} on ${view.node.name}`)
+}
+
+/** A faction on a world by id or name. */
+function factionNamed(view: WorldView, nameOrId: string) {
+  const all = view.timeline.factions
+  const f = all.find((x) => x.id === nameOrId) ?? all.find((x) => x.name.toLowerCase() === nameOrId.trim().toLowerCase())
+  if (!f) throw new ApiError(404, `There is no faction ${nameOrId} on ${view.node.name}${all.length ? ` (its factions: ${all.map((x) => x.name).join(', ')})` : ''}`)
+  return f
+}
+
+const SpanInput = {
+  from: When.optional().describe('When it begins; leave out for "from the start" (or from fromEventId’s date)'),
+  until: When.optional().describe('When it ends; leave out for "still"'),
+  fromEventId: z.string().optional().describe('The event that began it (its date is used if `from` isn’t given)'),
+  untilEventId: z.string().optional().describe('The event that ended it')
+}
+
+/** A span's fields from a client's dates and events (an event's date standing in for one not given). */
+function spanOf(ctx: ApiContext, worldId: string, p: { from?: string | number; until?: string | number; fromEventId?: string; untilEventId?: string }) {
+  const m = ctx.models
+  const event = (id: string | undefined) => {
+    if (!id) return undefined
+    const e = m.event(id)
+    if (e.ownerId !== worldId) throw new ApiError(400, `“${e.title}” is on another world`)
+    return e
+  }
+  const [begin, finish] = [event(p.fromEventId), event(p.untilEventId)]
+  const start = p.from !== undefined ? m.when(worldId, p.from) : (begin?.start ?? null)
+  const end = p.until !== undefined ? m.when(worldId, p.until) : finish ? (finish.end ?? finish.start) : null
+  if (start !== null && end !== null && end < start) throw new ApiError(400, 'It ends before it begins')
+  return { start, end, startEventId: begin?.id ?? null, endEventId: finish?.id ?? null }
+}
+
+const Who = z.array(z.string()).describe('Characters’ and factions’ ids: who took part')
+
 /** Where notes go, by the kind of thing an id names. */
 function notesTarget(ctx: ApiContext, id: string): { type: string; notes: string; name: string } {
   const data = ctx.models.data()
@@ -112,7 +155,8 @@ function notesTarget(ctx: ApiContext, id: string): { type: string; notes: string
     ['species.update', t.lifeforms],
     ['theme.update', t.themes],
     ['group.update', t.groups],
-    ['era.update', t.eras]
+    ['era.update', t.eras],
+    ['faction.update', t.factions]
   ]
   for (const [type, list] of lists) {
     const r = list.find((x) => x.id === id)
@@ -126,7 +170,7 @@ export const WRITES = [
   operation({
     name: 'create_event',
     title: 'Create an event',
-    description: 'Adds an event to a world’s timeline: a title, when (a moment, or a span with an end), where (regions and/or points), notes and tags. Returns its id.',
+    description: 'Adds an event to a world’s timeline: a title, when (a moment, or a span with an end), where (regions and/or points), who took part (characters and factions), notes and tags. Returns its id.',
     input: z.object({
       worldId: z.string(),
       title: z.string().min(1).max(200),
@@ -138,7 +182,8 @@ export const WRITES = [
       regionIds: z.array(z.string()).optional(),
       places: z.array(Place).optional(),
       lane: z.string().optional().describe('A lane by name; made if the world has none called that'),
-      color: HexColor.optional()
+      color: HexColor.optional(),
+      who: Who.optional()
     }),
     route: { method: 'POST', path: '/worlds/:worldId/events' },
     write: true,
@@ -164,7 +209,8 @@ export const WRITES = [
           laneId: lane.laneId,
           ...(p.color && { color: p.color }),
           ...notesAndTags(p),
-          locations: [...(p.regionIds ?? []).map((regionId) => ({ kind: 'region' as const, regionId })), ...(p.places ?? []).map((pl) => ({ kind: 'point' as const, ...pl }))]
+          locations: [...(p.regionIds ?? []).map((regionId) => ({ kind: 'region' as const, regionId })), ...(p.places ?? []).map((pl) => ({ kind: 'point' as const, ...pl }))],
+          ...(p.who && { participants: p.who.map((x) => partyOf(view, x)) })
         }
       }
       return write(ctx, [...lane.commands, event], `Added the event “${p.title}” (${m.date(p.worldId, start.t, precision)})`, { eventId: id })
@@ -173,8 +219,8 @@ export const WRITES = [
   operation({
     name: 'update_event',
     title: 'Edit an event',
-    description: 'Changes an event’s title, dates, tags or notes (notes replace what’s there; use update_note to add to them).',
-    input: z.object({ eventId: z.string(), title: z.string().min(1).max(200).optional(), start: When.optional(), end: z.union([When, z.null()]).optional(), tags: Tags.optional(), notes: Notes.optional() }),
+    description: 'Changes an event’s title, dates, tags, notes (they replace what’s there; use update_note to add to them) or who took part (the whole list).',
+    input: z.object({ eventId: z.string(), title: z.string().min(1).max(200).optional(), start: When.optional(), end: z.union([When, z.null()]).optional(), tags: Tags.optional(), notes: Notes.optional(), who: Who.optional() }),
     route: { method: 'POST', path: '/events/:eventId' },
     write: true,
     run: (ctx, p) => {
@@ -185,7 +231,8 @@ export const WRITES = [
         ...(p.title && { title: p.title }),
         ...(start && { start: start.t, precision: start.precision }),
         ...(p.end !== undefined && { end: p.end === null ? null : m.when(e.ownerId, p.end) }),
-        ...notesAndTags(p)
+        ...notesAndTags(p),
+        ...(p.who && { participants: p.who.map((x) => partyOf(m.world(e.ownerId), x)) })
       }
       return write(ctx, [{ type: 'event.update', payload: { id: e.id, patch } }], `Edited the event “${p.title ?? e.title}”`)
     }
@@ -390,6 +437,134 @@ export const WRITES = [
     }
   }),
   operation({
+    name: 'create_faction',
+    title: 'Create a faction',
+    description: `Adds a faction to a world: a kingdom, empire, house, clan, guild, order, faith, company or band (${FACTION_KINDS.join(', ')}), founded and dissolved when (or by which events), part of another faction (a house in a kingdom), with an emblem (an emoji or a letter or two), a summary and notes. Then add_member, hold_region and set_relationship.`,
+    input: z.object({
+      worldId: z.string(),
+      name: z.string().min(1).max(200),
+      kind: z.enum(FACTION_KINDS),
+      founded: When.optional(),
+      dissolved: When.optional(),
+      foundedBy: z.string().optional().describe('The event that founded it'),
+      dissolvedBy: z.string().optional().describe('The event that ended it'),
+      partOf: z.string().optional().describe('The faction it belongs to, by name or id'),
+      emblem: z.string().max(8).optional(),
+      color: HexColor.optional(),
+      summary: z.string().max(2000).optional(),
+      notes: Notes.optional(),
+      tags: Tags.optional()
+    }),
+    route: { method: 'POST', path: '/worlds/:worldId/factions' },
+    write: true,
+    run: (ctx, p) => {
+      const view = ctx.models.world(p.worldId)
+      const id = newId()
+      const span = spanOf(ctx, p.worldId, { from: p.founded, until: p.dissolved, fromEventId: p.foundedBy, untilEventId: p.dissolvedBy })
+      const payload = {
+        id,
+        ownerId: view.node.id,
+        name: p.name,
+        kind: p.kind,
+        ...span,
+        ...(p.partOf && { parentId: factionNamed(view, p.partOf).id }),
+        ...(p.emblem && { emblem: p.emblem }),
+        ...(p.color && { color: p.color }),
+        ...(p.summary && { summary: p.summary }),
+        ...notesAndTags(p)
+      }
+      return write(ctx, [{ type: 'faction.create', payload }], `Added the faction ${p.name}`, { factionId: id })
+    }
+  }),
+  operation({
+    name: 'update_faction',
+    title: 'Edit a faction',
+    description: 'Changes a faction’s name, kind, emblem, colour, summary, notes, what it’s part of (null: nothing), or when it was founded or dissolved (null: from the start, or still). Notes replace what’s there.',
+    input: z.object({
+      factionId: z.string(),
+      name: z.string().min(1).max(200).optional(),
+      kind: z.enum(FACTION_KINDS).optional(),
+      founded: z.union([When, z.null()]).optional(),
+      dissolved: z.union([When, z.null()]).optional(),
+      partOf: z.union([z.string(), z.null()]).optional(),
+      emblem: z.string().max(8).optional(),
+      color: HexColor.optional(),
+      summary: z.string().max(2000).optional(),
+      notes: Notes.optional(),
+      tags: Tags.optional()
+    }),
+    route: { method: 'POST', path: '/factions/:factionId' },
+    write: true,
+    run: (ctx, p) => {
+      const m = ctx.models
+      const f = findOr404(m.data().timeline.factions, p.factionId, 'faction')
+      const view = m.world(f.ownerId)
+      const date = (w: string | number | null) => (w === null ? null : m.when(f.ownerId, w))
+      const patch = {
+        ...(p.name && { name: p.name }),
+        ...(p.kind && { kind: p.kind }),
+        ...(p.founded !== undefined && { start: date(p.founded) }),
+        ...(p.dissolved !== undefined && { end: date(p.dissolved) }),
+        ...(p.partOf !== undefined && { parentId: p.partOf === null ? null : factionNamed(view, p.partOf).id }),
+        ...(p.emblem !== undefined && { emblem: p.emblem }),
+        ...(p.color && { color: p.color }),
+        ...(p.summary !== undefined && { summary: p.summary }),
+        ...notesAndTags(p)
+      }
+      return write(ctx, [{ type: 'faction.update', payload: { id: f.id, patch } }], `Edited the faction ${p.name ?? f.name}`)
+    }
+  }),
+  operation({
+    name: 'add_member',
+    title: 'Add someone to a faction',
+    description: 'Makes a character a member of a faction, perhaps with a role ("king", "master of coin"), from a date (or the event that made them one) until another (or for good). To end one, set its `end` with run_commands (membership.update).',
+    input: z.object({ factionId: z.string(), characterId: z.string(), role: z.string().max(100).optional(), ...SpanInput }),
+    route: { method: 'POST', path: '/factions/:factionId/members' },
+    write: true,
+    run: (ctx, p) => {
+      const m = ctx.models
+      const f = findOr404(m.data().timeline.factions, p.factionId, 'faction')
+      const c = findOr404(m.world(f.ownerId).timeline.characters, p.characterId, 'character on that world')
+      const id = newId()
+      const payload = { id, factionId: f.id, characterId: c.id, ...(p.role && { role: p.role }), ...spanOf(ctx, f.ownerId, p) }
+      return write(ctx, [{ type: 'membership.create', payload }], `${c.name} joins ${f.name}${p.role ? ` as ${p.role}` : ''}`, { membershipId: id })
+    }
+  }),
+  operation({
+    name: 'hold_region',
+    title: 'Give a faction a region',
+    description: 'Says a faction holds a region (its territory) from a date (or the event it was taken in) until another (or still). A region changing hands is one holding ending when the next begins.',
+    input: z.object({ factionId: z.string(), regionId: z.string(), ...SpanInput }),
+    route: { method: 'POST', path: '/factions/:factionId/territory' },
+    write: true,
+    run: (ctx, p) => {
+      const m = ctx.models
+      const f = findOr404(m.data().timeline.factions, p.factionId, 'faction')
+      const region = m.region(f.ownerId, p.regionId)
+      const id = newId()
+      return write(ctx, [{ type: 'holding.create', payload: { id, factionId: f.id, regionId: region.id, ...spanOf(ctx, f.ownerId, p) } }], `${f.name} holds ${region.name}`, { holdingId: id })
+    }
+  }),
+  operation({
+    name: 'set_relationship',
+    title: 'Relate two characters or factions',
+    description: `Says how two characters or factions (or one of each) on a world stand: ${RELATION_TYPES.join(', ')}. For parent, mentor and liege, \`fromId\` is the parent, mentor or liege of \`toId\`; the others read the same both ways. A label of its own ("sworn brother") reads instead of the type. From a date (or event) until another (or still).`,
+    input: z.object({ fromId: z.string(), toId: z.string(), type: z.enum(RELATION_TYPES), label: z.string().max(100).optional(), note: z.string().max(2000).optional(), ...SpanInput }),
+    route: { method: 'POST', path: '/relationships' },
+    write: true,
+    run: (ctx, p) => {
+      const m = ctx.models
+      const t = m.data().timeline
+      const owner = (t.characters.find((c) => c.id === p.fromId) ?? t.factions.find((f) => f.id === p.fromId))?.ownerId
+      if (!owner) throw new ApiError(404, `There is no character or faction ${p.fromId}`)
+      const view = m.world(owner)
+      const [from, to] = [partyOf(view, p.fromId), partyOf(view, p.toId)]
+      const id = newId()
+      const payload = { id, ownerId: owner, from, to, type: p.type, ...(p.label && { label: p.label }), ...(p.note && { note: p.note }), ...spanOf(ctx, owner, p) }
+      return write(ctx, [{ type: 'relationship.create', payload }], `${partyName(view, from)} and ${partyName(view, to)}: ${p.label || p.type}`, { relationshipId: id })
+    }
+  }),
+  operation({
     name: 'create_region',
     title: 'Draw a region',
     description: 'Adds a named region (a country, a forest, a sea) to a world, as an outline of at least three points.',
@@ -407,7 +582,7 @@ export const WRITES = [
   operation({
     name: 'update_note',
     title: 'Write notes',
-    description: 'Replaces or adds to the notes of anything that has them: a world or other node, a region, an event, a structure, a character, a species, a theme or an event group.',
+    description: 'Replaces or adds to the notes of anything that has them: a world or other node, a region, an event, a structure, a character, a species, a theme, an event group, an era or a faction.',
     input: z.object({ id: z.string(), text: Notes, mode: z.enum(['replace', 'append']).optional() }),
     route: { method: 'POST', path: '/notes/:id' },
     write: true,

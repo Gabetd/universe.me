@@ -1,4 +1,4 @@
-import { biomeName, describeCalendar, describeCharacter, describeEvent, describePowerSystem, describeStructure, nodePath } from './describe'
+import { biomeName, describeCalendar, describeCharacter, describeEvent, describeFactionHistory, describePowerSystem, describeRelationship, describeStructure, nodePath } from './describe'
 import type { ApiContext } from './operation'
 import { htmlToText } from './text'
 
@@ -46,6 +46,8 @@ async function bibleData({ models: m }: ApiContext, worldId: string) {
       notes: htmlToText(s.notes)
     })),
     powers: t.powers.map((p) => describePowerSystem(m, view, p)),
+    factions: t.factions.map((f) => describeFactionHistory(m, view, f)),
+    relationships: t.relationships.filter((r) => r.from.kind === 'character' && r.to.kind === 'character').map((r) => describeRelationship(m, view, r)),
     themes: t.themeSpans
       .map((sp) => ({ span: sp, theme: t.themes.find((x) => x.id === sp.themeId) }))
       .filter((x) => x.theme)
@@ -115,6 +117,24 @@ function markdown(b: BibleData): string {
   section(
     'Characters',
     b.characters.flatMap((c) => [`### ${md(c.name)}`, '', `*Born ${md(c.born)}${c.died ? `, died ${md(c.died)}` : ''}${c.alive && c.region ? `; now in ${md(c.region)}` : ''}.*`, '', ...para(c.notes)])
+  )
+  section(
+    'Factions',
+    b.factions.flatMap((f) => [
+      `### ${f.emblem ? `${md(f.emblem)} ` : ''}${md(f.name)}`,
+      '',
+      `*${md(f.kind)}${f.partOf ? ` of ${md(f.partOf)}` : ''}${f.founded ? `, founded ${md(f.founded)}` : ''}${f.dissolved ? `, dissolved ${md(f.dissolved)}` : ''}.*`,
+      '',
+      ...(f.summary ? [md(f.summary), ''] : []),
+      ...(f.territory.length ? [`**Held:** ${f.territory.map((h) => `${md(h.region)} (${md(h.when)})`).join(', ')}`, ''] : []),
+      ...(f.members.length ? [`**Members:** ${f.members.map((x) => `${md(x.name)}${x.role ? `, ${md(x.role)}` : ''} (${md(x.when)})`).join('; ')}`, ''] : []),
+      ...(f.relationships.length ? [`**Stands with:** ${f.relationships.map((r) => `${md(r.with)}: ${md(r.is)}${r.when ? ` (${md(r.when)})` : ''}`).join('; ')}`, ''] : []),
+      ...para(f.notes)
+    ])
+  )
+  section(
+    'Who’s related to whom',
+    b.relationships.map((r) => `- ${md(r.from)} and ${md(r.to)}: ${md(r.reads)}${r.when ? ` (${md(r.when)})` : ''}${r.note ? `. ${md(r.note)}` : ''}`)
   )
   section(
     'Life',
