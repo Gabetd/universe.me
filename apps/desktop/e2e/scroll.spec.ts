@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test'
-import { clickAt, expect, inspector, newWorld, openMap, row, setPlayhead, state, test } from './helpers'
+import { clickAt, expect, frames, inspector, newWorld, openMap, row, setPlayhead, state, test } from './helpers'
 
 const panel = (page: Page) => page.locator('.inspector-panel')
 /** Where a control is on screen. */
@@ -14,10 +14,14 @@ const shownAt = async (target: Locator) => (await target.boundingBox())?.y
  * focused, which isn't the panel moving.
  */
 async function stays(page: Page, target: Locator, change: () => Promise<unknown>, saved: () => Promise<unknown>): Promise<void> {
+  // The wheel lets go of the control last used, at once, as a user's scrolling does (a scroll event only arrives a frame later, and the panel could still hold that control in place).
+  await panel(page).dispatchEvent('wheel')
   await target.evaluate((el) => el.scrollIntoView({ block: 'center' }))
   const room = Math.floor((await target.boundingBox())!.y - (await panel(page).boundingBox())!.y) - 1
   await panel(page).evaluate((el, by) => el.scrollBy(0, by), Math.min(40, room))
   expect(await panel(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+  // The scroll events in, and anything that answers them done.
+  await frames(page)
   const before = await shownAt(target)
   const [box, shown] = [await target.boundingBox(), await panel(page).boundingBox()]
   expect(box!.y >= shown!.y && box!.y + box!.height <= shown!.y + shown!.height, 'the control is in full view before it changes').toBe(true)
