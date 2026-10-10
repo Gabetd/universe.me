@@ -78,6 +78,10 @@ if [[ ! -x "$CACHE/actionlint-$ACTIONLINT_VERSION" ]]; then
 fi
 (cd "$ROOT" && "$CACHE/actionlint-$ACTIONLINT_VERSION" -shellcheck= .github/workflows/*.yml) || fail "workflow files have errors"
 
+# CI installs exactly this Node (.github/actions/setup); a run on another one proves nothing about CI.
+NODE_WANTED=$(<"$ROOT/.node-version")
+[[ $(node --version) == "v$NODE_WANTED" ]] || fail "Node $(node --version) here, CI runs v$NODE_WANTED (.node-version): fnm use, nvm use or mise install"
+
 # The commit tested, fixed now: a commit made while this runs isn't the one that passed.
 TESTED=$(git -C "$ROOT" rev-parse HEAD)
 step "Clean checkout of ${TESTED:0:7}"

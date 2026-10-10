@@ -1,5 +1,5 @@
 name: Set up the workspace
-description: pnpm, Node 24 and the workspace's dependencies from the lockfile, plus what the job needs of Electron, kept in the Actions cache.
+description: pnpm, the Node in .node-version and the workspace's dependencies from the lockfile, plus what the job needs of Electron, kept in the Actions cache.
 inputs:
   electron:
     description: >-
@@ -13,7 +13,7 @@ runs:
     - uses: pnpm/action-setup@v4
     - uses: actions/setup-node@v4
       with:
-        node-version: 24
+        node-version-file: .node-version
         cache: pnpm
     - name: Install dependencies (frozen lockfile)
       shell: bash
