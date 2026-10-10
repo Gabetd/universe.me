@@ -9,12 +9,14 @@ const shownAt = async (target: Locator) => (await target.boundingBox())?.y
  * Changes a setting part way down the inspector (scrolled, so a jump shows),
  * and checks it's still where it was on screen once the change is saved and
  * whatever shows it has caught up. The control is put in the middle of the
- * panel first: at its edge, the browser itself scrolls a control into view as
- * it's focused, which isn't the panel moving.
+ * panel first, then scrolled on as far as it stays in full view: at the
+ * panel's edge, the browser itself scrolls a control into view as it's
+ * focused, which isn't the panel moving.
  */
 async function stays(page: Page, target: Locator, change: () => Promise<unknown>, saved: () => Promise<unknown>): Promise<void> {
   await target.evaluate((el) => el.scrollIntoView({ block: 'center' }))
-  await panel(page).evaluate((el) => el.scrollBy(0, 40))
+  const room = Math.floor((await target.boundingBox())!.y - (await panel(page).boundingBox())!.y) - 1
+  await panel(page).evaluate((el, by) => el.scrollBy(0, by), Math.min(40, room))
   expect(await panel(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
   const before = await shownAt(target)
   const [box, shown] = [await target.boundingBox(), await panel(page).boundingBox()]
@@ -41,8 +43,13 @@ test('a settings panel stays where it is when a setting changes', async ({ h }) 
   const node = () => page.evaluate(async () => (await window.universe.getState()).nodes.find((n) => n.kind === 'world')!)
   const ins = inspector(page)
 
-  const customize = ins.getByRole('button', { name: 'Customize' })
-  if (await customize.isVisible()) await customize.click()
+  /** Unlocks the options, and waits until they show unlocked (so nothing is still changing as the next one is measured). */
+  const customize = async () => {
+    const button = ins.getByRole('button', { name: 'Customize' })
+    if (await button.isVisible()) await button.click()
+    await expect(ins.getByText('Custom world: set the options below')).toBeVisible()
+  }
+  await customize()
   const land = ins.getByRole('group', { name: 'Land type' })
   await stays(
     page,
@@ -78,7 +85,7 @@ test('a settings panel stays where it is when a setting changes', async ({ h }) 
     },
     async () => (await world()).settings.seedText
   )
-  await ins.getByRole('button', { name: 'Customize' }).click()
+  await customize()
 
   // A change to the world's own record (its shape's seed), which the whole form shows.
   const shape = ins.getByRole('button', { name: '🎲 New shape' })
