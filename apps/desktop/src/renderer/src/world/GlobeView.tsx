@@ -187,6 +187,8 @@ function Planet({
     c.scale.setScalar(size)
   })
 
+  const hitSurface = useMemo(() => surfaceRaycast(model, scale), [model, scale])
+
   return (
     <group>
       {faces.map((f, i) => (
@@ -194,6 +196,8 @@ function Planet({
           key={f.index}
           geometry={f.geometry}
           material={land[i]}
+          // The first face finds the point under the pointer for the whole planet; the others leave it to it.
+          raycast={i === 0 ? hitSurface : noRaycast}
           onPointerDown={press}
           onPointerMove={move}
           onPointerOut={out}
@@ -226,6 +230,37 @@ function Planet({
       ))}
     </group>
   )
+}
+
+/**
+ * Where a ray meets the planet, worked out on the sphere rather than tried
+ * against each of the faces' 786,000 triangles on every move of the pointer:
+ * it meets the sphere at sea level, then the sphere through the terrain where
+ * it met it, a few times over, which closes in on the surface (its relief is
+ * small next to the planet). For the first face's mesh, standing for all six.
+ */
+function surfaceRaycast(model: TerrainModel, scale: number): THREE.Mesh['raycast'] {
+  const [inverse, local, at, dir] = [new THREE.Matrix4(), new THREE.Ray(), new THREE.Vector3(), new THREE.Vector3()]
+  /** Along the ray, how far to where it first meets the sphere of radius r about the centre (null if it doesn't, ahead). */
+  const toSphere = (ray: THREE.Ray, r: number) => {
+    const b = ray.origin.dot(ray.direction)
+    const disc = b * b - (ray.origin.lengthSq() - r * r)
+    if (disc < 0) return null
+    const t = -b - Math.sqrt(disc)
+    return t >= 0 ? t : null
+  }
+  return function (this: THREE.Mesh, raycaster: THREE.Raycaster, hits: THREE.Intersection[]) {
+    local.copy(raycaster.ray).applyMatrix4(inverse.copy(this.matrixWorld).invert())
+    let t = toSphere(local, 1)
+    for (let i = 0; i < 4 && t !== null; i++) {
+      dir.copy(local.at(t, at)).normalize()
+      t = toSphere(local, 1 + model.sampleHeight(dir.x, dir.y, dir.z) * scale)
+    }
+    if (t === null) return
+    const point = local.at(t, at).applyMatrix4(this.matrixWorld)
+    const distance = raycaster.ray.origin.distanceTo(point)
+    if (distance >= raycaster.near && distance <= raycaster.far) hits.push({ distance, point: point.clone(), object: this })
+  }
 }
 
 /** The direction from the planet's centre to the point under the pointer. */
