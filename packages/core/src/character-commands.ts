@@ -2,7 +2,8 @@ import { z } from 'zod'
 import { pickColor } from './command-kit'
 import type { HandlerMap } from './commands'
 import { Character, CharacterStop, sortStops } from './characters'
-import { NewId, create, recordCrud, update } from './record-kit'
+import { characterDependents } from './faction-commands'
+import { NewId, create, deleteWith, recordCrud, update } from './record-kit'
 import { Id } from './schema'
 import { Time } from './time'
 
@@ -31,7 +32,7 @@ export const characterHandlers: HandlerMap<CharacterCommand> = {
       stops: sortStops(p.stops ?? [])
     }),
   'character.update': (store, { id, patch }, ctx) => update(store, 'character', ctx, id, patch.stops ? { ...patch, stops: sortStops(patch.stops) } : patch),
-  'character.delete': characters.delete,
+  'character.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'character', id }, ({ ownerId }) => characterDependents(store, ownerId, id)),
   'character.travel'(store, { id, stop }, ctx) {
     const character = store.records('character').get(id)
     return update(store, 'character', ctx, id, { stops: sortStops([...(character?.stops ?? []), stop]) })

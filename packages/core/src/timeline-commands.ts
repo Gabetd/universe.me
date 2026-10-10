@@ -4,11 +4,12 @@ import type { Command, HandlerMap } from './commands'
 import { NewId, Ref, clearRefs, create, deleteWith, live, recordCrud, refsWhere, setDeleted, upsert, validate } from './record-kit'
 import { Id, Name } from './schema'
 import { Time } from './time'
+import { forgetCause } from './faction-commands'
 import { EntityChange, Era, EventGroup, EventLink, Lane, LinkType, TimelineEvent } from './timeline'
 
 /** Fields of a record kind that commands may set. */
 const EventFields = TimelineEvent.pick({
-  title: true, start: true, end: true, precision: true, laneId: true, groupId: true, color: true, notes: true, tags: true, locations: true, canvas: true, canvasHidden: true
+  title: true, start: true, end: true, precision: true, laneId: true, groupId: true, color: true, notes: true, tags: true, locations: true, canvas: true, canvasHidden: true, participants: true
 })
 const EraFields = Era.pick({ name: true, start: true, end: true, color: true, notes: true })
 const ChangeFields = EntityChange.pick({ at: true, change: true, patch: true, causeEventId: true, note: true })
@@ -85,7 +86,8 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
         ...clearRefs(store, 'maintenance', ownerId, 'causeEventId', id),
         ...live(store, 'character')
           .filter((c) => c.stops.some((s) => s.eventId === id))
-          .map((c): Command => ({ type: 'character.update', payload: { id: c.id, patch: { stops: c.stops.map((s) => (s.eventId === id ? { ...s, eventId: null } : s)) } } }))
+          .map((c): Command => ({ type: 'character.update', payload: { id: c.id, patch: { stops: c.stops.map((s) => (s.eventId === id ? { ...s, eventId: null } : s)) } } })),
+        ...forgetCause(store, id)
       ],
       remove: [...refsWhere(store, 'link', ownerId, (l) => l.fromId === id || l.toId === id), ...refsWhere(store, 'effect', ownerId, (e) => e.eventId === id)]
     })),

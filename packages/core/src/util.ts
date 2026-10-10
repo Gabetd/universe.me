@@ -22,3 +22,15 @@ export function byId<T extends { id: string }>(items: readonly T[]): Map<string,
   for (const item of items) if (!map.has(item.id)) map.set(item.id, item)
   return map
 }
+
+/** Items by a key of each, in their order (Map.groupBy, before ES2024). */
+export function groupBy<T, K>(items: Iterable<T>, key: (item: T) => K): Map<K, T[]> {
+  const out = new Map<K, T[]>()
+  for (const item of items) {
+    const k = key(item)
+    const list = out.get(k)
+    if (list) list.push(item)
+    else out.set(k, [item])
+  }
+  return out
+}

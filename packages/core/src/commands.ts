@@ -4,6 +4,7 @@ import { base64ToBytes, bytesToBase64 } from './encoding'
 import type { Store } from './store'
 import { CommandError, batchOf, liveNode, liveRegion, liveWorld, newNode, patchRow, pickColor, requireRow, softDelete, type CommandContext, type HandlerResult, type Run } from './command-kit'
 import { CHARACTER_COMMANDS, characterHandlers } from './character-commands'
+import { FACTION_COMMANDS, factionHandlers } from './faction-commands'
 import { FINDING_COMMANDS, findingHandlers } from './finding-commands'
 import { POWER_COMMANDS, powerHandlers } from './power-commands'
 import { THEME_COMMANDS, themeHandlers } from './theme-commands'
@@ -77,6 +78,7 @@ export const Command = z.discriminatedUnion('type', [
   ...THEME_COMMANDS,
   ...POWER_COMMANDS,
   ...FINDING_COMMANDS,
+  ...FACTION_COMMANDS,
   /** Several commands applied together; each is validated when it runs. The batch focuses `focusId`, or what its last command did. */
   z.object({ type: z.literal('batch'), payload: z.object({ commands: z.array(z.unknown()).min(1), focusId: Id.optional() }) })
 ])
@@ -97,6 +99,7 @@ export const handlers: Handlers = {
   ...themeHandlers,
   ...powerHandlers,
   ...findingHandlers,
+  ...factionHandlers,
 
   batch(store, { commands, focusId }, ctx) {
     const results = commands.map((input) => {

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { Id, Name, Notes, RecordMeta } from './schema'
+import { Party } from './factions'
 import { Precision, Time } from './time'
 import { HexColor, LatLon } from './world'
 
@@ -32,7 +33,9 @@ export const TimelineEvent = z.object({
   /** Where its card sits on the world's canvas; unset or null lays it out automatically. */
   canvas: z.object({ x: z.number(), y: z.number() }).nullable().optional(),
   /** Every event gets a card on the canvas unless hidden. Older events don't have these fields. */
-  canvasHidden: z.boolean().nullable().optional()
+  canvasHidden: z.boolean().nullable().optional(),
+  /** Who took part: characters and factions on the world. Older events don't have it. */
+  participants: z.array(Party).optional()
 })
 export type TimelineEvent = z.infer<typeof TimelineEvent>
 

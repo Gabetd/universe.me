@@ -24,6 +24,8 @@ import type { Store } from './store'
 import { findBlueprint } from './builtin-blueprints'
 import type { Blueprint } from './structures'
 import { stripUndefined } from './util'
+import { factionValidators, liveParty } from './faction-validators'
+import { sameParty } from './factions'
 import { powerValidators } from './power-validators'
 import { themeValidators } from './theme-validators'
 import { worldSimValidators } from './world-sim-validators'
@@ -64,7 +66,7 @@ export const validate = <K extends RecordKind>(store: Store, kind: K, record: Re
 
 /** Checks a record against the rest of the project; run on every create, update and restore. */
 const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>, check: Check<K>) => void } = {
-  event(store, e) {
+  event(store, e, { previous }) {
     const owner = liveNode(store, e.ownerId)
     if (e.end !== null && e.end < e.start) throw new CommandError('An event cannot end before it starts')
     if (e.laneId) sameOwner(liveRecord(store, 'lane', e.laneId), e.ownerId, 'lane')
@@ -73,6 +75,7 @@ const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>, check
     for (const loc of e.locations) {
       if (loc.kind === 'region' && liveRegion(store, loc.regionId).worldId !== e.ownerId) throw new CommandError('That region is on another world')
     }
+    for (const p of e.participants ?? []) if (!previous?.participants?.some((q) => sameParty(p, q))) liveParty(store, p, e.ownerId)
   },
   link(store, l, check) {
     if (l.fromId === l.toId) throw new CommandError('An event cannot be linked to itself')
@@ -115,6 +118,7 @@ const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>, check
   ...worldSimValidators,
   ...themeValidators,
   ...powerValidators,
+  ...factionValidators,
   finding: (store, f) => void liveWorld(store, f.ownerId)
 }
 
