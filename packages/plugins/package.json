@@ -1,0 +1,20 @@
+{
+  "name": "@universe/plugins",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Plugins (PLAN.md §9, M16): their manifests, and running their code sandboxed in QuickJS, with only what the host gives them.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
+    "@universe/core": "workspace:*",
+    "quickjs-emscripten-core": "0.32.0",
+    "zod": "^4.6.5"
+  }
+}
