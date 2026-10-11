@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { VersionsDialog, useVersionsDialog } from './components/ChangeVersion'
+import { DictionaryDialog, useDictionaryDialog, useSpellingNames } from './components/DictionaryDialog'
 import { ShortcutsSheet } from './components/ShortcutsSheet'
 import { UpdateBanner } from './components/UpdateBanner'
 import { Welcome } from './components/Welcome'
@@ -15,6 +16,7 @@ export function App() {
   const ready = useUi((s) => s.ready)
   const hasProject = useUi((s) => s.project !== null)
   useShortcuts({ shortcuts: showShortcuts })
+  useSpellingNames()
 
   useEffect(() => {
     const { apply } = useUi.getState()
@@ -23,6 +25,7 @@ export function App() {
     const offMenu = window.universe.onMenu((action) => {
       if (action === 'shortcuts') showShortcuts()
       else if (action === 'versions') useVersionsDialog.getState().set(true)
+      else if (action === 'dictionary') useDictionaryDialog.getState().set(true)
       else routeHistory(action)
     })
     window.addEventListener('keydown', onShortcutKey)
@@ -40,6 +43,7 @@ export function App() {
       <div className="app-main">{hasProject ? <Workspace /> : isPhoneApp() ? <NothingOpen /> : <Welcome />}</div>
       <ShortcutsSheet />
       {!isPhoneApp() && <VersionsDialog />}
+      {!isPhoneApp() && <DictionaryDialog />}
     </div>
   )
 }

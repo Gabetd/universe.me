@@ -524,6 +524,8 @@ Each milestone ends with something you can launch and demo.
 - [ ] The sample universe gains its factions (the Kingdom of Varn, the Greywood clans…) and who's related to whom.
 - [ ] Tests: commands and undo, territory and membership at a time, the graph at a time, the API and bible; e2e for a faction founded, given territory, a member joining, a relationship, the graph and the lanes.
 
+- [x] *Added during M14:* **spelling**. Misspelled words are underlined as they're typed, in every text field and the notes editor, by the app's own dictionary (English, Hunspell's, through nspell, bundled: the same everywhere, nothing downloaded; `main/dictionary.ts`). Right-clicking text gives the word's corrections (closest first, a swap of two letters counting as one change), **Add to the dictionary**, and cut, copy, paste and select all. The user's own words are kept in their profile (Edit → Dictionary… lists them, to add to or take out); the names of everything in the open universe count as words already.
+
 ### M15 — Rivers & erosion (3 weeks) — *planned*
 - Rivers that run downhill from the terrain to the sea or a lake (flow accumulation on the cube-sphere heightmap, in a worker), redrawn as land is sculpted; lakes in basins; named and selectable like regions; on the globe, map and ground.
 - Erosion over time: a world's land wearing down and rivers cutting valleys as the playhead moves (hydraulic and thermal erosion, deterministic from the seed and the world's erosion speed), shown blended like weathering; terrain edits still win.

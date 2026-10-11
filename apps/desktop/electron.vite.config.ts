@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process'
-import { resolve } from 'node:path'
+import { createRequire } from 'node:module'
+import { dirname, resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import pkg from './package.json'
@@ -19,6 +20,9 @@ if (!['main', 'staging', 'dev'].includes(channel)) throw new Error(`UNIVERSE_CHA
 
 const buildInfo = JSON.stringify({ version: pkg.version, commit: commit(), builtAt: new Date().toISOString(), channel })
 
+/** The English dictionary's files, bundled into the main process (its package exports only its loader). */
+const dictionaryFiles = dirname(createRequire(import.meta.url).resolve('dictionary-en'))
+
 // Workspace packages are TypeScript sources, so they must be bundled, not externalized.
 const workspace = ['@universe/api', '@universe/core', '@universe/db', '@universe/procgen', '@universe/sim']
 
@@ -26,6 +30,7 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin({ exclude: workspace })],
     define: { __BUILD_INFO__: buildInfo },
+    resolve: { alias: { 'dictionary-en-files': dictionaryFiles } },
     build: { rollupOptions: { external: ['node:sqlite'] } }
   },
   preload: {

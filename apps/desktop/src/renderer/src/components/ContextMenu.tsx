@@ -1,8 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { fromKeyboard, openElementMenu, parseMenuRef, useContextMenu } from '../contextMenu'
+import { editableAt, textMenu } from '../spelling'
 
-/** Where a right-click keeps the system's own behaviour: text being edited. */
-const EDITING = 'input, textarea, select, [contenteditable="true"]'
 
 /**
  * The right-click menu (see contextMenu.ts): opened on any element marked
@@ -20,7 +19,14 @@ export function ContextMenuHost() {
     const onContextMenu = (e: MouseEvent) => {
       if (e.defaultPrevented) return
       const target = e.target as Element
-      if (target.closest(EDITING)) return
+      // Text being typed: its spelling and editing (spelling.ts).
+      const editable = editableAt(target)
+      if (editable) {
+        e.preventDefault()
+        void textMenu(editable, e.clientX, e.clientY).then((menu) => useContextMenu.getState().open({ ...menu, x: e.clientX, y: e.clientY }))
+        return
+      }
+      if (target.closest('select')) return
       e.preventDefault()
       const el = target.closest<HTMLElement>('[data-menu]')
       const marked = parseMenuRef(el?.dataset.menu)

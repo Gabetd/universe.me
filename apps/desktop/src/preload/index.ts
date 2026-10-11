@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from 'electron'
 import { EVENTS, INVOKE, type AiChange, type ApiStatus, type AppState, type InvokeMethod, type MenuAction, type UniverseApi } from '../shared/api'
 import type { UpdateStatus } from '../shared/update'
 
@@ -23,3 +23,8 @@ const api: UniverseApi = {
 }
 
 contextBridge.exposeInMainWorld('universe', api)
+
+// Words typed in the page are checked by the app's own dictionary (main/dictionary.ts), which underlines the misspelled ones.
+webFrame.setSpellCheckProvider('en-US', {
+  spellCheck: (words, done) => void api.spellCheck(words).then(done, () => done([]))
+})

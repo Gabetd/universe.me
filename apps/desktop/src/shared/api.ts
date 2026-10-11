@@ -137,7 +137,7 @@ export interface ImportedModel {
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
 
 /** What a menu item asks of the window: undo or redo (whatever has focus takes it), or the shortcuts sheet. */
-export type MenuAction = 'undo' | 'redo' | 'shortcuts' | 'versions'
+export type MenuAction = 'undo' | 'redo' | 'shortcuts' | 'versions' | 'dictionary'
 
 export interface UniverseApi {
   /** The phone app's bridge (PLAN.md §6.6), rather than the window's: what's only for the computer isn't there. */
@@ -186,6 +186,18 @@ export interface UniverseApi {
   versions(): Promise<ChannelVersion[]>
   /** Installs another channel's app beside this one and opens it: null once it's opening, otherwise why it couldn't. */
   installVersion(channel: Channel): Promise<string | null>
+  /** The spelling dictionary: which of these words are misspelled (what's underlined as it's typed). */
+  spellCheck(words: string[]): Promise<string[]>
+  /** Corrections for a misspelled word, best first. */
+  spellSuggest(word: string): Promise<string[]>
+  /** The words the user added to the dictionary. */
+  dictionaryWords(): Promise<string[]>
+  addWord(word: string): Promise<string[]>
+  removeWord(word: string): Promise<string[]>
+  /** The names in the open universe, which count as spelled right. */
+  setSpellingNames(names: string[]): Promise<void>
+  /** Pastes the clipboard into the focused field (pages may write to the clipboard, but not read it). */
+  paste(): Promise<void>
   onUpdate(listener: (status: UpdateStatus) => void): () => void
 }
 
@@ -220,7 +232,14 @@ export const INVOKE: Record<InvokeMethod, string> = {
   dismissUpdate: 'update:dismiss',
   checkForUpdates: 'update:check',
   versions: 'update:versions',
-  installVersion: 'update:install-version'
+  installVersion: 'update:install-version',
+  spellCheck: 'spell:check',
+  spellSuggest: 'spell:suggest',
+  dictionaryWords: 'spell:words',
+  addWord: 'spell:add',
+  removeWord: 'spell:remove',
+  setSpellingNames: 'spell:names',
+  paste: 'edit:paste'
 }
 
 /**

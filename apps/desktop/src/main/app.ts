@@ -9,6 +9,7 @@ import type { ApiController } from './api'
 import type { Session } from './session'
 import { TAILNET_URLS } from './tailnet'
 import { CHANNELS } from '../shared/update'
+import { Dictionary } from './dictionary'
 import { Updater } from './updater'
 
 declare const __BUILD_INFO__: BuildInfo
@@ -43,6 +44,10 @@ let session: Session
 let api: ApiController
 let markLoaded!: () => void
 const loaded = new Promise<void>((resolve) => (markLoaded = resolve))
+/** The spelling dictionary, loaded the first time it's asked (it takes a moment to read). */
+let spelling: Dictionary | undefined
+const dictionary = () => (spelling ??= new Dictionary(app.getPath('userData')))
+
 const updater = new Updater(__BUILD_INFO__.channel, (status) => win?.webContents.send(EVENTS.update, status))
 /** A .universe file passed on the command line or via Finder before the window was ready. */
 let pendingOpen: string | undefined = process.argv.find((a) => a.endsWith('.universe'))
@@ -77,7 +82,9 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       sandbox: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // The app's own dictionary checks spelling (dictionary.ts, through the preload), the same everywhere and offline.
+      spellcheck: false
     }
   })
   win.once('ready-to-show', () => win?.show())
@@ -294,7 +301,9 @@ function buildMenu(): void {
         { role: 'cut' },
         { role: 'copy' },
         { role: 'paste' },
-        { role: 'selectAll' }
+        { role: 'selectAll' },
+        { type: 'separator' },
+        { label: 'Dictionary…', click: sendMenu('dictionary') }
       ]
     },
     {
@@ -408,6 +417,13 @@ function registerIpc(): void {
   handle('checkForUpdates', () => updater.check(true))
   handle('versions', () => updater.versions())
   handle('installVersion', (channel) => updater.installBeside(channel))
+  handle('spellCheck', (words) => dictionary().misspelled(words.filter((w) => typeof w === 'string').slice(0, 2000)))
+  handle('spellSuggest', (word) => dictionary().suggest(String(word)))
+  handle('dictionaryWords', () => dictionary().words())
+  handle('addWord', (word) => dictionary().add(String(word)))
+  handle('removeWord', (word) => dictionary().remove(String(word)))
+  handle('setSpellingNames', (names) => dictionary().setNames(names.filter((n) => typeof n === 'string')))
+  handle('paste', () => win?.webContents.paste())
 }
 
 // macOS delivers double-clicked files through this event, possibly before `ready`.
