@@ -18,6 +18,7 @@ import { useSurfaceTools } from './useSurfaceTools'
 import { useTerrain, type SurfaceViewProps } from './useTerrain'
 import { firstLook } from './firstLook'
 import { useShortcuts, withKey } from '../shortcuts'
+import { GROUND_SPEEDS } from './walk'
 import { showFaction } from '../contextMenu'
 import { useStructuresAt } from './useStructures'
 import { useCharactersAt } from './useCharacters'
@@ -45,7 +46,7 @@ const PICK_TOOLS: EditorTool[] = ['locate', 'move', 'travel']
 /** The rest are in the toolbar, each with a shortcut (`tool-<tool>`). */
 const TOOLBAR_TOOLS = TOOLS.filter((t) => !PICK_TOOLS.includes(t.tool))
 
-const GROUND_HINT = 'Drag to move over the ground, right-drag to look around, scroll to zoom. Scroll all the way out to go back up.'
+const GROUND_HINT = 'W A S D (or the arrows) or drag to move over the ground, Shift to go faster; right-drag to look around, scroll to zoom. Scroll all the way out to go back up.'
 
 /** WebGL can be missing (old GPUs, remote desktops); the map still works without it. */
 const hasWebGL = WEBGL.available
@@ -136,6 +137,7 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
             </button>
           ))}
         </div>
+        {activeView === 'ground' && <SpeedPicker />}
         {onSurface && activeView !== 'ground' && hasFactions && (
           <button className="territory-toggle" aria-pressed={territory} title="Colour the regions by the faction holding them at the playhead" onClick={() => set({ territory: !territory })}>
             ⚑ <span className="view-label">Territory</span>
@@ -197,6 +199,20 @@ function groundTarget(worldId: string): [LatLon, number?] {
   const event = timelineSelection?.kind === 'event' ? timeline.events.find((e) => e.id === timelineSelection.ids[0]) : undefined
   const place = event && eventPlace(event, regions)
   return [place ?? firstLook(worldId) ?? { lat: 0, lon: 0 }]
+}
+
+/** How fast W, A, S and D move over the ground. */
+function SpeedPicker() {
+  const speed = useEditor((s) => s.groundSpeed)
+  return (
+    <div className="segmented" role="radiogroup" aria-label="Speed" title="How fast W, A, S and D move (Shift: three times as fast)">
+      {GROUND_SPEEDS.map((s) => (
+        <button key={s.id} role="radio" aria-checked={speed === s.id} onClick={() => useEditor.getState().set({ groundSpeed: s.id })}>
+          {s.label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 /** Who holds the regions coloured on the view, at the playhead. */

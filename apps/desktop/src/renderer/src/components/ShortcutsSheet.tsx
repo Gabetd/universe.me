@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { SHORTCUTS, useShortcutSheet, type Shortcut } from '../shortcuts'
 
-const GROUPS: Shortcut['group'][] = ['General', 'World views', 'World tools', 'Timeline']
+const GROUPS: Shortcut['group'][] = ['General', 'World views', 'World tools', 'On the ground', 'Timeline']
 
 /** Every keyboard shortcut, from the table that runs them (`?`, or Help → Keyboard Shortcuts). */
 export function ShortcutsSheet() {

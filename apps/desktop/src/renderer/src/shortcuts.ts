@@ -17,7 +17,7 @@ export interface Shortcut {
   /** The `KeyboardEvent.key` it answers to (letters in either case); none for keys answered elsewhere. */
   key?: string
   label: string
-  group: 'General' | 'World views' | 'World tools' | 'Timeline'
+  group: 'General' | 'World views' | 'World tools' | 'On the ground' | 'Timeline'
 }
 
 const mod = navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl+'
@@ -49,6 +49,9 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'tool-erase', keys: 'E', key: 'e', label: 'Erase biome', group: 'World tools' },
   { id: 'tool-region', keys: 'G', key: 'g', label: 'Draw region', group: 'World tools' },
   { id: 'tool-place', keys: 'P', key: 'p', label: 'Place structure', group: 'World tools' },
+
+  { id: 'walk', keys: 'W A S D', label: 'Move forward, left, back and right (or the arrow keys)', group: 'On the ground' },
+  { id: 'walk-fast', keys: 'Shift', label: 'Hold to move three times as fast', group: 'On the ground' },
 
   { id: 'new-event', keys: 'N', key: 'n', label: 'New event at the playhead', group: 'Timeline' },
   { id: 'prev-event', keys: '[', key: '[', label: 'Playhead to the event before', group: 'Timeline' },

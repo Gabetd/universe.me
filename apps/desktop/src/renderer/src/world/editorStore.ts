@@ -1,6 +1,7 @@
 import type { LatLon } from '@universe/core'
 import { BIOME, type BrushTool } from '@universe/procgen'
 import { create } from 'zustand'
+import type { GroundSpeed } from './walk'
 
 /**
  * `locate` picks a point for an event's location (`locateEventId`), `place`
@@ -36,6 +37,8 @@ interface EditorState {
   factionId: string | null
   /** Regions coloured by the faction holding them at the playhead, on the globe and the map. */
   territory: boolean
+  /** How fast W, A, S and D move over the ground (walk.tsx). */
+  groundSpeed: GroundSpeed
   /** Where the ground view is (its middle), once opened. */
   ground: LatLon | null
   /** Where the globe last looked, and from how far (planet radii from the centre). */
@@ -70,6 +73,7 @@ export const useEditor = create<EditorState>((set) => ({
   travelCharacterId: null,
   factionId: null,
   territory: false,
+  groundSpeed: 'run',
   ground: null,
   lookingAt: null,
   lookDistance: 2.4,

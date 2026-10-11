@@ -35,6 +35,7 @@ import { useLandTint, useThemeName } from './ThemeTint'
 import { useViewTheme } from './useThemeLook'
 import { multiply } from './viewTheme'
 import { useGroundChunks } from './useGroundChunks'
+import { WalkKeys } from './walk'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
@@ -160,6 +161,7 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
     >
       <GroundLook worldId={worldId} regionIds={here} water={model.settings.terrain.waterColor} land={land} />
       <Rig ground={ground} onRebase={setOrigin} onCenter={setCenter} />
+      <WalkKeys />
       <Chunks {...props} ground={ground} center={center} land={land[0]!} onLoaded={setLoaded} onFailed={setFailed} />
       <GroundStructures structures={props.structures} ground={ground} onClick={props.onStructureClick} />
       {props.characters.map((c) => (
@@ -217,10 +219,13 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
   }, [hasControls])
 
   useFrame(() => {
-    const { camera, controls } = rig()
+    const { camera, controls, gl } = rig()
     if (!controls) return
     const t = controls.target
     t.y = ground.standAt(t.x, t.z)
+    // Where the view looks, in metres from the frame's origin (east, south), for tests to read.
+    const at = `${Math.round(t.x)},${Math.round(t.z)}`
+    if (gl.domElement.dataset.at !== at) gl.domElement.dataset.at = at
     const floor = ground.standAt(camera.position.x, camera.position.z) + 1.7
     if (camera.position.y < floor) camera.position.y = floor
     const here = fromLocal(ground.frame, t.x, t.z)
