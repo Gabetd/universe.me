@@ -96,6 +96,26 @@ test('the canvas as Obsidian has it: cards of every kind, connections, selection
     await page.mouse.click(spot!.x, spot!.y)
     if (shift) await page.keyboard.up('Shift')
   }
+  /** Drags something on the board by `dx`, `dy`, from its middle, once nothing else covers it there (hover waits for that, or says what does). */
+  const dragBy = async (target: Locator, dx: number, dy: number) => {
+    await target.hover()
+    const from = center((await target.boundingBox())!)
+    await dragPoints(page, from, { x: from.x + dx, y: from.y + dy })
+  }
+  /** A point on the board with nothing on it, or null. */
+  const emptySpot = () =>
+    board.evaluate((el) => {
+      const r = el.getBoundingClientRect()
+      for (let fy = 0.97; fy > 0.03; fy -= 0.04) {
+        for (let fx = 0.03; fx < 0.98; fx += 0.04) {
+          const [x, y] = [r.left + r.width * fx, r.top + r.height * fy]
+          const hit = document.elementFromPoint(x, y)
+          // The board, or the layer its lines are drawn on (not a line).
+          if (hit === el || hit?.classList.contains('event-links')) return { x, y }
+        }
+      }
+      return null
+    })
   const bar = page.getByRole('toolbar', { name: 'Selection' })
   const palette = page.getByRole('group', { name: 'Add to the canvas' })
   const controls = page.getByRole('group', { name: 'Board' })
@@ -129,6 +149,8 @@ test('the canvas as Obsidian has it: cards of every kind, connections, selection
 
   // Connected from the text card's side onto the element card; labelled, its arrows at both ends.
   const elementBox = await settledBox(card('element'))
+  // A card's handles are there once it's selected (or under the pointer).
+  await pickCard('text')
   await dragPoints(page, center((await card('text').locator('.side-handle.right').boundingBox())!), center(elementBox))
   await expect.poll(async () => (await state(page, 'timeline')).connections.length).toBe(1)
   // Picked by its line (wherever the cards have put it, it may run under one).
@@ -164,8 +186,9 @@ test('the canvas as Obsidian has it: cards of every kind, connections, selection
   await page.getByLabel('Group label').press('Enter')
   await expect(page.locator('.canvas-group-label')).toHaveText('The north')
   const before = (await cards()).find((c) => c.kind === 'text')!
-  const label = center((await page.locator('.canvas-group-label').boundingBox())!)
-  await dragPoints(page, label, { x: label.x + 60, y: label.y + 50 })
+  // All of it in view (on a small screen the group's label can be left under the toolbar).
+  await controls.getByRole('button', { name: 'Zoom to fit' }).click()
+  await dragBy(page.locator('.canvas-group-label'), 60, 50)
   await expect.poll(async () => (await cards()).find((c) => c.kind === 'text')!.x).not.toBe(before.x)
   const after = (await cards()).find((c) => c.kind === 'text')!
   const group = (await cards()).find((c) => c.kind === 'group')!
@@ -173,8 +196,9 @@ test('the canvas as Obsidian has it: cards of every kind, connections, selection
   await shot(page, '33-canvas-cards', { wait: 300 })
 
   // Resized, duplicated and deleted, each a step to undo.
-  const corner = center((await card('text').locator('.resize-handle').boundingBox())!)
-  await dragPoints(page, corner, { x: corner.x + 80, y: corner.y + 40 })
+  await controls.getByRole('button', { name: 'Zoom to fit' }).click()
+  await pickCard('text')
+  await dragBy(card('text').locator('.resize-handle'), 80, 40)
   await expect.poll(async () => (await cards()).find((c) => c.kind === 'text')!.w).toBeGreaterThan(260)
   await pickCard('text')
   await board.press('Control+d')
@@ -195,6 +219,7 @@ test('the canvas as Obsidian has it: cards of every kind, connections, selection
   await expect(page.locator('.canvas-item.selected')).toHaveCount(0)
 
   // Dragged from a side onto empty board: a new card there, connected, to write in.
+  await pickCard('element')
   const handle = center((await card('element').locator('.side-handle.bottom').boundingBox())!)
   await dragPoints(page, handle, await at(0.05, 0.6))
   await page.getByLabel('Card text').fill('What it meant')
@@ -221,8 +246,10 @@ test('the canvas as Obsidian has it: cards of every kind, connections, selection
   await controls.getByRole('button', { name: 'Read-only' }).click()
   await expect(palette).toHaveCount(0)
   const count = (await cards()).length
-  const empty = await at(0.5, 0.97)
-  await page.mouse.dblclick(empty.x, empty.y - 60)
+  await controls.getByRole('button', { name: 'Zoom to fit' }).click()
+  const empty = await emptySpot()
+  expect(empty, 'somewhere empty on the board').not.toBeNull()
+  await page.mouse.dblclick(empty!.x, empty!.y)
   expect((await cards()).length).toBe(count)
   await controls.getByRole('button', { name: 'Read-only' }).click()
   await stubSaveDialog(app, join(dir, 'board.png'))
