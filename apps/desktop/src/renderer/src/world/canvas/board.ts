@@ -125,6 +125,20 @@ export function distanceToCurve(curve: Curve, p: Point, steps = 24): number {
 
 export const snapToGrid = (v: number) => Math.round(v / GRID) * GRID
 
+/** Where a box `size` big centred on `at` can go without covering another: there if it's free, else the nearest free place round it (by steps of `step`). */
+export function freeSpot(at: Point, size: { w: number; h: number }, others: readonly Box[], step = 40): Point {
+  const free = (p: Point) => !others.some((o) => overlaps({ x: p.x - size.w / 2, y: p.y - size.h / 2, ...size }, o))
+  for (let ring = 0; ring < 40; ring++) {
+    for (let i = -ring; i <= ring; i++) {
+      for (const [dx, dy] of [[i, -ring], [i, ring], [-ring, i], [ring, i]] as const) {
+        const p = { x: at.x + dx * step, y: at.y + dy * step }
+        if (free(p)) return p
+      }
+    }
+  }
+  return at
+}
+
 /**
  * Where a box being moved to `box` goes with snapping: its left, centre or
  * right onto another box's (and its top, middle or bottom), whichever is

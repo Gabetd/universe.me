@@ -1359,6 +1359,13 @@ input[type='color'] {
   inset: 0;
   display: flex;
   flex-direction: column;
+  container: event-canvas / inline-size;
+}
+/* On a narrow canvas the add buttons are their icons, so the toolbar keeps to a row or two. */
+@container event-canvas (max-width: 760px) {
+  .palette-label {
+    display: none;
+  }
 }
 .event-canvas-bar {
   display: flex;
@@ -1367,9 +1374,6 @@ input[type='color'] {
   padding: 6px 10px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
-}
-.event-canvas-bar > span {
-  flex: 1;
 }
 .event-board {
   position: relative !important;
@@ -1457,11 +1461,336 @@ input[type='color'] {
 }
 .event-node-handle {
   position: absolute;
-  right: 4px;
+  /* The other corner is for resizing. */
+  left: 4px;
   bottom: 2px;
   color: var(--accent);
   cursor: crosshair;
   padding: 2px 4px;
+}
+
+/* The canvas's own cards (M17), beside the events: text, elements, pictures, links and groups */
+.event-board:focus {
+  outline: none;
+}
+/* Nothing on the board is selected as text by a drag (that selects cards); a card being edited is the editor's. */
+.event-board {
+  user-select: none;
+}
+.event-board.read-only {
+  cursor: default;
+}
+.canvas-card {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  display: flex;
+  flex-direction: column;
+  /* The handles sit half outside it; what's in it keeps to it. */
+  overflow: visible;
+  background: var(--panel-2);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px #0008;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.canvas-card.card-group {
+  overflow: visible;
+  background: color-mix(in srgb, var(--card-color, #8891ad) 8%, transparent);
+  border-style: solid;
+  box-shadow: none;
+}
+.canvas-group-label {
+  position: absolute;
+  bottom: 100%;
+  left: -2px;
+  margin-bottom: 4px;
+  padding: 2px 10px;
+  border-radius: 6px;
+  background: #3a4260;
+  color: #fff;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.canvas-item.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.canvas-card.dragging {
+  z-index: 10000;
+  box-shadow: 0 12px 32px #000a;
+}
+.canvas-markdown {
+  padding: 8px 12px;
+  overflow: auto;
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.canvas-markdown > :first-child {
+  margin-top: 0;
+}
+.canvas-markdown h1,
+.canvas-markdown h2,
+.canvas-markdown h3 {
+  margin: 0.4em 0 0.3em;
+  line-height: 1.2;
+}
+.canvas-markdown ul,
+.canvas-markdown ol {
+  padding-left: 1.3em;
+  margin: 0.3em 0;
+}
+.canvas-markdown blockquote {
+  margin: 0.3em 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+.canvas-markdown pre {
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: #0006;
+  overflow: auto;
+}
+.canvas-markdown mark {
+  background: #ffd27a66;
+  color: inherit;
+}
+.canvas-markdown .wikilink {
+  color: var(--accent);
+}
+.canvas-text-editor {
+  flex: 1;
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  padding: 8px 12px;
+  resize: none;
+  font: 14px/1.45 ui-monospace, monospace;
+  background: var(--bg);
+  user-select: text;
+}
+.canvas-group-label .canvas-text-editor {
+  padding: 0 4px;
+  font: inherit;
+  min-width: 120px;
+}
+.canvas-element {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  overflow: hidden;
+}
+.canvas-element-name {
+  font-weight: 600;
+  font-size: 15px;
+  text-align: left;
+}
+.canvas-element.missing .canvas-element-name {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.canvas-element-notes {
+  margin: 2px 0 0;
+  color: var(--muted);
+  overflow: hidden;
+}
+.canvas-picture {
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  object-fit: contain;
+  pointer-events: none;
+}
+.canvas-link-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  overflow: hidden;
+}
+.canvas-link-card a {
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Handles: on each side to connect, in the corner to resize; shown on hover and when selected. */
+.side-handle,
+.resize-handle {
+  position: absolute;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.canvas-item:hover > .side-handle,
+.canvas-item:hover > .resize-handle,
+.canvas-item.selected > .side-handle,
+.canvas-item.selected > .resize-handle {
+  opacity: 1;
+}
+.side-handle {
+  width: 12px;
+  height: 12px;
+  margin: -6px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  cursor: crosshair;
+}
+.side-handle.top {
+  top: 0;
+  left: 50%;
+}
+.side-handle.bottom {
+  top: 100%;
+  left: 50%;
+}
+.side-handle.left {
+  top: 50%;
+  left: 0;
+}
+.side-handle.right {
+  top: 50%;
+  left: 100%;
+}
+.resize-handle {
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 50%, var(--accent) 50%);
+  border-bottom-right-radius: 6px;
+}
+/* An event's card lets its handles sit half outside it too. */
+.event-node.canvas-item {
+  overflow: visible;
+}
+.canvas-connection path:not(.canvas-link-hit) {
+  stroke-width: 2.5;
+}
+.canvas-connection.selected path:not(.canvas-link-hit) {
+  stroke-width: 4;
+}
+.canvas-guides line {
+  stroke: var(--accent);
+  stroke-dasharray: 4 4;
+  opacity: 0.8;
+}
+.canvas-edge-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  z-index: 1;
+}
+input.canvas-edge-label {
+  cursor: text;
+  min-width: 140px;
+}
+.canvas-marquee {
+  position: absolute;
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  pointer-events: none;
+}
+.canvas-selection-bar {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px #0008;
+  cursor: default;
+}
+.canvas-selection-bar {
+  transform: translateX(-50%);
+}
+.canvas-selection-bar > button,
+.canvas-controls > button {
+  min-width: 30px;
+  padding: 4px 6px;
+}
+.canvas-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px #0008;
+}
+.canvas-popover[aria-label='Colours'] {
+  flex-direction: row;
+  align-items: center;
+}
+.canvas-any-color input {
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: none;
+}
+/* The toolbar: adding cards, then the board's own controls; it wraps on a narrow window. */
+.event-canvas-bar {
+  flex-wrap: wrap;
+}
+.canvas-bar-gap {
+  flex: 1;
+}
+.canvas-controls,
+.canvas-palette {
+  display: flex;
+  gap: 2px;
+}
+.canvas-controls {
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+.canvas-controls button[aria-pressed='true'] {
+  background: var(--accent);
+  color: #0b0e17;
+}
+.canvas-empty {
+  position: absolute;
+  inset: 40% 10% auto;
+  text-align: center;
+  pointer-events: none;
+}
+/* Exported as an image: the board without its controls or the selection. */
+.event-board.capturing .view-control {
+  visibility: hidden;
+}
+.event-board.capturing .canvas-item.selected {
+  outline: none;
+}
+.canvas-dialog form,
+.canvas-dialog {
+  display: grid;
+  gap: 8px;
+}
+.canvas-element-choices {
+  max-height: 50vh;
+  overflow: auto;
 }
 
 /* Structures */

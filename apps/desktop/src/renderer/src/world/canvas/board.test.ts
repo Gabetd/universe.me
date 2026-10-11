@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { align, arrowHead, bounds, connectionCurve, curveAt, distanceToCurve, facingSide, nearestSide, snapBox } from './board'
+import { align, arrowHead, bounds, connectionCurve, curveAt, distanceToCurve, facingSide, freeSpot, nearestSide, snapBox } from './board'
 
 const a = { x: 0, y: 0, w: 100, h: 50 }
 const b = { x: 300, y: 0, w: 100, h: 50 }
@@ -28,6 +28,12 @@ describe('the canvas’s geometry', () => {
     expect(snapped.at).toEqual({ x: 300, y: 80 })
     expect(snapped.guides.x).toEqual([300])
     expect(snapBox(moved, [b], { grid: false, objects: false, slack: 6 }).at).toEqual({ x: 303, y: 77 })
+  })
+
+  it('finds a free place for a new box near where it was asked', () => {
+    expect(freeSpot({ x: 1000, y: 1000 }, { w: 100, h: 50 }, [a])).toEqual({ x: 1000, y: 1000 })
+    const p = freeSpot({ x: 50, y: 25 }, { w: 100, h: 50 }, [a])
+    expect(Math.abs(p.x - 50) >= 100 || Math.abs(p.y - 25) >= 50).toBe(true)
   })
 
   it('aligns boxes against the bounds of them all', () => {

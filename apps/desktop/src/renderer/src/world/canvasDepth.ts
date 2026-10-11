@@ -28,11 +28,3 @@ export function nodeDepth(event: TimelineEvent, playhead: number, horizon: numbe
 
 /** A point on the canvas plane pushed back by `scale`, toward the vanishing point `(vx, vy)`. */
 export const project = (x: number, y: number, vx: number, vy: number, scale: number): [number, number] => [vx + (x - vx) * scale, vy + (y - vy) * scale]
-
-/** Where the line from `from` to the box centred on `to` (half sizes hw × hh) meets the box's edge. */
-export function boxEdge(from: [number, number], to: [number, number], hw: number, hh: number): [number, number] {
-  const dx = to[0] - from[0]
-  const dy = to[1] - from[1]
-  const t = Math.min(dx ? hw / Math.abs(dx) : Infinity, dy ? hh / Math.abs(dy) : Infinity, 1)
-  return [to[0] - dx * t, to[1] - dy * t]
-}

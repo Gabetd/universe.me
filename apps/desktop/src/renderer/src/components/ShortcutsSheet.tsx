@@ -1,7 +1,7 @@
 import { SHORTCUTS, useShortcutSheet, type Shortcut } from '../shortcuts'
 import { Modal } from './Modal'
 
-const GROUPS: Shortcut['group'][] = ['General', 'World views', 'World tools', 'On the ground', 'Timeline']
+const GROUPS: Shortcut['group'][] = ['General', 'World views', 'World tools', 'On the ground', 'Timeline', 'Canvas']
 
 /** Every keyboard shortcut, from the table that runs them (`?`, or Help → Keyboard Shortcuts). */
 export function ShortcutsSheet() {

@@ -17,7 +17,7 @@ export interface Shortcut {
   /** The `KeyboardEvent.key` it answers to (letters in either case); none for keys answered elsewhere. */
   key?: string
   label: string
-  group: 'General' | 'World views' | 'World tools' | 'On the ground' | 'Timeline'
+  group: 'General' | 'World views' | 'World tools' | 'On the ground' | 'Timeline' | 'Canvas'
 }
 
 const mod = navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl+'
@@ -53,6 +53,13 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'walk', keys: 'W A S D', label: 'Move forward, left, back and right (or the arrow keys)', group: 'On the ground' },
   { id: 'climb', keys: 'Space / Ctrl', label: 'Rise, or come down to the ground', group: 'On the ground' },
   { id: 'walk-fast', keys: 'Shift', label: 'Hold to move three times as fast', group: 'On the ground' },
+
+  { id: 'canvas-card', keys: 'Double-click', label: 'A new text card (on a card: edit it; on an event: go to it)', group: 'Canvas' },
+  { id: 'canvas-select', keys: 'Drag · Shift-click', label: 'Select with a box, or one more', group: 'Canvas' },
+  { id: 'canvas-pan', keys: 'Space-drag · middle-drag', label: 'Move round the board', group: 'Canvas' },
+  { id: 'canvas-duplicate', keys: `${mod}D`, label: 'Duplicate the cards selected', group: 'Canvas' },
+  { id: 'canvas-all', keys: `${mod}A`, label: 'Select everything', group: 'Canvas' },
+  { id: 'canvas-fit', keys: '⇧1 · ⇧2 · ⇧0', label: 'Zoom to fit, to the selection, to 100%', group: 'Canvas' },
 
   { id: 'new-event', keys: 'N', key: 'n', label: 'New event at the playhead', group: 'Timeline' },
   { id: 'prev-event', keys: '[', key: '[', label: 'Playhead to the event before', group: 'Timeline' },

@@ -1,6 +1,6 @@
 import type { TimelineEvent } from '@universe/core'
 import { describe, expect, it } from 'vitest'
-import { boxEdge, nodeDepth, project } from './canvasDepth'
+import { nodeDepth, project } from './canvasDepth'
 
 const event = (start: number, end: number | null = null) => ({ start, end }) as TimelineEvent
 
@@ -25,10 +25,5 @@ describe('projection helpers', () => {
   it('pulls points toward the vanishing point', () => {
     expect(project(100, 0, 0, 0, 0.5)).toEqual([50, 0])
     expect(project(10, 10, 10, 10, 0.2)).toEqual([10, 10])
-  })
-
-  it('stops a line at the edge of the target box', () => {
-    expect(boxEdge([0, 0], [100, 0], 20, 10)).toEqual([80, 0])
-    expect(boxEdge([100, 100], [100, 0], 20, 10)).toEqual([100, 10])
   })
 })
