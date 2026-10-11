@@ -70,5 +70,6 @@ describe('the terrain model, worn and with lakes', () => {
     // Bluer than the land it covers.
     expect(wet[2]! - wet[0]!).toBeGreaterThan(land[2]! - land[0]!)
     expect(water.lakeLevel).toHaveLength(PLANET_CELLS)
-  })
+    // A whole planet's water, twice: about a second alone, more beside the other packages' tests.
+  }, 30_000)
 })
