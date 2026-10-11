@@ -197,11 +197,28 @@
     spelling: ['230-spelling', 'Right-clicking a misspelled word: its corrections, Add to the dictionary, and cut, copy and paste'],
     groundWalk: ['64-ground-walk', 'Walking the ground with W A S D, at the speed picked in the toolbar'],
     groundFar: ['65-ground-far', 'The ground reaching 12 km, and the map in the corner: the fiftieth of the planet around you, with an arrow the way you face'],
-    powersShared: ['151-powers-shared', 'A power system pinned to a star system: any place lists the systems that hold there']
+    powersShared: ['151-powers-shared', 'A power system pinned to a star system: any place lists the systems that hold there'],
+    rivers: ['150-rivers-map', 'Rivers that run downhill to the sea and join on the way, and lakes in the basins, each named'],
+    riverGround: ['151-river-ground', 'Down on the ground by a river: its water as wide as it runs'],
+    eroded: ['152-eroded-map', 'Thousands of years on: rivers have cut their valleys and steep slopes have slumped'],
+    plugins: ['160-plugins', 'Tools → Plugins…: a plugin from the template, its generators, exporters and name generators, each with its options'],
+    subFactions: ['75-sub-factions', 'Sub-factions as deep as they go: a kingdom, its house, the house’s branch and its own part']
   }
 
   // One entry per published build, newest first.
   const LOG = [
+    {
+      ver: '0.1.75', date: '11 Oct 2026', tag: 'M16',
+      title: 'Rivers and erosion, plugins, and worlds by the Earth’s measure',
+      points: [
+        'Water finds its own way: rain runs downhill to the sea, gathering into rivers that join on the way and filling basins as lakes, on the globe, the map and the ground. Each has a name from the seed; pick one in the world’s list or on the map to give it a name of your own and notes. As time passes the land wears down: rivers cut valleys and steep slopes slump, never where you’ve sculpted.',
+        'Plugins (Tools → Plugins…): your own generators, exporters and name generators, each a folder with its code, run sandboxed with no network and no files but the ones you pick. Everything a generator makes is one step to undo, and New plugin from the template starts you with a working example.',
+        'Factions can have sub-factions, as deep as they go. A planet’s size is on the Earth scale (Earth is 10), and its mass follows its size unless you unlink them. An ice world freezes over, with sea ice, and each preset recolours the land and water.',
+        'Pointing at anything in space says what it is (a galaxy, a star system, a planet, a moon), and pointing at an orbit’s line picks out its planet with its card. The breadcrumb outlines where you are, and the window’s title gives the version: 0.1.75 (Live).',
+        'On the ground, Space rises and Ctrl comes back down. On Windows, an install script fetches the app without the browser’s or SmartScreen’s warnings. The Relief slider no longer gets dragged away, and a world’s first species can be linked to a new one.'
+      ],
+      shots: ['rivers', 'eroded', 'riverGround', 'plugins', 'subFactions']
+    },
     {
       ver: '0.1.70', date: '11 Oct 2026', tag: 'M14',
       title: 'A closer map on the ground, and fifty times the speed',
@@ -412,7 +429,9 @@
   const AREAS = [
     { title: 'The universe', shots: ['contextMenu', 'universe', 'cluster', 'galaxy', 'galaxyStars', 'systemPlanets', 'claimedPlanet'] },
     { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom', 'powers', 'powersShared', 'warnings'] },
-    { title: 'Factions and relationships', shots: ['relationships', 'territory'] },
+    { title: 'Rivers and erosion', shots: ['rivers', 'eroded', 'riverGround'] },
+    { title: 'Factions and relationships', shots: ['relationships', 'subFactions', 'territory'] },
+    { title: 'Plugins', shots: ['plugins'] },
     { title: 'Star systems and sky', shots: ['starSystem', 'planetMoons', 'moonTrack', 'colder', 'orbit'] },
     { title: 'Ecosystem', shots: ['foodWeb', 'speciesEditor'] },
     { title: 'AI and the API', shots: ['connectAi', 'aiChange', 'aiSuggestions', 'warnings', 'phoneSignIn', 'phoneConnected'] },
