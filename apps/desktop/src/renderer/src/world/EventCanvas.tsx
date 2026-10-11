@@ -86,7 +86,13 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   const { snapGrid, snapObjects, readOnly } = useCanvasSettings()
   // Null until the board has a size: then it starts fitted to what's on it.
   const [savedView, setViewState] = useState<View | null>(() => views.get(worldId) ?? null)
-  const [drag, setDrag] = useState<Drag | null>(null)
+  const [drag, setDragState] = useState<Drag | null>(null)
+  // The drag as it is now, for the pointer's handlers: a quick drag can be let go before the board has drawn its last move.
+  const dragNow = useRef<Drag | null>(null)
+  const setDrag = (next: Drag | null) => {
+    dragNow.current = next
+    setDragState(next)
+  }
   const [showHidden, setShowHidden] = useState(false)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [edge, setEdge] = useState<Edge | null>(null)
@@ -402,6 +408,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   const onPointerMove = (e: React.PointerEvent) => {
     const p = boardPoint(e)
     pointer.current = toPlane(p)
+    const drag = dragNow.current
     if (!drag || !view) return
     // The button was let go where the board didn't hear it (a click on an item not yet dragged, let go off the window).
     if (e.buttons === 0 && e.pointerType === 'mouse') return setDrag(null)
@@ -430,6 +437,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   const onPointerUp = (e: React.PointerEvent) => {
     const p = boardPoint(e)
     const under = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-item-id]')?.dataset.itemId
+    const drag = dragNow.current
     setDrag(null)
     if (!drag) return
     switch (drag.kind) {
