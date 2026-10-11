@@ -241,6 +241,15 @@ It downloads the installer itself and checks it against the release's update man
 | Linux | `Universe-…-linux-x86_64.AppImage` | `chmod +x` it, then run it. Or install the `.deb`. |
 
 The builds aren't code-signed yet, which is why the OS asks for confirmation when one is downloaded in a browser. The lasting fix is signing them (milestone M19); until then, the install script avoids the question on Windows. Windows 11's Smart App Control, if it's turned on, blocks unsigned apps however they arrive.
+
+### Signing the builds (M19)
+
+The builds are signed as soon as the certificates are added as repository secrets (Settings → Secrets and variables → Actions); `main`'s and `staging`'s builds use them, `dev`'s never do.
+
+- **Windows**, through [Azure Artifact Signing](https://learn.microsoft.com/en-us/azure/trusted-signing/) (formerly Trusted Signing): an Artifact Signing account and a public-trust certificate profile (your identity is checked first, which takes a few days), and an app registration with a client secret, given the *Trusted Signing Certificate Profile Signer* role on it. Secrets: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SIGNING_ENDPOINT` (the account's region endpoint, as `https://eus.codesigning.azure.net`), `AZURE_SIGNING_ACCOUNT`, `AZURE_SIGNING_PROFILE` and `AZURE_SIGNING_PUBLISHER` (the name on the certificate).
+- **macOS**, with a Developer ID Application certificate from the Apple Developer Program, exported as a .p12 and base64-encoded: `MAC_CERTIFICATE`, `MAC_CERTIFICATE_PASSWORD`; and for notarizing, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`.
+
+Signed, a download is no longer "unknown publisher"; SmartScreen still learns a new signature's reputation as people download and run it, so the first signed builds can be warned about for a while.
 Once installed, Universe updates itself from `main`'s builds, and only installs
 one whose manifest is signed with the project's key (an Ed25519 key kept as a
 GitHub secret; the app has its public half).
