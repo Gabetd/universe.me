@@ -12,7 +12,7 @@ const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').rep
 function inline(text: string): string {
   const codes: string[] = []
   // Code first, kept out of the other marks.
-  let out = text.replace(/`([^`]+)`/g, (_, code: string) => `\u0000${codes.push(code) - 1}\u0000`)
+  let out = text.replace(/`([^`]+)`/g, (_, code: string) => `\uE000${codes.push(code) - 1}\uE000`)
   out = out
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
     .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, name: string, label?: string) => `<span class="wikilink">${label ?? name}</span>`)
@@ -20,7 +20,7 @@ function inline(text: string): string {
     .replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\*)|(^|[^_\w])_([^_\s][^_]*?)_(?!\w)/g, (_, p1?: string, a?: string, p2?: string, b?: string) => `${p1 ?? p2 ?? ''}<em>${a ?? b}</em>`)
     .replace(/~~([^~]+)~~/g, '<del>$1</del>')
     .replace(/==([^=]+)==/g, '<mark>$1</mark>')
-  return out.replace(/\u0000(\d+)\u0000/g, (_, i: string) => `<code>${codes[Number(i)]}</code>`)
+  return out.replace(/\uE000(\d+)\uE000/g, (_, i: string) => `<code>${codes[Number(i)]}</code>`)
 }
 
 export function markdownToHtml(markdown: string): string {
