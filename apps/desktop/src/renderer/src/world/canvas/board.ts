@@ -27,7 +27,6 @@ export function bounds(boxes: readonly Box[]): Box | null {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 }
 
-export const inside = (inner: Box, outer: Box) => inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.w <= outer.x + outer.w && inner.y + inner.h <= outer.y + outer.h
 export const overlaps = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 /** The box between two corners, either way round. */
 export const boxBetween = (a: Point, b: Point): Box => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) })
@@ -112,16 +111,6 @@ export function arrowHead(curve: Curve, atEnd: boolean, size: number): string {
   return `${tip.x},${tip.y} ${bx + px},${by + py} ${bx - px},${by - py}`
 }
 const same = (a: Point, b: Point) => a.x === b.x && a.y === b.y
-
-/** How far a point is from the curve (sampled), for picking a connection. */
-export function distanceToCurve(curve: Curve, p: Point, steps = 24): number {
-  let best = Infinity
-  for (let i = 0; i <= steps; i++) {
-    const q = curveAt(curve, i / steps)
-    best = Math.min(best, Math.hypot(q.x - p.x, q.y - p.y))
-  }
-  return best
-}
 
 export const snapToGrid = (v: number) => Math.round(v / GRID) * GRID
 

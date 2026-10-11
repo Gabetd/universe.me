@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { CanvasCard } from './canvas'
 import { Id, Name, Notes, RecordMeta } from './schema'
 import { Party } from './factions'
 import { Precision, Time } from './time'
@@ -31,7 +32,7 @@ export const TimelineEvent = z.object({
   /** Where it happens: points or regions on the owning world. */
   locations: z.array(EventLocation),
   /** Where its card sits on the world's canvas, and its size if it's been resized; unset or null lays it out automatically. */
-  canvas: z.object({ x: z.number(), y: z.number(), w: z.number().min(40).max(20_000).optional(), h: z.number().min(40).max(20_000).optional() }).nullable().optional(),
+  canvas: z.object({ x: z.number(), y: z.number(), w: CanvasCard.shape.w.optional(), h: CanvasCard.shape.h.optional() }).nullable().optional(),
   /** Every event gets a card on the canvas unless hidden. Older events don't have these fields. */
   canvasHidden: z.boolean().nullable().optional(),
   /** Who took part: characters and factions on the world. Older events don't have it. */

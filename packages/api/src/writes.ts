@@ -44,7 +44,7 @@ import type { WorldView } from './model'
 import { textToHtml } from './text'
 import { nameOf, waterwayOf, waterwaysOf } from './waterways'
 
-const newId = () => crypto.randomUUID()
+export const newId = () => crypto.randomUUID()
 const Tags = z.array(z.string().min(1).max(60))
 const Notes = z.string().describe('Plain text: paragraphs separated by a blank line, "- " for list items')
 

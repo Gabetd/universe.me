@@ -275,7 +275,7 @@ describe('the operations', () => {
     // Put to the right of what was there.
     expect(canvas.cards[1]!.x).toBeGreaterThan(200)
     expect(canvas.cards[3]).toMatchObject({ label: 'Signs' })
-    expect(canvas.connections).toEqual([expect.objectContaining({ from: 'text', to: 'The comet', label: 'foretells', arrows: 'both' })])
+    expect(canvas.connections).toEqual([expect.objectContaining({ from: 'Omens', to: 'The comet', label: 'foretells', arrows: 'both' })])
     // The bible has the text cards, under their first lines.
     expect(await p.call<string>('export_world_bible', { worldId: p.worldId })).toMatch(/## On the canvas\n\n### Omens\n\nIt came \\\*\\\*red\\\*\\\*\./)
   })

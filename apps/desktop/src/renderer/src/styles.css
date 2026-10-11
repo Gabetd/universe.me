@@ -1369,6 +1369,7 @@ input[type='color'] {
 }
 .event-canvas-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
@@ -1381,6 +1382,8 @@ input[type='color'] {
   overflow: hidden;
   cursor: grab;
   touch-action: none;
+  /* Nothing on the board is selected as text by a drag (that selects cards); a card being edited is the editor's. */
+  user-select: none;
   background-color: #090c15;
   background-image: radial-gradient(circle, #222a44 1px, transparent 1.2px);
 }
@@ -1472,10 +1475,6 @@ input[type='color'] {
 /* The canvas's own cards (M17), beside the events: text, elements, pictures, links and groups */
 .event-board:focus {
   outline: none;
-}
-/* Nothing on the board is selected as text by a drag (that selects cards); a card being edited is the editor's. */
-.event-board {
-  user-select: none;
 }
 .event-board.read-only {
   cursor: default;
@@ -1705,9 +1704,10 @@ input.canvas-edge-label {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   pointer-events: none;
 }
-.canvas-selection-bar {
+/* The bar over the selection and its menus: small panels over the board. */
+.canvas-selection-bar,
+.canvas-popover {
   position: absolute;
-  z-index: 20;
   display: flex;
   gap: 2px;
   padding: 4px;
@@ -1715,9 +1715,10 @@ input.canvas-edge-label {
   background: var(--panel);
   border: 1px solid var(--border);
   box-shadow: 0 4px 16px #0008;
-  cursor: default;
 }
 .canvas-selection-bar {
+  z-index: 20;
+  cursor: default;
   transform: translateX(-50%);
 }
 .canvas-selection-bar > button,
@@ -1726,34 +1727,16 @@ input.canvas-edge-label {
   padding: 4px 6px;
 }
 .canvas-popover {
-  position: absolute;
   top: 100%;
   left: 0;
   margin-top: 4px;
-  display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 4px;
-  border-radius: 8px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  box-shadow: 0 4px 16px #0008;
 }
 .canvas-popover[aria-label='Colours'] {
   flex-direction: row;
   align-items: center;
 }
-.canvas-any-color input {
-  width: 28px;
-  height: 24px;
-  padding: 0;
-  border: none;
-  background: none;
-}
 /* The toolbar: adding cards, then the board's own controls; it wraps on a narrow window. */
-.event-canvas-bar {
-  flex-wrap: wrap;
-}
 .canvas-bar-gap {
   flex: 1;
 }
@@ -1776,10 +1759,7 @@ input.canvas-edge-label {
   text-align: center;
   pointer-events: none;
 }
-/* Exported as an image: the board without its controls or the selection. */
-.event-board.capturing .view-control {
-  visibility: hidden;
-}
+/* Exported as an image: the board without the selection. */
 .event-board.capturing .canvas-item.selected {
   outline: none;
 }

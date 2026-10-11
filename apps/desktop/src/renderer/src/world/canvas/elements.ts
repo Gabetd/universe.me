@@ -3,10 +3,11 @@ import { nameOf, openElement, type ElementRef } from '../../contextMenu'
 import { kindLabel } from '../../kinds'
 import { useUi } from '../../store'
 
-/** What an element card shows, by the app's names for things (a species is a lifeform record). */
-export const elementRef = ({ kind, id }: CardTarget): ElementRef => ({ kind: kind === 'lifeform' ? 'species' : kind, id }) as ElementRef
+/** What an element card shows, as the rest of the app knows it (the kinds are the same). */
+const elementRef = (target: CardTarget): ElementRef => target
 
-const LABELS: Record<CardTarget['kind'], string> = {
+/** What each kind of thing an element card shows is called. */
+export const TARGET_LABELS: Record<CardTarget['kind'], string> = {
   node: 'Place',
   region: 'Region',
   event: 'Event',
@@ -14,7 +15,7 @@ const LABELS: Record<CardTarget['kind'], string> = {
   character: 'Character',
   faction: 'Faction',
   structure: 'Structure',
-  lifeform: 'Species',
+  species: 'Species',
   waterway: 'River or lake',
   power: 'Power',
   theme: 'Theme'
@@ -25,7 +26,7 @@ export function elementSummary(target: CardTarget): { name: string; kind: string
   const s = useUi.getState()
   const name = nameOf(elementRef(target))
   const node = target.kind === 'node' ? s.nodes.find((n) => n.id === target.id) : undefined
-  const kind = node ? kindLabel(node, s.nodes) || KIND_LABELS[node.kind] : LABELS[target.kind]
+  const kind = node ? kindLabel(node, s.nodes) || KIND_LABELS[node.kind] : TARGET_LABELS[target.kind]
   return { name: name ?? 'Gone', kind, notes: plain(notesOf(target)), missing: name === undefined }
 }
 
@@ -41,7 +42,7 @@ function notesOf({ kind, id }: CardTarget): string {
     character: t.characters,
     faction: t.factions,
     structure: t.structures,
-    lifeform: t.lifeforms,
+    species: t.lifeforms,
     power: t.powers,
     theme: t.themes
   }

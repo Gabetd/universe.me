@@ -1,5 +1,5 @@
-import { ARROWS, CARD_DEFAULT_SIZE, SIDES, canvasColor, inGroup, timelineOf, type CardKind, type CanvasCard, type CanvasColor, type CardTarget, type Command, type Region, type Side, type TimelineEvent } from '@universe/core'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { CARD_DEFAULT_SIZE, CARD_IMAGE_TYPES, CARD_SIZE, CardUrl, SIDES, canvasColor, inGroup, timelineOf, type CardKind, type CanvasCard, type CanvasColor, type Command, type Region, type Side, type TimelineEvent } from '@universe/core'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useUi } from '../store'
 import { eventDates, locationLabel } from '../timeline/labels'
 import { useCalendar } from './useSky'
@@ -9,9 +9,9 @@ import { nodeDepth, project, type NodeDepth } from './canvasDepth'
 import { goToEvent } from './goToEvent'
 import { menuRef, useContextMenu, type MenuItem } from '../contextMenu'
 import { align, arrowHead, bounds, boxBetween, connectionCurve, curveAt, curvePath, freeSpot, nearestSide, overlaps, SNAP_PX, snapBox, snapToGrid, type Box, type Curve, type Point } from './canvas/board'
-import { addCard, addCardCommand, CLIPBOARD_TYPE, copyOf, deleteSelected, paste, readPicture, tell, toEvent, type Copied, type NewCard } from './canvas/actions'
-import { ARROW_LABELS, AddPalette, BoardControls, SelectionBar, type SelectionActions } from './canvas/CanvasBars'
-import { CardBody, GroupLabel } from './canvas/CardView'
+import { addCard, addCardCommand, CLIPBOARD_TYPE, copyOf, deleteSelected, lastCopy, paste, readPicture, remember, runCommands, tell, toEvent, type Copied, type NewCard, type Selected } from './canvas/actions'
+import { AddPalette, BoardControls, menuItems, SelectionBar, type SelectionActions } from './canvas/CanvasBars'
+import { CardBody, GroupLabel, InlineEditor } from './canvas/CardView'
 import { useCanvasSettings } from './canvas/canvasSettings'
 import { ElementPicker, LinkDialog } from './canvas/dialogs'
 import { openTarget } from './canvas/elements'
@@ -49,7 +49,7 @@ interface Placed extends Item {
 
 type Drag =
   | { kind: 'pan'; start: Point; from: View }
-  | { kind: 'move'; start: Point; ids: string[]; lead: string; k: number; moved: boolean; delta: Point; guides: { x: number[]; y: number[] }; collapse: boolean }
+  | { kind: 'move'; start: Point; ids: string[]; lead: string; k: number; moved: boolean; delta: Point; guides: { x: number[]; y: number[] }; collapse: boolean; others: Box[] }
   | { kind: 'resize'; id: string; start: Point; from: Box; k: number; size: { w: number; h: number } }
   | { kind: 'marquee'; start: Point; to: Point; additive: boolean }
   | { kind: 'connect'; fromId: string; fromSide: Side; start: Point; to: Point }
@@ -65,9 +65,6 @@ const eventBox = (e: TimelineEvent, slot: number): Box => ({
   w: e.canvas?.w ?? NODE_W,
   h: e.canvas?.h ?? NODE_H
 })
-
-/** Copied cards, for pasting within the app when the clipboard can't hold them. */
-let copied: Copied | null = null
 
 /**
  * A world's canvas, as Obsidian's Canvas (PLAN.md §9, M17): every event on
@@ -141,7 +138,9 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   const fitted = () => viewOf(bounds(items.map((i) => i.box)))
   // It shows everything until it's first used, and stays put from then on: adding a card doesn't move the board under the pointer.
   const view = savedView ?? (size.w && size.h ? fitted() : null)
-  const freeze = () => !savedView && view && setView(view)
+  const freeze = () => {
+    if (!savedView && view) setView(view)
+  }
 
   /** Where things are while being moved or resized: their resting place, or where the drag has them. */
   const moving = drag?.kind === 'move' && drag.moved ? new Set(drag.ids) : null
@@ -197,6 +196,13 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
     select([])
     setEditing(null)
   }
+  /** Selects a connection or a timeline link (and nothing else). */
+  const selectEdge = (picked: Edge) => {
+    setSelected(new Set())
+    setEdge(picked)
+  }
+  // Stable, for the memoized cards.
+  const stopEditing = useCallback(() => setEditing(null), [])
 
   /** What moves with the selection: it, and what lies inside the groups in it. */
   const withContents = (ids: Iterable<string>) => {
@@ -209,11 +215,19 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   }
 
   // Changes, each one step to undo.
-  const run = (commands: Command[]) => commands.length && void execute(commands.length === 1 ? commands[0]! : { type: 'batch', payload: { commands } })
-  const placeCommand = (item: Item, at: Point): Command =>
-    item.event
-      ? { type: 'event.update', payload: { id: item.id, patch: { canvas: { ...item.event.canvas, x: Math.round(at.x), y: Math.round(at.y) } } } }
-      : { type: 'card.update', payload: { id: item.id, patch: { x: Math.round(at.x), y: Math.round(at.y) } } }
+  const run = (commands: Command[]) => void runCommands(commands)
+  /** Puts an item at a place on the plane and (resized) a size: an event keeps its place on the canvas, a card its own. */
+  const boxCommand = (item: Item, patch: Partial<Box>): Command => {
+    const rounded = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, Math.round(v)]))
+    return item.event
+      ? { type: 'event.update', payload: { id: item.id, patch: { canvas: { x: item.box.x, y: item.box.y, ...item.event.canvas, ...rounded } } } }
+      : { type: 'card.update', payload: { id: item.id, patch: rounded } }
+  }
+  /** Deletes `what` and clears the selection. */
+  const remove = (what: Partial<Selected>) => {
+    deleteSelected({ cards: [], events: [], ...what })
+    clear()
+  }
   const recolor = (color: CanvasColor) =>
     run([
       ...selectedCards.map((c): Command => ({ type: 'card.update', payload: { id: c.id, patch: { color } } })),
@@ -229,8 +243,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   }
   /** The middle of the view, or the nearest place to it not covered, for a card of `kind` added from the toolbar. */
   const freeMiddle = (kind: CardKind) => freeSpot(middle(), CARD_DEFAULT_SIZE[kind], items.map((i) => i.box))
-  const startAdding = (kind: 'text' | 'element' | 'image' | 'link' | 'group', at: Point = freeMiddle(kind)) => {
-    freeze()
+  const startAdding = (kind: CardKind, at: Point = freeMiddle(kind)) => {
     if (kind === 'text') return void addAt({ kind: 'text', text: '' }, at, true)
     if (kind === 'image') {
       pictureAt.current = at
@@ -247,13 +260,14 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
     void addAt({ kind: 'group', text: 'Group', w: box.w, h: box.h }, { x: box.x + box.w / 2, y: box.y + box.h / 2 }, true)
   }
   const addPictures = async (files: File[], at: Point) => {
-    const commands: Command[] = []
-    for (const [i, file] of files.entries()) {
-      const read = await readPicture(file)
-      if ('error' in read) tell(read.error)
-      else commands.push(addCardCommand(worldId, { kind: 'image', ...read }, { x: at.x + i * 30, y: at.y + i * 30 }).command)
-    }
-    run(commands)
+    const read = await Promise.all(files.map(readPicture))
+    run(
+      read.flatMap((picture, i) => {
+        if (!('error' in picture)) return [addCardCommand(worldId, { kind: 'image', ...picture }, { x: at.x + i * 30, y: at.y + i * 30 }).command]
+        tell(picture.error)
+        return []
+      })
+    )
   }
   const duplicate = async () => {
     if (!selectedCards.length) return
@@ -263,34 +277,41 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   }
 
   // Copying, cutting and pasting cards (Edit menu or keys), pictures and text from elsewhere, while the board has the keyboard.
+  const onCopy = (e: ClipboardEvent, cut: boolean) => {
+    if (!selectedCards.length) return
+    e.preventDefault()
+    const copied = remember(copyOf(selectedCards, connections))
+    e.clipboardData?.setData(CLIPBOARD_TYPE, JSON.stringify(copied))
+    e.clipboardData?.setData('text/plain', selectedCards.map((c) => c.text || c.url || '').filter(Boolean).join('\n\n'))
+    if (cut && !readOnly) deleteSelected({ cards: selectedCards, events: [] })
+  }
+  const onPaste = async (e: ClipboardEvent) => {
+    if (readOnly) return
+    e.preventDefault()
+    freeze()
+    const at = pointer.current ?? middle()
+    const data = e.clipboardData
+    const ours = data?.getData(CLIPBOARD_TYPE)
+    const files = [...(data?.files ?? [])].filter((f) => f.type.startsWith('image/'))
+    const text = data?.getData('text/plain').trim()
+    const copied = lastCopy()
+    if (ours || (copied && !files.length && !text)) {
+      const ids = await paste(worldId, ours ? (JSON.parse(ours) as Copied) : copied!, at)
+      if (ids.length) select(ids)
+    } else if (files.length) await addPictures(files, at)
+    else if (text && CardUrl.safeParse(text).success) void addAt({ kind: 'link', url: text }, at)
+    else if (text) void addAt({ kind: 'text', text }, at)
+  }
+  // Listened for once; the handlers of the latest render are the ones called.
+  const clipboard = useRef({ onCopy, onPaste })
+  useEffect(() => {
+    clipboard.current = { onCopy, onPaste }
+  })
   useEffect(() => {
     const focused = () => document.activeElement === boardRef.current
-    const onCopy = (e: ClipboardEvent, cut: boolean) => {
-      if (!focused() || !selectedCards.length) return
-      e.preventDefault()
-      copied = copyOf(selectedCards, connections)
-      e.clipboardData?.setData(CLIPBOARD_TYPE, JSON.stringify(copied))
-      e.clipboardData?.setData('text/plain', selectedCards.map((c) => c.text || c.url || '').filter(Boolean).join('\n\n'))
-      if (cut && !readOnly) deleteSelected({ cards: selectedCards, events: [] })
-    }
-    const onPaste = async (e: ClipboardEvent) => {
-      if (!focused() || readOnly) return
-      e.preventDefault()
-      const at = pointer.current ?? middle()
-      const data = e.clipboardData
-      const ours = data?.getData(CLIPBOARD_TYPE)
-      const files = [...(data?.files ?? [])].filter((f) => f.type.startsWith('image/'))
-      const text = data?.getData('text/plain').trim()
-      if (ours || (copied && !files.length && !text)) {
-        const ids = await paste(worldId, ours ? (JSON.parse(ours) as Copied) : copied!, at)
-        if (ids.length) select(ids)
-      } else if (files.length) await addPictures(files, at)
-      else if (text && /^https?:\/\/\S+$/i.test(text)) void addAt({ kind: 'link', url: text }, at)
-      else if (text) void addAt({ kind: 'text', text }, at)
-    }
-    const copy = (e: ClipboardEvent) => onCopy(e, false)
-    const cut = (e: ClipboardEvent) => onCopy(e, true)
-    const pasted = (e: ClipboardEvent) => void onPaste(e)
+    const copy = (e: ClipboardEvent) => focused() && clipboard.current.onCopy(e, false)
+    const cut = (e: ClipboardEvent) => focused() && clipboard.current.onCopy(e, true)
+    const pasted = (e: ClipboardEvent) => focused() && void clipboard.current.onPaste(e)
     document.addEventListener('copy', copy)
     document.addEventListener('cut', cut)
     document.addEventListener('paste', pasted)
@@ -299,7 +320,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
       document.removeEventListener('cut', cut)
       document.removeEventListener('paste', pasted)
     }
-  })
+  }, [])
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     // Typing in a card or a label is the editor's.
@@ -309,8 +330,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
     if (e.key === ' ') return void ((space.current = true), handled())
     if ((e.key === 'Delete' || e.key === 'Backspace') && !readOnly) {
       handled()
-      deleteSelected({ cards: selectedCards, events: selectedEvents, ...(edge?.kind === 'connection' ? { connectionId: edge.id } : edge ? { linkId: edge.id } : {}) })
-      return clear()
+      return remove({ cards: selectedCards, events: selectedEvents, ...(edge?.kind === 'connection' ? { connectionId: edge.id } : edge ? { linkId: edge.id } : {}) })
     }
     if (e.key === 'Escape') return void (handled(), clear())
     if (mod && e.key.toLowerCase() === 'a') return void (handled(), select(placed.keys()))
@@ -336,7 +356,6 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
 
   const onBoardPointerDown = (e: React.PointerEvent) => {
     if (!view) return
-    freeze()
     const panning = e.button === 1 || (e.button === 0 && (space.current || e.pointerType === 'touch'))
     if (!panning && e.button !== 0) return
     capture(e)
@@ -349,7 +368,6 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   const onItemPointerDown = (e: React.PointerEvent, item: Placed) => {
     if (e.button !== 0) return
     e.stopPropagation()
-    freeze()
     // The pointer is the board's only once the item is moved: a click or double-click stays the item's.
     boardRef.current!.focus({ preventScroll: true })
     if (space.current) return capture(e), setDrag({ kind: 'pan', start: { x: e.clientX, y: e.clientY }, from: view! })
@@ -367,35 +385,26 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
       setSelected(ids)
     } else if (!selected.has(item.id)) setSelected((ids = new Set([item.id])))
     if (readOnly || editing === item.id) return collapse ? void setSelected(new Set([item.id])) : undefined
-    setDrag({ kind: 'move', start: { x: e.clientX, y: e.clientY }, ids: withContents(ids), lead: item.id, k: item.k, moved: false, delta: { x: 0, y: 0 }, guides: { x: [], y: [] }, collapse })
+    const moved = withContents(ids)
+    // What it may snap to: everything not moving with it.
+    const others = items.filter((i) => !moved.includes(i.id)).map((i) => i.box)
+    setDrag({ kind: 'move', start: { x: e.clientX, y: e.clientY }, ids: moved, lead: item.id, k: item.k, moved: false, delta: { x: 0, y: 0 }, guides: { x: [], y: [] }, collapse, others })
   }
 
-  const onResizePointerDown = (e: React.PointerEvent, item: Placed) => {
+  /** A handle's drag (resizing, connecting, linking): the board's from the start. */
+  const startDrag = (e: React.PointerEvent, make: (p: Point) => Drag) => {
     if (e.button !== 0 || readOnly) return
     e.stopPropagation()
     capture(e)
-    setDrag({ kind: 'resize', id: item.id, start: { x: e.clientX, y: e.clientY }, from: item.box, k: item.k, size: { w: item.box.w, h: item.box.h } })
-  }
-
-  const onSidePointerDown = (e: React.PointerEvent, item: Placed, side: Side) => {
-    if (e.button !== 0 || readOnly) return
-    e.stopPropagation()
-    capture(e)
-    const p = boardPoint(e)
-    setDrag({ kind: 'connect', fromId: item.id, fromSide: side, start: p, to: p })
-  }
-
-  const onLinkHandlePointerDown = (e: React.PointerEvent, item: Placed) => {
-    if (e.button !== 0 || readOnly) return
-    e.stopPropagation()
-    capture(e)
-    setDrag({ kind: 'link', fromId: item.id, to: boardPoint(e) })
+    setDrag(make(boardPoint(e)))
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
     const p = boardPoint(e)
     pointer.current = toPlane(p)
     if (!drag || !view) return
+    // The button was let go where the board didn't hear it (a click on an item not yet dragged, let go off the window).
+    if (e.buttons === 0 && e.pointerType === 'mouse') return setDrag(null)
     if (drag.kind === 'marquee' || drag.kind === 'connect' || drag.kind === 'link') return setDrag({ ...drag, to: p })
     // How far the pointer has gone since the drag began, on screen.
     const [dx, dy] = [e.clientX - drag.start.x, e.clientY - drag.start.y]
@@ -403,9 +412,8 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
       case 'pan':
         return setView({ ...drag.from, x: drag.from.x + dx, y: drag.from.y + dy })
       case 'resize': {
-        const w = Math.max(40, drag.from.w + dx / drag.k)
-        const h = Math.max(40, drag.from.h + dy / drag.k)
-        return setDrag({ ...drag, size: snapGrid ? { w: Math.max(40, snapToGrid(w)), h: Math.max(40, snapToGrid(h)) } : { w, h } })
+        const fit = (n: number) => Math.max(CARD_SIZE.min, snapGrid ? snapToGrid(n) : n)
+        return setDrag({ ...drag, size: { w: fit(drag.from.w + dx / drag.k), h: fit(drag.from.h + dy / drag.k) } })
       }
       case 'move': {
         if (!drag.moved && Math.hypot(dx, dy) <= 4) return
@@ -413,8 +421,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
         // A receded event is drawn smaller, so the same mouse move covers more of the plane.
         const lead = byId.get(drag.lead)!.box
         const want = { ...lead, x: lead.x + dx / drag.k, y: lead.y + dy / drag.k }
-        const others = items.filter((i) => !drag.ids.includes(i.id)).map((i) => i.box)
-        const snapped = snapBox(want, others, { grid: snapGrid, objects: snapObjects, slack: SNAP_PX / view.zoom })
+        const snapped = snapBox(want, drag.others, { grid: snapGrid, objects: snapObjects, slack: SNAP_PX / view.zoom })
         return setDrag({ ...drag, moved: true, delta: { x: snapped.at.x - lead.x, y: snapped.at.y - lead.y }, guides: snapped.guides })
       }
     }
@@ -428,17 +435,16 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
     switch (drag.kind) {
       case 'move':
         if (!drag.moved && drag.collapse) return setSelected(new Set([drag.lead]))
-        if (drag.moved) run(drag.ids.flatMap((id) => (byId.has(id) ? [placeCommand(byId.get(id)!, { x: byId.get(id)!.box.x + drag.delta.x, y: byId.get(id)!.box.y + drag.delta.y })] : [])))
+        if (drag.moved)
+          run(
+            drag.ids.flatMap((id) => {
+              const item = byId.get(id)
+              return item ? [boxCommand(item, { x: item.box.x + drag.delta.x, y: item.box.y + drag.delta.y })] : []
+            })
+          )
         return
-      case 'resize': {
-        const item = byId.get(drag.id)!
-        const size = { w: Math.round(drag.size.w), h: Math.round(drag.size.h) }
-        return run([
-          item.event
-            ? { type: 'event.update', payload: { id: item.id, patch: { canvas: { ...item.event.canvas, x: item.box.x, y: item.box.y, ...size } } } }
-            : { type: 'card.update', payload: { id: item.id, patch: size } }
-        ])
-      }
+      case 'resize':
+        return run([boxCommand(byId.get(drag.id)!, drag.size)])
       case 'marquee': {
         const box = boxBetween(drag.start, drag.to)
         if (box.w < 4 && box.h < 4) return clear()
@@ -451,10 +457,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
       case 'connect': {
         const target = under && under !== drag.fromId ? placed.get(under) : undefined
         if (target) {
-          const toSide = nearestSide(target.screen, p)
-          // Between two events it's a timeline link, as their ● makes.
-          if (byId.get(drag.fromId)?.event && target.event) return run([{ type: 'link.create', payload: { fromId: drag.fromId, toId: target.id } }])
-          return run([{ type: 'connection.create', payload: { fromId: drag.fromId, toId: target.id, fromSide: drag.fromSide, toSide } }])
+          return run([{ type: 'connection.create', payload: { fromId: drag.fromId, toId: target.id, fromSide: drag.fromSide, toSide: nearestSide(target.screen, p) } }])
         }
         // Dropped on the board: a new card there, connected, to write in (not for a handle only clicked).
         if (Math.hypot(p.x - drag.start.x, p.y - drag.start.y) < 20) return
@@ -489,30 +492,12 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
     const connectionId = (e.target as Element).closest<SVGElement>('[data-connection-id]')?.dataset.connectionId
     if (connectionId) {
       const picked: Edge = { kind: 'connection', id: connectionId }
-      setSelected(new Set())
-      setEdge(picked)
-      const actions = actionsFor([], [], picked)
-      return open('Connection', [
-        ...(actions.onEdit ? [{ label: 'Edit the label', run: actions.onEdit }] : []),
-        ...(actions.onArrows ? ARROWS.map((arrows) => ({ label: ARROW_LABELS[arrows], run: () => actions.onArrows!(arrows) })) : []),
-        ...(actions.onDelete ? ['separator' as const, { label: 'Delete', run: actions.onDelete, danger: true }] : [])
-      ])
+      selectEdge(picked)
+      return open('Connection', menuItems(actionsFor([], [], picked)))
     }
     if (card) {
       if (!selected.has(card.id)) select([card.id])
-      const actions = actionsFor([card], [], null)
-      return open(
-        card.kind === 'group' ? card.text || 'Group' : 'Card',
-        [
-          ...(actions.onEdit ? [{ label: 'Edit', run: actions.onEdit }] : []),
-          ...(actions.onOpen ? [{ label: 'Open', run: actions.onOpen }] : []),
-          ...(actions.onBrowser ? [{ label: 'Open in browser', run: actions.onBrowser }] : []),
-          ...(actions.onToEvent ? [{ label: 'Turn into an event', run: actions.onToEvent }] : []),
-          ...(actions.onDuplicate ? [{ label: 'Duplicate', run: actions.onDuplicate }] : []),
-          { label: 'Zoom to it', run: () => setView(viewOf(card)) },
-          ...(actions.onDelete ? ['separator' as const, { label: 'Delete', run: actions.onDelete, danger: true }] : [])
-        ]
-      )
+      return open(card.kind === 'group' ? card.text || 'Group' : 'Card', menuItems(actionsFor([card], [], null)))
     }
     const adding: MenuItem[] = readOnly
       ? []
@@ -535,21 +520,21 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
       if (!c) return {}
       const set = (patch: object) => run([{ type: 'connection.update', payload: { id: c.id, patch } }])
       return writable
-        ? { onEdit: () => setEditing(`label:${c.id}`), onColor: (color) => set({ color }), allowNone: true, arrows: c.arrows, onArrows: (arrows) => set({ arrows }), onDelete: () => (deleteSelected({ cards: [], events: [], connectionId: c.id }), clear()) }
+        ? { onEdit: () => setEditing(`label:${c.id}`), onColor: (color) => set({ color }), allowNone: true, arrows: c.arrows, onArrows: (arrows) => set({ arrows }), onDelete: () => remove({ connectionId: c.id }) }
         : {}
     }
-    if (selectedEdge?.kind === 'link') return writable ? { onDelete: () => (deleteSelected({ cards: [], events: [], linkId: selectedEdge.id }), clear()) } : {}
+    if (selectedEdge?.kind === 'link') return writable ? { onDelete: () => remove({ linkId: selectedEdge.id }) } : {}
     const count = cards.length + evs.length
     if (!count) return {}
     const one = count === 1 ? cards[0] : undefined
-    const boxes = [...cards.map((c) => ({ id: c.id, x: c.x, y: c.y, w: c.w, h: c.h })), ...evs.flatMap((ev) => (byId.has(ev.id) ? [{ id: ev.id, ...byId.get(ev.id)!.box }] : []))]
+    const boxes = [...cards, ...evs].flatMap(({ id }) => (byId.has(id) ? [{ id, ...byId.get(id)!.box }] : []))
     return {
-      onZoom: zoomToSelection,
-      ...(one?.kind === 'element' && { onOpen: () => openTarget(one.target as CardTarget) }),
+      onZoom: () => setView(viewOf(bounds(boxes))),
+      ...(one?.kind === 'element' && { onOpen: () => openTarget(one.target!) }),
       ...(one?.kind === 'link' && { onBrowser: () => void window.open(one.url!, '_blank') }),
       ...(count === 1 && evs[0] && { onGoTo: () => goToEvent(evs[0]!) }),
       ...(writable && {
-        onDelete: () => (deleteSelected({ cards, events: evs }), clear()),
+        onDelete: () => remove({ cards, events: evs }),
         onColor: recolor,
         allowNone: !evs.length,
         ...((one?.kind === 'text' || one?.kind === 'group') && { onEdit: () => setEditing(one.id) }),
@@ -559,7 +544,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
           onGroup: () => groupSelection(middle()),
           onAlign: (how) => {
             const to = align(boxes, how)
-            run(boxes.map((b) => placeCommand(byId.get(b.id)!, to.get(b.id)!)))
+            run(boxes.map((b) => boxCommand(byId.get(b.id)!, to.get(b.id)!)))
           }
         })
       })
@@ -606,7 +591,8 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   }
 
   return (
-    <div className="event-canvas">
+    // Anything done on it (a click, a key, a drop; a paste freezes it itself) keeps the view where it is from then on.
+    <div className="event-canvas" onPointerDownCapture={freeze} onKeyDownCapture={freeze} onDropCapture={freeze}>
       <div className="event-canvas-bar" role="toolbar" aria-label="Canvas">
         {!readOnly && <AddPalette onAdd={(kind) => startAdding(kind)} />}
         <span className="canvas-bar-gap" />
@@ -653,7 +639,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
             const d = curvePath(curve)
             return (
               <g key={l.id} className={`canvas-link${edge?.id === l.id ? ' selected' : ''}`} data-link-id={l.id} style={{ opacity: 1 - 0.4 * depth }}>
-                <path d={d} className="canvas-link-hit" data-menu={menuRef('link', l.id)} onPointerDown={(e) => (e.stopPropagation(), setSelected(new Set()), setEdge({ kind: 'link', id: l.id }))} />
+                <path d={d} className="canvas-link-hit" data-menu={menuRef('link', l.id)} onPointerDown={(e) => (e.stopPropagation(), selectEdge({ kind: 'link', id: l.id }))} />
                 <path d={d} stroke={style.color} strokeDasharray={style.dash} fill="none" />
                 {style.arrow && <polygon points={arrowHead(curve, true, 10)} fill={style.color} />}
               </g>
@@ -668,7 +654,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
                   d={d}
                   className="canvas-link-hit"
                   aria-label={c.label || 'Connection'}
-                  onPointerDown={(e) => (e.stopPropagation(), boardRef.current!.focus({ preventScroll: true }), setSelected(new Set()), setEdge({ kind: 'connection', id: c.id }))}
+                  onPointerDown={(e) => (e.stopPropagation(), boardRef.current!.focus({ preventScroll: true }), selectEdge({ kind: 'connection', id: c.id }))}
                   onDoubleClick={(e) => (e.stopPropagation(), !readOnly && setEditing(`label:${c.id}`))}
                 />
                 <path d={d} stroke={color} fill="none" />
@@ -692,9 +678,23 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
 
         {drawn.map(({ c, curve }) => {
           const at = curveAt(curve, 0.5)
-          if (editing === `label:${c.id}`) return <LabelEditor key={c.id} at={at} value={c.label} onDone={(label) => (setEditing(null), label !== c.label && run([{ type: 'connection.update', payload: { id: c.id, patch: { label } } }]))} />
+          if (editing === `label:${c.id}`)
+            return (
+              <InlineEditor
+                key={c.id}
+                label="Connection label"
+                className="canvas-edge-label editing"
+                style={{ left: at.x, top: at.y }}
+                value={c.label}
+                onDone={(text) => {
+                  const label = text.trim()
+                  setEditing(null)
+                  if (label !== c.label) run([{ type: 'connection.update', payload: { id: c.id, patch: { label } } }])
+                }}
+              />
+            )
           return c.label ? (
-            <div key={c.id} className="canvas-edge-label" style={{ left: at.x, top: at.y }} onDoubleClick={() => !readOnly && setEditing(`label:${c.id}`)} onPointerDown={(e) => (e.stopPropagation(), setSelected(new Set()), setEdge({ kind: 'connection', id: c.id }))}>
+            <div key={c.id} className="canvas-edge-label" style={{ left: at.x, top: at.y }} onDoubleClick={() => !readOnly && setEditing(`label:${c.id}`)} onPointerDown={(e) => (e.stopPropagation(), selectEdge({ kind: 'connection', id: c.id }))}>
               {c.label}
             </div>
           ) : null
@@ -703,7 +703,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
         {ordered.filter((i) => i.card?.kind !== 'group').map((item) => renderItem(item))}
 
         {marquee && <div className="canvas-marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />}
-        {barAt && !drag && !editing && Object.keys(actions).length > 0 && <SelectionBar at={{ x: barAt.x, y: Math.max(8, barAt.y - 52) }} actions={actions} />}
+        {barAt && !drag && !editing && !capturing && Object.keys(actions).length > 0 && <SelectionBar at={{ x: barAt.x, y: Math.max(8, barAt.y - 52) }} actions={actions} />}
         {items.length === 0 && (
           <p className="canvas-empty muted">
             The world’s events show up here, beside cards of your own: double-click to write one, or add one from the toolbar. Drag to select, Space-drag to pan, scroll to zoom; drag from a card’s side onto another to connect them.
@@ -713,7 +713,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
       <input
         ref={fileRef}
         type="file"
-        accept="image/png,image/jpeg,image/gif,image/webp"
+        accept={CARD_IMAGE_TYPES.join(',')}
         multiple
         hidden
         aria-label="Picture for the canvas"
@@ -733,9 +733,9 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
     const handles = !readOnly && !capturing && (
       <>
         {SIDES.map((side) => (
-          <span key={side} className={`side-handle ${side}`} title="Drag onto another card to connect them" aria-label={`Connect from the ${side}`} onPointerDown={(e) => onSidePointerDown(e, item, side)} />
+          <span key={side} className={`side-handle ${side}`} title="Drag onto another card to connect them" aria-label={`Connect from the ${side}`} onPointerDown={(e) => startDrag(e, (p) => ({ kind: 'connect', fromId: item.id, fromSide: side, start: p, to: p }))} />
         ))}
-        <span className="resize-handle" title="Drag to resize" aria-label="Resize" onPointerDown={(e) => onResizePointerDown(e, item)} />
+        <span className="resize-handle" title="Drag to resize" aria-label="Resize" onPointerDown={(e) => startDrag(e, () => ({ kind: 'resize', id: item.id, start: { x: e.clientX, y: e.clientY }, from: item.box, k: item.k, size: { w: item.box.w, h: item.box.h } }))} />
       </>
     )
     if (item.event) {
@@ -779,7 +779,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
           <div className="muted small">{eventDates(ev, cal)}</div>
           <div className="small event-node-place">{ev.locations.length ? ev.locations.map((l) => locationLabel(l, regions)).join(' · ') : <span className="muted">No place yet</span>}</div>
           {!readOnly && (
-            <span className="event-node-handle" aria-label={`Link ${ev.title} to…`} title="Drag onto another node to link them" onPointerDown={(e) => onLinkHandlePointerDown(e, item)}>
+            <span className="event-node-handle" aria-label={`Link ${ev.title} to…`} title="Drag onto another node to link them" onPointerDown={(e) => startDrag(e, (p) => ({ kind: 'link', fromId: item.id, to: p }))}>
               ●
             </span>
           )}
@@ -806,7 +806,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
         onPointerDown={(e) => onItemPointerDown(e, item)}
         onDoubleClick={(e) => onDoubleClickItem(e, item)}
       >
-        {card.kind === 'group' ? <GroupLabel card={card} editing={editingThis} onDone={() => setEditing(null)} /> : <CardBody card={card} editing={editingThis} onDone={() => setEditing(null)} />}
+        {card.kind === 'group' ? <GroupLabel card={card} editing={editingThis} onDone={stopEditing} /> : <CardBody card={card} editing={editingThis} onDone={stopEditing} />}
         {handles}
       </div>
     )
@@ -815,27 +815,6 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
 
 /** Groups first (the biggest at the back), then events (the farthest back first), then cards. */
 const rank = (i: Placed) => (i.card?.kind === 'group' ? -1e12 + 1 / Math.max(1, i.box.w * i.box.h) : i.event ? (i.depth?.depth ?? 0) * -1 : 1)
-
-/** A connection's label, typed where it sits on the curve. */
-function LabelEditor({ at, value, onDone }: { at: Point; value: string; onDone(label: string): void }) {
-  const ref = useRef<HTMLInputElement>(null)
-  useEffect(() => ref.current?.focus(), [])
-  return (
-    <input
-      ref={ref}
-      className="canvas-edge-label editing"
-      aria-label="Connection label"
-      style={{ left: at.x, top: at.y }}
-      defaultValue={value}
-      onPointerDown={(e) => e.stopPropagation()}
-      onBlur={(e) => onDone(e.target.value.trim())}
-      onKeyDown={(e) => {
-        e.stopPropagation()
-        if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur()
-      }}
-    />
-  )
-}
 
 /** The element's size in CSS pixels, kept current. */
 function useSize(ref: React.RefObject<HTMLElement | null>): { w: number; h: number } {

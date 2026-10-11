@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { align, arrowHead, bounds, connectionCurve, curveAt, distanceToCurve, facingSide, freeSpot, nearestSide, snapBox } from './board'
+import { align, arrowHead, bounds, connectionCurve, curveAt, facingSide, freeSpot, nearestSide, snapBox } from './board'
 
 const a = { x: 0, y: 0, w: 100, h: 50 }
 const b = { x: 300, y: 0, w: 100, h: 50 }
@@ -15,7 +15,6 @@ describe('the canvas’s geometry', () => {
     expect(down.from).toEqual({ x: 50, y: 50 })
     expect(down.to).toEqual({ x: 350, y: 0 })
     expect(curveAt(curve, 0.5)).toEqual({ x: 200, y: 25 })
-    expect(distanceToCurve(curve, { x: 200, y: 30 })).toBeCloseTo(5, 0)
     expect(facingSide(a, { x: 50, y: 400 })).toBe('bottom')
     expect(nearestSide(b, { x: 302, y: 30 })).toBe('left')
     // The arrowhead's tip is the curve's end.

@@ -1,5 +1,7 @@
-import { ARROWS, CANVAS_COLORS, canvasColor, type Arrows, type CanvasColor } from '@universe/core'
+import { ARROWS, CANVAS_COLORS, canvasColor, type Arrows, type CanvasColor, type CardKind } from '@universe/core'
 import { useState } from 'react'
+import { ColorField } from '../../components/fields'
+import type { MenuItem } from '../../contextMenu'
 import { ALIGNS, type Align, type Point } from './board'
 import { useCanvasSettings } from './canvasSettings'
 
@@ -27,7 +29,29 @@ export interface SelectionActions {
   onArrows?(arrows: Arrows): void
 }
 
-/** The bar over what's selected (Obsidian's): colour, delete, zoom to it, and what else it can do. */
+/** The actions that are one button (and one menu item) each, in the bar's order. */
+type ButtonAction = 'onEdit' | 'onOpen' | 'onBrowser' | 'onGoTo' | 'onGroup' | 'onToEvent' | 'onDuplicate' | 'onZoom'
+const ACTIONS: { key: ButtonAction; icon: string; label: string; title: string }[] = [
+  { key: 'onEdit', icon: '✏️', label: 'Edit', title: 'Edit (or double-click)' },
+  { key: 'onOpen', icon: '↗', label: 'Open', title: 'Open it' },
+  { key: 'onBrowser', icon: '🌐', label: 'Open in browser', title: 'Open in your browser' },
+  { key: 'onGoTo', icon: '📍', label: 'Go to', title: 'Go to when and where it happened (or double-click)' },
+  { key: 'onGroup', icon: '▭', label: 'Group', title: 'Put in a group' },
+  { key: 'onToEvent', icon: '📅', label: 'Turn into event', title: 'Turn into an event at the playhead' },
+  { key: 'onDuplicate', icon: '⧉', label: 'Duplicate', title: 'Duplicate (Ctrl+D)' },
+  { key: 'onZoom', icon: '🔍', label: 'Zoom to selection', title: 'Zoom to it (Shift+2)' }
+]
+
+/** A selection's actions as a right-click menu: the bar's buttons, the arrows of a connection, and Delete. */
+export function menuItems(a: SelectionActions): MenuItem[] {
+  return [
+    ...ACTIONS.flatMap(({ key, label }) => (a[key] ? [{ label, run: a[key] }] : [])),
+    ...(a.onArrows ? ARROWS.map((arrows) => ({ label: ARROW_LABELS[arrows], run: () => a.onArrows!(arrows) })) : []),
+    ...(a.onDelete ? ['separator' as const, { label: 'Delete', run: a.onDelete, danger: true }] : [])
+  ]
+}
+
+/** The bar over what's selected (Obsidian's): its actions, colour, arrows and aligning, and delete. */
 export function SelectionBar({ at, actions }: { at: Point; actions: SelectionActions }) {
   const [open, setOpen] = useState<'color' | 'align' | 'arrows' | null>(null)
   const a = actions
@@ -35,11 +59,14 @@ export function SelectionBar({ at, actions }: { at: Point; actions: SelectionAct
   /** Picking from one of its menus closes it. */
   const pick = <T,>(run: (value: T) => void) => (value: T) => (setOpen(null), run(value))
   return (
-    <div className="canvas-selection-bar view-control" role="toolbar" aria-label="Selection" style={{ left: at.x, top: at.y }} onPointerDown={(e) => e.stopPropagation()}>
-      {a.onEdit && <button title="Edit (or double-click)" aria-label="Edit" onClick={a.onEdit}>✏️</button>}
-      {a.onOpen && <button title="Open it" aria-label="Open" onClick={a.onOpen}>↗</button>}
-      {a.onBrowser && <button title="Open in your browser" aria-label="Open in browser" onClick={a.onBrowser}>🌐</button>}
-      {a.onGoTo && <button title="Go to when and where it happened (or double-click)" aria-label="Go to" onClick={a.onGoTo}>📍</button>}
+    <div className="canvas-selection-bar" role="toolbar" aria-label="Selection" style={{ left: at.x, top: at.y }} onPointerDown={(e) => e.stopPropagation()}>
+      {ACTIONS.map(({ key, icon, label, title }) =>
+        a[key] ? (
+          <button key={key} title={title} aria-label={label} onClick={a[key]}>
+            {icon}
+          </button>
+        ) : null
+      )}
       {a.onColor && (
         <button title="Colour" aria-label="Colour" aria-expanded={open === 'color'} onClick={() => toggle('color')}>
           🎨
@@ -55,11 +82,11 @@ export function SelectionBar({ at, actions }: { at: Point; actions: SelectionAct
           ⫷
         </button>
       )}
-      {a.onGroup && <button title="Put in a group" aria-label="Group" onClick={a.onGroup}>▭</button>}
-      {a.onToEvent && <button title="Turn into an event at the playhead" aria-label="Turn into event" onClick={a.onToEvent}>📅</button>}
-      {a.onDuplicate && <button title="Duplicate (Ctrl+D)" aria-label="Duplicate" onClick={a.onDuplicate}>⧉</button>}
-      {a.onZoom && <button title="Zoom to selection (Shift+2)" aria-label="Zoom to selection" onClick={a.onZoom}>🔍</button>}
-      {a.onDelete && <button title="Delete (Delete key)" aria-label="Delete" className="danger" onClick={a.onDelete}>🗑</button>}
+      {a.onDelete && (
+        <button title="Delete (Delete key)" aria-label="Delete" className="danger" onClick={a.onDelete}>
+          🗑
+        </button>
+      )}
 
       {open === 'color' && a.onColor && (
         <div className="canvas-popover" role="group" aria-label="Colours">
@@ -68,9 +95,7 @@ export function SelectionBar({ at, actions }: { at: Point; actions: SelectionAct
               <span className="swatch" style={{ background: canvasColor(c)! }} />
             </button>
           ))}
-          <label title="Any colour" className="canvas-any-color">
-            <input type="color" aria-label="Any colour" onChange={(e) => pick(a.onColor!)(e.target.value)} />
-          </label>
+          <ColorField label="Any colour" value="#888888" onCommit={pick(a.onColor)} />
           {a.allowNone && (
             <button aria-label="No colour" title="No colour" onClick={() => pick(a.onColor!)(null)}>
               ⊘
@@ -129,7 +154,7 @@ const ADDS = [
 ] as const
 
 /** Adding cards, in the middle of the view (a right-click or a double-click adds one where it's asked). */
-export function AddPalette({ onAdd }: { onAdd(kind: 'text' | 'element' | 'image' | 'link' | 'group'): void }) {
+export function AddPalette({ onAdd }: { onAdd(kind: CardKind): void }) {
   return (
     <div className="canvas-palette" role="group" aria-label="Add to the canvas">
       {ADDS.map(({ kind, icon, label, title }) => (

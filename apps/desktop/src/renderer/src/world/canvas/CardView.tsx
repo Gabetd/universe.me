@@ -1,6 +1,6 @@
 import { canvasColor, type CanvasCard } from '@universe/core'
-import { useEffect, useRef } from 'react'
-import { useUi } from '../../store'
+import { memo, useEffect, useMemo, useRef } from 'react'
+import { updater, useUi } from '../../store'
 import { elementSummary, openTarget } from './elements'
 import { markdownToHtml } from './markdown'
 
@@ -10,10 +10,11 @@ import { markdownToHtml } from './markdown'
  * its notes, a picture card its picture, a link card its address, a group
  * its label above it. Where it is and how big is the board's to say.
  */
-export function CardBody({ card, editing, onDone }: { card: CanvasCard; editing: boolean; onDone(): void }) {
+// Memoized: the board re-renders as it's panned and things are dragged, and a card only when it changes (`onDone` is stable).
+export const CardBody = memo(function CardBody({ card, editing, onDone }: { card: CanvasCard; editing: boolean; onDone(): void }) {
   switch (card.kind) {
     case 'text':
-      return editing ? <TextEditor card={card} field="text" label="Card text" multiline onDone={onDone} /> : <div className="canvas-markdown" dangerouslySetInnerHTML={{ __html: markdownToHtml(card.text) || '<p class="muted">Double-click to write</p>' }} />
+      return editing ? <InlineEditor label="Card text" value={card.text} multiline onDone={(text) => saveText(card, text, onDone)} /> : <Markdown text={card.text} />
     case 'element':
       return <ElementBody card={card} />
     case 'image':
@@ -31,22 +32,35 @@ export function CardBody({ card, editing, onDone }: { card: CanvasCard; editing:
     case 'group':
       return null
   }
+})
+
+function Markdown({ text }: { text: string }) {
+  const html = useMemo(() => markdownToHtml(text) || '<p class="muted">Double-click to write</p>', [text])
+  return <div className="canvas-markdown" dangerouslySetInnerHTML={{ __html: html }} />
+}
+
+/** Keeps a card's text (or a group's label) as it was left, one step to undo, if it changed. */
+const saveText = (card: CanvasCard, text: string, done: () => void) => {
+  if (text !== card.text) updater('card', card.id)({ text })
+  done()
 }
 
 /** A group's label, over its top-left corner (edited in place). */
-export function GroupLabel({ card, editing, onDone }: { card: CanvasCard; editing: boolean; onDone(): void }) {
+export const GroupLabel = memo(function GroupLabel({ card, editing, onDone }: { card: CanvasCard; editing: boolean; onDone(): void }) {
   const color = canvasColor(card.color)
   return (
     <div className="canvas-group-label" style={color ? { background: color } : undefined}>
-      {editing ? <TextEditor card={card} field="text" label="Group label" onDone={onDone} /> : card.text || 'Group'}
+      {editing ? <InlineEditor label="Group label" value={card.text} onDone={(text) => saveText(card, text, onDone)} /> : card.text || 'Group'}
     </div>
   )
-}
+})
 
 function ElementBody({ card }: { card: CanvasCard }) {
-  // Read anew when the project changes, so a rename shows.
-  useUi((s) => s.timeline)
-  const summary = elementSummary(card.target!)
+  // Worked out again when the project changes (a rename shows), not as the board moves.
+  const timeline = useUi((s) => s.timeline)
+  const nodes = useUi((s) => s.nodes)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `timeline` and `nodes` stand for what it reads from the store
+  const summary = useMemo(() => elementSummary(card.target!), [card.target, timeline, nodes])
   return (
     <div className={`canvas-element${summary.missing ? ' missing' : ''}`}>
       <span className="small muted">{summary.kind}</span>
@@ -58,25 +72,21 @@ function ElementBody({ card }: { card: CanvasCard }) {
   )
 }
 
-/** Edits a card's text in place: kept as it's left (Escape, a click elsewhere, Ctrl+Enter), one step to undo. */
-function TextEditor({ card, field, label, multiline, onDone }: { card: CanvasCard; field: 'text'; label: string; multiline?: boolean; onDone(): void }) {
+/** Text edited in place (a card's, a group's label, a connection's label): kept as it's left (Escape, a click elsewhere, Enter or, written on several lines, Ctrl+Enter). */
+export function InlineEditor({ label, value, multiline, className = 'canvas-text-editor', style, onDone }: { label: string; value: string; multiline?: boolean; className?: string; style?: React.CSSProperties; onDone(value: string): void }) {
   const ref = useRef<HTMLTextAreaElement & HTMLInputElement>(null)
   useEffect(() => {
     const el = ref.current!
     el.focus()
     el.setSelectionRange(el.value.length, el.value.length)
   }, [])
-  const save = () => {
-    const value = ref.current!.value
-    if (value !== card[field]) void useUi.getState().execute({ type: 'card.update', payload: { id: card.id, patch: { [field]: value } } })
-    onDone()
-  }
   const props = {
     ref,
     'aria-label': label,
-    defaultValue: card[field],
-    className: 'canvas-text-editor',
-    onBlur: save,
+    defaultValue: value,
+    className,
+    style,
+    onBlur: () => onDone(ref.current!.value),
     onPointerDown: (e: React.PointerEvent) => e.stopPropagation(),
     onKeyDown: (e: React.KeyboardEvent) => {
       e.stopPropagation()

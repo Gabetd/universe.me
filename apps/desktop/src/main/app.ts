@@ -1,6 +1,7 @@
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { CardUrl } from '@universe/core'
 import { rng } from '@universe/procgen'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session as electronSession, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type OpenDialogOptions, type SaveDialogOptions, type WebFrameMain } from 'electron'
 import { appFolder, isAllowedRequest } from '../shared/offline'
@@ -255,35 +256,32 @@ function pluginManager(): Promise<import('./plugins').Plugins> {
   return plugins
 }
 
-/** Asks where to save a world's bible and writes it there. */
-async function exportBible(worldId: string): Promise<string | null> {
-  const world = session.state().nodes.find((n) => n.id === worldId)
+/** Asks where to save something (in the documents folder by default, named `name`) and writes it there; the path, or null if cancelled. */
+async function exportTo(title: string, name: string, filter: { name: string; extension: string }, contents: () => Promise<string | Buffer>): Promise<string | null> {
   const filePath = await pickToSave({
-    title: 'Export the world bible',
+    title,
     buttonLabel: 'Export',
-    defaultPath: join(app.getPath('documents'), `${(world?.name ?? 'World').replace(/[\\/:*?"<>|]/g, '-')}.md`),
-    filters: [{ name: 'Markdown', extensions: ['md'] }]
+    defaultPath: join(app.getPath('documents'), `${name.replace(/[\\/:*?"<>|]/g, '-')}.${filter.extension}`),
+    filters: [{ name: filter.name, extensions: [filter.extension] }]
   })
   if (!filePath) return null
-  await writeFile(filePath, await api.bible(worldId))
+  await writeFile(filePath, await contents())
   return filePath
 }
 
-/** An address the browser is given to open: a web page, nothing else (no files, no other apps' links). */
-const isWebPage = (url: string) => /^https?:\/\/[^\s]+$/i.test(url)
+/** Asks where to save a world's bible and writes it there. */
+const exportBible = (worldId: string) =>
+  exportTo('Export the world bible', session.state().nodes.find((n) => n.id === worldId)?.name ?? 'World', { name: 'Markdown', extension: 'md' }, () => api.bible(worldId))
 
-/** Saves a part of the window (in CSS px) as a PNG where the user says. */
+/** An address the browser is given to open: a web page (as a canvas's link card holds), nothing else (no files, no other apps' links). */
+const isWebPage = (url: string) => CardUrl.safeParse(url).success
+
+/** Saves a part of the window (in CSS px; the page may be zoomed) as a PNG where the user says. */
 async function exportImage(rect: { x: number; y: number; width: number; height: number }, name: string): Promise<string | null> {
-  const image = await win!.webContents.capturePage({ x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) })
-  const filePath = await pickToSave({
-    title: 'Export as an image',
-    buttonLabel: 'Export',
-    defaultPath: join(app.getPath('documents'), `${name.replace(/[\\/:*?"<>|]/g, '-')}.png`),
-    filters: [{ name: 'PNG image', extensions: ['png'] }]
-  })
-  if (!filePath) return null
-  await writeFile(filePath, image.toPNG())
-  return filePath
+  const zoom = win!.webContents.getZoomFactor()
+  const [x, y, width, height] = [rect.x, rect.y, rect.width, rect.height].map((v) => Math.round(v * zoom))
+  const image = await win!.webContents.capturePage({ x: x!, y: y!, width: width!, height: height! })
+  return exportTo('Export as an image', name, { name: 'PNG image', extension: 'png' }, async () => image.toPNG())
 }
 
 /** Menu-triggered actions that can fail show their error in a dialog, since there is no caller to return it to. */

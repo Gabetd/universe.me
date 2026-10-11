@@ -2,6 +2,7 @@ import { CardUrl, type CardTarget } from '@universe/core'
 import { useMemo, useState } from 'react'
 import { Modal } from '../../components/Modal'
 import { useUi } from '../../store'
+import { TARGET_LABELS } from './elements'
 
 /** Asks for a web page's address for a link card. */
 export function LinkDialog({ onAdd, onClose }: { onAdd(url: string): void; onClose(): void }) {
@@ -42,19 +43,21 @@ export function ElementPicker({ worldId, onPick, onClose }: { worldId: string; o
   const [query, setQuery] = useState('')
   const choices = useMemo(() => {
     const own = <R extends { ownerId: string }>(list: R[]) => list.filter((r) => r.ownerId === worldId)
-    const of = <R extends { id: string }>(kind: CardTarget['kind'], label: string, list: R[], name: (r: R) => string): Choice[] => list.map((r) => ({ target: { kind, id: r.id }, name: name(r), kind: label }))
+    const of = <R extends { id: string }>(kind: Exclude<CardTarget['kind'], 'waterway'>, list: R[], name: (r: R) => string): Choice[] =>
+      list.map((r) => ({ target: { kind, id: r.id }, name: name(r), kind: TARGET_LABELS[kind] }))
     return [
-      ...of('node', 'Place', nodes, (n) => n.name),
-      ...of('region', 'Region', regions.filter((r) => r.worldId === worldId), (r) => r.name),
-      ...of('event', 'Event', own(t.events), (e) => e.title),
-      ...of('era', 'Era', own(t.eras), (e) => e.name),
-      ...of('character', 'Character', own(t.characters), (c) => c.name),
-      ...of('faction', 'Faction', own(t.factions), (f) => f.name),
-      ...of('structure', 'Structure', own(t.structures), (s) => s.name),
-      ...of('lifeform', 'Species', own(t.lifeforms), (s) => s.name),
-      ...own(t.waterways).filter((w) => w.name).map((w): Choice => ({ target: { kind: 'waterway', id: w.key }, name: w.name, kind: 'River or lake' })),
-      ...of('power', 'Power', t.powers, (p) => p.name),
-      ...of('theme', 'Theme', t.themes, (x) => x.name)
+      ...of('node', nodes, (n) => n.name),
+      ...of('region', regions.filter((r) => r.worldId === worldId), (r) => r.name),
+      ...of('event', own(t.events), (e) => e.title),
+      ...of('era', own(t.eras), (e) => e.name),
+      ...of('character', own(t.characters), (c) => c.name),
+      ...of('faction', own(t.factions), (f) => f.name),
+      ...of('structure', own(t.structures), (s) => s.name),
+      ...of('species', own(t.lifeforms), (s) => s.name),
+      // Rivers and lakes given a name of their own (the rest are the terrain's, named as it changes).
+      ...own(t.waterways).filter((w) => w.name).map((w): Choice => ({ target: { kind: 'waterway', id: w.key }, name: w.name, kind: TARGET_LABELS.waterway })),
+      ...of('power', t.powers, (p) => p.name),
+      ...of('theme', t.themes, (x) => x.name)
     ]
   }, [nodes, regions, t, worldId])
   const words = query.trim().toLowerCase()

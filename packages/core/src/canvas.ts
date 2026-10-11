@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { Id, RecordMeta } from './schema'
 import { HexColor } from './world'
+import { WaterwayKey } from './waterways'
 
 /**
  * A world's canvas (PLAN.md §9, M17), as Obsidian's Canvas has it: beside
@@ -24,14 +25,22 @@ export type CanvasColor = z.infer<typeof CanvasColor>
 export const canvasColor = (color: CanvasColor | undefined): string | null => (color ? (CANVAS_COLORS[color as keyof typeof CANVAS_COLORS] ?? color) : null)
 
 /** What an element card can show: a place in the universe tree, a region, a river or lake (by its hydrology id), or one of these records. */
-export const CARD_TARGET_KINDS = ['node', 'region', 'event', 'era', 'character', 'faction', 'structure', 'lifeform', 'waterway', 'power', 'theme'] as const
-export const CardTarget = z.object({ kind: z.enum(CARD_TARGET_KINDS), id: Id })
+export const CARD_TARGET_KINDS = ['node', 'region', 'event', 'era', 'character', 'faction', 'structure', 'species', 'waterway', 'power', 'theme'] as const
+/** By the names the app and findings give things (a species, not a lifeform record); a river or lake by its hydrology id. */
+export const CardTarget = z.union([
+  z.object({ kind: z.literal('waterway'), id: WaterwayKey }),
+  z.object({ kind: z.enum(CARD_TARGET_KINDS).exclude(['waterway']), id: Id })
+])
 export type CardTarget = z.infer<typeof CardTarget>
 
-/** A picture kept in the card: a PNG, JPEG, GIF or WebP as a data URL, up to about 4 MB. */
+/** The kinds of picture a card keeps. */
+export const CARD_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const
+/** The longest picture a card keeps, as a data URL (about 4 MB of image; the app keeps them much smaller). */
+export const CARD_IMAGE_MAX = 6_000_000
+/** A picture kept in the card, as a data URL. */
 export const CardImage = z
   .string()
-  .max(6_000_000)
+  .max(CARD_IMAGE_MAX)
   .regex(/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/)
 /** A web page, opened in the browser. */
 export const CardUrl = z.string().max(4000).regex(/^https?:\/\/\S+$/i)
