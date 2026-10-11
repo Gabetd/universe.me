@@ -105,9 +105,10 @@ test('offers a newer build, can be dismissed, and upgrades itself with one click
 })
 
 test('Change version says when this copy has nothing to update to, and why', async () => {
-  /** A copy started with `env` (and the test's key), asked to check. */
+  /** A copy started with `env` (and the test's key), asked to check; the other channels are asked of the test's server too, which hasn't them, so nothing waits on GitHub. */
   const check = async (env: Record<string, string>) => {
-    const launched = await launch(() => ({ UNIVERSE_UPDATE_PUBLIC_KEY: PUBLIC_KEY, ...env }))
+    const others = manifestUrl.replace('update.json', 'none.json')
+    const launched = await launch(() => ({ UNIVERSE_UPDATE_PUBLIC_KEY: PUBLIC_KEY, UNIVERSE_UPDATE_URLS: JSON.stringify({ main: others, staging: others, dev: others }), ...env }))
     await launched.page.getByRole('button', { name: 'Change version' }).click()
     return launched
   }

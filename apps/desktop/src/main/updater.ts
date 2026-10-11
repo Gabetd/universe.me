@@ -14,6 +14,8 @@ import { UntrustedUpdate, readSignedManifest } from './update-signature'
 const run = promisify(execFile)
 const CHECK_EVERY_MS = 60 * 60 * 1000
 const FIRST_CHECK_MS = 5000
+/** How long a manifest (a few hundred bytes) has to arrive before GitHub counts as unreachable. */
+const MANIFEST_TIMEOUT_MS = 20_000
 
 /**
  * Checks the latest-build release for a newer version and, on request,
@@ -52,9 +54,9 @@ export class Updater {
     return channel === this.channel ? this.manifestUrl : (this.urls[channel] ?? manifestUrl(channel))
   }
 
-  /** A channel's manifest, if it's there and signed with Universe's key. */
+  /** A channel's manifest, if it's there and signed with Universe's key; given up on (as unreachable) after a while, so nothing waits on it for ever. */
   private async manifest(channel: Channel): Promise<UpdateManifest> {
-    const res = await net.fetch(this.urlOf(channel), { cache: 'no-store' })
+    const res = await net.fetch(this.urlOf(channel), { cache: 'no-store', signal: AbortSignal.timeout(MANIFEST_TIMEOUT_MS) })
     // Missing while CI swaps the release's files; try again next time.
     if (!res.ok) throw new NotPublishedYet()
     return readSignedManifest(await res.text(), this.publicKey)
