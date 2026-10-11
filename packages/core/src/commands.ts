@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { ALLOWED_CHILDREN, Id, KIND_LABELS, NodeKind, NodePatch, Notes, Seed, Vec3, type CommandSource, type SpatialNode } from './schema'
 import { base64ToBytes, bytesToBase64 } from './encoding'
-import { changedFields, fieldsOf, rowOf, valueAt } from './fields'
+import { changedFields, fieldsOf, rowOf } from './fields'
 import type { Store } from './store'
 import { CommandError, batchOf, liveNode, liveRegion, liveWorld, newNode, patchRow, pickColor, requireRow, softDelete, type CommandContext, type HandlerResult, type Run } from './command-kit'
 import { CHARACTER_COMMANDS, characterHandlers } from './character-commands'
@@ -256,7 +256,8 @@ export const handlers: Handlers = {
 
 /** The patch that puts back the settings a world's change changed. A setting it was saved without (by an older version) has its default either way. */
 function settingsUndo(previous: WorldSettings, next: WorldSettings): WorldSettingsPatch {
-  const undo = changedFields(previous, next).flatMap((path) => (valueAt(previous, path) === undefined ? [] : [[path, valueAt(previous, path)] as const]))
+  const was = fieldsOf(previous)
+  const undo = changedFields(was, fieldsOf(next)).flatMap((path) => (was.has(path) ? [[path, was.get(path)] as const] : []))
   return (rowOf(undo) ?? {}) as WorldSettingsPatch
 }
 

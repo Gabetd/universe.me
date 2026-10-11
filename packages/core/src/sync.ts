@@ -140,9 +140,9 @@ export class MemoryStampTable implements StampTable {
 export interface SyncLedger {
   stampsOf(ref: SyncRef): RowStamps | undefined
   /**
-   * The row `merge` is writing keeps these stamps rather than getting new
-   * ones; without a row stamp (fields from both versions), it gets a new one
-   * from this device, after both.
+   * The row `merge` is about to write keeps these stamps rather than getting
+   * new ones; without a row stamp (fields from both versions), it gets a new
+   * one from this device, after both.
    */
   adopt(ref: SyncRef, stamps: MergedStamps): void
 }
@@ -158,9 +158,8 @@ const PAGE_BYTES = 2_000_000
  */
 export class StampedStore extends ObservedStore {
   private readonly ledger: SyncLedger
-  /** Rows written in the open transaction (each one of fields as it was before), and the stamps merged ones keep. */
-  private readonly touched = new Map<string, SyncRef>()
-  private readonly before = new Map<string, unknown>()
+  /** Rows written in the open transaction, by key, and the stamps merged ones keep. */
+  private readonly written = new Map<string, Written>()
   private readonly adopted = new Map<string, MergedStamps>()
 
   constructor(
@@ -204,44 +203,57 @@ export class StampedStore extends ObservedStore {
   }
 
   /**
-   * Notes a row of fields as it was before the transaction first wrote it,
-   * to find which fields it changed. A world whose settings were never set
-   * has the defaults, so a first change to them stamps only what it changes
-   * (and two devices' first changes to different sliders both stay).
+   * Notes a row as the transaction first writes it: one of fields as it was
+   * before, to find which fields it changed (but one a merge writes, which
+   * keeps the stamps it brings). A world whose settings were never set has
+   * the defaults, so a first change to them stamps only what it changes (and
+   * two devices' first changes to different sliders both stay).
    */
   protected override writing(ref: SyncRef, inserted: boolean): void {
     const key = refKey(ref)
-    if (hasFields(ref) && !this.before.has(key)) this.before.set(key, inserted ? undefined : this.rowBefore(ref))
+    if (this.written.has(key)) return
+    const before = hasFields(ref) && !inserted && !this.adopted.has(key) ? this.rowBefore(ref) : undefined
+    this.written.set(key, { ref, before, done: false, after: undefined })
   }
 
   private rowBefore(ref: SyncRef): unknown {
     return ref.t === 'world' ? (this.inner.worlds.getSettings(ref.id) ?? DEFAULT_WORLD_SETTINGS) : readRow(this.inner, ref)
   }
 
-  protected wrote(ref: SyncRef): void {
-    this.touched.set(refKey(ref), ref)
+  protected wrote(ref: SyncRef, _inserted: boolean, value: unknown): void {
+    const row = this.written.get(refKey(ref))!
+    row.done = true
+    row.after = value
   }
 
   /** Each row its own stamp (rows that only share one would tie, and a page could end between them), or the ones merged with it. */
   protected override committing(): void {
-    for (const [key, ref] of this.touched) {
+    for (const [key, row] of this.written) {
+      if (!row.done) continue
       const adopted = this.adopted.get(key)
-      const stamps = adopted ? ('stamp' in adopted ? adopted : { stamp: this.clock.next(), ...adopted }) : this.restamped(key, ref)
+      const stamps = adopted ? ('stamp' in adopted ? adopted : { stamp: this.clock.next(), ...adopted }) : this.restamped(key, row)
       if (stamps) this.table.put(key, stamps)
     }
   }
 
   /** A row's new stamps after a write here: a field's changes only if it changed (none at all if nothing did). */
-  private restamped(key: string, ref: SyncRef): RowStamps | undefined {
+  private restamped(key: string, { ref, before, after }: Written): RowStamps | undefined {
     const next = () => this.clock.next()
-    return hasFields(ref) ? restamp(this.table.get(key), this.before.get(key), readRow(this.inner, ref), next) : { stamp: next() }
+    return hasFields(ref) ? restamp(this.table.get(key), before, after, next) : { stamp: next() }
   }
 
   protected override ended(): void {
-    this.touched.clear()
-    this.before.clear()
+    this.written.clear()
     this.adopted.clear()
   }
+}
+
+/** A row the open transaction wrote: as it was before (a row of fields, unless it's new or merged), and, once a write went through (`done`), as it was last written. */
+interface Written {
+  ref: SyncRef
+  before: unknown
+  done: boolean
+  after: unknown
 }
 
 /** About how many bytes a row's data takes as it travels. */

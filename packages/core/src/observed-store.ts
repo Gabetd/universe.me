@@ -21,8 +21,8 @@ export abstract class ObservedStore implements Store {
 
   /** A row is about to be written; `inserted` if it's new. */
   protected writing(_ref: SyncRef, _inserted: boolean): void {}
-  /** A row was written; `inserted` if it's new. */
-  protected abstract wrote(ref: SyncRef, inserted: boolean): void
+  /** A row was written; `inserted` if it's new, and `value` what it was given (its bytes, for terrain; null for an asset removed). */
+  protected abstract wrote(ref: SyncRef, inserted: boolean, value: unknown): void
   /** A world's terrain revision went up (not a row of its own: each device counts its own). */
   protected bumped(_worldId: Id): void {}
   /** The writes are all in and the transaction is about to commit: writes made here land in it. */
@@ -41,27 +41,27 @@ export abstract class ObservedStore implements Store {
       children: (id) => nodes.children(id),
       all: () => nodes.all(),
       root: () => nodes.root(),
-      insert: (n) => this.write({ t: 'node', id: n.id }, true, () => nodes.insert(n)),
-      update: (n) => this.write({ t: 'node', id: n.id }, false, () => nodes.update(n))
+      insert: (n) => this.write({ t: 'node', id: n.id }, true, n, () => nodes.insert(n)),
+      update: (n) => this.write({ t: 'node', id: n.id }, false, n, () => nodes.update(n))
     }
     this.regions = {
       get: (id) => regions.get(id),
       all: () => regions.all(),
-      insert: (r) => this.write({ t: 'region', id: r.id }, true, () => regions.insert(r)),
-      update: (r) => this.write({ t: 'region', id: r.id }, false, () => regions.update(r))
+      insert: (r) => this.write({ t: 'region', id: r.id }, true, r, () => regions.insert(r)),
+      update: (r) => this.write({ t: 'region', id: r.id }, false, r, () => regions.update(r))
     }
     this.worlds = {
       getSettings: (id) => worlds.getSettings(id),
-      putSettings: (id, settings) => this.write({ t: 'world', id }, false, () => worlds.putSettings(id, settings)),
+      putSettings: (id, settings) => this.write({ t: 'world', id }, false, settings, () => worlds.putSettings(id, settings)),
       getLayer: (id, layer, face) => worlds.getLayer(id, layer, face),
-      putLayer: (id, layer, face, bytes) => this.write({ t: 'layer', id, layer, face }, false, () => worlds.putLayer(id, layer, face, bytes)),
+      putLayer: (id, layer, face, bytes) => this.write({ t: 'layer', id, layer, face }, false, bytes, () => worlds.putLayer(id, layer, face, bytes)),
       terrainRevision: (id) => worlds.terrainRevision(id),
       bumpTerrainRevision: (id) => (worlds.bumpTerrainRevision(id), this.alone(() => this.bumped(id)))
     }
     this.assets = {
       get: (id) => assets.get(id),
-      put: (a) => this.write({ t: 'asset', id: a.id }, false, () => assets.put(a)),
-      remove: (id) => this.write({ t: 'asset', id }, false, () => assets.remove(id))
+      put: (a) => this.write({ t: 'asset', id: a.id }, false, a, () => assets.put(a)),
+      remove: (id) => this.write({ t: 'asset', id }, false, null, () => assets.remove(id))
     }
   }
 
@@ -73,8 +73,8 @@ export abstract class ObservedStore implements Store {
         get: (id) => inner.get(id),
         all: () => inner.all(),
         byOwner: (ownerId) => inner.byOwner(ownerId),
-        insert: (r) => this.write({ t: 'record', kind, id: r.id }, true, () => inner.insert(r)),
-        update: (r) => this.write({ t: 'record', kind, id: r.id }, false, () => inner.update(r))
+        insert: (r) => this.write({ t: 'record', kind, id: r.id }, true, r, () => inner.insert(r)),
+        update: (r) => this.write({ t: 'record', kind, id: r.id }, false, r, () => inner.update(r))
       }
       this.recordRepos.set(kind, repo as RecordRepository<unknown>)
     }
@@ -102,8 +102,8 @@ export abstract class ObservedStore implements Store {
     }
   }
 
-  /** Makes a write, telling of it before and after; outside a transaction, one that throws ends there. */
-  private write(ref: SyncRef, inserted: boolean, write: () => void): void {
+  /** Makes a write of `value`, telling of it before and after; outside a transaction, one that throws ends there. */
+  private write(ref: SyncRef, inserted: boolean, value: unknown, write: () => void): void {
     this.writing(ref, inserted)
     try {
       write()
@@ -111,7 +111,7 @@ export abstract class ObservedStore implements Store {
       if (this.depth === 0) this.ended(false)
       throw err
     }
-    this.alone(() => this.wrote(ref, inserted))
+    this.alone(() => this.wrote(ref, inserted, value))
   }
 
   /** Tells of a write; outside a transaction, it's committed as soon as it's made. */

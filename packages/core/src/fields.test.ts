@@ -19,6 +19,6 @@ describe('a row as fields', () => {
   it('finds what changed, however keys are ordered', () => {
     expect(sameValue({ a: 1, b: [{ c: 2, d: 3 }] }, { b: [{ d: 3, c: 2 }], a: 1 })).toBe(true)
     expect(sameValue([1, 2], [2, 1])).toBe(false)
-    expect(changedFields({ a: 1, canvas: { x: 1, y: 2 } }, { canvas: null, a: 1 }).sort()).toEqual(['/canvas', '/canvas/x', '/canvas/y'])
+    expect(changedFields(fieldsOf({ a: 1, canvas: { x: 1, y: 2 } }), fieldsOf({ canvas: null, a: 1 })).sort()).toEqual(['/canvas', '/canvas/x', '/canvas/y'])
   })
 })

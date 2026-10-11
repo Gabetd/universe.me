@@ -69,10 +69,8 @@ export function sameValue(a: unknown, b: unknown): boolean {
   return entries.length === definedEntries(b).length && entries.every(([key, v]) => sameValue(v, b[key]))
 }
 
-/** The paths whose values differ between two versions of a row: changed, added, or taken out. */
-export function changedFields(before: unknown, after: unknown): string[] {
-  const was = fieldsOf(before)
-  const now = fieldsOf(after)
+/** The paths whose values differ between two versions of a row, from each one's fields (`fieldsOf`): changed, added, or taken out. */
+export function changedFields(was: ReadonlyMap<string, unknown>, now: ReadonlyMap<string, unknown>): string[] {
   const changed = [...now].filter(([path, value]) => !was.has(path) || !sameValue(was.get(path), value)).map(([path]) => path)
   return [...changed, ...[...was.keys()].filter((path) => !now.has(path))]
 }

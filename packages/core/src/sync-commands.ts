@@ -30,6 +30,10 @@ interface Landing {
   ref: SyncRef
   data: unknown
   stamps: MergedStamps
+  /** Whether `data` is checked already (a merge of both versions is, to know it's a row at all): what its schema made of it. */
+  checked?: boolean
+  /** Whether this copy has the row, if it's known (it was read to merge with). */
+  here?: boolean
 }
 
 /**
@@ -44,8 +48,9 @@ export function mergeRows(store: Store, rows: SyncRow[]): void {
   const nodes = landing.filter((r) => r.ref.t === 'node')
   const rest = landing.filter((r): r is Landing & { ref: Exclude<SyncRef, { t: 'node' }> } => r.ref.t !== 'node').sort((a, b) => ORDER[a.ref.t] - ORDER[b.ref.t])
   for (const row of [...parentsFirst(store, nodes), ...rest]) {
-    write(store, row.ref, row.data)
+    // Said first, so the store knows not to work out new stamps for it.
     ledger.adopt(row.ref, row.stamps)
+    write(store, row)
   }
 }
 
@@ -62,11 +67,14 @@ function landingOf(store: Store, ledger: SyncLedger, ref: SyncRef, row: SyncRow)
   if (!own) return theirs
   const later = row.stamp > own.stamp ? theirs : undefined
   if (sameStamps(own, theirs.stamps)) return undefined
-  const data = hasFields(ref) ? readRow(store, ref) : undefined
-  if (!isPlainObject(data) || !isPlainObject(row.data)) return later
+  if (!hasFields(ref) || !isPlainObject(row.data)) return later
+  const data = readRow(store, ref)
+  const here = (landing: Landing | undefined) => landing && { ...landing, here: data !== null }
+  if (!isPlainObject(data)) return here(later)
   const merged = mergeFields({ data, stamps: own }, theirs)
-  if ('keep' in merged) return merged.keep === 'theirs' ? theirs : undefined
-  return schemaOf(ref).safeParse(merged.data).success ? { ref, data: merged.data, stamps: { fields: merged.fields } } : later
+  if ('keep' in merged) return merged.keep === 'theirs' ? here(theirs) : undefined
+  const parsed = schemaOf(ref).safeParse(merged.data)
+  return here(parsed.success ? { ref, data: parsed.data, stamps: { fields: merged.fields }, checked: true } : later)
 }
 
 /** What a row of fields has to be (bytes, never merged by field, are checked as they're written). */
@@ -110,18 +118,19 @@ function parentsFirst<R extends Landing>(store: Store, nodes: R[]): R[] {
   return out
 }
 
-/** Writes one row as another device has it, checked like any other write. */
-function write(store: Store, ref: SyncRef, data: unknown): void {
+/** Writes one row as another device has it, checked like any other write (unless it was as it was merged). */
+function write(store: Store, { ref, data, checked, here }: Landing): void {
   const what = refKey(ref)
+  const parse = <T>(schema: z.ZodType<T>): T => (checked ? (data as T) : schema.parse(data))
   switch (ref.t) {
     case 'node': {
-      const node = SpatialNode.parse(data)
+      const node = parse(SpatialNode)
       if (node.id !== ref.id) throw new CommandError(`${what} holds another node`)
-      return store.nodes.get(node.id) ? store.nodes.update(node) : store.nodes.insert(node)
+      return (here ?? store.nodes.get(node.id)) ? store.nodes.update(node) : store.nodes.insert(node)
     }
     case 'world':
       // A world never set keeps the defaults.
-      if (data !== null) store.worlds.putSettings(ref.id, WorldSettings.parse(data))
+      if (data !== null) store.worlds.putSettings(ref.id, parse(WorldSettings))
       return
     case 'layer': {
       const size = TERRAIN_RES * TERRAIN_RES * LAYER_BYTES_PER_CELL[ref.layer]
@@ -133,15 +142,15 @@ function write(store: Store, ref: SyncRef, data: unknown): void {
       return
     }
     case 'region': {
-      const region = Region.parse(data)
+      const region = parse(Region)
       if (region.id !== ref.id) throw new CommandError(`${what} holds another region`)
-      return store.regions.get(region.id) ? store.regions.update(region) : store.regions.insert(region)
+      return (here ?? store.regions.get(region.id)) ? store.regions.update(region) : store.regions.insert(region)
     }
     case 'record': {
-      const record = RECORD_SCHEMAS[ref.kind].parse(data) as { id: string }
+      const record = parse(RECORD_SCHEMAS[ref.kind] as z.ZodType<{ id: string }>)
       if (record.id !== ref.id) throw new CommandError(`${what} holds another record`)
       const repo = store.records(ref.kind) as { get(id: string): unknown; insert(r: unknown): void; update(r: unknown): void }
-      return repo.get(record.id) ? repo.update(record) : repo.insert(record)
+      return (here ?? repo.get(record.id)) ? repo.update(record) : repo.insert(record)
     }
     case 'asset': {
       if (data === null) return store.assets.remove(ref.id)

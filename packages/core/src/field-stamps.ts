@@ -52,12 +52,13 @@ function listed(byField: ReadonlyMap<string, string>, stamp: string, values: Rea
  */
 export function restamp(old: RowStamps | undefined, before: unknown, after: unknown, next: () => string): RowStamps | undefined {
   if (!isPlainObject(before) || !isPlainObject(after)) return { stamp: next() }
-  const changed = changedFields(before, after)
+  const [was, now] = [fieldsOf(before), fieldsOf(after)]
+  const changed = changedFields(was, now)
   if (old && !changed.length) return undefined
   const stamp = next()
-  const byField = stampsByField(old ?? { stamp: ORIGIN_STAMP }, fieldsOf(before))
+  const byField = stampsByField(old ?? { stamp: ORIGIN_STAMP }, was)
   for (const path of changed) byField.set(path, stamp)
-  return rowStamps(stamp, listed(byField, stamp, fieldsOf(after)))
+  return rowStamps(stamp, listed(byField, stamp, now))
 }
 
 /** What merging two versions of a row comes to: one of them as it is, or a row of fields from each, with each field's stamp. */
