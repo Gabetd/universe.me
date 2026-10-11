@@ -395,6 +395,8 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
     // What it may snap to: everything not moving with it.
     const others = items.filter((i) => !moved.includes(i.id)).map((i) => i.box)
     setDrag({ kind: 'move', start: { x: e.clientX, y: e.clientY }, ids: moved, lead: item.id, k: item.k, moved: false, delta: { x: 0, y: 0 }, guides: { x: [], y: [] }, collapse, others })
+    // Let go where the board doesn't hear it (off the window, before the move made the pointer the board's), the move ends all the same.
+    window.addEventListener('pointerup', () => dragNow.current?.kind === 'move' && setDrag(null), { once: true })
   }
 
   /** A handle's drag (resizing, connecting, linking): the board's from the start. */
@@ -410,8 +412,6 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
     pointer.current = toPlane(p)
     const drag = dragNow.current
     if (!drag || !view) return
-    // The button was let go where the board didn't hear it (a click on an item not yet dragged, let go off the window).
-    if (e.buttons === 0 && e.pointerType === 'mouse') return setDrag(null)
     if (drag.kind === 'marquee' || drag.kind === 'connect' || drag.kind === 'link') return setDrag({ ...drag, to: p })
     // How far the pointer has gone since the drag began, on screen.
     const [dx, dy] = [e.clientX - drag.start.x, e.clientY - drag.start.y]
