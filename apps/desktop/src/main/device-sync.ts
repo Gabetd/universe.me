@@ -194,7 +194,7 @@ export class DeviceSync {
     return { status: 200, body: this.o.session.changesSince(ask.data.since, visitor.device, PAGE) }
   }
 
-  /** Rows a visitor brings (a device that can reach this one, but not this one it), merged as pulled ones are; the devices that can be told are. */
+  /** Rows a visitor brings (a device that can reach this one, but not this one it), merged as pulled ones are; the other devices with this universe open then hear of them. */
   push(body: unknown, visitor: SyncVisitor): SyncAnswer {
     const given = Push.safeParse(body)
     if (!this.mayVisit(visitor)) return notShared
@@ -209,7 +209,7 @@ export class DeviceSync {
     return { status: 200, body: {} }
   }
 
-  /** A visitor says it has changes: one of its own devices is asked at once (as one of the owner's, or one of theirs). */
+  /** A visitor says it has changes: the device it names is asked at once, if it's the visitor's own (one of the owner's, or one of that person's). */
   nudged(body: unknown, visitor: SyncVisitor): void {
     const host = z.object({ host: z.string() }).safeParse(body)
     const tailnet = this.o.tailnet()
@@ -299,8 +299,8 @@ export class DeviceSync {
     if (!trusted) return set({ state: 'other', project, error: `${owner?.name ?? peer.name} isn’t a member of this universe here` })
     if (hello.people) this.presences.hear(project.syncId, hello.people, this.o.tailnet()?.me?.login)
     try {
-      await this.take(peer.host, hello.device, project.syncId, hello.project.upTo)
-      await this.give(peer.host, hello.device, project.syncId)
+      // Both at once: neither sends the other's own rows, and a row both have is only merged where it's newer.
+      await Promise.all([this.take(peer.host, hello.device, project.syncId, hello.project.upTo), this.give(peer.host, hello.device, project.syncId)])
       set({ state: 'same', project, lastSync: Date.now() })
     } catch (err) {
       set({ state: 'same', project, ...(before?.lastSync && { lastSync: before.lastSync }), error: (err as Error).message })
