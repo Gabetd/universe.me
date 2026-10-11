@@ -1203,7 +1203,8 @@ input[type='color'] {
 }
 .ground-minimap {
   position: absolute;
-  top: 8px;
+  /* Under the readout's row, which it would cover in a narrow view. */
+  top: 40px;
   right: 8px;
   width: 220px;
   height: 110px;
