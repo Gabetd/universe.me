@@ -1,7 +1,15 @@
 import type { DatabaseSync } from 'node:sqlite'
-import { CUBE_FACES, RECORD_KINDS, SyncClock, refKey, type StampTable, type SyncRef, type TerrainLayerName } from '@universe/core'
+import { CUBE_FACES, RECORD_KINDS, SyncClock, refKey, type RowStamps, type StampTable, type StampedKey, type SyncRef, type TerrainLayerName } from '@universe/core'
 
-/** Each row's sync stamp in the project file (PLAN.md §6.7), with the order this copy got them in. */
+/** A row of `row_stamps`, as SQLite returns it. */
+interface StampRow {
+  stamp: string
+  fields: string | null
+}
+
+const stampsOf = ({ stamp, fields }: StampRow): RowStamps => (fields ? { stamp, fields: JSON.parse(fields) as Record<string, string> } : { stamp })
+
+/** Each row's sync stamps in the project file (PLAN.md §6.7), with the order this copy got them in. */
 export class SqliteStampTable implements StampTable {
   private readonly s
   /** When this copy last got a row (0: never). */
@@ -9,25 +17,29 @@ export class SqliteStampTable implements StampTable {
 
   constructor(db: DatabaseSync) {
     this.s = {
-      get: db.prepare('SELECT stamp FROM row_stamps WHERE key = ?'),
-      put: db.prepare('INSERT INTO row_stamps (key, stamp, seq) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET stamp = excluded.stamp, seq = excluded.seq'),
+      get: db.prepare('SELECT stamp, fields FROM row_stamps WHERE key = ?'),
+      put: db.prepare(
+        'INSERT INTO row_stamps (key, stamp, fields, seq) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET stamp = excluded.stamp, fields = excluded.fields, seq = excluded.seq'
+      ),
       // The device's own rows are left out here, so the limit counts only rows that are sent.
-      since: db.prepare("SELECT key, stamp, seq FROM row_stamps WHERE seq > ? AND stamp NOT LIKE '%.' || ? ESCAPE '\\' ORDER BY seq LIMIT ?")
+      since: db.prepare("SELECT key, stamp, fields, seq FROM row_stamps WHERE seq > ? AND stamp NOT LIKE '%.' || ? ESCAPE '\\' ORDER BY seq LIMIT ?")
     }
     this.latest = (db.prepare('SELECT max(seq) AS n FROM row_stamps').get() as { n: number | null }).n ?? 0
   }
 
-  get(key: string): string | undefined {
-    return (this.s.get.get(key) as { stamp: string } | undefined)?.stamp
+  get(key: string): RowStamps | undefined {
+    const row = this.s.get.get(key) as StampRow | undefined
+    return row && stampsOf(row)
   }
 
-  put(key: string, stamp: string): void {
-    this.s.put.run(key, stamp, ++this.latest)
+  put(key: string, { stamp, fields }: RowStamps): void {
+    this.s.put.run(key, stamp, fields ? JSON.stringify(fields) : null, ++this.latest)
   }
 
-  since(since: number, limit: number, skip?: string): { key: string; stamp: string; seq: number }[] {
+  since(since: number, limit: number, skip?: string): StampedKey[] {
     // A device id's _ is a LIKE wildcard; escaped, it's itself. With no device to skip, '%.' matches no stamp.
-    return this.s.since.all(since, skip ? skip.replace(/[\\%_]/g, '\\$&') : '', limit) as { key: string; stamp: string; seq: number }[]
+    const rows = this.s.since.all(since, skip ? skip.replace(/[\\%_]/g, '\\$&') : '', limit) as unknown as (StampRow & { key: string; seq: number })[]
+    return rows.map((row) => ({ key: row.key, ...stampsOf(row), seq: row.seq }))
   }
 }
 
@@ -52,6 +64,6 @@ export function stampExisting(db: DatabaseSync, table: SqliteStampTable, clock: 
     ...ids('SELECT id FROM assets').map(({ id }): SyncRef => ({ t: 'asset', id }))
   ]
   transaction(() => {
-    for (const ref of refs) table.put(refKey(ref), clock.next())
+    for (const ref of refs) table.put(refKey(ref), { stamp: clock.next() })
   })
 }

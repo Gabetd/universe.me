@@ -30,14 +30,14 @@ export function mergeRows(store: Store, rows: SyncRow[]): void {
   const newer = rows
     .map((row) => ({ ...row, ref: parseRefKey(row.key) }))
     .filter((row) => {
-      const own = ledger.stampOf(row.ref)
-      return own === undefined || row.stamp > own
+      const own = ledger.stampsOf(row.ref)
+      return own === undefined || row.stamp > own.stamp
     })
   const nodes = newer.filter((r) => r.ref.t === 'node')
   const rest = newer.filter((r): r is typeof r & { ref: Exclude<SyncRef, { t: 'node' }> } => r.ref.t !== 'node').sort((a, b) => ORDER[a.ref.t] - ORDER[b.ref.t])
   for (const row of [...parentsFirst(store, nodes), ...rest]) {
     write(store, row.ref, row.data)
-    ledger.adopt(row.ref, row.stamp)
+    ledger.adopt(row.ref, row.fields ? { stamp: row.stamp, fields: row.fields } : { stamp: row.stamp })
   }
 }
 

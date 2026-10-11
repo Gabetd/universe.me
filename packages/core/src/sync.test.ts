@@ -12,7 +12,8 @@ import {
   parseRefKey,
   refKey,
   type Command,
-  type Store
+  type Store,
+  type SyncRef
 } from './index'
 
 interface Device {
@@ -28,7 +29,7 @@ function device(name: string, time: { now: number }, from?: Device): Device {
   const inner = new MemoryStore()
   const store = new StampedStore(inner, new MemoryStampTable(), new SyncClock(name, () => time.now))
   let n = 0
-  const bus = new CommandBus(store, { context: { newId: () => `${name}-${++n}`, randomSeed: () => 1 } })
+  const bus = new CommandBus(store, { context: { now: () => new Date(time.now).toISOString(), newId: () => `${name}-${++n}`, randomSeed: () => 1 } })
   // A copy starts from everything the other has.
   if (from) pull(from, { store, bus, seen: new Map(), name })
   else createRootUniverse(store, 'Shared')
@@ -48,6 +49,9 @@ function pull(from: Device, to: Device): number {
 }
 
 const run = (d: Device, type: string, payload: object) => d.bus.execute({ type, payload } as Command)
+
+/** A row as a device sends it now. */
+const sent = (d: Device, ref: SyncRef) => d.store.changesSince(0, { limit: 1000 }).rows.find((r) => r.key === refKey(ref))!
 
 /** Everything a device has, as comparable data (terrain as base64: comparing its bytes one by one takes about half a second a face). */
 function contents(store: Store) {
@@ -127,6 +131,28 @@ describe('sync', () => {
     pull(b, a)
     expect(a.store.nodes.get(cluster)!.deletedAt).not.toBeNull()
     expect(a.store.nodes.root()!.id).toBe(root)
+  })
+
+  it('stamps the fields a write changes, the others keeping theirs, and doesn’t stamp a write that changes nothing', () => {
+    const time = { now: Date.UTC(2026, 0, 1) }
+    const a = device('A', time)
+    const cluster = run(a, 'node.create', { parentId: a.store.nodes.root()!.id, kind: 'galaxy_cluster', name: 'Virgo' }).targetId!
+    const ref: SyncRef = { t: 'node', id: cluster }
+    const created = sent(a, ref)
+    // A new row's fields are all at its stamp.
+    expect(created.fields).toBeUndefined()
+
+    time.now += 10
+    run(a, 'node.update', { id: cluster, patch: { name: 'Virgo II', position: { x: 1, y: 0, z: 0 } } })
+    const edited = sent(a, ref)
+    expect(edited.stamp > created.stamp).toBe(true)
+    // What it changed is at the new stamp (so not listed); the rest, down into the position, keeps the first.
+    const unchanged = ['/id', '/parentId', '/kind', '/seed', '/position/y', '/position/z', '/notes', '/tags', '/createdAt', '/deletedAt']
+    expect(edited.fields).toEqual(Object.fromEntries(unchanged.map((path) => [path, created.stamp])))
+
+    time.now += 10
+    a.store.transaction(() => a.store.nodes.update({ ...a.store.nodes.get(cluster)! }))
+    expect(sent(a, ref)).toEqual(edited)
   })
 
   it('passes on what it got from a third device, even with an older stamp than it has sent before', () => {

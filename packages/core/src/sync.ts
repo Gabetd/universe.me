@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { bytesToBase64 } from './encoding'
+import { restamp, type RowStamps } from './field-stamps'
 import { RECORD_KINDS, type RecordKind } from './records'
 import type { Id } from './schema'
 import { ObservedStore } from './observed-store'
@@ -10,11 +11,13 @@ import { TerrainLayerName } from './world'
  * Sync between devices (PLAN.md §6.7): rows, not commands. Every row a
  * project keeps (a node, a world's settings, a face of a terrain layer, a
  * region, a record, an asset) carries the stamp of its last write, from a
- * hybrid logical clock that orders writes across devices. A device asks the
- * others for the rows stamped after the last one it saw, and keeps each one
- * whose stamp is later than its own copy's (`sync.merge`): the last write
- * wins, row by row. Deletes are soft, so they're rows like any other (an
- * asset, which is removed outright, comes as nothing).
+ * hybrid logical clock that orders writes across devices, and a row of
+ * fields (all but terrain and assets, which are bytes) a stamp for each of
+ * its fields too (`field-stamps.ts`). A device asks the others for the rows
+ * stamped after the last one it saw, and keeps each field whose stamp is
+ * later than its own copy's (`sync.merge`): the last write wins, field by
+ * field. Deletes are soft, so they're rows like any other (an asset, which
+ * is removed outright, comes as nothing).
  */
 
 /** Which row: its table and key. */
@@ -25,6 +28,9 @@ export type SyncRef =
   | { t: 'region'; id: Id }
   | { t: 'record'; kind: RecordKind; id: Id }
   | { t: 'asset'; id: Id }
+
+/** Whether a row is kept field by field (an object), or whole (the bytes of terrain or a file). */
+export const hasFields = (ref: SyncRef): boolean => ref.t !== 'layer' && ref.t !== 'asset'
 
 /** A row's key as text: the same for the same row on every device. */
 export function refKey(ref: SyncRef): string {
@@ -99,39 +105,46 @@ function readStamp(text: string): [number, number] {
 export const SyncStamp = z.string().regex(STAMP)
 
 /**
- * Each row's last stamp, by key, and when this copy got it: a count of its
+ * Each row's last stamps, by key, and when this copy got it: a count of its
  * own, so another device can ask for everything since the last it saw. (Not
  * by stamp: a row merged from a third device can carry a stamp older than
  * ones already asked for, and would never be asked for.)
  */
 export interface StampTable {
-  get(key: string): string | undefined
-  /** Notes a row's stamp, as the latest thing this copy got. */
-  put(key: string, stamp: string): void
+  get(key: string): RowStamps | undefined
+  /** Notes a row's stamps, as the latest thing this copy got. */
+  put(key: string, stamps: RowStamps): void
   /** Up to `limit` rows got after `since` (0 for all), in the order they came, but those `skip` (a device) stamped. */
-  since(since: number, limit: number, skip?: string): { key: string; stamp: string; seq: number }[]
+  since(since: number, limit: number, skip?: string): StampedKey[]
   /** When this copy last got a row (0: never). */
   readonly latest: number
 }
 
+/** A row in the stamp table: its key, its stamps, and when this copy got it. */
+export type StampedKey = RowStamps & { key: string; seq: number }
+
 export class MemoryStampTable implements StampTable {
-  private readonly rows = new Map<string, { stamp: string; seq: number }>()
+  private readonly rows = new Map<string, { stamps: RowStamps; seq: number }>()
   latest = 0
-  get = (key: string) => this.rows.get(key)?.stamp
-  put = (key: string, stamp: string) => void this.rows.set(key, { stamp, seq: ++this.latest })
+  get = (key: string) => this.rows.get(key)?.stamps
+  put = (key: string, stamps: RowStamps) => void this.rows.set(key, { stamps, seq: ++this.latest })
   since = (since: number, limit: number, skip?: string) =>
     [...this.rows]
-      .filter(([, r]) => r.seq > since && !(skip && r.stamp.endsWith(`.${skip}`)))
+      .filter(([, r]) => r.seq > since && !(skip && r.stamps.stamp.endsWith(`.${skip}`)))
       .sort((a, b) => a[1].seq - b[1].seq)
       .slice(0, limit)
-      .map(([key, r]) => ({ key, ...r }))
+      .map(([key, r]) => ({ key, ...r.stamps, seq: r.seq }))
 }
 
-/** What a store that syncs offers the merge: a row's stamp, and taking another device's stamp for a row it writes. */
+/** What a store that syncs offers the merge: a row's stamps, and taking another device's for a row it writes. */
 export interface SyncLedger {
-  stampOf(ref: SyncRef): string | undefined
-  /** The row `merge` is writing keeps `stamp` rather than getting a new one. */
-  adopt(ref: SyncRef, stamp: string): void
+  stampsOf(ref: SyncRef): RowStamps | undefined
+  /**
+   * The row `merge` is writing keeps these stamps rather than getting new
+   * ones; without a row stamp (fields from both versions), it gets a new one
+   * from this device, after both.
+   */
+  adopt(ref: SyncRef, stamps: RowStamps | { fields: Record<string, string> }): void
 }
 
 /** Rows from another device in one merge, at most: a pull is asked for in pages smaller than this. */
@@ -145,9 +158,10 @@ const PAGE_BYTES = 2_000_000
  */
 export class StampedStore extends ObservedStore {
   private readonly ledger: SyncLedger
-  /** Rows written in the open transaction, and the stamps merged ones keep. */
-  private readonly touched = new Set<string>()
-  private readonly adopted = new Map<string, string>()
+  /** Rows written in the open transaction (each one of fields as it was before), and the stamps merged ones keep. */
+  private readonly touched = new Map<string, SyncRef>()
+  private readonly before = new Map<string, unknown>()
+  private readonly adopted = new Map<string, RowStamps | { fields: Record<string, string> }>()
 
   constructor(
     inner: Store,
@@ -156,10 +170,10 @@ export class StampedStore extends ObservedStore {
   ) {
     super(inner)
     this.ledger = {
-      stampOf: (ref) => this.table.get(refKey(ref)),
-      adopt: (ref, s) => {
-        this.adopted.set(refKey(ref), s)
-        this.clock.see(s)
+      stampsOf: (ref) => this.table.get(refKey(ref)),
+      adopt: (ref, stamps) => {
+        this.adopted.set(refKey(ref), stamps)
+        for (const s of [...('stamp' in stamps ? [stamps.stamp] : []), ...Object.values(stamps.fields ?? {})]) this.clock.see(s)
       }
     }
   }
@@ -177,28 +191,45 @@ export class StampedStore extends ObservedStore {
     const got = this.table.since(since, limit, from)
     const rows: SyncRow[] = []
     let bytes = 0
-    for (const { key, stamp: s } of got) {
+    for (const { key, stamp: s, fields } of got) {
       if (bytes > PAGE_BYTES) break
       const data = readRow(this.inner, parseRefKey(key))
       bytes += sizeOf(data)
-      rows.push({ key, stamp: s, data })
+      rows.push(fields ? { key, stamp: s, fields, data } : { key, stamp: s, data })
     }
     const more = rows.length < got.length || got.length === limit
     // Everything got up to now has been seen, the asker's own rows too, unless the page ended first.
     return { rows, upTo: more ? got[rows.length - 1]!.seq : Math.max(since, this.table.latest), more }
   }
 
-  protected wrote(ref: SyncRef): void {
-    this.touched.add(refKey(ref))
+  /** Notes a row of fields as it was before the transaction first wrote it, to find which fields it changed. */
+  protected override writing(ref: SyncRef, inserted: boolean): void {
+    const key = refKey(ref)
+    if (hasFields(ref) && !this.before.has(key)) this.before.set(key, inserted ? undefined : readRow(this.inner, ref))
   }
 
-  /** Each row its own stamp (rows that only share one would tie, and a page could end between them), or the one merged with it. */
+  protected wrote(ref: SyncRef): void {
+    this.touched.set(refKey(ref), ref)
+  }
+
+  /** Each row its own stamp (rows that only share one would tie, and a page could end between them), or the ones merged with it. */
   protected override committing(): void {
-    for (const key of this.touched) this.table.put(key, this.adopted.get(key) ?? this.clock.next())
+    for (const [key, ref] of this.touched) {
+      const adopted = this.adopted.get(key)
+      const stamps = adopted ? ('stamp' in adopted ? adopted : { stamp: this.clock.next(), ...adopted }) : this.restamped(key, ref)
+      if (stamps) this.table.put(key, stamps)
+    }
+  }
+
+  /** A row's new stamps after a write here: a field's changes only if it changed (none at all if nothing did). */
+  private restamped(key: string, ref: SyncRef): RowStamps | undefined {
+    const next = () => this.clock.next()
+    return hasFields(ref) ? restamp(this.table.get(key), this.before.get(key), readRow(this.inner, ref), next) : { stamp: next() }
   }
 
   protected override ended(): void {
     this.touched.clear()
+    this.before.clear()
     this.adopted.clear()
   }
 }
@@ -210,8 +241,12 @@ function sizeOf(data: unknown): number {
   return typeof asset?.data === 'string' ? asset.data.length : JSON.stringify(data).length
 }
 
-/** A row as it travels: its key, its stamp, and what it holds (null: nothing, as an asset removed). */
-export const SyncRow = z.object({ key: z.string().min(1).max(2000), stamp: SyncStamp, data: z.unknown() })
+/**
+ * A row as it travels: its key, its stamp, the stamps of its fields that
+ * differ from it (none from a device from before field stamps: they're all
+ * at the row's), and what it holds (null: nothing, as an asset removed).
+ */
+export const SyncRow = z.object({ key: z.string().min(1).max(2000), stamp: SyncStamp, fields: z.record(z.string().max(2000), SyncStamp).optional(), data: z.unknown() })
 export type SyncRow = z.infer<typeof SyncRow>
 
 /** A page of rows another device asked for: where to ask from next, and whether there's more after it. */
@@ -219,7 +254,7 @@ export const SyncPage = z.object({ rows: z.array(SyncRow).max(MAX_MERGE_ROWS), u
 export type SyncPage = z.infer<typeof SyncPage>
 
 /** What a row holds now, as it travels: byte arrays as base64, nothing as null. */
-function readRow(store: Store, ref: SyncRef): unknown {
+export function readRow(store: Store, ref: SyncRef): unknown {
   switch (ref.t) {
     case 'node':
       return store.nodes.get(ref.id) ?? null

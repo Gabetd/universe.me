@@ -99,6 +99,9 @@ export const MIGRATIONS: readonly string[] = [
   SET data = json_set(data, '$.ownerId', (SELECT id FROM nodes WHERE parent_id IS NULL), '$.pins', json_array(owner_id)),
       owner_id = (SELECT id FROM nodes WHERE parent_id IS NULL)
   WHERE kind = 'power' AND EXISTS (SELECT 1 FROM nodes WHERE parent_id IS NULL);
+  `,
+  /* 8: the stamps of a row's fields that differ from the row's, as JSON (PLAN.md §6.7); null: all at the row's */ `
+  ALTER TABLE row_stamps ADD COLUMN fields TEXT;
   `
 ]
 

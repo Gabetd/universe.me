@@ -71,6 +71,21 @@ describe('a project between devices', () => {
     expect(own.every((r) => r.stamp.endsWith('.desktop'))).toBe(true)
   })
 
+  it('keeps the stamps of a row’s fields in the file', () => {
+    const path = join(dir, 'a.universe')
+    const a = Project.create(path, 'Shared', { device: 'laptop' })
+    const id = a.bus.execute({ type: 'node.create', payload: { parentId: a.info().rootId, kind: 'galaxy_cluster', name: 'Virgo' } }).targetId!
+    a.bus.execute({ type: 'node.update', payload: { id, patch: { name: 'Virgo II' } } })
+    const row = () => a.changesSince(0).rows.find((r) => JSON.parse(r.key)[1] === id)!
+    const edited = row()
+    // The name changed; the kind, say, is as it was made.
+    expect(edited.fields?.['/kind']).toMatch(/\.laptop$/)
+    expect(edited.fields?.['/name']).toBeUndefined()
+    a.close()
+    const again = track(Project.open(path, { device: 'laptop' }))
+    expect(again.changesSince(0).rows.find((r) => r.key === edited.key)).toEqual(edited)
+  })
+
   it('stamps a project made before sync on its first open, so a copy of it gets everything', () => {
     const path = join(dir, 'old.universe')
     const old = Project.create(path, 'Old')
