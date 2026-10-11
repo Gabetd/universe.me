@@ -30,6 +30,7 @@ import { powerValidators } from './power-validators'
 import { themeValidators } from './theme-validators'
 import { worldSimValidators } from './world-sim-validators'
 import { canvasValidators } from './canvas-validators'
+import { memberValidators } from './member-validators'
 
 /** Creating, updating and deleting records of any kind (records.ts), with each kind's checks. */
 
@@ -122,7 +123,8 @@ const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>, check
   waterway: (store, w) => void liveWorld(store, w.ownerId),
   ...factionValidators,
   finding: (store, f) => void liveWorld(store, f.ownerId),
-  ...canvasValidators
+  ...canvasValidators,
+  ...memberValidators
 }
 
 /** A blueprint by id: a built-in one or one in the project's library. */

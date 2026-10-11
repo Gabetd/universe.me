@@ -10,6 +10,7 @@ import { FINDING_COMMANDS, findingHandlers } from './finding-commands'
 import { POWER_COMMANDS, powerHandlers } from './power-commands'
 import { WATERWAY_COMMANDS, waterwayHandlers } from './waterway-commands'
 import { CANVAS_COMMANDS, canvasHandlers } from './canvas-commands'
+import { MEMBER_COMMANDS, memberHandlers } from './member-commands'
 import { THEME_COMMANDS, themeHandlers } from './theme-commands'
 import { WORLD_SIM_COMMANDS, worldSimHandlers } from './world-sim-commands'
 import { STRUCTURE_COMMANDS, structureHandlers } from './structure-commands'
@@ -84,6 +85,7 @@ export const Command = z.discriminatedUnion('type', [
   ...FINDING_COMMANDS,
   ...FACTION_COMMANDS,
   ...CANVAS_COMMANDS,
+  ...MEMBER_COMMANDS,
   /** Several commands applied together; each is validated when it runs. The batch focuses `focusId`, or what its last command did. */
   z.object({ type: z.literal('batch'), payload: z.object({ commands: z.array(z.unknown()).min(1), focusId: Id.optional() }) })
 ])
@@ -107,6 +109,7 @@ export const handlers: Handlers = {
   ...findingHandlers,
   ...factionHandlers,
   ...canvasHandlers,
+  ...memberHandlers,
 
   batch(store, { commands, focusId }, ctx) {
     const results = commands.map((input) => {
