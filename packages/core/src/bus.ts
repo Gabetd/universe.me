@@ -71,6 +71,17 @@ export class CommandBus {
     return n
   }
 
+  /**
+   * Makes the latest `n` changes one step, to undo and redo together (what a
+   * plugin did in one run); they stay as they were applied and logged.
+   */
+  group(n: number): void {
+    if (n < 2 || n > this.undoStack.length) return
+    const entries = this.undoStack.splice(-n)
+    const batch = (commands: Command[]): Command => ({ type: 'batch', payload: { commands } })
+    this.undoStack.push({ command: batch(entries.map((e) => e.command)), inverse: batch(entries.map((e) => e.inverse).reverse()), source: entries.at(-1)!.source })
+  }
+
   /** Validates and applies a command. Throws `CommandError` if it is invalid. */
   execute(input: unknown, source: CommandSource = 'user'): ExecuteResult {
     const parsed = Command.safeParse(input)

@@ -66,6 +66,29 @@ describe('undo/redo', () => {
     expect(bus.canRedo).toBe(false)
   })
 
+  it('groups the latest changes into one step, undone and redone together', () => {
+    const before = create(rootId, 'galaxy_cluster', 'Before')
+    const cluster = create(rootId, 'galaxy_cluster', 'Virgo')
+    const galaxy = create(cluster, 'galaxy', 'Milky Way')
+    bus.execute({ type: 'node.update', payload: { id: galaxy, patch: { name: 'The Milky Way' } } }, 'plugin')
+    bus.group(3)
+    expect(bus.latestFrom('plugin')).toBe(1)
+    bus.undo()
+    expect(store.nodes.get(cluster)!.deletedAt).not.toBeNull()
+    expect(store.nodes.get(galaxy)!.deletedAt).not.toBeNull()
+    expect(store.nodes.get(before)!.deletedAt).toBeNull()
+    bus.redo()
+    expect(store.nodes.get(galaxy)).toMatchObject({ name: 'The Milky Way', deletedAt: null })
+    bus.undo()
+    bus.undo()
+    expect(store.nodes.get(before)!.deletedAt).not.toBeNull()
+    // Fewer than two, or more than there are, changes nothing.
+    bus.redo()
+    bus.group(1)
+    bus.group(99)
+    expect(bus.canUndo).toBe(true)
+  })
+
   it('restores previous values on update undo', () => {
     const id = create(rootId, 'galaxy_cluster', 'Virgo')
     bus.execute({ type: 'node.update', payload: { id, patch: { name: 'Laniakea', tags: ['home'] } } })

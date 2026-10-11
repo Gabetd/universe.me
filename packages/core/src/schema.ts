@@ -70,5 +70,5 @@ export type SpatialNode = z.infer<typeof SpatialNode>
 export const NodePatch = SpatialNode.pick({ name: true, seed: true, position: true, notes: true, tags: true }).partial()
 export type NodePatch = z.infer<typeof NodePatch>
 
-export const CommandSource = z.enum(['user', 'ai', 'system'])
+export const CommandSource = z.enum(['user', 'ai', 'plugin', 'system'])
 export type CommandSource = z.infer<typeof CommandSource>
