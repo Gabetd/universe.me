@@ -11,7 +11,8 @@ import {
   chunkOf,
   cellCenter,
   chunksAround,
-  mouthFlow,
+  cellPlace,
+  faceCellOf,
   dirToLatLon,
   faceToDir,
   fromLocal,
@@ -22,7 +23,8 @@ import {
   type GroundChunk,
   type GroundSheet,
   type LocalFrame,
-  type Plant
+  type Plant,
+  type River
 } from '@universe/procgen'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -43,7 +45,7 @@ import { useViewTheme } from './useThemeLook'
 import { multiply } from './viewTheme'
 import { useFarGround, useGroundChunks } from './useGroundChunks'
 import { useWater } from './useWater'
-import { smoothPath } from './waterLook'
+import { riverMetres, smoothPath } from './waterLook'
 import { GroundMinimap, useGroundPose } from './GroundMinimap'
 import { WalkKeys } from './walk'
 import type { PlacedCharacter } from './useCharacters'
@@ -181,8 +183,7 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
         </>
       }
     >
-      <GroundLook worldId={worldId} regionIds={here} water={model.settings.terrain.waterColor} land={land} />
-      <GroundWater worldId={worldId} regionIds={here} water={model.settings.terrain.waterColor} ground={ground} center={center} />
+      <GroundLook worldId={worldId} regionIds={here} water={model.settings.terrain.waterColor} land={land} ground={ground} center={center} settled={model.isStroking ? 'stroking' : change} />
       <Rig ground={ground} onRebase={setOrigin} onCenter={setCenter} />
       <WalkKeys />
       <Chunks {...props} ground={ground} center={center} land={land[0]!} onLoaded={setLoaded} onFailed={setFailed} />
@@ -287,12 +288,26 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
 }
 
 /**
- * The sky, its haze, the light, the sea and the land, as the theme in force
+ * The sky, its haze, the light, the sea (and rivers and lakes) and the land, as the theme in force
  * at the playhead has them where the view is (a region's own themes in it).
  * On its own, so only it re-renders as themes blend; the sky, fog and lights
  * change in place (a new fog would recompile every material).
  */
-function GroundLook({ worldId, regionIds, water, land }: { worldId: string; regionIds: readonly string[]; water: string; land: readonly THREE.MeshStandardMaterial[] }) {
+function GroundLook({
+  worldId,
+  regionIds,
+  water,
+  land,
+  ...where
+}: {
+  worldId: string
+  regionIds: readonly string[]
+  water: string
+  land: readonly THREE.MeshStandardMaterial[]
+  ground: Ground
+  center: LatLon
+  settled: unknown
+}) {
   const theme = useViewTheme(worldId, regionIds)
   useThemeName(theme.name)
   useLandTint(land, theme.land)
@@ -310,12 +325,11 @@ function GroundLook({ worldId, regionIds, water, land }: { worldId: string; regi
       <hemisphereLight color={multiply(HEMISPHERE[0], theme.ambient)} groundColor={HEMISPHERE[1]} intensity={0.75 * theme.ambientScale} />
       <directionalLight position={[700, 650, 250]} color={theme.sun} intensity={1.6 * theme.sunScale} />
       <Water color={theme.water(water)} />
+      <GroundWater worldId={worldId} color={theme.water(water)} {...where} />
     </>
   )
 }
 
-/** How wide a river is on the ground, in metres: a stream sixty or so, the greatest some three hundred. */
-const riverMetres = (flow: number) => Math.min(320, 40 + 55 * Math.log2(1 + flow))
 /** How many pieces a river bends in between two cells on the ground: a kilometre or so each. */
 const RIVER_BENDS = 32
 /** How far apart a river's points are on the ground, so it follows the land's rises and falls. */
@@ -326,84 +340,31 @@ const WATER_REACH_M = FAR_M + 40_000
 /**
  * Rivers and lakes on the ground: each river a ribbon over the land, as wide
  * as its water, following where it runs (from cell to cell, smoothed); each
- * lake a sheet at its surface over the cells it covers.
+ * lake a sheet at its surface over the cells it covers. Laid out again a
+ * chunk at a time, and as the land settles (not every dab of a stroke).
  */
-function GroundWater({ worldId, regionIds, water, ground, center }: { worldId: string; regionIds: readonly string[]; water: string; ground: Ground; center: LatLon }) {
-  const theme = useViewTheme(worldId, regionIds)
-  const color = theme.water(water)
+function GroundWater({ worldId, color, ground, center, settled }: { worldId: string; color: string; ground: Ground; center: LatLon; settled: unknown }) {
   const world = useWater(worldId)
   const middle = chunkKey(chunkOf(center, ground.frame.radiusKm))
   const geometry = useMemo(() => {
     if (!world) return undefined
-    const reach = WATER_REACH_M / (ground.frame.radiusKm * 1000)
     const here = latLonToDir(center.lat, center.lon)
+    const reach = Math.cos(WATER_REACH_M / (ground.frame.radiusKm * 1000))
     const near = (p: LatLon) => {
       const d = latLonToDir(p.lat, p.lon)
-      return d[0] * here[0] + d[1] * here[1] + d[2] * here[2] > Math.cos(reach)
+      return d[0] * here[0] + d[1] * here[1] + d[2] * here[2] > reach
     }
     const positions: number[] = []
     const quad = (a: number[], b: number[], c: number[], d: number[]) => positions.push(...a, ...b, ...c, ...a, ...c, ...d)
-    for (const river of world.rivers) {
-      if (!river.points.some(near)) continue
-      const half = riverMetres(mouthFlow(river)) / 2
-      const path = smoothPath(
-        river.points.map((p) => toLocal(ground.frame, p)),
-        RIVER_BENDS
-      )
-      // Densified, so the ribbon lies on the land between the points.
-      const along: [number, number][] = []
-      for (let k = 0; k < path.length - 1; k++) {
-        const [ax, az] = path[k]!
-        const [bx, bz] = path[k + 1]!
-        const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / RIVER_STEP_M))
-        for (let i = 0; i < n; i++) along.push([ax + ((bx - ax) * i) / n, az + ((bz - az) * i) / n])
-      }
-      along.push(path.at(-1)!)
-      // Each point's two banks, square to the river there (the way from the point before to the one after), so the pieces join; only near enough to see.
-      const far = along.map(([x, z]) => Math.hypot(x, z) > WATER_REACH_M)
-      const bank = (k: number) => {
-        const [x, z] = along[k]!
-        const [px, pz] = along[Math.max(0, k - 1)]!
-        const [qx, qz] = along[Math.min(along.length - 1, k + 1)]!
-        const len = Math.hypot(qx - px, qz - pz) || 1
-        const [nx, nz] = [(-(qz - pz) / len) * half, ((qx - px) / len) * half]
-        const at = (x: number, z: number) => [x, Math.max(0, ground.heightAt(x, z)) + 1, z]
-        return [at(x + nx, z + nz), at(x - nx, z - nz)] as const
-      }
-      let last: readonly [number[], number[]] | undefined
-      for (let k = 0; k < along.length - 1; k++) {
-        if (far[k] && far[k + 1]) {
-          last = undefined
-          continue
-        }
-        const [a, b] = [last ?? bank(k), bank(k + 1)]
-        quad(a[0], a[1], b[1], b[0])
-        last = b
-      }
-    }
-    // Lakes: a sheet at the surface over each cell a lake covers, near enough to see.
-    const corner = (face: number, i: number, j: number, di: number, dj: number, level: number) => {
-      const d = faceToDir(face, cellCenter(i) + di / TERRAIN_RES, cellCenter(j) + dj / TERRAIN_RES)
-      const [x, z] = toLocal(ground.frame, dirToLatLon(...d))
-      return [x, level, z]
-    }
-    for (const lake of world.lakes) {
-      if (!near(lake.center) && !lake.cells.some((g) => near(placeOfCell(g)))) continue
-      for (const g of lake.cells) {
-        const face = Math.floor(g / (TERRAIN_RES * TERRAIN_RES))
-        const cell = g - face * TERRAIN_RES * TERRAIN_RES
-        const [i, j] = [cell % TERRAIN_RES, Math.floor(cell / TERRAIN_RES)]
-        if (!near(placeOfCell(g))) continue
-        quad(corner(face, i, j, -1, -1, lake.level), corner(face, i, j, 1, -1, lake.level), corner(face, i, j, 1, 1, lake.level), corner(face, i, j, -1, 1, lake.level))
-      }
-    }
+    for (const river of world.rivers) riverRibbon(river, ground, near, quad)
+    for (const lake of world.lakes) for (const g of lake.cells) if (near(cellPlace(g))) lakeCell(g, lake.level, ground, quad)
     if (!positions.length) return undefined
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
     g.computeVertexNormals()
     return g
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `middle` stands for `center`: the water is laid out again a chunk at a time
-  }, [world, ground, middle])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `middle` stands for `center`, the frame's origin and `settled` for `ground`
+  }, [world, ground.frame.origin, middle, settled])
   useEffect(() => () => geometry?.dispose(), [geometry])
   if (!geometry) return null
   return (
@@ -413,11 +374,67 @@ function GroundWater({ worldId, regionIds, water, ground, center }: { worldId: s
   )
 }
 
-/** Where a planet-wide cell's centre is. */
-function placeOfCell(g: number): LatLon {
-  const face = Math.floor(g / (TERRAIN_RES * TERRAIN_RES))
-  const cell = g - face * TERRAIN_RES * TERRAIN_RES
-  return dirToLatLon(...faceToDir(face, cellCenter(cell % TERRAIN_RES), cellCenter(Math.floor(cell / TERRAIN_RES))))
+type Quad = (a: number[], b: number[], c: number[], d: number[]) => void
+
+/** A river's ribbon where it's near enough to see: its stretch there (and two cells either side, so it bends as it does everywhere), curved, densified to follow the land, and its banks joined from point to point. */
+function riverRibbon(river: River, ground: Ground, near: (p: LatLon) => boolean, quad: Quad): void {
+  const first = river.points.findIndex(near)
+  if (first < 0) return
+  const last = river.points.findLastIndex(near)
+  const stretch = river.points.slice(Math.max(0, first - 2), last + 3)
+  const path = smoothPath(
+    stretch.map((p) => toLocal(ground.frame, p)),
+    RIVER_BENDS
+  )
+  const along: [number, number][] = []
+  for (let k = 0; k < path.length - 1; k++) {
+    const [ax, az] = path[k]!
+    const [bx, bz] = path[k + 1]!
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / RIVER_STEP_M))
+    for (let i = 0; i < n; i++) along.push([ax + ((bx - ax) * i) / n, az + ((bz - az) * i) / n])
+  }
+  along.push(path.at(-1)!)
+  const half = riverMetres(river) / 2
+  const far = along.map(([x, z]) => Math.hypot(x, z) > WATER_REACH_M)
+  // A point's two banks, square to the river there (the way from the point before to the one after).
+  const banks = (k: number) => {
+    const [x, z] = along[k]!
+    const [px, pz] = along[Math.max(0, k - 1)]!
+    const [qx, qz] = along[Math.min(along.length - 1, k + 1)]!
+    const len = Math.hypot(qx - px, qz - pz) || 1
+    const [nx, nz] = [(-(qz - pz) / len) * half, ((qx - px) / len) * half]
+    const at = (x: number, z: number) => [x, ground.standAt(x, z) + 1, z]
+    return [at(x + nx, z + nz), at(x - nx, z - nz)] as const
+  }
+  let before: ReturnType<typeof banks> | undefined
+  for (let k = 0; k < along.length - 1; k++) {
+    if (far[k] && far[k + 1]) {
+      before = undefined
+      continue
+    }
+    const [a, b] = [before ?? banks(k), banks(k + 1)]
+    quad(a[0], a[1], b[1], b[0])
+    before = b
+  }
+}
+
+/** The corners of a cell, a half cell from its centre each way. */
+const CORNERS = [
+  [-1, -1],
+  [1, -1],
+  [1, 1],
+  [-1, 1]
+] as const
+
+/** A lake's water over one of its cells (a planet-wide number), at its surface. */
+function lakeCell(g: number, level: number, ground: Ground, quad: Quad): void {
+  const [face, cell] = faceCellOf(g)
+  const [i, j] = [cell % TERRAIN_RES, Math.floor(cell / TERRAIN_RES)]
+  const [a, b, c, d] = CORNERS.map(([di, dj]) => {
+    const [x, z] = toLocal(ground.frame, dirToLatLon(...faceToDir(face, cellCenter(i) + di / TERRAIN_RES, cellCenter(j) + dj / TERRAIN_RES)))
+    return [x, level, z]
+  })
+  quad(a!, b!, c!, d!)
 }
 
 /** The sea: a sheet at sea level that follows the view. */

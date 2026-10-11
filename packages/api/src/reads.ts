@@ -15,6 +15,7 @@ import {
   factionWarnings,
   relationshipsAt,
   BUILTIN_BLUEPRINTS,
+  WaterwayKind,
   type SpatialNode
 } from '@universe/core'
 import type { Lake, River } from '@universe/procgen'
@@ -511,7 +512,7 @@ export const READS = [
       'A world’s rivers and lakes, worked out from its terrain (where the land sends its rain), the biggest first: each one’s id, name (and the one it was made with, if it’s been renamed), a river’s length and where it runs, a lake’s area and surface height, which region it’s in, how many rivers feed it and its notes. With named: true, only those given a name or notes. Name one with name_waterway.',
     input: z.object({
       worldId: WorldId,
-      kind: z.enum(['river', 'lake']).optional(),
+      kind: WaterwayKind.optional(),
       named: QueryFlag.optional(),
       limit: QueryNumber.int().min(1).max(5000).optional().describe('How many of each kind, the biggest first (50 if left out)')
     }),

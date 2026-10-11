@@ -35,9 +35,8 @@ async function bibleData({ models: m }: ApiContext, worldId: string) {
   const view = m.world(worldId)
   const now = m.now(worldId)
   const regions = view.regions
-  // One after the other: both work from the world's terrain, made once.
-  const w = await waterwaysOf(m, worldId)
-  const { curves } = await m.structures(worldId)
+  // At once: the water is worked out off the main thread while the structures' weather is.
+  const [w, { curves }] = await Promise.all([waterwaysOf(m, worldId), m.structures(worldId)])
   const cal = m.calendar(worldId)
   const t = view.timeline
   const name = (id: string) => t.lifeforms.find((s) => s.id === id)?.name ?? '?'

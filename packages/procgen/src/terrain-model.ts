@@ -14,6 +14,7 @@ import { biomeAt, climateTerms, polarity, wetBand, worldPalette, type Climate, t
 import { LATITUDE_TWIN, angleBetween, cellDirections, dirToFace, faceToDir, nearestCell, toGrid, type FacePoint, type Vec3 } from './cubesphere'
 import { DEG, bilerp, clamp } from './math'
 import type { BaseTerrain } from './generate'
+import type { WaterInput } from './water'
 
 /** What a star and orbit do to a world's climate: degrees warmer than Earth, and how strongly it cools toward the poles. */
 export interface SkyClimate {
@@ -136,14 +137,14 @@ export class TerrainModel {
   /** Each face's colours once asked for, and what they were made from. */
   private faceColorCache: (FaceColors | undefined)[] = []
   private colorsFor:
-    | { settings: WorldSettings; base: BaseTerrain; sky: SkyClimate | undefined; heights: Int16Array[]; biomes: Uint8Array[]; worn: TerrainModel['worn']; lakes: Float32Array[] | undefined }
+    | { settings: WorldSettings; base: BaseTerrain; sky: SkyClimate | undefined; heights: Int16Array[]; biomes: Uint8Array[]; worn: TerrainModel['worn']; lakes: TerrainModel['lakes'] }
     | undefined
   /** What `locate` fills in. */
   private located: FacePoint = { face: 0, s: 0, t: 0 }
-  /** How far each cell has worn down at the playhead (per face), if at all: the erosion field times how much of it has happened. */
-  private worn: { field: Float32Array[]; amount: number; depth: Float32Array[] } | undefined
-  /** The surface of the lake over each cell (metres above sea level), per face; NaN where there's none. */
-  private lakes: Float32Array[] | undefined
+  /** How far each cell has worn down at the playhead, if at all: the erosion field (per face) times how much of it has happened. */
+  private worn: { field: Float32Array[]; amount: number } | undefined
+  /** The surface of the lake over each cell (metres above sea level), planet-wide and per face; NaN where there's none. */
+  private lakes: { level: Float32Array; faces: Float32Array[] } | undefined
 
   constructor(
     public settings: WorldSettings,
@@ -176,23 +177,24 @@ export class TerrainModel {
 
   /** A cell's height in metres: generated, sculpted, and worn down by erosion as of the playhead. */
   height(face: number, cell: number): number {
-    return this.base.height[face]![cell]! + this.heightEdits[face]![cell]! - (this.worn?.depth[face]![cell] ?? 0)
+    const worn = this.worn
+    return this.base.height[face]![cell]! + this.heightEdits[face]![cell]! - (worn ? worn.field[face]![cell]! * worn.amount : 0)
   }
 
-  /** Every cell's height above sea level, generated and sculpted but not worn: what rivers and erosion are worked out from. */
-  heightsAboveSea(): Float32Array[] {
-    const sea = this.settings.seaLevel
-    return this.base.height.map((base, f) => {
-      const edits = this.heightEdits[f]!
-      const out = new Float32Array(CELLS)
-      for (let c = 0; c < CELLS; c++) out[c] = base[c]! + edits[c]! - sea
-      return out
-    })
+  /** What the world's water is worked out from (see worldWater): the land as generated and sculpted, not worn. */
+  waterInput(seed: number): WaterInput {
+    return { base: this.base.height, edits: this.heightEdits, seaLevel: this.settings.seaLevel, moisture: this.base.moisture, seed, radiusKm: this.settings.radiusKm }
   }
 
-  /** Whether a cell has been sculpted (its edits win over erosion). */
-  sculpted(face: number, cell: number): boolean {
-    return this.heightEdits[face]![cell] !== 0
+  /** Reads the land as it was before any wear (what weathering is worked out from, the same at any playhead and in the API). */
+  unworn<T>(read: () => T): T {
+    const worn = this.worn
+    this.worn = undefined
+    try {
+      return read()
+    } finally {
+      this.worn = worn
+    }
   }
 
   /**
@@ -202,18 +204,16 @@ export class TerrainModel {
   setErosion(field: Float32Array[] | undefined, amount: number): boolean {
     const now = field && amount > 0 ? { field, amount } : undefined
     if (now?.field === this.worn?.field && now?.amount === this.worn?.amount) return false
-    this.worn = now && { ...now, depth: field!.map((f) => f.map((d) => d * amount)) }
+    this.worn = now
     return true
   }
 
   /** Sets where the lakes are (each cell's lake surface, planet-wide, NaN where there's none); true if that changes anything. */
   setLakes(level: Float32Array | undefined): boolean {
-    if (level === this.lakesFrom) return false
-    this.lakesFrom = level
-    this.lakes = level && Array.from({ length: CUBE_FACES }, (_, f) => level.subarray(f * CELLS, (f + 1) * CELLS))
+    if (level === this.lakes?.level) return false
+    this.lakes = level && { level, faces: Array.from({ length: CUBE_FACES }, (_, f) => level.subarray(f * CELLS, (f + 1) * CELLS)) }
     return true
   }
-  private lakesFrom: Float32Array | undefined
 
   /** Effective biome: painted, or derived from climate. */
   biome(face: number, cell: number): number {
@@ -360,23 +360,19 @@ export class TerrainModel {
     const moisture = this.base.moisture[face]!
     const edits = this.heightEdits[face]!
     const painted = this.biomeEdits[face]!
-    const worn = this.worn?.depth[face]
-    const lake = this.lakes?.[face]
+    const worn = this.worn?.field[face]
+    const wear = this.worn?.amount ?? 0
+    const lake = this.lakes?.faces[face]
     const { polar, band } = latitudeTerms()[face]!
     for (let k = 0; k < cells.length; k++) {
       const c = cells[k]!
       if (colored[c] && !again) continue
-      const elevation = height[c]! + edits[c]! - (worn?.[c] ?? 0) - sea
+      const elevation = height[c]! + edits[c]! - (worn ? worn[c]! * wear : 0) - sea
       let r: number, g: number, b: number
       const lakeDepth = lake ? lake[c]! - elevation : NaN
-      if (lakeDepth > 0) {
-        // A lake: shallow water, darker where it's deep.
-        const t = 0.15 + 0.35 * Math.min(1, lakeDepth / 300)
-        r = shallow[0] + (deep[0] - shallow[0]) * t
-        g = shallow[1] + (deep[1] - shallow[1]) * t
-        b = shallow[2] + (deep[2] - shallow[2]) * t
-      } else if (elevation < 0) {
-        const t = Math.sqrt(Math.min(1, -elevation / 4500))
+      // Water, from shallow (0) to deep (1): a lake shallow-ish, darker where it's deep; the sea by its depth.
+      const t = lakeDepth > 0 ? 0.15 + 0.35 * Math.min(1, lakeDepth / 300) : elevation < 0 ? Math.sqrt(Math.min(1, -elevation / 4500)) : -1
+      if (t >= 0) {
         r = shallow[0] + (deep[0] - shallow[0]) * t
         g = shallow[1] + (deep[1] - shallow[1]) * t
         b = shallow[2] + (deep[2] - shallow[2]) * t

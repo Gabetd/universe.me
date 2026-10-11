@@ -34,3 +34,6 @@ export const waterwayKind = (key: string): WaterwayKind => (key.startsWith('l') 
 
 /** What a river or lake is called: its own name if it's been given one, else its generated one. */
 export const waterwayName = (generated: string, own: Pick<Waterway, 'name'> | undefined) => own?.name || generated
+
+/** The name a river or lake keeps when it's called `next`: its own, or none (so the generated one again) when that's what it was made with. */
+export const ownName = (generated: string, next: string) => (next === generated ? '' : next)

@@ -325,18 +325,26 @@ const RIVER_BANDS = [1.2, 2, 3] as const
 /** The world's rivers, just above the land, smoothed from cell to cell; wider as more water runs in them. */
 function RiverLines({ worldId, model, change, scale }: { worldId: string; model: TerrainModel; change: TerrainChange; scale: number }) {
   const water = useWater(worldId)
+  // Each river's curve and band, once a water; laid on the land again only as it settles (not every dab of a stroke).
+  const courses = useMemo(
+    () =>
+      (water?.rivers ?? []).map((river) => {
+        const width = riverWidth(river)
+        const band = RIVER_BANDS.reduce((best, w, i) => (Math.abs(w - width) < Math.abs(RIVER_BANDS[best]! - width) ? i : best), 0)
+        return { band, dirs: smoothDirs(river.points.map((p) => latLonToDir(p.lat, p.lon))) }
+      }),
+    [water]
+  )
+  const settled = model.isStroking ? 'stroking' : change
   const bands = useMemo(() => {
     const out: [number, number, number][][] = RIVER_BANDS.map(() => [])
-    for (const river of water?.rivers ?? []) {
-      const width = riverWidth(river)
-      const band = width < 1.6 ? 0 : width < 2.6 ? 1 : 2
-      const dirs = smoothDirs(river.points.map((p) => latLonToDir(p.lat, p.lon)))
+    for (const { band, dirs } of courses) {
       const points = dirs.map((d) => surfacePoint(model, d, scale, 0.004))
       for (let k = 0; k < points.length - 1; k++) out[band]!.push(points[k]!, points[k + 1]!)
     }
     return out
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` stands for the terrain heights
-  }, [water, model, scale, change])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `settled` stands in for the terrain heights
+  }, [courses, model, scale, settled])
   return (
     <>
       {bands.map((segments, i) => segments.length > 0 && <Line key={i} segments points={segments} color={RIVER_COLOR} lineWidth={RIVER_BANDS[i]} raycast={noRaycast} />)}

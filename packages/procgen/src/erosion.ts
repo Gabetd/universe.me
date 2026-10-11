@@ -1,5 +1,5 @@
 import { CUBE_FACES, TERRAIN_RES } from '@universe/core'
-import { neighbours, PLANET_CELLS, type Hydrology } from './hydrology'
+import { cellKm2, faceCellOf, neighbours, PLANET_CELLS, planetWide, type Hydrology } from './hydrology'
 
 /**
  * Erosion over time (PLAN.md §9, M15): a world's land wearing down as the
@@ -29,21 +29,20 @@ export interface ErosionInput {
   /** Metres above sea level, per face. */
   heights: ArrayLike<number>[]
   water: Pick<Hydrology, 'flow' | 'receiver' | 'lakeLevel'>
-  /** Whether the user has sculpted a cell (face, cell): those don't erode. */
-  edited?: (face: number, cell: number) => boolean
+  /** What the user has sculpted, per face (the terrain's height edits: anything but 0 is sculpted): those cells don't erode. */
+  sculpted?: ArrayLike<number>[]
   radiusKm: number
 }
 
 /** How deep each cell (per face) wears down by in the long run: rivers' valleys and slumped slopes; nothing at sea, under a lake or where sculpted. */
-export function erosionField({ heights, water, edited, radiusKm }: ErosionInput): Float32Array[] {
+export function erosionField({ heights, water, sculpted, radiusKm }: ErosionInput): Float32Array[] {
   const N = PLANET_CELLS
-  const h = new Float32Array(N)
-  for (let f = 0; f < CUBE_FACES; f++) for (let c = 0; c < CELLS; c++) h[f * CELLS + c] = heights[f]![c]!
-  const cellM = Math.sqrt((4 * Math.PI * radiusKm * radiusKm) / N) * 1000
+  const h = planetWide(heights)
+  const cellM = Math.sqrt(cellKm2(radiusKm)) * 1000
   const keep = (g: number) => {
     if (h[g]! <= 0 || !Number.isNaN(water.lakeLevel[g]!)) return true
-    const face = Math.floor(g / CELLS)
-    return !!edited?.(face, g - face * CELLS)
+    const [face, cell] = faceCellOf(g)
+    return !!sculpted?.[face]![cell]
   }
 
   // Rivers cut: more water and steeper ground cut deeper, but never below where the water goes.

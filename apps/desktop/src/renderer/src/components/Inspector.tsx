@@ -14,7 +14,7 @@ export function Inspector() {
   const node = useUi(selectNode)
   const timelineSelection = useUi((s) => s.timelineSelection)
   // What the inspector is showing: picking something else shows its panel from the top; while it's the same, the panel stays still.
-  const menu = useUi((s) => [s.selectedId, s.selectedRegionId, s.selectedStructureId, s.selectedCharacterId, s.timelineSelection?.kind, s.timelineSelection?.ids.join()].join(':'))
+  const menu = useUi((s) => [s.selectedId, s.selectedRegionId, s.selectedStructureId, s.selectedCharacterId, s.selectedWaterwayKey, s.timelineSelection?.kind, s.timelineSelection?.ids.join()].join(':'))
   const content = useRef<HTMLDivElement>(null)
   useSteadyScroll(content, menu)
   return (

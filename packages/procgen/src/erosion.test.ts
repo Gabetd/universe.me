@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { erosionAt, erosionField, erosionStep } from './erosion'
 import { generateBase } from './generate'
 import { PLANET_CELLS, hydrology } from './hydrology'
+import { worldWater } from './water'
 import { TerrainModel } from './terrain-model'
 
 const CELLS = TERRAIN_RES * TERRAIN_RES
@@ -15,7 +16,7 @@ describe('erosion', () => {
   it('cuts valleys where rivers run and slumps steep slopes, but not at sea, under lakes or where sculpted', () => {
     const river = water.rivers.reduce((a, b) => (b.cells.length > a.cells.length ? b : a))
     const sculpted = river.cells[0]!
-    const field = erosionField({ heights, water, radiusKm: 6371, edited: (f, c) => f * CELLS + c === sculpted })
+    const field = erosionField({ heights, water, radiusKm: 6371, sculpted: heights.map((_, f) => Uint8Array.from({ length: CELLS }, (_, c) => (f * CELLS + c === sculpted ? 1 : 0))) })
     const depthAt = (g: number) => field[Math.floor(g / CELLS)]![g % CELLS]!
     expect(field).toHaveLength(CUBE_FACES)
     // Along the biggest river (past its sculpted source), the land wears down; it stays land.
@@ -45,17 +46,17 @@ describe('the terrain model, worn and with lakes', () => {
   const base = generateBase(42, DEFAULT_WORLD_SETTINGS.terrain)
   it('wears its land down by as much of the erosion as has happened, and colours lakes as water', () => {
     const model = new TerrainModel(DEFAULT_WORLD_SETTINGS, base)
-    const heights = model.heightsAboveSea()
-    const water = hydrology({ heights, moisture: base.moisture, seed: 42, radiusKm: 6371 })
-    const field = erosionField({ heights, water, radiusKm: 6371 })
+    const water = worldWater(model.waterInput(42), { erosion: true })
+    const field = water.erosion!
     let worst = 0
     for (let c = 1; c < CELLS; c++) if (field[0]![c]! > field[0]![worst]!) worst = c
     const before = model.height(0, worst)
     expect(model.setErosion(field, 0.5)).toBe(true)
     expect(model.setErosion(field, 0.5)).toBe(false)
     expect(model.height(0, worst)).toBeCloseTo(before - field[0]![worst]! * 0.5, 3)
-    // What rivers are worked out from isn't worn.
-    expect(model.heightsAboveSea()[0]![worst]).toBeCloseTo(heights[0]![worst]!, 3)
+    // What rivers and weathering are worked out from isn't worn.
+    expect(worldWater(model.waterInput(42)).rivers).toEqual(water.rivers)
+    expect(model.unworn(() => model.height(0, worst))).toBeCloseTo(before, 3)
     model.setErosion(field, 0)
     expect(model.height(0, worst)).toBeCloseTo(before, 3)
 

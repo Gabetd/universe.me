@@ -152,7 +152,7 @@ function nextSelection(state: AppState, current: Selection, fresh: boolean): Sel
     const kind = focus.kind
     if (state.timeline[`${kind}s`].some((r) => r.id === focus.id)) {
       const ids = current.timelineSelection?.kind === kind && current.timelineSelection.ids.includes(focus.id) ? timelineSelection!.ids : [focus.id]
-      return { ...keptNodeSelection(state, current), selectedRegionId: null, selectedStructureId: null, selectedCharacterId: null, selectedWaterwayKey: null, timelineSelection: { kind, ids } }
+      return { ...keptNodeSelection(state, current), ...none, timelineSelection: { kind, ids } }
     }
   }
   const exists = (id: string | null | undefined): id is string => !!id && state.nodes.some((n) => n.id === id)

@@ -1,9 +1,9 @@
 import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ApiServer, OAuth, apiContext, clearDiscovery, fileStore, worldBible, writeDiscovery, writePrivate, type ApiContext, type ApiHost, type WorldWater } from '@universe/api'
+import { ApiServer, OAuth, apiContext, clearDiscovery, fileStore, worldBible, writeDiscovery, writePrivate, type ApiContext, type ApiHost } from '@universe/api'
 import type { TerrainParams } from '@universe/core'
-import type { BaseTerrain, HydrologyInput } from '@universe/procgen'
+import type { BaseTerrain, WaterInput, WorldWater } from '@universe/procgen'
 import { app } from 'electron'
 import createTerrainWorker from './terrain.worker?nodeWorker'
 import type { TerrainJob } from './terrain.worker'
@@ -416,7 +416,7 @@ let worker: ReturnType<typeof createTerrainWorker> | undefined
 const pending = new Map<number, { resolve(result: unknown): void; reject(err: Error): void }>()
 let nextId = 0
 
-function terrainWork<T>(job: TerrainJob, transfer: ArrayBuffer[] = []): Promise<T> {
+function terrainWork<T>(job: TerrainJob): Promise<T> {
   if (!worker) {
     const w = createTerrainWorker({})
     worker = w
@@ -439,11 +439,11 @@ function terrainWork<T>(job: TerrainJob, transfer: ArrayBuffer[] = []): Promise<
   const id = nextId++
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve: resolve as (result: unknown) => void, reject })
-    worker!.postMessage({ id, ...job }, transfer)
+    worker!.postMessage({ id, ...job })
   })
 }
 
 const baseTerrain = (seed: number, params: TerrainParams) => terrainWork<BaseTerrain>({ job: 'base', seed, params })
 
-/** The heights are made for the call, so they're handed over; the moisture is the model's own, so it's copied. */
-const water = (input: HydrologyInput) => terrainWork<WorldWater>({ job: 'water', ...input }, input.heights.map((h) => (h as Float32Array).buffer as ArrayBuffer))
+/** The terrain's arrays are the model's own, so they're copied, not handed over. */
+const water = (input: WaterInput) => terrainWork<WorldWater>({ job: 'water', ...input })

@@ -1,16 +1,15 @@
-import type { WorldInfo } from '@universe/core'
-import { erosionAt, erosionStep, type TerrainModel } from '@universe/procgen'
-import { secondsPerYear } from '@universe/core'
+import { secondsPerYear, type WorldInfo } from '@universe/core'
+import { erosionAt, erosionStep, type TerrainModel, type WaterInput } from '@universe/procgen'
 import { useEffect, useRef } from 'react'
 import { create } from 'zustand'
 import { usePlayhead } from '../timeline/timelineStore'
 import { workerCalls } from '../workerCalls'
 import type { TerrainChange } from './useTerrain'
 import { useCalendar } from './useSky'
-import type { Water, WaterRequest } from './water.worker'
+import type { Water } from './water.worker'
 import WaterWorker from './water.worker?worker'
 
-const work = workerCalls<WaterRequest, Water>(() => new WaterWorker())
+const work = workerCalls<WaterInput, Water>(() => new WaterWorker())
 
 /** Each world's water, once worked out (its rivers and lakes for the views, the inspector and the lists). */
 export const useWaterOf = create<{ byWorld: Record<string, Water>; set(worldId: string, water: Water): void }>((set) => ({
@@ -45,8 +44,7 @@ export function useWaterIn(worldId: string, seed: number, info: WorldInfo | unde
     if (!model || !source || model.isStroking || done.current === source) return
     const timer = setTimeout(() => {
       done.current = source
-      const sculpted = model.heightEdits.map((edits) => Uint8Array.from(edits, (e) => (e ? 1 : 0)))
-      work({ heights: model.heightsAboveSea(), moisture: model.base.moisture, sculpted, seed, radiusKm: model.settings.radiusKm }).then(
+      work(model.waterInput(seed)).then(
         (w) => useWaterOf.getState().set(worldId, w),
         // Tried again with the next change; the world shows without rivers meanwhile.
         () => (done.current = undefined)

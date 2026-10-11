@@ -1,9 +1,9 @@
-import { waterwayKind, waterwayName, type Waterway } from '@universe/core'
-import type { Lake, River } from '@universe/procgen'
+import { ownName, type Waterway } from '@universe/core'
+import { isRiver, waterwayIndex, type Lake, type River } from '@universe/procgen'
 import { useMemo, useState } from 'react'
 import { useOwnRecords, useUi } from '../store'
 import { useWater } from '../world/useWater'
-import { RIVER_COLOR, viewUpClose } from '../world/waterLook'
+import { RIVER_COLOR, viewUpClose, waterwayLabel } from '../world/waterLook'
 import { NotesField, PanelHeader, Swatch, SwatchList, TextField } from './fields'
 
 /**
@@ -12,21 +12,11 @@ import { NotesField, PanelHeader, Swatch, SwatchList, TextField } from './fields
  * kept with its notes in a waterway record by its id.
  */
 
-/** A world's rivers and lakes by id, with what's been given them. */
+/** A world's rivers and lakes by id, with what's been given them and what feeds each. */
 export function useWaterways(worldId: string) {
   const water = useWater(worldId)
   const own = useOwnRecords('waterways', worldId)
-  return useMemo(() => {
-    const given = new Map(own.map((w) => [w.key, w]))
-    const byKey = new Map<string, River | Lake>()
-    for (const r of water?.rivers ?? []) byKey.set(r.id, r)
-    for (const l of water?.lakes ?? []) byKey.set(l.id, l)
-    const nameOf = (key: string) => {
-      const found = byKey.get(key)
-      return found ? waterwayName(found.name, given.get(key)) : undefined
-    }
-    return { water, byKey, given, nameOf }
-  }, [water, own])
+  return useMemo(() => ({ water, ...waterwayIndex(water ?? { rivers: [], lakes: [] }, own) }), [water, own])
 }
 
 /** Names a river or lake (its generated name back if it's given that, or nothing) or writes its notes. */
@@ -35,15 +25,14 @@ const setWaterway = (worldId: string, key: string, patch: Partial<Pick<Waterway,
 
 /** The selected river or lake: its name, what it is, where it ends or what runs into it, its notes, and going to see it. */
 export function WaterwayPanel({ worldId, waterKey }: { worldId: string; waterKey: string }) {
-  const { water, byKey, given, nameOf } = useWaterways(worldId)
+  const { water, byKey, own: given, feeders, nameOf } = useWaterways(worldId)
   const found = byKey.get(waterKey)
   const select = useUi((s) => s.selectWaterway)
-  const kind = waterwayKind(waterKey)
-  const label = kind === 'lake' ? 'Lake' : 'River'
+  const label = waterwayLabel(waterKey)
   if (!water) return <p className="muted small">Working out where the water runs…</p>
   if (!found) return null
   const own = given.get(waterKey)
-  const name = waterwayName(found.name, own)
+  const name = nameOf(waterKey)!
   const link = (key: string) => (
     <button className="link" onClick={() => select(key)}>
       {nameOf(key) ?? key}
@@ -52,10 +41,10 @@ export function WaterwayPanel({ worldId, waterKey }: { worldId: string; waterKey
   return (
     <section className="inspector-section" aria-label={label}>
       <PanelHeader icon={<Swatch color={RIVER_COLOR} />} label={label} onClose={() => select(null)} />
-      <TextField label={`${label} name`} value={name} required onCommit={(next) => setWaterway(worldId, waterKey, { name: next === found.name ? '' : next })} />
+      <TextField label={`${label} name`} value={name} required onCommit={(next) => setWaterway(worldId, waterKey, { name: ownName(found.name, next) })} />
       {own?.name && <p className="muted small">Named {found.name} when the world was made.</p>}
       <dl className="facts-list small" aria-label={`About the ${label.toLowerCase()}`}>
-        {'points' in found ? (
+        {isRiver(found) ? (
           <>
             <dt>Length</dt>
             <dd>{found.lengthKm.toLocaleString()} km</dd>
@@ -70,7 +59,7 @@ export function WaterwayPanel({ worldId, waterKey }: { worldId: string; waterKey
             <dd>{Math.round(found.level).toLocaleString()} m above the sea</dd>
           </>
         )}
-        <Feeders water={water} waterKey={waterKey} link={link} />
+        <Feeders feeders={feeders.get(waterKey) ?? []} link={link} />
       </dl>
       <div className="add-buttons">
         <button onClick={() => viewUpClose(found)}>🔍 View up close</button>
@@ -81,8 +70,7 @@ export function WaterwayPanel({ worldId, waterKey }: { worldId: string; waterKey
 }
 
 /** The rivers that run into a river or lake, biggest first. */
-function Feeders({ water, waterKey, link }: { water: NonNullable<ReturnType<typeof useWater>>; waterKey: string; link(key: string): React.ReactNode }) {
-  const feeders = water.rivers.filter((r) => r.into.kind !== 'sea' && r.into.id === waterKey)
+function Feeders({ feeders, link }: { feeders: River[]; link(key: string): React.ReactNode }) {
   if (!feeders.length) return null
   return (
     <>

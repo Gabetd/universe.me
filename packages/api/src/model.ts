@@ -22,9 +22,9 @@ import {
   type TimelineData,
   type WorldInfo
 } from '@universe/core'
-import { TerrainModel, generateBase, hydrology, shapeKey, type BaseTerrain } from '@universe/procgen'
+import { TerrainModel, generateBase, shapeKey, worldWater, type BaseTerrain, type WorldWater } from '@universe/procgen'
 import { exposureAt, systemIdOf, systemModel, worldCalendar, worldClimateOf, type SystemModel, type WorldClimate } from '@universe/sim'
-import { ApiError, findOr404, type ApiHost, type ProjectData, type WorldWater } from './host'
+import { ApiError, findOr404, type ApiHost, type ProjectData } from './host'
 
 /** A date as an API client writes it: text in the world's calendar ("1204", "15 Mar 1204", "c. 1200", "4.5 billion years ago"), or a year. */
 export type When = string | number
@@ -245,6 +245,8 @@ export class ProjectModels {
       return cached
     }
     const base = await this.base(node.seed, info.settings.terrain, shape)
+    // Another call made it while this one waited for the same base: one model per world.
+    if (this.terrains.get(worldId)?.key === key) return this.terrain(worldId)
     const model = new TerrainModel(info.settings, base, this.host.terrainLayers(worldId))
     model.setSky(climate)
     const terrain = { key, revision: info.terrainRevision, model, exposures: new Map<string, Exposure>() }
@@ -271,9 +273,8 @@ export class ProjectModels {
     const { node } = this.world(worldId)
     const terrain = await this.terrain(worldId)
     if (!terrain.water) {
-      const { model } = terrain
-      const input = { heights: model.heightsAboveSea(), moisture: model.base.moisture, seed: node.seed, radiusKm: model.settings.radiusKm }
-      const water = this.host.water ? this.host.water(input) : Promise.resolve(hydrology(input))
+      const input = terrain.model.waterInput(node.seed)
+      const water = this.host.water ? this.host.water(input) : Promise.resolve(worldWater(input))
       terrain.water = water
       // Asked again next time rather than failing for good.
       water.catch(() => terrain.water === water && (terrain.water = undefined))

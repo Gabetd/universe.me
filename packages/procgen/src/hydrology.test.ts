@@ -1,7 +1,7 @@
 import { CUBE_FACES, TERRAIN_RES } from '@universe/core'
 import { describe, expect, it } from 'vitest'
 import { cellDirections } from './cubesphere'
-import { PLANET_CELLS, RIVER_FLOW, hydrology, neighbours, type Hydrology } from './hydrology'
+import { PLANET_CELLS, hydrology, neighbours, type Hydrology } from './hydrology'
 
 const CELLS = TERRAIN_RES * TERRAIN_RES
 
@@ -70,6 +70,5 @@ describe('hydrology', () => {
     const again = hydrology({ ...planet(), seed: 7, radiusKm: 6371 })
     expect(again.rivers.map((r) => [r.id, r.name, r.cells.length])).toEqual(water().rivers.map((r) => [r.id, r.name, r.cells.length]))
     expect(again.lakes.map((l) => l.id)).toEqual(water().lakes.map((l) => l.id))
-    expect(RIVER_FLOW).toBeGreaterThan(0)
   })
 })

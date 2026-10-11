@@ -1,12 +1,18 @@
-import type { LatLon } from '@universe/core'
-import { mouthFlow, type Lake, type River } from '@universe/procgen'
+import { waterwayKind } from '@universe/core'
+import { mouthFlow, waterwayPlace, type Lake, type River } from '@universe/procgen'
 import { useEditor } from './editorStore'
+
+/** What a river or lake (by its id) is called as a kind of thing. */
+export const waterwayLabel = (key: string) => (waterwayKind(key) === 'lake' ? 'Lake' : 'River')
 
 /** How rivers look on every view: one water colour, wider as more water runs in them. */
 export const RIVER_COLOR = '#5aa9e6'
 
 /** A river's width on screen, in pixels: a stream at 1, the greatest about 3½. */
 export const riverWidth = (r: River) => Math.min(3.5, 0.9 + 0.6 * Math.log2(1 + mouthFlow(r)))
+
+/** A river's width on the ground, in metres: a stream sixty or so, the greatest some three hundred. */
+export const riverMetres = (r: River) => Math.min(320, 40 + 55 * Math.log2(1 + mouthFlow(r)))
 
 /**
  * A path (of points in any number of dimensions) drawn as a curve through
@@ -32,8 +38,5 @@ export function smoothPath<P extends number[]>(path: P[], steps = 4): P[] {
 /** How far from the ground's middle the camera starts when going to see water: far enough to see a river's width. */
 const VIEW_FROM_M = 1500
 
-/** Where to go down to the ground to see a river or lake: a river's middle, a lake's deepest point. */
-export const placeOf = (w: River | Lake): LatLon => ('points' in w ? w.points[Math.floor(w.points.length / 2)]! : w.center)
-
-/** Goes down to the ground at a river or lake. */
-export const viewUpClose = (w: River | Lake) => useEditor.getState().enterGround(placeOf(w), VIEW_FROM_M)
+/** Goes down to the ground at a river or lake: a river's middle, a lake's deepest point. */
+export const viewUpClose = (w: River | Lake) => useEditor.getState().enterGround(waterwayPlace(w), VIEW_FROM_M)

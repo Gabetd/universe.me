@@ -29,7 +29,8 @@ import {
   type LatLon,
   type Era,
   type PowerAspect,
-  type PowerSystem
+  type PowerSystem,
+  ownName
 } from '@universe/core'
 import { readSeed } from '@universe/procgen'
 import { EARTH_ORBIT, luminosityOf } from '@universe/sim'
@@ -612,7 +613,7 @@ export const WRITES = [
       const was = nameOf(w, p.key)
       const name = p.name?.trim()
       const notes = p.notes === undefined ? undefined : (p.mode === 'append' ? (w.own.get(p.key)?.notes ?? '') : '') + textToHtml(p.notes)
-      const patch = { ...(name !== undefined && { name: name === found.name ? '' : name }), ...(notes !== undefined && { notes }) }
+      const patch = { ...(name !== undefined && { name: ownName(found.name, name) }), ...(notes !== undefined && { notes }) }
       const summary = name !== undefined && name !== was ? `Named ${was} ${name || found.name}` : `Wrote the notes of ${was}`
       return write(ctx, [{ type: 'waterway.set', payload: { worldId: p.worldId, key: p.key, patch } }], summary)
     }

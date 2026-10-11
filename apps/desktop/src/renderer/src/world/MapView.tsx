@@ -1,5 +1,5 @@
-import { TERRAIN_RES, type LatLon } from '@universe/core'
-import { brushRows, latLonToDir, latLonToPixel, pixelToLatLon, renderEquirect, type TerrainModel, type Vec3 } from '@universe/procgen'
+import type { LatLon } from '@universe/core'
+import { brushRows, latLonToDir, latLonToPixel, pixelToLatLon, planetCell, renderEquirect, type River, type TerrainModel, type Vec3 } from '@universe/procgen'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { EdgePush, zoomOut } from '../components/zoom'
 import { useUi } from '../store'
@@ -11,7 +11,6 @@ import { STAGE_COLORS } from './structureLook'
 import { useByValue } from '../useByValue'
 import { useRegionViewThemes, useViewTheme } from './useThemeLook'
 import { useWater } from './useWater'
-import type { Water } from './water.worker'
 import { RIVER_COLOR, riverWidth, smoothPath } from './waterLook'
 import type { SurfaceViewProps, TerrainChange } from './useTerrain'
 import { openElementMenu, useContextMenu, type ElementRef } from '../contextMenu'
@@ -173,8 +172,8 @@ export const MapView = memo(function MapView({
   const draft = useEditor((s) => s.draft)
   const theme = useViewTheme(worldId)
   const water = useWater(worldId)
-  // Each river's path on the map, worked out once a water: for drawing and for picking.
-  const rivers = useMemo(() => (water?.rivers ?? []).map((r) => ({ river: r, path: smoothPath(polygon(r.points)), width: riverWidth(r) })), [water])
+  // Each river's path on the map, worked out once a water: for picking, and for drawing as one path per width.
+  const rivers = useMemo(() => riverPaths(water?.rivers ?? []), [water])
   const regionIds = useMemo(() => regions.map((r) => r.id), [regions])
   const regionThemes = useRegionViewThemes(worldId, regionIds)
   const shades = useByValue<MapShades>({ world: theme.shade, regions: [...regionThemes].flatMap(([id, t]) => (t.shade === theme.shade ? [] : [[id, t.shade]])) })
@@ -276,17 +275,17 @@ export const MapView = memo(function MapView({
       const { draft: points, tool, radiusKm } = useEditor.getState()
       c.lineJoin = 'round'
       c.lineCap = 'round'
-      // Rivers under everything else, the smallest first so the great ones run over their tributaries; the selected one in white, over them all.
-      const { selectedWaterwayKey } = useUi.getState()
+      // Rivers under everything else, the thinnest first so the great ones run over their tributaries; the selected one in white, over them all.
+      c.save()
+      c.translate(shift, 0)
       c.strokeStyle = RIVER_COLOR
-      for (let k = rivers.length - 1; k >= 0; k--) {
-        const { river, path, width } = rivers[k]!
-        if (river.id === selectedWaterwayKey) continue
-        tracePath(c, path, shift)
+      for (const [width, path] of rivers.byWidth) {
         c.lineWidth = width / scale
-        c.stroke()
+        c.stroke(path)
       }
-      const chosen = rivers.find((r) => r.river.id === selectedWaterwayKey)
+      c.restore()
+      const { selectedWaterwayKey } = useUi.getState()
+      const chosen = rivers.list.find((r) => r.river.id === selectedWaterwayKey)
       if (chosen) {
         tracePath(c, chosen.path, shift)
         c.strokeStyle = '#ffffff'
@@ -440,10 +439,10 @@ export const MapView = memo(function MapView({
     const v = view.current!
     const near = (path: [number, number][]) =>
       [-W, 0, W].some((s) => path.some((a, k) => k > 0 && distanceToSegment(p[0] - s, p[1], path[k - 1]!, a) * v.scale <= 5))
-    const river = rivers.find((r) => near(r.path))
+    const river = rivers.list.find((r) => near(r.path))
     if (river) return river.river.id
     const { face, cell } = model.cellAt(...dirAt(p))
-    return lakeAt(water, face * TERRAIN_RES * TERRAIN_RES + cell)
+    return water.lakes[water.lakeOf[planetCell(face, cell)]!]?.id
   }
 
   const dirAt = ([x, y]: [number, number]): Vec3 => {
@@ -532,14 +531,17 @@ function distanceToSegment(x: number, y: number, [ax, ay]: [number, number], [bx
   return Math.hypot(x - (ax + t * dx), y - (ay + t * dy))
 }
 
-/** Each world's lakes by their cells, worked out once a water. */
-const lakeCells = new WeakMap<Water, Map<number, string>>()
-
-/** The lake over a planet-wide cell, if any. */
-function lakeAt(water: Water, g: number): string | undefined {
-  let byCell = lakeCells.get(water)
-  if (!byCell) lakeCells.set(water, (byCell = new Map(water.lakes.flatMap((l) => l.cells.map((c) => [c, l.id] as const)))))
-  return byCell.get(g)
+/** Rivers' paths on the map (smoothed), and all of them as one path per width (to a quarter pixel), thinnest first: a few strokes a frame rather than one a river. */
+function riverPaths(rivers: River[]) {
+  const list = rivers.map((river) => ({ river, path: smoothPath(polygon(river.points)), width: riverWidth(river) }))
+  const byWidth = new Map<number, Path2D>()
+  for (const { path, width } of list) {
+    const band = Math.round(width * 4) / 4
+    let all = byWidth.get(band)
+    if (!all) byWidth.set(band, (all = new Path2D()))
+    path.forEach(([x, y], i) => (i ? all.lineTo(x, y) : all.moveTo(x, y)))
+  }
+  return { list, byWidth: [...byWidth].sort((a, b) => a[0] - b[0]) }
 }
 
 function tracePath(c: CanvasRenderingContext2D, poly: [number, number][], shift: number): void {

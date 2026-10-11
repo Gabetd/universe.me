@@ -1,6 +1,6 @@
-import { CUBE_FACES, TERRAIN_RES, type LatLon } from '@universe/core'
+import { CUBE_FACES, TERRAIN_RES, waterwayName, type LatLon, type Waterway } from '@universe/core'
 import { cellCenter, cellDirections, dirToFace, dirToLatLon, faceToDir, nearestCell } from './cubesphere'
-import { rng, subSeed } from './random'
+import { cellSeed, rng, subSeed } from './random'
 import { randomSeedName } from './world-seed'
 
 /**
@@ -26,7 +26,7 @@ const LAKE_MIN_CELLS = 2
 /** How much lake a basin's water keeps up, in cells per cell's worth of rain reaching it: the rest the sun takes. */
 const LAKE_SHARE = 0.06
 /** How much water (cells' worth of rain on wet land) makes a river. */
-export const RIVER_FLOW = 15
+const RIVER_FLOW = 15
 
 export interface HydrologyInput {
   /** Metres above sea level, per face (TERRAIN_RES² cells each). */
@@ -67,12 +67,62 @@ export interface Lake {
 export interface Hydrology {
   /** Each cell's lake surface (metres above sea level), or NaN where there's no lake. */
   lakeLevel: Float32Array
+  /** Which of `lakes` covers each cell, or −1. */
+  lakeOf: Int32Array
   /** Water through each land cell. */
   flow: Float32Array
   /** Where each cell drains to (planet-wide number), or −1 for the sea. */
   receiver: Int32Array
   rivers: River[]
   lakes: Lake[]
+}
+
+/** A face's cell as a planet-wide cell number. */
+export const planetCell = (face: number, cell: number) => face * CELLS + cell
+
+/** A planet-wide cell number's face and cell on it. */
+export const faceCellOf = (g: number): [face: number, cell: number] => {
+  const face = Math.floor(g / CELLS)
+  return [face, g - face * CELLS]
+}
+
+/** Per-face values (heights, say) as one planet-wide array. */
+export function planetWide(perFace: ArrayLike<number>[]): Float32Array {
+  const out = new Float32Array(PLANET_CELLS)
+  for (let f = 0; f < CUBE_FACES; f++) for (let c = 0; c < CELLS; c++) out[f * CELLS + c] = perFace[f]![c]!
+  return out
+}
+
+/** How much of a planet's surface one cell covers, in km². */
+export const cellKm2 = (radiusKm: number) => (4 * Math.PI * radiusKm * radiusKm) / PLANET_CELLS
+
+export const isRiver = (w: River | Lake): w is River => 'points' in w
+
+/** Where a river or lake is: a river's middle, a lake's deepest point. */
+export const waterwayPlace = (w: River | Lake): LatLon => (isRiver(w) ? w.points[Math.floor(w.points.length / 2)]! : w.center)
+
+/** A world's rivers and lakes by id, with what's been given each (its waterway record) and the rivers that run into each: what the app's panels and menus and the API look them up in. */
+export interface WaterwayIndex {
+  byKey: Map<string, River | Lake>
+  own: Map<string, Waterway>
+  /** The rivers running into each river or lake, biggest first. */
+  feeders: Map<string, River[]>
+  /** What one is called: its own name, else the one it was made with. */
+  nameOf(key: string): string | undefined
+}
+
+export function waterwayIndex(water: Pick<Hydrology, 'rivers' | 'lakes'>, records: readonly Waterway[]): WaterwayIndex {
+  const byKey = new Map<string, River | Lake>()
+  for (const w of water.rivers) byKey.set(w.id, w)
+  for (const w of water.lakes) byKey.set(w.id, w)
+  const own = new Map(records.map((w) => [w.key, w]))
+  const feeders = new Map<string, River[]>()
+  for (const r of water.rivers) if (r.into.kind !== 'sea') feeders.set(r.into.id, [...(feeders.get(r.into.id) ?? []), r])
+  const nameOf = (key: string) => {
+    const found = byKey.get(key)
+    return found && waterwayName(found.name, own.get(key))
+  }
+  return { byKey, own, feeders, nameOf }
 }
 
 /** A river's own water where it ends (a tributary's last point is where it joins another, so its own is the point before). */
@@ -97,7 +147,7 @@ function edgeNeighboursOf(face: number, i: number, j: number): Int32Array {
       // Off the face: a point a cell's width out, found on the face it's on.
       const d = faceToDir(face, cellCenter(i) + di * step, cellCenter(j) + dj * step)
       const p = dirToFace(d[0], d[1], d[2])
-      const g = p.face * CELLS + nearestCell(p.s, p.t)
+      const g = planetCell(p.face, nearestCell(p.s, p.t))
       if (g !== self) out.add(g)
     }
   }
@@ -169,21 +219,19 @@ class CellHeap {
   }
 }
 
-const nameOf = (seed: number, g: number, salt: number) => randomSeedName(rng(subSeed(seed ^ Math.imul(g, 0x9e3779b1), salt)))
+const nameOf = (seed: number, g: number, salt: number) => randomSeedName(rng(subSeed(cellSeed(seed, g, 0), salt)))
 
-/** Where a cell's centre is. */
-function placeOf(g: number): LatLon {
-  const face = Math.floor(g / CELLS)
-  const c = (g - face * CELLS) * 3
+/** Where a planet-wide cell's centre is. */
+export function cellPlace(g: number): LatLon {
+  const [face, cell] = faceCellOf(g)
   const dirs = cellDirections()[face]!
-  return dirToLatLon(dirs[c]!, dirs[c + 1]!, dirs[c + 2]!)
+  return dirToLatLon(dirs[cell * 3]!, dirs[cell * 3 + 1]!, dirs[cell * 3 + 2]!)
 }
 
 /** Where every drop of rain on a world goes: its lakes and rivers (see the top of this file). */
 export function hydrology({ heights, moisture, seed, radiusKm }: HydrologyInput): Hydrology {
   const N = PLANET_CELLS
-  const h = new Float32Array(N)
-  for (let f = 0; f < CUBE_FACES; f++) for (let c = 0; c < CELLS; c++) h[f * CELLS + c] = heights[f]![c]!
+  const h = planetWide(heights)
   const land = (g: number) => h[g]! > 0
 
   // Filling from the sea up: each cell, reached from the lowest one next to it, drains into that one.
@@ -224,8 +272,8 @@ export function hydrology({ heights, moisture, seed, radiusKm }: HydrologyInput)
 
   // Water: the rain on each land cell, carried down to the sea, upstream cells first. A basin that holds a lake with no outlet keeps what reaches it.
   const rain = (g: number) => {
-    const face = Math.floor(g / CELLS)
-    return 0.15 + moisture[face]![g - face * CELLS]!
+    const [face, cell] = faceCellOf(g)
+    return 0.15 + moisture[face]![cell]!
   }
   const flow = new Float32Array(N)
   const gather = (keeps?: Uint8Array) => {
@@ -247,7 +295,7 @@ export function hydrology({ heights, moisture, seed, radiusKm }: HydrologyInput)
   const lakeOf = new Int32Array(N).fill(-1)
   const basinOf = new Int32Array(N).fill(-1)
   const keeps = new Uint8Array(N)
-  const cellKm2 = (4 * Math.PI * radiusKm * radiusKm) / N
+  const areaKm2 = cellKm2(radiusKm)
   for (let g = 0, basins = 0; g < N; g++) {
     if (!land(g) || basinOf[g]! >= 0 || filled[g]! - h[g]! <= LAKE_DEPTH) continue
     const cells: number[] = []
@@ -285,7 +333,7 @@ export function hydrology({ heights, moisture, seed, radiusKm }: HydrologyInput)
       lakeLevel[c] = level
       lakeOf[c] = lakes.length
     }
-    lakes.push({ id: `l${deepest}`, name: `Lake ${nameOf(seed, deepest, 0x4c4b)}`, cells: water, level, areaKm2: Math.round(water.length * cellKm2), center: placeOf(deepest) })
+    lakes.push({ id: `l${deepest}`, name: `Lake ${nameOf(seed, deepest, 0x4c4b)}`, cells: water, level, areaKm2: Math.round(water.length * areaKm2), center: cellPlace(deepest) })
   }
   // What a lake without an outlet keeps goes no further.
   if (keeps.some(Boolean)) gather(keeps)
@@ -303,7 +351,7 @@ export function hydrology({ heights, moisture, seed, radiusKm }: HydrologyInput)
       firstUp[r] = g
     } else mouths.push(g)
   }
-  const kmPerCell = Math.sqrt(cellKm2)
+  const kmPerCell = Math.sqrt(areaKm2)
   const rivers: River[] = []
   // From each mouth upstream, the biggest stream is the river itself; the others are tributaries, each a river of its own that ends where it joins.
   const starts: { g: number; into: River['into']; join?: number }[] = mouths.map((g) => {
@@ -332,7 +380,7 @@ export function hydrology({ heights, moisture, seed, radiusKm }: HydrologyInput)
       id,
       name: nameOf(seed, g, 0x5256),
       cells: path,
-      points: (outlet >= 0 ? [...path, outlet] : path).map(placeOf),
+      points: (outlet >= 0 ? [...path, outlet] : path).map(cellPlace),
       flow: outlet >= 0 ? [...flows, flows.at(-1)!] : flows,
       into,
       lengthKm: Math.round((path.length - 1) * kmPerCell)
@@ -341,5 +389,6 @@ export function hydrology({ heights, moisture, seed, radiusKm }: HydrologyInput)
   // Biggest first: what's drawn on top, and listed first.
   rivers.sort((a, b) => mouthFlow(b) - mouthFlow(a) || (a.id < b.id ? -1 : 1))
   lakes.sort((a, b) => b.cells.length - a.cells.length || (a.id < b.id ? -1 : 1))
-  return { lakeLevel, flow, receiver, rivers, lakes }
+  lakes.forEach((l, i) => l.cells.forEach((c) => (lakeOf[c] = i)))
+  return { lakeLevel, lakeOf, flow, receiver, rivers, lakes }
 }

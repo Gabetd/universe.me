@@ -27,7 +27,10 @@ const GROWTH: Partial<Record<number, number>> = {
 /** How far inland sea air carries salt, m. */
 const SALT_M = 25_000
 
-export function exposureAt(model: TerrainModel, climate: WorldClimate | undefined, lat: number, lon: number): Exposure {
+/** What a place's weather does to what stands there, from the land before erosion wears it (so the same at any playhead, and in the API). */
+export const exposureAt = (model: TerrainModel, climate: WorldClimate | undefined, lat: number, lon: number): Exposure => model.unworn(() => exposureOnLand(model, climate, lat, lon))
+
+function exposureOnLand(model: TerrainModel, climate: WorldClimate | undefined, lat: number, lon: number): Exposure {
   const dir = latLonToDir(lat, lon)
   const at = model.locate(...dir)
   const { face } = at
