@@ -108,23 +108,24 @@ export function modelSampler(model: TerrainModel): BaseSampler {
   }
 }
 
-/** The base terrain over a chunk, sampled on a small grid; enough to rebuild it elsewhere (a worker). */
+/** The base terrain over an area (a chunk, the distant ground), sampled on a small grid; enough to rebuild it elsewhere (a worker). */
 export interface BaseGrid {
   bounds: ChunkBounds
-  /** GRID × GRID samples, row-major from (lat0, lon0). */
+  /** size × size samples, row-major from (lat0, lon0). */
   elevation: number[]
   biome: number[]
 }
 
+/** Samples along a chunk's grid. */
 const GRID = 5
 
-export function sampleBaseGrid(base: BaseSampler, bounds: ChunkBounds): BaseGrid {
+export function sampleBaseGrid(base: BaseSampler, bounds: ChunkBounds, size = GRID): BaseGrid {
   const elevation: number[] = []
   const biome: number[] = []
-  for (let j = 0; j < GRID; j++) {
-    for (let i = 0; i < GRID; i++) {
-      const lat = bounds.lat0 + ((bounds.lat1 - bounds.lat0) * j) / (GRID - 1)
-      const lon = bounds.lon0 + ((bounds.lon1 - bounds.lon0) * i) / (GRID - 1)
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      const lat = bounds.lat0 + ((bounds.lat1 - bounds.lat0) * j) / (size - 1)
+      const lon = bounds.lon0 + ((bounds.lon1 - bounds.lon0) * i) / (size - 1)
       elevation.push(base.elevation(lat, lon))
       biome.push(base.biome(lat, lon))
     }
@@ -135,19 +136,20 @@ export function sampleBaseGrid(base: BaseSampler, bounds: ChunkBounds): BaseGrid
 /** Reads a sampled grid back, interpolating heights (biomes: the nearest sample). */
 export function gridSampler(grid: BaseGrid): BaseSampler {
   const { bounds: b, elevation: e, biome } = grid
+  const size = Math.round(Math.sqrt(e.length))
   // Where a point is on the grid, in samples.
-  const gx = (lon: number) => clamp(((lon - b.lon0) / (b.lon1 - b.lon0)) * (GRID - 1), 0, GRID - 1)
-  const gy = (lat: number) => clamp(((lat - b.lat0) / (b.lat1 - b.lat0)) * (GRID - 1), 0, GRID - 1)
+  const gx = (lon: number) => clamp(((lon - b.lon0) / (b.lon1 - b.lon0)) * (size - 1), 0, size - 1)
+  const gy = (lat: number) => clamp(((lat - b.lat0) / (b.lat1 - b.lat0)) * (size - 1), 0, size - 1)
   return {
     elevation(lat, lon) {
       const x = gx(lon)
       const y = gy(lat)
-      const i0 = Math.min(GRID - 2, Math.floor(x))
-      const j0 = Math.min(GRID - 2, Math.floor(y))
-      const k = j0 * GRID + i0
-      return bilerp(e[k]!, e[k + 1]!, e[k + GRID]!, e[k + GRID + 1]!, x - i0, y - j0)
+      const i0 = Math.min(size - 2, Math.floor(x))
+      const j0 = Math.min(size - 2, Math.floor(y))
+      const k = j0 * size + i0
+      return bilerp(e[k]!, e[k + 1]!, e[k + size]!, e[k + size + 1]!, x - i0, y - j0)
     },
-    biome: (lat, lon) => biome[Math.round(gy(lat)) * GRID + Math.round(gx(lon))]!,
+    biome: (lat, lon) => biome[Math.round(gy(lat)) * size + Math.round(gx(lon))]!,
     only: biome.every((v) => v === biome[0]) ? biome[0] : undefined
   }
 }
@@ -252,14 +254,11 @@ const SIZE: Record<Plant, [min: number, max: number]> = {
 /** Plants that grow at the water's edge or in it rather than on dry land. */
 const WET: Plant[] = ['reed']
 
-export interface GroundChunkInput {
+export interface GroundChunkInput extends GroundColors {
   id: ChunkId
   frame: LocalFrame
   seed: number
   grid: BaseGrid
-  /** RGB (0–255) per biome id, and for the sea bed. */
-  biomeColors: number[][]
-  seabedColor: number[]
 }
 
 export interface GroundChunk {
@@ -307,11 +306,8 @@ export function buildGroundChunk(input: GroundChunkInput): GroundChunk {
       positions[t * 3] = x
       positions[t * 3 + 1] = heights[t] = y
       positions[t * 3 + 2] = z
-      const rgb = y < 0 ? input.seabedColor : y < 1.5 ? (input.biomeColors[BIOME.beach] ?? input.seabedColor) : input.biomeColors[detail.biome(base, lat, lon)]!
-      // Some variation, so a field isn't one flat colour: lighter and darker patches, and bare earth here and there.
-      const v = (light[t] = 0.86 + 0.12 * detail.patch(lat, lon, 3))
-      const bare = y < 1.5 ? 0 : clamp(detail.patch(lat, lon, 5) * 1.6 - 0.7, 0, 0.45)
-      for (let k = 0; k < 3; k++) colors[t * 3 + k] = (ground[t * 3 + k] = (rgb[k]! * (1 - bare) + EARTH[k]! * bare) / 255) * v
+      const v = (light[t] = groundColor(input, detail, base, lat, lon, y, ground, t))
+      for (let k = 0; k < 3; k++) colors[t * 3 + k] = ground[t * 3 + k]! * v
     }
   }
   let next = n * n
@@ -353,6 +349,95 @@ export function buildGroundChunk(input: GroundChunkInput): GroundChunk {
   }
 
   return { id, positions, colors, indices, plants: scatterPlants(input, detail, base) }
+}
+
+/**
+ * The ground's colour at a point (at height `y`), before light and shade, into `out` at vertex `t`; returns its light.
+ * Some variation, so a field isn't one flat colour: lighter and darker patches, and bare earth here and there.
+ */
+function groundColor(input: GroundColors, detail: GroundDetail, base: BaseSampler, lat: number, lon: number, y: number, out: Float64Array | Float32Array, t: number): number {
+  const rgb = y < 0 ? input.seabedColor : y < 1.5 ? (input.biomeColors[BIOME.beach] ?? input.seabedColor) : input.biomeColors[detail.biome(base, lat, lon)]!
+  const bare = y < 1.5 ? 0 : clamp(detail.patch(lat, lon, 5) * 1.6 - 0.7, 0, 0.45)
+  for (let k = 0; k < 3; k++) out[t * 3 + k] = (rgb[k]! * (1 - bare) + EARTH[k]! * bare) / 255
+  return 0.86 + 0.12 * detail.patch(lat, lon, 3)
+}
+
+/** How far the distant ground reaches from the middle of the view, in metres. */
+export const FAR_M = 12_000
+/** Vertices along the distant ground's edge, less one: 250 m apart. */
+export const FAR_SEGMENTS = 96
+/** Samples of the globe's terrain along the distant ground's edge: 500 m apart. */
+export const FAR_GRID = 49
+
+/** The distant ground's lat/lon edges: a square FAR_M out from the middle of chunk `center` each way. */
+export function farBounds(center: ChunkId, radiusKm: number): ChunkBounds {
+  const c = chunkBounds(center, radiusKm)
+  const [lat, lon] = [(c.lat0 + c.lat1) / 2, (c.lon0 + c.lon1) / 2]
+  const dLat = FAR_M / metresPerDegLat(radiusKm)
+  const dLon = dLat / Math.max(0.02, Math.cos(lat * RAD))
+  return { lat0: Math.max(-90, lat - dLat), lat1: Math.min(90, lat + dLat), lon0: lon - dLon, lon1: lon + dLon }
+}
+
+interface GroundColors {
+  /** RGB (0–255) per biome id, and for the sea bed. */
+  biomeColors: number[][]
+  seabedColor: number[]
+}
+
+export interface FarGroundInput extends GroundColors {
+  /** The chunk in the middle of the view; the sheet is built in a frame at its south-west corner, like a chunk. */
+  center: ChunkId
+  frame: LocalFrame
+  seed: number
+  /** The globe's terrain over `farBounds`, FAR_GRID samples a side. */
+  grid: BaseGrid
+  /** Within this many metres of the middle of the view (each way), the sheet is sunk out of sight: the chunks are there. */
+  sinkWithin: number
+}
+
+/** How far the distant ground is sunk where the chunks cover it. */
+const SUNK_M = 60
+
+/** A sheet of ground: a mesh in frame metres. */
+export interface GroundSheet {
+  positions: Float32Array
+  colors: Float32Array
+  indices: Uint32Array
+}
+
+/**
+ * The ground beyond the chunks, out to FAR_M: one coarse sheet with the same
+ * hills and colours (no plants), drawn behind the chunks. Pure, like a chunk.
+ */
+export function buildFarGround(input: FarGroundInput): GroundSheet {
+  const { frame, grid } = input
+  const detail = new GroundDetail(input.seed, frame.radiusKm)
+  const base = gridSampler(grid)
+  const b = grid.bounds
+  const n = FAR_SEGMENTS + 1
+  const positions = new Float32Array(n * n * 3)
+  const colors = new Float32Array(n * n * 3)
+  const indices = new Uint32Array(FAR_SEGMENTS * FAR_SEGMENTS * 6)
+  for (let j = 0, t = 0; j < n; j++) {
+    for (let i = 0; i < n; i++, t++) {
+      const lat = b.lat0 + ((b.lat1 - b.lat0) * j) / FAR_SEGMENTS
+      const lon = b.lon0 + ((b.lon1 - b.lon0) * i) / FAR_SEGMENTS
+      const [x, z] = toLocal(frame, { lat, lon })
+      const y = detail.elevation(base, lat, lon)
+      // The middle of the centre chunk is (CHUNK_M / 2, −CHUNK_M / 2) in its corner's frame.
+      const under = Math.max(Math.abs(x - CHUNK_M / 2), Math.abs(z + CHUNK_M / 2)) < input.sinkWithin
+      positions.set([x, under ? y - SUNK_M : y, z], t * 3)
+      const v = groundColor(input, detail, base, lat, lon, y, colors, t)
+      for (let k = 0; k < 3; k++) colors[t * 3 + k]! *= v
+    }
+  }
+  for (let j = 0, index = 0; j < FAR_SEGMENTS; j++) {
+    for (let i = 0; i < FAR_SEGMENTS; i++, index += 6) {
+      const a = j * n + i
+      indices.set([a, a + 1, a + n + 1, a, a + n + 1, a + n], index)
+    }
+  }
+  return { positions, colors, indices }
 }
 
 /** Plants and rocks for a chunk, by its biomes; none in the sea, reeds only at the water's edge. */

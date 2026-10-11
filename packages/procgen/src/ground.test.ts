@@ -3,8 +3,13 @@ import { BIOME, BIOME_RGB } from './biomes'
 import {
   CHUNK_M,
   CHUNK_SEGMENTS,
+  FAR_GRID,
+  FAR_M,
+  FAR_SEGMENTS,
   INSTANCE_STRIDE,
+  buildFarGround,
   buildGroundChunk,
+  farBounds,
   chunkBounds,
   chunkOf,
   chunksAround,
@@ -87,5 +92,49 @@ describe('ground chunks', () => {
     const sea = chunk(chunkOf({ lat: 0, lon: 0 }, R), flat(BIOME.grassland, -400))
     expect(Object.keys(sea.plants)).toEqual([])
     expect(Math.max(...sea.positions.filter((_, i) => i % 3 === 1))).toBeLessThan(0)
+  })
+})
+
+describe('the distant ground', () => {
+  const center = chunkOf({ lat: 45.1, lon: 7.4 }, R)
+  const corner = chunkBounds(center, R)
+  const frame = { origin: { lat: corner.lat0, lon: corner.lon0 }, radiusKm: R }
+  const sheet = (base: BaseSampler) =>
+    buildFarGround({ center, frame, seed: 42, grid: sampleBaseGrid(base, farBounds(center, R), FAR_GRID), biomeColors: BIOME_RGB.map((c) => [...c]), seabedColor: [40, 60, 80], sinkWithin: 0 })
+
+  it('reaches FAR_M from the middle of the view each way, with the same hills as the chunks there', () => {
+    const base = flat(BIOME.grassland)
+    const { positions, indices } = sheet(base)
+    const n = FAR_SEGMENTS + 1
+    expect(positions).toHaveLength(n * n * 3)
+    expect(indices).toHaveLength(FAR_SEGMENTS * FAR_SEGMENTS * 6)
+    const xs = Array.from({ length: n * n }, (_, t) => positions[t * 3]!)
+    const zs = Array.from({ length: n * n }, (_, t) => positions[t * 3 + 2]!)
+    // The middle of the centre chunk is (500, -500) in its corner's frame.
+    expect(Math.min(...xs) - 500).toBeCloseTo(-FAR_M, -2)
+    expect(Math.max(...xs) - 500).toBeCloseTo(FAR_M, -2)
+    expect(Math.min(...zs) + 500).toBeCloseTo(-FAR_M, -2)
+    // At the chunk's corner both are the globe's height plus the same hills.
+    const near = chunk(center, base, frame)
+    const at = (p: Float32Array, t: number) => [p[t * 3]!, p[t * 3 + 1]!, p[t * 3 + 2]!]
+    const [cx, cy, cz] = at(near.positions, 0)
+    let best = 0
+    for (let t = 1; t < n * n; t++) if (Math.hypot(xs[t]! - cx!, zs[t]! - cz!) < Math.hypot(xs[best]! - cx!, zs[best]! - cz!)) best = t
+    expect(Math.hypot(xs[best]! - cx!, zs[best]! - cz!)).toBeLessThan(180)
+    expect(Math.abs(positions[best * 3 + 1]! - cy!)).toBeLessThan(25)
+  })
+
+  it('is the same every time', () => {
+    const base = flat(BIOME.rainforest, 300)
+    expect(sheet(base).positions).toEqual(sheet(base).positions)
+  })
+
+  it('sinks out of sight where the chunks are', () => {
+    const base = flat(BIOME.grassland)
+    const open = sheet(base).positions
+    const sunk = buildFarGround({ center, frame, seed: 42, grid: sampleBaseGrid(base, farBounds(center, R), FAR_GRID), biomeColors: BIOME_RGB.map((c) => [...c]), seabedColor: [40, 60, 80], sinkWithin: 1500 }).positions
+    const middle = ((FAR_SEGMENTS / 2) * (FAR_SEGMENTS + 1) + FAR_SEGMENTS / 2) * 3 + 1
+    expect(sunk[middle]!).toBeLessThan(open[middle]! - 50)
+    expect(sunk[1]).toBe(open[1])
   })
 })

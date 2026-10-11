@@ -7,7 +7,8 @@ import { LabelLayer, LabelProjector, type ViewLabel } from './labels'
 import { WEBGL } from './webgl'
 
 /** Kept for screenshots and the zoom's still of the view; antialiasing only with a GPU. */
-const GL = { preserveDrawingBuffer: true, antialias: !WEBGL.software }
+// A stencil buffer: the ground's chunks mark where they're drawn, for the distant ground to keep out of.
+const GL = { preserveDrawingBuffer: true, antialias: !WEBGL.software, stencil: true }
 /**
  * Sized by its box's layout size, not its size on screen: a view that opens
  * while the zoom between levels is still scaling it in would otherwise keep

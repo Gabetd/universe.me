@@ -86,6 +86,12 @@ function drawMapImage(model: TerrainModel, change: TerrainChange, seen: TerrainC
   map.drawn = change
 }
 
+/** A planet's map image brought up to `change` (`seen` is the change before it, as the caller saw it), for a view of its own: the ground's minimap. */
+export function planetMap(model: TerrainModel, change: TerrainChange, seen: TerrainChange | undefined): HTMLCanvasElement {
+  drawMapImage(model, change, seen)
+  return mapImageOf(model).canvas
+}
+
 /** Multiplies the map image by `colour`: the theme's light and land. */
 function shadeMap(c: CanvasRenderingContext2D, colour: string): void {
   c.globalCompositeOperation = 'multiply'

@@ -2,6 +2,7 @@ import { findBlueprint, insidePolygon, type Blueprint, type BlueprintPart, type 
 import {
   CHUNK_M,
   CHUNK_SEGMENTS,
+  FAR_M,
   GroundDetail,
   SKIRT_M,
   INSTANCE_STRIDE,
@@ -13,7 +14,9 @@ import {
   latLonToDir,
   modelSampler,
   toLocal,
+  type ChunkId,
   type GroundChunk,
+  type GroundSheet,
   type LocalFrame,
   type Plant
 } from '@universe/procgen'
@@ -34,7 +37,8 @@ import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
 import { useLandTint, useThemeName } from './ThemeTint'
 import { useViewTheme } from './useThemeLook'
 import { multiply } from './viewTheme'
-import { useGroundChunks } from './useGroundChunks'
+import { useFarGround, useGroundChunks } from './useGroundChunks'
+import { GroundMinimap } from './GroundMinimap'
 import { WalkKeys } from './walk'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
@@ -42,8 +46,8 @@ import type { EventPin } from './useWorldAtTime'
 import type { SurfaceViewProps } from './useTerrain'
 
 const SKY = '#a9cdea'
-/** Where the fog starts and where it hides everything, in metres, in the usual air. */
-const FOG = [1400, 3400] as const
+/** Where the fog starts and where it hides everything, in metres, in the usual air: 12 km off, the distant ground's edge. */
+const FOG = [4500, FAR_M] as const
 /** The light from the sky and from the ground under it. */
 const HEMISPHERE = ['#dce9f7', '#4a4536'] as const
 /** Chunks drawn around the middle of the view in each direction: a 5 × 5 km square. */
@@ -51,13 +55,13 @@ const RING = 2
 /** Farthest the camera pulls back; scrolling out past it returns to the globe. */
 const MAX_DISTANCE = 2600
 /** Things farther than this from the middle of the view aren't drawn (the fog has them). */
-const DRAW_M = 3800
+const DRAW_M = FAR_M
 const RAD = Math.PI / 180
 const inView = (x: number, z: number) => Math.hypot(x, z) <= DRAW_M
 const smooth = (t: number) => t * t * (3 - 2 * t)
 const latLonOf = (p: LatLon): [number, number] => [p.lat, p.lon]
 
-const CAMERA = { position: [0, 400, 600] as [number, number, number], fov: 55, near: 0.5, far: 9000 }
+const CAMERA = { position: [0, 400, 600] as [number, number, number], fov: 55, near: 0.5, far: FAR_M * 1.4 }
 const CONTROLS = { screenSpacePanning: false, minDistance: 3, maxDistance: MAX_DISTANCE, maxPolarAngle: Math.PI * 0.47, zoomSpeed: 2.5 }
 
 /** Heights of the ground anywhere: the globe's terrain plus the seeded detail the chunks have. */
@@ -143,9 +147,16 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
   const items = useMemo(() => groundLabels(structures, characters, pins, ground), [structures, characters, pins, ground])
   // The regions the middle of the view lies in: their own themes show here.
   const here = useByValue(useMemo(() => regions.flatMap((r) => (insidePolygon(center, r.points) ? [r.id] : [])), [regions, center]))
-  // One material for every chunk's ground (its colours are the chunk's), tinted by the theme in force.
-  const land = useMemo(() => [new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 })], [])
-  useEffect(() => () => land[0]!.dispose(), [land])
+  // One material for every chunk's ground (its colours are the chunk's), and one for the distant ground, tinted by the theme in force.
+  // The chunks mark where they're drawn, and the distant ground is drawn only where they aren't: close by, the chunks always win.
+  const land = useMemo(
+    () => [
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, stencilWrite: true, stencilRef: 1, stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp }),
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc })
+    ],
+    []
+  )
+  useEffect(() => () => land.forEach((m) => m.dispose()), [land])
 
   return (
     <SurfaceCanvas
@@ -157,12 +168,18 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
       labels={items}
       // How many chunks are in, for tests to wait on.
       wrap={{ 'data-chunks': loaded }}
-      overlay={<GroundReadout ground={ground} error={failed} />}
+      overlay={
+        <>
+          <GroundReadout ground={ground} error={failed} />
+          <GroundMinimap model={model} change={change} at={center} />
+        </>
+      }
     >
       <GroundLook worldId={worldId} regionIds={here} water={model.settings.terrain.waterColor} land={land} />
       <Rig ground={ground} onRebase={setOrigin} onCenter={setCenter} />
       <WalkKeys />
       <Chunks {...props} ground={ground} center={center} land={land[0]!} onLoaded={setLoaded} onFailed={setFailed} />
+      <FarGround {...props} ground={ground} center={center} material={land[1]!} />
       <GroundStructures structures={props.structures} ground={ground} onClick={props.onStructureClick} />
       {props.characters.map((c) => (
         <Figure key={c.character.id} id={c.character.id} at={c.place} color={c.character.color} selected={c.selected} ground={ground} onClick={props.onCharacterClick} />
@@ -362,6 +379,46 @@ function Chunks(
   )
 }
 
+/** Where something built in a frame at chunk `id`'s south-west corner (a chunk, the distant ground) goes in the view's frame. */
+function placement(id: ChunkId, frame: LocalFrame) {
+  const bounds = chunkBounds(id, frame.radiusKm)
+  const [x, z] = toLocal(frame, { lat: bounds.lat0, lon: bounds.lon0 })
+  // East-west, the view's frame and the chunk's own differ by the ratio of their latitudes' cosines.
+  return { x, z, stretch: Math.cos(frame.origin.lat * RAD) / Math.cos(bounds.lat0 * RAD) }
+}
+
+/** Within this many metres of the middle of the view, the chunks cover the distant ground: it's sunk there, out of the way of what stands on them. */
+const UNDER_CHUNKS_M = (RING - 0.5) * CHUNK_M
+
+/** The ground beyond the chunks, out to 12 km: coarse, without plants, and drawn only where the chunks aren't. */
+function FarGround({ model, change, seed, ground, center, material }: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; material: THREE.Material }) {
+  const far = useFarGround(model, change, seed, chunkOf(center, ground.frame.radiusKm), UNDER_CHUNKS_M)
+  const geometry = useMemo(() => far && sheetGeometry(far.sheet), [far])
+  useEffect(() => () => geometry?.dispose(), [geometry])
+  if (!far || !geometry) return null
+  const { x, z, stretch } = placement(far.center, ground.frame)
+  return (
+    <group position={[x, 0, z]} scale={[stretch, 1, 1]}>
+      {/* After the chunks, so they've marked where they are. */}
+      <mesh geometry={geometry} material={material} renderOrder={1} raycast={noRaycast} />
+    </group>
+  )
+}
+
+/** A sheet's mesh; its colours are sRGB, like the map's, and the renderer works in linear light. */
+function sheetGeometry(sheet: Pick<GroundSheet, 'positions' | 'colors' | 'indices'>, positions = sheet.positions): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  const color = new THREE.Color()
+  const colors = new Float32Array(sheet.colors.length)
+  for (let i = 0; i < colors.length; i += 3) color.setRGB(sheet.colors[i]!, sheet.colors[i + 1]!, sheet.colors[i + 2]!, THREE.SRGBColorSpace).toArray(colors, i)
+  g.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  g.setIndex(new THREE.BufferAttribute(sheet.indices, 1))
+  g.computeVertexNormals()
+  g.computeBoundingSphere()
+  return g
+}
+
 /** One chunk, placed in the view's frame from its own (it was built around its south-west corner). */
 const ChunkView = memo(function ChunkView({
   chunk,
@@ -382,14 +439,10 @@ const ChunkView = memo(function ChunkView({
   onPointerDown: SurfaceViewProps['onPointerDown']
   onPointerMove: SurfaceViewProps['onPointerMove']
 }) {
-  const bounds = chunkBounds(chunk.id, ground.frame.radiusKm)
-  const [x, z] = toLocal(ground.frame, { lat: bounds.lat0, lon: bounds.lon0 })
-  // East-west, the view's frame and the chunk's own differ by the ratio of their latitudes' cosines.
-  const stretch = Math.cos(ground.frame.origin.lat * RAD) / Math.cos(bounds.lat0 * RAD)
+  const { x, z, stretch } = placement(chunk.id, ground.frame)
   /** Levels a height of the chunk (at chunk coordinates) where structures stand. */
   const level = useCallback((lx: number, lz: number, y: number) => ground.level(x + lx * stretch, z + lz, y), [ground, x, z, stretch])
   const geometry = useMemo(() => {
-    const g = new THREE.BufferGeometry()
     const positions = chunk.positions.slice()
     const grid = (CHUNK_SEGMENTS + 1) ** 2
     for (let i = 0; i < positions.length; i += 3) {
@@ -397,16 +450,7 @@ const ChunkView = memo(function ChunkView({
       const drop = i / 3 >= grid ? SKIRT_M : 0
       positions[i + 1] = level(positions[i]!, positions[i + 2]!, positions[i + 1]! + drop) - drop
     }
-    g.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    // The chunk's colours are sRGB, like the map's; the renderer works in linear light.
-    const color = new THREE.Color()
-    const colors = new Float32Array(chunk.colors.length)
-    for (let i = 0; i < colors.length; i += 3) color.setRGB(chunk.colors[i]!, chunk.colors[i + 1]!, chunk.colors[i + 2]!, THREE.SRGBColorSpace).toArray(colors, i)
-    g.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-    g.setIndex(new THREE.BufferAttribute(chunk.indices, 1))
-    g.computeVertexNormals()
-    g.computeBoundingSphere()
-    return g
+    return sheetGeometry(chunk, positions)
   }, [chunk, level])
   useEffect(() => () => geometry.dispose(), [geometry])
   const local = useMemo(() => footprints.map((f) => ({ x: (f.x - x) / stretch, z: f.z - z, r: f.r })).filter((f) => f.x > -f.r && f.x < CHUNK_M * 1.5 + f.r && f.z < f.r && f.z > -CHUNK_M * 1.5 - f.r), [footprints, x, z, stretch])
