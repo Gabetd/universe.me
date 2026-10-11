@@ -26,7 +26,7 @@ export const ROADMAP: Milestone[] = [
   { id: 'M14', title: 'Factions & relationships', status: 'done', summary: 'Factions with members and territory over time, who’s related to whom, a lane per character; spelling, shared power systems, one zoom from universe to ground, 12 km on the ground' },
   { id: 'M15', title: 'Rivers & erosion', status: 'done', summary: 'Rivers that run downhill and join, lakes in basins, each named and picked like a region, and land that wears down as time passes' },
   { id: 'M16', title: 'Plugins', status: 'done', summary: 'Your own generators, exporters and name generators, sandboxed, undone in one step; a manager and a template to start from; sub-factions as deep as they go' },
-  { id: 'M17', title: 'The canvas, as Obsidian has it', status: 'active', summary: 'Text, element, picture and link cards, groups, labelled connections, colours, resizing, selection and the board’s tools' },
+  { id: 'M17', title: 'The canvas, as Obsidian has it', status: 'done', summary: 'Text, element, picture and link cards, groups, labelled connections, colours, resizing, selection and the board’s tools' },
   { id: 'M18', title: 'Live collaboration', status: 'planned', summary: 'Several people in one universe at once, over their tailnets' },
   { id: 'M19', title: 'Signed installers', status: 'planned', summary: 'Installers signed and notarized, once there are certificates' }
 ]

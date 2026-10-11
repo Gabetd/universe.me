@@ -6,7 +6,7 @@ a local API and MCP server. See [PLAN.md](PLAN.md) for the full design and roadm
 
 **Status:** M0 to M13 are done (v1: up to phone access, sync between your
 devices, and polish), and so are M14 (factions and relationships), M15
-(rivers and erosion) and M16 (plugins). M17 (the canvas, as Obsidian has it) is under way. New here? On the start screen,
+(rivers and erosion), M16 (plugins) and M17 (the canvas, as Obsidian has it). M18 (live collaboration) is next. New here? On the start screen,
 **Explore a sample universe** opens Calder, a world with fifteen centuries of
 history to look around in. Press `?` for the keyboard shortcuts.
 
@@ -80,6 +80,21 @@ can use it…). Answer them once for every age, then again for any era where
 things are different, and say how strong it is in each; the age under the
 playhead is marked. Everything can be undone, and everything stays on your
 computer.
+
+## The canvas
+
+Each world has a canvas (🗂 Canvas), as Obsidian's Canvas: its events are cards
+on it, laid out in time order until you move them, and receding into the distance
+once they're over. Beside them go cards of your own: text in Markdown (double-click
+the board to write one), an element of the project (a character, a place, an event…,
+opened with a click), a picture (from a file, dropped or pasted) and a web page
+(opened in your browser), and groups that carry what's in them. Drag from a card's
+side onto another to connect them, with a label, a colour and arrows; drag off into
+empty board for a new card there. Select with a click, Shift-click or a box dragged
+round them; move, resize, colour, align, group, duplicate, copy and paste; turn a
+text card into an event; zoom to fit or to the selection, snap to the grid or to
+other cards, lock it read-only, or export it as an image. AI clients can lay it out
+too (`get_canvas`, `add_canvas_card`, `connect_on_canvas`).
 
 ## Plugins
 

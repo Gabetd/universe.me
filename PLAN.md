@@ -551,15 +551,15 @@ Each milestone ends with something you can launch and demo.
 - [x] Tests: the sandbox (operations, names from a seed, files and bytes, imports, nothing of the computer in reach, every limit, manifests) (`sandbox.test.ts`); grouping changes (`bus.test.ts`); the terrain and map operations; the PNG encoder; `e2e/plugins.spec.ts`: the template's villages made and undone as one, its wiki and map saved, a world named, and a plugin that fails part way leaving nothing behind.
 - [x] *Added during M16:* **sub-factions, as deep as they go** (see M14).
 
-### M17 — The canvas, as Obsidian has it (2–3 weeks) — *in progress*
+### M17 — The canvas, as Obsidian has it (2–3 weeks) — *done*
 A world's canvas does everything Obsidian's Canvas does, with the world's events on it as now:
-- [ ] **Cards of its own** beside the events, added from the toolbar, a right-click or a double-click on empty board: **text** (Markdown, written in place), **an element of the project** (a character, faction, region, structure, species, river or place, its name, kind and notes, opened with a click), **a picture** (from a file, kept in the project) and **a web link** (opened in the browser with a click; the app itself stays offline, so there's no page inside it).
-- [ ] **Groups**: a labelled, coloured box, made empty or round the selection; what's inside moves with it.
-- [ ] **Connections** between any two cards, from and to any side: a label, a colour, an arrow at the end, both ends or neither; dragged off into empty board, one makes a new card there. Between two events it's a timeline link as before (cause, effect…).
-- [ ] **Every card** (and event) resized by its corner and coloured (six colours or any); selected by a click, Shift-click or a box dragged round them; moved, aligned, duplicated, copied and pasted, and deleted together; a text card turned into an event.
-- [ ] **The board**: zoom in and out, to fit, to the selection and to 100%; snap to the grid and to other cards' edges; read-only; export as a PNG image.
-- [ ] **Through the command bus** (`packages/core/src/canvas.ts`: card and edge records, undoable, synced like every record); the API and MCP list, add, change and connect cards; the world bible has the text cards.
-- [ ] Tests: the records and commands; the operations; `e2e/canvas.spec.ts` for every kind of card, groups, connections, selection and the board's tools.
+- [x] **Cards of its own** beside the events, added from the toolbar, a right-click or a double-click on empty board: **text** (Markdown, written in place), **an element of the project** (a character, faction, region, structure, species, river or place, its name, kind and notes, opened with a click), **a picture** (from a file, kept in the project) and **a web link** (opened in the browser with a click; the app itself stays offline, so there's no page inside it). Pictures are dropped or pasted in too; new cards find a free place.
+- [x] **Groups**: a labelled, coloured box, made empty or round the selection; what's inside moves with it.
+- [x] **Connections** between any two cards, from and to any side: a label, a colour, an arrow at the end, both ends or neither; dragged off into empty board, one makes a new card there. Between two events it's a timeline link as before (cause, effect…).
+- [x] **Every card** (and event) resized by its corner and coloured (six colours or any); selected by a click, Shift-click or a box dragged round them; moved, aligned, duplicated, copied and pasted, and deleted together; a text card turned into an event.
+- [x] **The board**: zoom in and out, to fit, to the selection and to 100%; snap to the grid and to other cards' edges (with guides); read-only; export as a PNG image. Its tools are in the canvas's toolbar, so nothing covers the board; it opens fitted and stays put. A click selects an event and a double-click goes to it.
+- [x] **Through the command bus** (`packages/core/src/canvas.ts`: card and connection records, undoable, synced like every record; a card's or event's connections go with it); the API and MCP: `get_canvas`, `add_canvas_card`, `update_canvas_card` and `connect_on_canvas`; the world bible has the text cards under their first lines.
+- [x] Tests: the records and commands (`canvas.test.ts`); the geometry and the Markdown (`world/canvas/*.test.ts`); the operations and the bible; `e2e/canvas.spec.ts`: every kind of card, connections, selection, groups, colours, resizing, duplicating, the board's tools, export and a card turned into an event.
 
 ### M18 — Live collaboration (4–6 weeks) — *planned*
 - Several people editing one universe at once over their tailnets: invite someone (Tailscale sharing), see who's in and where, changes appearing as they're made.
@@ -600,7 +600,7 @@ A world's canvas does everything Obsidian's Canvas does, with the world's events
 ---
 
 ## 12. Post-v1 ideas
-- Factions and relationships (M14), rivers and erosion (M15), plugins (M16), the canvas (M17) and live collaboration (M18) are milestones now (M14, M15 and M16 done).
+- Factions and relationships (M14), rivers and erosion (M15), plugins (M16), the canvas (M17) and live collaboration (M18) are milestones now (M14 to M17 done).
 - Image generation for structures/themes via AI; ambient soundscapes per theme. (Image generation would need a remote service, against keeping everything local.)
 
 ---
