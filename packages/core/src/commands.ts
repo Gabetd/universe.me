@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ALLOWED_CHILDREN, Id, KIND_LABELS, NodeKind, NodePatch, Notes, Seed, Vec3, type SpatialNode } from './schema'
+import { ALLOWED_CHILDREN, Id, KIND_LABELS, NodeKind, NodePatch, Notes, Seed, Vec3, type CommandSource, type SpatialNode } from './schema'
 import { base64ToBytes, bytesToBase64 } from './encoding'
 import { changedFields, fieldsOf, rowOf, valueAt } from './fields'
 import type { Store } from './store'
@@ -10,7 +10,7 @@ import { FINDING_COMMANDS, findingHandlers } from './finding-commands'
 import { POWER_COMMANDS, powerHandlers } from './power-commands'
 import { WATERWAY_COMMANDS, waterwayHandlers } from './waterway-commands'
 import { CANVAS_COMMANDS, canvasHandlers } from './canvas-commands'
-import { MEMBER_COMMANDS, memberHandlers } from './member-commands'
+import { MEMBER_COMMANDS, NOT_THE_USER, changesMembers, memberHandlers } from './member-commands'
 import { THEME_COMMANDS, themeHandlers } from './theme-commands'
 import { WORLD_SIM_COMMANDS, worldSimHandlers } from './world-sim-commands'
 import { STRUCTURE_COMMANDS, structureHandlers } from './structure-commands'
@@ -258,6 +258,22 @@ export const handlers: Handlers = {
 function settingsUndo(previous: WorldSettings, next: WorldSettings): WorldSettingsPatch {
   const undo = changedFields(previous, next).flatMap((path) => (valueAt(previous, path) === undefined ? [] : [[path, valueAt(previous, path)] as const]))
   return (rowOf(undo) ?? {}) as WorldSettingsPatch
+}
+
+/**
+ * Turns down a command `source` can't send: one only the user sends
+ * (`USER_ONLY_COMMANDS`), from an AI client or a plugin, on its own or in a
+ * batch at any depth. A command in a batch that isn't valid is left to the
+ * batch, which turns it down as it runs.
+ */
+export function checkSource(command: Command, source: CommandSource): void {
+  if (!NOT_THE_USER.has(source)) return
+  if (changesMembers(command)) throw new CommandError('Who the universe is shared with is changed in Universe itself, not by an AI client or a plugin')
+  if (command.type !== 'batch') return
+  for (const input of command.payload.commands) {
+    const parsed = Command.safeParse(input)
+    if (parsed.success) checkSource(parsed.data, source)
+  }
 }
 
 /** Applies an already-validated command inside the current transaction. */

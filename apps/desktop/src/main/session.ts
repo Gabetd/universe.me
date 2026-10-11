@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { buildSample, writePrivate } from '@universe/api'
-import { Command as CommandSchema, CommandError, DEVICE_ID, EMPTY_TIMELINE, memberWithLogin, type Command, type Member, type CommandSource, type ExecuteResult, type SyncPage, type SyncRow, type Target } from '@universe/core'
+import { Command as CommandSchema, CommandError, DEVICE_ID, EMPTY_TIMELINE, checkSource, memberWithLogin, type Command, type Member, type CommandSource, type ExecuteResult, type SyncPage, type SyncRow, type Target } from '@universe/core'
 import { Project } from '@universe/db'
 import type { AppState, ProposalSummary, WorldTerrain } from '../shared/api'
 
@@ -189,6 +189,8 @@ export class Session {
     this.require()
     const parsed = CommandSchema.safeParse(command)
     if (!parsed.success) throw new CommandError(`That isn’t a valid change: ${parsed.error.issues[0]?.message ?? 'unknown'}`)
+    // One it couldn't apply either is turned down now, not once the user accepts it.
+    checkSource(parsed.data, 'ai')
     if (this.proposals.length >= MAX_PROPOSALS) throw new CommandError(`${MAX_PROPOSALS} suggestions are already waiting for the user`)
     const size = JSON.stringify(command).length
     if (this.proposals.reduce((n, p) => n + p.size, size) > MAX_PROPOSAL_CHARS) throw new CommandError('The suggestions waiting for the user are already as big as they can be')

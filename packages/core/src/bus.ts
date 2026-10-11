@@ -1,5 +1,5 @@
 import { DEFAULT_CONTEXT, batchOf } from './command-kit'
-import { Command, CommandError, applyCommand, type CommandContext, type HandlerResult, type Target } from './commands'
+import { Command, CommandError, applyCommand, checkSource, type CommandContext, type HandlerResult, type Target } from './commands'
 import { Footprint } from './footprint'
 import type { CommandSource } from './schema'
 import type { Store } from './store'
@@ -89,13 +89,14 @@ export class CommandBus {
     })
   }
 
-  /** Validates and applies a command. Throws `CommandError` if it is invalid. */
+  /** Validates and applies a command. Throws `CommandError` if it is invalid, or `source` can't send it (`checkSource`). */
   execute(input: unknown, source: CommandSource = 'user'): ExecuteResult {
     const parsed = Command.safeParse(input)
     if (!parsed.success) {
       throw new CommandError(parsed.error.issues.map((i) => `${i.path.join('.') || 'command'}: ${i.message}`).join('; '))
     }
     const command = parsed.data
+    checkSource(command, source)
     const footprint = new Footprint()
     const result = this.apply('do', command, source, footprint)
     this.undoStack.push({ command, inverse: result.inverse, source, footprint })

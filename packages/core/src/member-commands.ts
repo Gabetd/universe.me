@@ -3,7 +3,7 @@ import { batchOf } from './command-kit'
 import type { HandlerMap } from './commands'
 import { Login, Member, loginName, memberWithLogin } from './members'
 import { NewId, create, recordCrud } from './record-kit'
-import { Id, Name } from './schema'
+import { Id, Name, type CommandSource } from './schema'
 
 /** Inviting people to a universe and removing them (members.ts), through the bus like every record. */
 
@@ -23,6 +23,23 @@ export const MEMBER_COMMANDS = [
 ] as const
 
 type MemberCommand = z.infer<(typeof MEMBER_COMMANDS)[number]>
+
+/**
+ * The commands only the user sends, in Universe itself: who the universe is
+ * shared with gives people its files, so an AI client or a plugin can't
+ * change it, not even in a batch or for review (`checkSource`).
+ */
+export const USER_ONLY_COMMANDS: ReadonlySet<string> = new Set(MEMBER_COMMANDS.map((c) => c.shape.type.value))
+
+/** The sources that can't send them. */
+export const NOT_THE_USER: ReadonlySet<CommandSource> = new Set(['ai', 'plugin'])
+
+/** Whether a command changes who the universe is shared with: a member command, or a member taken out or put back as a record. */
+export function changesMembers(command: { type: string; payload: unknown }): boolean {
+  if (USER_ONLY_COMMANDS.has(command.type)) return true
+  const refs = command.type === 'record.remove' || command.type === 'record.restore' ? (command.payload as { refs: { kind: string }[] }).refs : []
+  return refs.some((ref) => ref.kind === 'member')
+}
 
 export const memberHandlers: HandlerMap<MemberCommand> = {
   'member.create': (store, { id, ownerId, login, name, invitedBy }, ctx) => {

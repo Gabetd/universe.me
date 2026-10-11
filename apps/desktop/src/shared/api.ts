@@ -132,7 +132,7 @@ export interface DeviceStatus {
  * - **Removing** someone: `execute({ type: 'member.delete', payload: { id } })`
  *   with their member's id (renaming: `member.update`). Members are records of
  *   the universe (`state.timeline.members` too), synced with it; API clients
- *   can't change them.
+ *   and plugins can't change them.
  * - **Where you are**: `setWhere({ nodeId, view, label })` whenever the
  *   selection or the view changes (null with nothing open), as others will
  *   read it ("Terra, the map").
