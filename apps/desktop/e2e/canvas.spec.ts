@@ -66,7 +66,7 @@ test('events become nodes on the world canvas: move, hide, link, recede with tim
 })
 
 /** A 2×1 PNG, for a picture card. */
-const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR42mP8z8DwnwEJMAIAKfwD/eO1Aj4AAAAASUVORK5CYII=', 'base64')
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGM4oaHxX0PjxH8AEPMELwjne3oAAAAASUVORK5CYII=', 'base64')
 
 test('the canvas as Obsidian has it: cards of every kind, connections, selection, groups, colours, resizing, duplicating, the board’s tools, and a card turned into an event', async ({ h }) => {
   test.slow()
