@@ -403,7 +403,7 @@ Each milestone ends with something you can launch and demo.
 - [x] `core` command bus with undo/redo, Zod schemas, SQLite + migrations, command history log.
 - [x] Create/open/save-a-copy `.universe` project, recent projects. Main layout (breadcrumb, outline, viewport, inspector, timeline placeholder).
 - [x] Universe tree editing (cluster → galaxy → system → planet → moon/world) with a seeded 2D placeholder viewport.
-- [ ] Code signing (Windows certificate, Apple Developer ID). Deferred to M18, for when the certificates are in hand; builds are unsigned until then.
+- [ ] Code signing (Windows certificate, Apple Developer ID). Deferred to M19, for when the certificates are in hand; builds are unsigned until then.
 - [x] *Added after M2:* self-update. Each CI build is versioned `0.1.<run>` and publishes an `update.json` manifest (file names, sizes, SHA-512) with the installers. The app checks it at launch and hourly (and on request: Help → Change Version, or the **Change version** button on the start screen and in the status bar, which says right there when there’s nothing newer); a dismissable banner offers the new version, and **Upgrade now** downloads, verifies and installs it, then restarts, with no further input: NSIS installer run silently, portable exe swapped, macOS `.app` replaced from the zip, AppImage replaced in place. A `.deb` install needs the system password (root).
 - [x] *Added after M2:* local only. All data lives in the project's SQLite file (built into the app via `node:sqlite`, no server). The main process cancels every network request except the app's own files and the self-updater's download from this repo's GitHub release; pages can't reach the network at all, and links open in the browser instead of the app window.
 
@@ -474,7 +474,7 @@ Each milestone ends with something you can launch and demo.
   - Data: nothing in a note, a date, a far-off time or a crafted project can stall the app (linear note reading, bounded dates, step-counted moon phases, inflation capped at a layer's size); the world bible escapes everything.
   - Build and release: read-only tokens unless publishing, one publish at a time, the updater takes only an installer's name from the manifest and stops a download that runs long; ci:local checks what it downloads and marks the commit it tested.
 - Not yet tried against claude.ai itself and a real tailnet (the tests stand in for both).
-- Deferred from the audit: signed update manifests and publishing installed copies' updates from `main` only (both done in M13); Electron fuses (asar integrity, no NODE_OPTIONS or inspect flags; RunAsNode stays for `--mcp`) with code signing in M18; validating every row of a project on load (a crafted project can still break the window, but its colours and links no longer reach anything); the .deb installer's wait between checking and installing; a nonce the stdio server checks before handing the app its token.
+- Deferred from the audit: signed update manifests and publishing installed copies' updates from `main` only (both done in M13); Electron fuses (asar integrity, no NODE_OPTIONS or inspect flags; RunAsNode stays for `--mcp`) with code signing in M19; validating every row of a project on load (a crafted project can still break the window, but its colours and links no longer reach anything); the .deb installer's wait between checking and installing; a nonce the stdio server checks before handing the app its token.
 
 ### M9 — Power systems (1 week) — *done*
 - [x] `power` and `powerAge` records, commands and templates in core (`powers.ts`): magic, divine, psionic, technology, political and other, each with its questions; an entry per system and era, merged as it's edited; era and system deletes take their entries.
@@ -512,7 +512,7 @@ Each milestone ends with something you can launch and demo.
 - [x] **A sample universe** to start from (`packages/api/src/sample.ts`): **Explore a sample universe** on the start screen (and in the Help menu) saves Calder, a world with fifteen centuries of history, where the user picks, and opens it on the world. Four eras, events linked and grouped, four regions, seven structures that weather and are fought over, three people, themes for its ages, a small food web and a magic system described age by age. It's written with the API's own operations (so it's checked like any edit), as the app's own changes (not the AI's), and opens with nothing to undo. Its places are all on land (tested against its seed). The API gained `create_era`. With nothing selected, the globe and the ground now open facing where a world's story is (the middle of its regions and structures), not 0°, 0°.
 - [x] **Keyboard shortcuts** (`shortcuts.ts`): one table that both runs the keys and lists them in a sheet (`?`, or Help → Keyboard Shortcuts). `1`–`7` the world's views; letters for the tools (`H` navigate, `R` raise, `L` lower, `S` smooth, `F` flatten, `B` paint, `E` erase, `G` region, `P` place); on the timeline `N` a new event at the playhead, `[` and `]` the playhead to the event before or after (selected, so the views turn to it), `0` fit; and the menu's and the selection's keys. Single keys work while nothing that takes typing has focus and no dialog is open; what's on screen registers what its keys do, and buttons' tooltips say their key.
 - [x] **Performance pass**, measured first (a world with hundreds of structures and thousands of events, frame times and draw calls while dragging each view and scrubbing): the map and the timeline stayed at 60 fps; the cost was structures on the ground and the globe's hit-testing. On the ground, structures now have a level of detail (in full while big on screen, about twenty times their size away; farther, plain blocks of their massing, all in one instanced mesh), and near ones that look alike (one blueprint, the same parts standing, weathered alike) draw together, one instanced mesh per kind of part: a town of 200 houses went from 279 draw calls a frame to 91. The globe finds the point under the pointer on the sphere (refined for the terrain) instead of against its 786,000 triangles: about 7 ms of every pointer move became 0.1 ms.
-- Signed installers (Windows NSIS, macOS dmg + notarization) moved to M18 with Electron fuses, for when there's an Apple Developer ID and a Windows certificate; updates are already signature-checked (above).
+- Signed installers (Windows NSIS, macOS dmg + notarization) moved to M19 with Electron fuses, for when there's an Apple Developer ID and a Windows certificate; updates are already signature-checked (above).
 - [x] **E2E tests for the main flows**: each part has its own (`e2e/*.spec.ts`, 34 tests on the dev build and the packaged apps, on Linux and Windows 10 and 11), and `main-flow.spec.ts` runs the whole of §10's flow at once: a world painted, a castle built, a siege that leads to its fall (which destroys it), an age of war over those years, and the views (the map, the inspector, the globe) at moments before and after.
 
 ### M14 — Factions & relationships (3 weeks) — *done*
@@ -551,16 +551,26 @@ Each milestone ends with something you can launch and demo.
 - [x] Tests: the sandbox (operations, names from a seed, files and bytes, imports, nothing of the computer in reach, every limit, manifests) (`sandbox.test.ts`); grouping changes (`bus.test.ts`); the terrain and map operations; the PNG encoder; `e2e/plugins.spec.ts`: the template's villages made and undone as one, its wiki and map saved, a world named, and a plugin that fails part way leaving nothing behind.
 - [x] *Added during M16:* **sub-factions, as deep as they go** (see M14).
 
-### M17 — Live collaboration (4–6 weeks) — *planned*
+### M17 — The canvas, as Obsidian has it (2–3 weeks) — *in progress*
+A world's canvas does everything Obsidian's Canvas does, with the world's events on it as now:
+- [ ] **Cards of its own** beside the events, added from the toolbar, a right-click or a double-click on empty board: **text** (Markdown, written in place), **an element of the project** (a character, faction, region, structure, species, river or place, its name, kind and notes, opened with a click), **a picture** (from a file, kept in the project) and **a web link** (opened in the browser with a click; the app itself stays offline, so there's no page inside it).
+- [ ] **Groups**: a labelled, coloured box, made empty or round the selection; what's inside moves with it.
+- [ ] **Connections** between any two cards, from and to any side: a label, a colour, an arrow at the end, both ends or neither; dragged off into empty board, one makes a new card there. Between two events it's a timeline link as before (cause, effect…).
+- [ ] **Every card** (and event) resized by its corner and coloured (six colours or any); selected by a click, Shift-click or a box dragged round them; moved, aligned, duplicated, copied and pasted, and deleted together; a text card turned into an event.
+- [ ] **The board**: zoom in and out, to fit, to the selection and to 100%; snap to the grid and to other cards' edges; read-only; export as a PNG image.
+- [ ] **Through the command bus** (`packages/core/src/canvas.ts`: card and edge records, undoable, synced like every record); the API and MCP list, add, change and connect cards; the world bible has the text cards.
+- [ ] Tests: the records and commands; the operations; `e2e/canvas.spec.ts` for every kind of card, groups, connections, selection and the board's tools.
+
+### M18 — Live collaboration (4–6 weeks) — *planned*
 - Several people editing one universe at once over their tailnets: invite someone (Tailscale sharing), see who's in and where, changes appearing as they're made.
 - A real merge story beyond M12's row-level last-writer-wins: field-level merges (or CRDTs) so two people editing one event don't lose each other's work, and per-person undo.
 
-### M18 — Signed installers (1 week, when the certificates are in hand) — *planned*
+### M19 — Signed installers (1 week, when the certificates are in hand) — *planned*
 - Windows NSIS and portable signed with a code-signing certificate; macOS dmg and zip signed with a Developer ID and notarized; certificates as repository secrets, used only on `main` and `staging`.
 - Electron fuses (asar integrity, no NODE_OPTIONS or inspect flags; RunAsNode stays for `--mcp`).
 - [x] *Meanwhile:* a PowerShell install script (`scripts/install.ps1`, published with each release) downloads the Windows installer itself, so it carries no mark of the web and neither the browser nor SmartScreen stops it, and checks it against the release's update manifest before running it.
 
-**Rough total: 19–25 weeks** to v1 (M0–M13); M14–M18 are after it. for one full-time developer. M7 (API/MCP) can be pulled earlier, right after M2, if AI assistance is wanted sooner. The core layer makes it cheap to add.
+**Rough total: 19–25 weeks** to v1 (M0–M13); M14–M19 are after it. for one full-time developer. M7 (API/MCP) can be pulled earlier, right after M2, if AI assistance is wanted sooner. The core layer makes it cheap to add.
 
 ---
 
@@ -590,7 +600,7 @@ Each milestone ends with something you can launch and demo.
 ---
 
 ## 12. Post-v1 ideas
-- Factions and relationships (M14), rivers and erosion (M15), plugins (M16) and live collaboration (M17) are milestones now (M14, M15 and M16 done).
+- Factions and relationships (M14), rivers and erosion (M15), plugins (M16), the canvas (M17) and live collaboration (M18) are milestones now (M14, M15 and M16 done).
 - Image generation for structures/themes via AI; ambient soundscapes per theme. (Image generation would need a remote service, against keeping everything local.)
 
 ---

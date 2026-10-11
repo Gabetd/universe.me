@@ -6,7 +6,7 @@ a local API and MCP server. See [PLAN.md](PLAN.md) for the full design and roadm
 
 **Status:** M0 to M13 are done (v1: up to phone access, sync between your
 devices, and polish), and so are M14 (factions and relationships), M15
-(rivers and erosion) and M16 (plugins). M17 (live collaboration) is next. New here? On the start screen,
+(rivers and erosion) and M16 (plugins). M17 (the canvas, as Obsidian has it) is under way. New here? On the start screen,
 **Explore a sample universe** opens Calder, a world with fifteen centuries of
 history to look around in. Press `?` for the keyboard shortcuts.
 
@@ -210,7 +210,7 @@ It downloads the installer itself and checks it against the release's update man
 | macOS, Intel | `Universe-…-mac-x64.dmg` | Same as above. |
 | Linux | `Universe-…-linux-x86_64.AppImage` | `chmod +x` it, then run it. Or install the `.deb`. |
 
-The builds aren't code-signed yet, which is why the OS asks for confirmation when one is downloaded in a browser. The lasting fix is signing them (milestone M18); until then, the install script avoids the question on Windows. Windows 11's Smart App Control, if it's turned on, blocks unsigned apps however they arrive.
+The builds aren't code-signed yet, which is why the OS asks for confirmation when one is downloaded in a browser. The lasting fix is signing them (milestone M19); until then, the install script avoids the question on Windows. Windows 11's Smart App Control, if it's turned on, blocks unsigned apps however they arrive.
 Once installed, Universe updates itself from `main`'s builds, and only installs
 one whose manifest is signed with the project's key (an Ed25519 key kept as a
 GitHub secret; the app has its public half).
