@@ -196,12 +196,21 @@
     territory: ['221-territory', 'The map coloured by the faction holding each region at the playhead'],
     spelling: ['230-spelling', 'Right-clicking a misspelled word: its corrections, Add to the dictionary, and cut, copy and paste'],
     groundWalk: ['64-ground-walk', 'Walking the ground with W A S D, at the speed picked in the toolbar'],
-    groundFar: ['65-ground-far', 'The ground reaching 12 km, and the planet’s map in the corner showing where you are'],
+    groundFar: ['65-ground-far', 'The ground reaching 12 km, and the map in the corner: the fiftieth of the planet around you, with an arrow the way you face'],
     powersShared: ['151-powers-shared', 'A power system pinned to a star system: any place lists the systems that hold there']
   }
 
   // One entry per published build, newest first.
   const LOG = [
+    {
+      ver: '0.1.70', date: '11 Oct 2026', tag: 'M14',
+      title: 'A closer map on the ground, and fifty times the speed',
+      points: [
+        'The planet’s map in the corner of the ground view now shows the fiftieth of it around you, centred on the camera, with an arrow the way you face that turns as you look around. A click on it still takes you there.',
+        'Walk, Run, Ride and Fly are fifty times as fast: 300 m/s, 1 km/s, 3 km/s and 12.5 km/s, Shift three times that. Each button says its speed.'
+      ],
+      shots: ['groundFar', 'groundWalk']
+    },
     {
       ver: '0.1.66', date: '11 Oct 2026', tag: 'M14',
       title: 'Factions and relationships, and one zoom from the universe to the ground',
