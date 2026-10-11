@@ -80,7 +80,21 @@ test('the canvas as Obsidian has it: cards of every kind, connections, selection
   const card = (kind: string) => page.locator(`.canvas-card.card-${kind}`)
   /** Clicks a card where nothing else covers it (another card, a label, the bar over the selection) and not on a button or link in it. */
   const pickCard = async (kind: string | Locator, shift = false) => {
-    const spot = await (typeof kind === 'string' ? card(kind) : kind).first().evaluate((node) => {
+    const target = (typeof kind === 'string' ? card(kind) : kind).first()
+    let spot = await uncovered(target)
+    // On a small board the bar over what's selected can cover the card: picked alone, what was selected can go first.
+    if (!spot && !shift) {
+      await board.press('Escape')
+      spot = await uncovered(target)
+    }
+    expect(spot, 'somewhere to click on the card').not.toBeNull()
+    if (shift) await page.keyboard.down('Shift')
+    await page.mouse.click(spot!.x, spot!.y)
+    if (shift) await page.keyboard.up('Shift')
+  }
+  /** A point on a card where nothing else covers it, and not on a button or link in it, or null. */
+  const uncovered = (target: Locator) =>
+    target.evaluate((node) => {
       const r = node.getBoundingClientRect()
       for (let fy = 0.2; fy < 0.95; fy += 0.15) {
         for (let fx = 0.1; fx < 0.95; fx += 0.15) {
@@ -91,11 +105,6 @@ test('the canvas as Obsidian has it: cards of every kind, connections, selection
       }
       return null
     })
-    expect(spot, 'somewhere to click on the card').not.toBeNull()
-    if (shift) await page.keyboard.down('Shift')
-    await page.mouse.click(spot!.x, spot!.y)
-    if (shift) await page.keyboard.up('Shift')
-  }
   /** Drags something on the board by `dx`, `dy`, from its middle, once nothing else covers it there (hover waits for that, or says what does). */
   const dragBy = async (target: Locator, dx: number, dy: number) => {
     await target.hover()
