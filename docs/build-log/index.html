@@ -203,11 +203,24 @@
     eroded: ['152-eroded-map', 'Thousands of years on: rivers have cut their valleys and steep slopes have slumped'],
     plugins: ['160-plugins', 'Tools → Plugins…: a plugin from the template, its generators, exporters and name generators, each with its options'],
     subFactions: ['75-sub-factions', 'Sub-factions as deep as they go: a kingdom, its house, the house’s branch and its own part'],
+    share: ['240-share', 'Share this universe: invite someone by their Tailscale login, and see who it’s shared with, who’s in now and where'],
+    peopleIn: ['241-people-in', 'Someone else in the universe: their mark in the top bar says where they are, and another follows the place they’re on in the tree'],
     canvasCards: ['33-canvas-cards', 'The canvas as Obsidian’s: a text card, an element, a picture and a web page beside the events, two of them in a group, connected with a label']
   }
 
   // One entry per published build, newest first.
   const LOG = [
+    {
+      ver: '0.1.87', date: '11 Oct 2026', tag: 'M18',
+      title: 'Live collaboration: a universe shared with other people',
+      points: [
+        'Share a universe with other people by their Tailscale login (Share, in the top bar): their copy and yours keep each other up to date as you both work, directly over your tailnets, with nothing in the cloud. Universes shared with you are listed with their owners, ready to copy.',
+        'See who’s in and where: each person’s mark in the top bar says where they are and takes you there with a click, and a smaller one follows the place they’re on in the tree.',
+        'Changes merge field by field, so two people changing different things about one event (or different sliders of one world) both keep their change, and undo takes back only your own changes, never someone else’s since.',
+        'Only you can change who a universe is shared with: AI clients and plugins can see the list but not change it.'
+      ],
+      shots: ['share', 'peopleIn']
+    },
     {
       ver: '0.1.83', date: '11 Oct 2026', tag: 'M17',
       title: 'The canvas, as Obsidian has it',
@@ -447,6 +460,7 @@
     { title: 'Ecosystem', shots: ['foodWeb', 'speciesEditor'] },
     { title: 'AI and the API', shots: ['connectAi', 'aiChange', 'aiSuggestions', 'warnings', 'phoneSignIn', 'phoneConnected'] },
     { title: 'Your phone and other devices', shots: ['phoneApp', 'sync'] },
+    { title: 'Sharing with other people', shots: ['share', 'peopleIn'] },
     { title: 'Themes', shots: ['themeCrossfade', 'themeEditor', 'themeGlobe', 'themeRegion'] },
     { title: 'Timeline and canvas', shots: ['mainFlow', 'timeline', 'worldAtTime', 'globeAtTime', 'canvasCards', 'canvas1', 'canvas2', 'canvas3'] },
     { title: 'Structures', shots: ['structGlobe', 'structPanel', 'weathering', 'effects', 'pins', 'builder', 'builderRuin', 'model', 'blueprints'] },
