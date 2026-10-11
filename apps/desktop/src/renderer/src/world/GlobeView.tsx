@@ -16,6 +16,8 @@ import { SelectionRing } from './SelectionRing'
 import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
 import { useLandTint, useThemeName } from './ThemeTint'
 import { useViewTheme } from './useThemeLook'
+import { useWater } from './useWater'
+import { RIVER_COLOR, riverWidth, smoothPath } from './waterLook'
 import { firstLook } from './firstLook'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
@@ -210,6 +212,7 @@ function Planet({
         <ringGeometry args={[0.92, 1, 48]} />
         <meshBasicMaterial color="#ffffff" transparent opacity={0.85} depthTest={false} />
       </mesh>
+      <RiverLines worldId={worldId} model={model} change={change} scale={scale} />
       <RegionLines model={model} change={change} regions={regions} highlight={highlightRegionIds} scale={scale} />
       {pins.map((p, i) => (
         <Pin key={`${p.eventId}:${i}`} pin={p} position={placed.pins[i]!} onClick={onPinClick} />
@@ -315,6 +318,38 @@ function RegionLines({
     </>
   )
 }
+
+/** Rivers' widths on the globe, in pixels: streams, rivers and the great ones, each drawn at once. */
+const RIVER_BANDS = [1.2, 2, 3] as const
+
+/** The world's rivers, just above the land, smoothed from cell to cell; wider as more water runs in them. */
+function RiverLines({ worldId, model, change, scale }: { worldId: string; model: TerrainModel; change: TerrainChange; scale: number }) {
+  const water = useWater(worldId)
+  const bands = useMemo(() => {
+    const out: [number, number, number][][] = RIVER_BANDS.map(() => [])
+    for (const river of water?.rivers ?? []) {
+      const width = riverWidth(river)
+      const band = width < 1.6 ? 0 : width < 2.6 ? 1 : 2
+      const dirs = smoothDirs(river.points.map((p) => latLonToDir(p.lat, p.lon)))
+      const points = dirs.map((d) => surfacePoint(model, d, scale, 0.004))
+      for (let k = 0; k < points.length - 1; k++) out[band]!.push(points[k]!, points[k + 1]!)
+    }
+    return out
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` stands for the terrain heights
+  }, [water, model, scale, change])
+  return (
+    <>
+      {bands.map((segments, i) => segments.length > 0 && <Line key={i} segments points={segments} color={RIVER_COLOR} lineWidth={RIVER_BANDS[i]} raycast={noRaycast} />)}
+    </>
+  )
+}
+
+/** Directions along a river with their corners cut (as on the map), back on the sphere. */
+const smoothDirs = (dirs: Vec3[]): Vec3[] =>
+  smoothPath(dirs).map(([x, y, z]) => {
+    const len = Math.hypot(x, y, z)
+    return [x / len, y / len, z / len]
+  })
 
 /** A unit sphere, scaled to each pin's size. */
 const DOT = new THREE.SphereGeometry(1, 16, 12)

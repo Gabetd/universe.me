@@ -26,7 +26,7 @@ const LAKE_MIN_CELLS = 2
 /** How much lake a basin's water keeps up, in cells per cell's worth of rain reaching it: the rest the sun takes. */
 const LAKE_SHARE = 0.06
 /** How much water (cells' worth of rain on wet land) makes a river. */
-export const RIVER_FLOW = 25
+export const RIVER_FLOW = 15
 
 export interface HydrologyInput {
   /** Metres above sea level, per face (TERRAIN_RES² cells each). */
@@ -44,6 +44,7 @@ export interface River {
   name: string
   /** Its cells (planet-wide numbers), from its source to its mouth; a tributary ends where it joins. */
   cells: number[]
+  /** Where it runs, cell by cell, and on into the sea or lake it reaches (one point more than `cells` then). */
   points: LatLon[]
   /** Water through each point, in RIVER_FLOW units at the source and more downstream. */
   flow: number[]
@@ -73,6 +74,9 @@ export interface Hydrology {
   rivers: River[]
   lakes: Lake[]
 }
+
+/** A river's own water where it ends (a tributary's last point is where it joins another, so its own is the point before). */
+export const mouthFlow = (r: River) => r.flow[r.flow.length - (r.into.kind === 'river' ? 2 : 1)]!
 
 /** The neighbours across a face's edges, worked out once (inside a face they're just the next cells). */
 let edgeNeighbours: Map<number, Int32Array> | undefined
@@ -321,19 +325,20 @@ export function hydrology({ heights, moisture, seed, radiusKm }: HydrologyInput)
     path.reverse()
     if (join !== undefined) path.push(join)
     if (path.length < 2) continue
+    const flows = path.map((c) => Math.round((flow[c]! / RIVER_FLOW) * 10) / 10)
+    // Drawn on into the water it reaches, so it meets the shore.
+    const outlet = into.kind === 'river' ? -1 : receiver[g]!
     rivers.push({
       id,
       name: nameOf(seed, g, 0x5256),
       cells: path,
-      points: path.map(placeOf),
-      flow: path.map((c) => Math.round((flow[c]! / RIVER_FLOW) * 10) / 10),
+      points: (outlet >= 0 ? [...path, outlet] : path).map(placeOf),
+      flow: outlet >= 0 ? [...flows, flows.at(-1)!] : flows,
       into,
       lengthKm: Math.round((path.length - 1) * kmPerCell)
     })
   }
   // Biggest first: what's drawn on top, and listed first.
-  // A tributary's last point is where it joins, so its own water is the point before.
-  const mouthFlow = (r: River) => r.flow[r.flow.length - (r.into.kind === 'river' ? 2 : 1)]!
   rivers.sort((a, b) => mouthFlow(b) - mouthFlow(a) || (a.id < b.id ? -1 : 1))
   lakes.sort((a, b) => b.cells.length - a.cells.length || (a.id < b.id ? -1 : 1))
   return { lakeLevel, flow, receiver, rivers, lakes }

@@ -10,6 +10,8 @@ import { hitOpacity } from './SelectionRing'
 import { STAGE_COLORS } from './structureLook'
 import { useByValue } from '../useByValue'
 import { useRegionViewThemes, useViewTheme } from './useThemeLook'
+import { useWater } from './useWater'
+import { RIVER_COLOR, riverWidth, smoothPath } from './waterLook'
 import type { SurfaceViewProps, TerrainChange } from './useTerrain'
 import { openElementMenu, useContextMenu, type ElementRef } from '../contextMenu'
 
@@ -168,6 +170,7 @@ export const MapView = memo(function MapView({
   const selectedRegionId = useUi((s) => s.selectedRegionId)
   const draft = useEditor((s) => s.draft)
   const theme = useViewTheme(worldId)
+  const water = useWater(worldId)
   const regionIds = useMemo(() => regions.map((r) => r.id), [regions])
   const regionThemes = useRegionViewThemes(worldId, regionIds)
   const shades = useByValue<MapShades>({ world: theme.shade, regions: [...regionThemes].flatMap(([id, t]) => (t.shade === theme.shade ? [] : [[id, t.shade]])) })
@@ -181,7 +184,7 @@ export const MapView = memo(function MapView({
 
   useEffect(() => {
     dirty.current = true
-  }, [regions, selectedRegionId, draft, pins, highlightRegionIds, structures, characters])
+  }, [regions, selectedRegionId, draft, pins, highlightRegionIds, structures, characters, water])
 
   // Bring the selected event's place to the middle of the view, on the next frame (the view may not be sized yet).
   const pendingFocus = useRef<LatLon | null>(null)
@@ -197,6 +200,7 @@ export const MapView = memo(function MapView({
     const ctx = canvas.getContext('2d')!
     const map = mapImageOf(model)
     const outlines = new Map(regions.map((r) => [r.id, polygon(r.points)]))
+    const rivers = (water?.rivers ?? []).map((r) => ({ river: r, path: smoothPath(polygon(r.points)), width: riverWidth(r) }))
     const own = new Map(shades.regions)
     const outlined = regions.filter((r) => own.has(r.id))
     /** The map image with the themes' shading, drawn again only when the image, the shades or a shaded region's outline changes. */
@@ -268,6 +272,16 @@ export const MapView = memo(function MapView({
       const { selectedRegionId: sel } = useUi.getState()
       const { draft: points, tool, radiusKm } = useEditor.getState()
       c.lineJoin = 'round'
+      c.lineCap = 'round'
+      // Rivers under everything else, the smallest first so the great ones run over their tributaries.
+      c.strokeStyle = RIVER_COLOR
+      for (let k = rivers.length - 1; k >= 0; k--) {
+        const { path, width } = rivers[k]!
+        tracePath(c, path, shift)
+        c.lineWidth = width / scale
+        c.stroke()
+      }
+      c.lineCap = 'butt'
       for (const region of regions) {
         const poly = outlines.get(region.id)!
         const lit = region.id === sel || highlightRegionIds.has(region.id)
@@ -376,7 +390,7 @@ export const MapView = memo(function MapView({
 
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [model, regions, pins, highlightRegionIds, structures, characters, shades])
+  }, [model, regions, pins, highlightRegionIds, structures, characters, shades, water])
 
   /** Pointer position in map pixels (x wrapped to [0, W)), or null outside the map vertically. */
   const mapPoint = (e: React.PointerEvent | React.MouseEvent): [number, number] | null => {

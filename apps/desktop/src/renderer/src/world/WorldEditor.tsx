@@ -16,6 +16,7 @@ import { GroundView } from './GroundView'
 import { MapView } from './MapView'
 import { useSurfaceTools } from './useSurfaceTools'
 import { useTerrain, type SurfaceViewProps } from './useTerrain'
+import { useWaterIn } from './useWater'
 import { firstLook } from './firstLook'
 import { useShortcuts, withKey } from '../shortcuts'
 import { GROUND_SPEEDS } from './walk'
@@ -88,6 +89,7 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
   const characters = useCharactersAt(world.id)
   const warnings = useWarningCount(world.id)
   const { model, change, error, bump, commit } = useTerrain(world.id, world.seed, info)
+  useWaterIn(world.id, world.seed, info, model, change, bump)
   const { pointerDown, pointerMove, finishRegion } = useSurfaceTools(world.id, model, bump, commit)
   // Without WebGL the 3D views fall back to the map.
   const activeView = hasWebGL || !showsSurface(view) ? view : 'map'

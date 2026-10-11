@@ -58,7 +58,7 @@ describe('hydrology', () => {
         expect(flow[r.cells[k + 1]!]).toBeGreaterThanOrEqual(flow[r.cells[k]!]!)
       }
       expect(r.flow[0]).toBeGreaterThanOrEqual(1)
-      expect(r.points).toHaveLength(r.cells.length)
+      expect(r.points).toHaveLength(r.cells.length + (r.into.kind === 'river' ? 0 : 1))
     }
     // The biggest river comes first, and reaches the sea; and something flows into the lake.
     expect(rivers[0]!.into.kind).toBe('sea')
