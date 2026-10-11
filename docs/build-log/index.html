@@ -190,11 +190,31 @@
     sync: ['180-sync', 'Your other devices: the studio computer in step with this laptop, synced seconds ago'],
     sample: ['190-sample-universe', 'The sample universe: Calder, its kingdoms marked on the globe and fifteen hundred years of history on the timeline'],
     shortcuts: ['200-shortcuts', 'Keyboard shortcuts: press ? for all of them, from the world’s views to the timeline'],
-    mainFlow: ['210-main-flow', 'A castle built in 1000, a siege that leads to its fall in 1210, an Age of War over those years; at 1220 the castle is gone']
+    mainFlow: ['210-main-flow', 'A castle built in 1000, a siege that leads to its fall in 1210, an Age of War over those years; at 1220 the castle is gone'],
+    changeVersion: ['142-change-version', 'Change version: Live, Staging and Dev, each with its newest build, to update this copy or install another beside it'],
+    relationships: ['220-relationships', 'A kingdom and its houses, their members over time, and who’s related to whom as a graph'],
+    territory: ['221-territory', 'The map coloured by the faction holding each region at the playhead'],
+    spelling: ['230-spelling', 'Right-clicking a misspelled word: its corrections, Add to the dictionary, and cut, copy and paste'],
+    groundWalk: ['64-ground-walk', 'Walking the ground with W A S D, at the speed picked in the toolbar'],
+    groundFar: ['65-ground-far', 'The ground reaching 12 km, and the planet’s map in the corner showing where you are'],
+    powersShared: ['151-powers-shared', 'A power system pinned to a star system: any place lists the systems that hold there']
   }
 
   // One entry per published build, newest first.
   const LOG = [
+    {
+      ver: '0.1.66', date: '11 Oct 2026', tag: 'M14',
+      title: 'Factions and relationships, and one zoom from the universe to the ground',
+      points: [
+        'Factions: kingdoms, houses, guilds and faiths, part of one another, with members and the land they hold over time. The map and the globe can colour each region by who holds it at the playhead, and a graph shows who’s related to whom: kin, friends, allies, rivals, lieges and vassals.',
+        'Any character or faction can have a lane of their own on the timeline: a life from birth to death, the factions they belong to, the events they take part in.',
+        'Power systems belong to the universe now, shared by every place they’re pinned to: a planet, a star system, a galaxy, or an era. Each place lists the systems that hold there.',
+        'The wheel alone goes from the universe down through every level to the ground and back, claiming on the way in what the seed made. On the ground, W A S D walk, run, ride or fly, the view reaches 12 km, and the planet’s map in the corner shows where you are.',
+        'Spelling: misspelled words are underlined, and right-clicking one gives its corrections and Add to the dictionary. Holding the middle button resizes the terrain brush or the selected structure, and every planet setting says what it does on hover.',
+        'Change version, in place of Check for updates: install Universe (staging) or Universe (dev) beside this copy, each an app of its own.'
+      ],
+      shots: ['relationships', 'territory', 'groundFar', 'powersShared', 'spelling', 'changeVersion']
+    },
     {
       ver: '0.1.58', date: '10 Oct 2026', tag: 'M13',
       title: 'A sample universe, keyboard shortcuts, and a faster ground',
@@ -382,7 +402,8 @@
 
   const AREAS = [
     { title: 'The universe', shots: ['contextMenu', 'universe', 'cluster', 'galaxy', 'galaxyStars', 'systemPlanets', 'claimedPlanet'] },
-    { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom', 'powers', 'warnings'] },
+    { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom', 'powers', 'powersShared', 'warnings'] },
+    { title: 'Factions and relationships', shots: ['relationships', 'territory'] },
     { title: 'Star systems and sky', shots: ['starSystem', 'planetMoons', 'moonTrack', 'colder', 'orbit'] },
     { title: 'Ecosystem', shots: ['foodWeb', 'speciesEditor'] },
     { title: 'AI and the API', shots: ['connectAi', 'aiChange', 'aiSuggestions', 'warnings', 'phoneSignIn', 'phoneConnected'] },
@@ -390,9 +411,9 @@
     { title: 'Themes', shots: ['themeCrossfade', 'themeEditor', 'themeGlobe', 'themeRegion'] },
     { title: 'Timeline and canvas', shots: ['mainFlow', 'timeline', 'worldAtTime', 'globeAtTime', 'canvas1', 'canvas2', 'canvas3'] },
     { title: 'Structures', shots: ['structGlobe', 'structPanel', 'weathering', 'effects', 'pins', 'builder', 'builderRuin', 'model', 'blueprints'] },
-    { title: 'On the ground', shots: ['ground', 'groundClose', 'charGround'] },
+    { title: 'On the ground', shots: ['ground', 'groundClose', 'groundWalk', 'groundFar', 'charGround'] },
     { title: 'Characters', shots: ['charMap', 'charGround'] },
-    { title: 'Updates and the start', shots: ['update', 'checkUpdates', 'welcome', 'sample', 'shortcuts'] }
+    { title: 'Updates and the start', shots: ['update', 'changeVersion', 'checkUpdates', 'welcome', 'sample', 'shortcuts', 'spelling'] }
   ]
 
   const viewer = document.getElementById('viewer')
