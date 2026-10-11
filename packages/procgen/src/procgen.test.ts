@@ -2,7 +2,11 @@ import { CUBE_FACES, CommandBus, DEFAULT_WORLD_SETTINGS, MemoryStore, TERRAIN_RE
 import { beforeAll, describe, expect, it } from 'vitest'
 import {
   TerrainModel,
+  EARTH_CLIMATE,
   autoBiome,
+  climateTerms,
+  frozenWater,
+  polarity,
   BIOME,
   BIOMES,
   LATITUDE_TWIN,
@@ -110,6 +114,15 @@ describe('generateBase', () => {
 describe('biomes', () => {
   it('has unique ids matching their index', () => {
     BIOMES.forEach((b, i) => expect(b.id).toBe(i))
+  })
+
+  it('freezes seas and lakes where the land would lie under ice', () => {
+    const terms = climateTerms(EARTH_CLIMATE)
+    expect(frozenWater(polarity(85), 0, terms)).toBe(true)
+    expect(frozenWater(polarity(30), 0, terms)).toBe(false)
+    // An ice world's equator: frozen seas, and land at most tundra.
+    const ice = climateTerms({ ...EARTH_CLIMATE, temperature: -30 })
+    expect(frozenWater(polarity(30), 0, ice)).toBe(true)
   })
 
   it('follows the rough climate rules', () => {
@@ -260,7 +273,7 @@ function hash(views: ArrayBufferView[]): string {
 }
 
 describe('outputs stay the same', () => {
-  // Hashes of what the generator, the globe, the map and the ground made before they were optimized: a speed-up must not change a byte.
+  // Hashes of what the generator, the globe, the map and the ground make (since cold seas freeze over): a speed-up must not change a byte.
   it('for the terrain, its colours, the map and a ground chunk', () => {
     expect(hash([...base.height, ...base.moisture])).toBe('f67e7407')
     const model = new TerrainModel(DEFAULT_WORLD_SETTINGS, base)
@@ -270,7 +283,7 @@ describe('outputs stay the same', () => {
         renderFaceTexture(model, f, pixels)
         return pixels
       })
-    expect(hash(faces())).toBe('1612eb31')
+    expect(hash(faces())).toBe('f412258e')
 
     const settings = { ...DEFAULT_WORLD_SETTINGS, seaLevel: 150, terrain: { ...DEFAULT_WORLD_SETTINGS.terrain, vegetationColor: '#7a3fa0', waterColor: '#3fa08a', temperature: 5, aridity: 0.7, beaches: 1 } }
     model.settings = settings
@@ -281,11 +294,11 @@ describe('outputs stay the same', () => {
     model.beginStroke({ tool: 'paint', radiusKm: 500, strength: 1, biome: BIOME.swamp }, latLonToDir(-20, 100))
     model.dab(latLonToDir(-20, 100))
     model.endStroke('w')
-    expect(hash(faces())).toBe('b24ed931')
+    expect(hash(faces())).toBe('e2fca575')
 
     const map = new Uint8ClampedArray(512 * 256 * 4)
     renderEquirect(model, map, 512, 256)
-    expect(hash([map])).toBe('a706c823')
+    expect(hash([map])).toBe('2cc20403')
 
     const R = settings.radiusKm
     const id = chunkOf({ lat: 10, lon: 20 }, R)

@@ -94,6 +94,16 @@ export function surfaceTemperature(latDeg: number, elevation: number, climate: C
   return temperatureAt(polarity(latDeg), elevation, climateTerms(climate))
 }
 
+/** How cold (°C, on average) land has to be to lie under ice: the sea and lakes freeze over there too. */
+const FREEZING = -8
+
+/**
+ * Whether water at this latitude (its polarity) and height freezes over: sea
+ * ice, an ice-bound lake. `wobble` (0–1, from a noise like moisture) moves the
+ * edge a few degrees either way, so it's ragged rather than a line of latitude.
+ */
+export const frozenWater = (polar: number, elevation: number, k: ClimateTerms, wobble = 0.5) => temperatureAt(polar, Math.max(0, elevation), k) + (wobble - 0.5) * 12 < FREEZING
+
 /**
  * Biomes from climate (a Whittaker-style chart): temperature from latitude
  * and altitude, moisture from noise plus wet/dry latitude bands (wet
@@ -108,7 +118,7 @@ export function autoBiome(latDeg: number, elevation: number, moisture: number, c
 export function biomeAt(polar: number, band: number, elevation: number, moisture: number, k: ClimateTerms): number {
   const temperature = temperatureAt(polar, elevation, k)
   if (elevation > 2800) return temperature < -4 ? BIOME.ice : BIOME.rock
-  if (temperature < -8) return BIOME.ice
+  if (temperature < FREEZING) return BIOME.ice
   if (temperature < -1) return BIOME.tundra
   if (elevation < k.beach) return BIOME.beach
 

@@ -139,7 +139,7 @@ export const WORLD_PRESETS: { name: string; terrain: Partial<TerrainParams> }[] 
   { name: 'Earth-like', terrain: DEFAULT_TERRAIN },
   { name: 'Ocean world', terrain: { landform: 'archipelago', water: 0.9, islands: 0.8, aridity: 0.3, beaches: 0.4 } },
   { name: 'Desert world', terrain: { water: 0.2, aridity: 1, temperature: 12, sandColor: '#d8a86a', beaches: 0 } },
-  { name: 'Ice world', terrain: { water: 0.55, temperature: -26, aridity: 0.4 } },
+  { name: 'Ice world', terrain: { water: 0.6, temperature: -30, aridity: 0.5 } },
   { name: 'Jungle world', terrain: { water: 0.5, temperature: 12, aridity: 0.05, vegetationColor: '#2f7a2a' } },
   { name: 'Supercontinent', terrain: { landform: 'supercontinent', water: 0.6, islands: 0.15 } },
   { name: 'Archipelago', terrain: { landform: 'archipelago', water: 0.78, islands: 0.9, beaches: 0.5 } },

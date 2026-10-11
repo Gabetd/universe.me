@@ -10,7 +10,7 @@ import {
   type TerrainPatch,
   type WorldSettings
 } from '@universe/core'
-import { biomeAt, climateTerms, polarity, wetBand, worldPalette, type Climate, type ClimateTerms, type Palette } from './biomes'
+import { BIOME, biomeAt, climateTerms, frozenWater, polarity, wetBand, worldPalette, type Climate, type ClimateTerms, type Palette } from './biomes'
 import { LATITUDE_TWIN, angleBetween, cellDirections, dirToFace, faceToDir, nearestCell, toGrid, type FacePoint, type Vec3 } from './cubesphere'
 import { DEG, bilerp, clamp } from './math'
 import type { BaseTerrain } from './generate'
@@ -372,7 +372,13 @@ export class TerrainModel {
       const lakeDepth = lake ? lake[c]! - elevation : NaN
       // Water, from shallow (0) to deep (1): a lake shallow-ish, darker where it's deep; the sea by its depth.
       const t = lakeDepth > 0 ? 0.15 + 0.35 * Math.min(1, lakeDepth / 300) : elevation < 0 ? Math.sqrt(Math.min(1, -elevation / 4500)) : -1
-      if (t >= 0) {
+      if (t >= 0 && frozenWater(polar[c]!, lakeDepth > 0 ? lake![c]! : 0, terms, moisture[c]!)) {
+        // Sea ice, or a frozen lake: ice, a little bluer where the water under it is deep.
+        const ice = biomes[BIOME.ice]!
+        r = ice[0] * (1 - 0.12 * t)
+        g = ice[1] * (1 - 0.06 * t)
+        b = ice[2]
+      } else if (t >= 0) {
         r = shallow[0] + (deep[0] - shallow[0]) * t
         g = shallow[1] + (deep[1] - shallow[1]) * t
         b = shallow[2] + (deep[2] - shallow[2]) * t
