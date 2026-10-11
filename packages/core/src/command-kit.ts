@@ -1,9 +1,10 @@
 import { v7 as uuidv7 } from 'uuid'
 import type { Command } from './commands'
 import { pathOf } from './fields'
-import type { Footprint } from './footprint'
+import { patchThrough, type Footprint } from './footprint'
 import type { SpatialNode } from './schema'
 import type { Store } from './store'
+import type { SyncRef } from './sync'
 import type { RecordKind, RecordOf } from './records'
 import { stripUndefined } from './util'
 import { PALETTE, type Region } from './world'
@@ -65,7 +66,6 @@ export class CommandError extends Error {
 
 /** What nodes, regions and records have in common: rows that are soft-deleted and know when they last changed. */
 interface Row {
-  id: string
   updatedAt: string
   deletedAt: string | null
 }
@@ -106,22 +106,22 @@ export function liveRecord<K extends RecordKind>(store: Store, kind: K, id: stri
 }
 
 /**
- * Writes a patch over a row of `table` (a node, a region, a record kind),
- * once `check` (if any) accepts the result; returns the patch that undoes it.
+ * Writes a patch over a row (`ref`: a node, a region, a record), once
+ * `check` (if any) accepts the result; returns the patch that undoes it.
  * Undoing or redoing, a field that holds something other than what the step
- * left there stays as it is (see `Footprint`); with nothing left to change,
- * nothing is written, and there's nothing to undo (undefined).
+ * left there stays as it is (see `patchThrough`); with nothing left to
+ * change, nothing is written, and there's nothing to undo (undefined).
  */
-export function patchRow<T extends Row, P extends object>(rows: Rows<T>, table: string, row: T, patch: P, ctx: CommandContext, check?: (next: T) => void): P | undefined {
-  const key = `${table}:${row.id}`
-  const asked = Object.entries(stripUndefined(patch))
-  const kept = asked.filter(([field]) => ctx.footprint?.holds(key, row, pathOf([field])) ?? true)
-  if (asked.length && !kept.length) return undefined
-  const next = { ...row, ...Object.fromEntries(kept), updatedAt: ctx.now() }
-  check?.(next)
-  rows.update(next)
-  ctx.footprint?.wrote(key, next, kept.map(([field]) => pathOf([field])))
-  return previousValues(row as Record<string, unknown>, Object.fromEntries(kept)) as P
+export function patchRow<T extends Row, P extends object>(rows: Rows<T>, ref: SyncRef, row: T, patch: P, ctx: CommandContext, check?: (next: T) => void): P | undefined {
+  const asked = Object.entries(stripUndefined(patch)).map(([field, value]) => [pathOf([field]), field, value] as const)
+  const fields = (kept: readonly (typeof asked)[number][]) => Object.fromEntries(kept.map(([, field, value]) => [field, value]))
+  const done = patchThrough(ctx.footprint, ref, row, asked, (kept) => {
+    const next = { ...row, ...fields(kept), updatedAt: ctx.now() }
+    check?.(next)
+    rows.update(next)
+    return next
+  })
+  return done && (previousValues(row as Record<string, unknown>, fields(done.kept)) as P)
 }
 
 /** Marks a row deleted at `deletedAt`, or with null, not deleted. */

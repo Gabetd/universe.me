@@ -133,7 +133,7 @@ export class CommandBus {
     const result = this.apply('undo', entry.inverse, entry.source, entry.footprint)
     // Redoing runs the inverse of the inverse, which for a create is a restore,
     // so the entity keeps its id and history. The footprint now holds what the undo left.
-    this.redoStack.push({ command: entry.inverse, inverse: result.inverse, source: entry.source, footprint: entry.footprint })
+    this.redoStack.push({ ...entry, command: entry.inverse, inverse: result.inverse })
     return this.finish('undo', entry.inverse, result)
   }
 
@@ -141,7 +141,7 @@ export class CommandBus {
     const entry = this.redoStack.pop()
     if (!entry) return undefined
     const result = this.apply('redo', entry.inverse, entry.source, entry.footprint)
-    this.undoStack.push({ command: entry.inverse, inverse: result.inverse, source: entry.source, footprint: entry.footprint })
+    this.undoStack.push({ ...entry, command: entry.inverse, inverse: result.inverse })
     return this.finish('redo', entry.inverse, result)
   }
 
