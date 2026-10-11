@@ -390,6 +390,7 @@ The same universe on several computers (and through them, phones), with no cloud
   - **Both ways from one side**: sharing a machine lets the person it's shared with reach it, but not it them, so a visitor also gives what it got since it last gave (`POST /sync/push`, from `syncSent:<device>`, a page at a time), merged by `sync.merge` like pulled rows; rows going both ways are only merged once. Each device pulls and pushes only with its owner's devices and members' (by the login Tailscale gives each peer), whatever another claims to have open.
   - **Shared with you**: another person's device whose hello has a universe open (so you're a member of it) is listed with its owner, and **Copy here** works as for your own devices.
   - **Who's in and where**: the window says where the user is (`setWhere`: "Terra, the map"); a hello (a POST now, GET still answered) carries the visitor's universe and where, and is answered with who's in it there: the device's own person and those it heard from in the last half minute, by how long ago (two clocks differ), so two people visiting a third see each other; no one's own entry goes back to them. Devices visit every 3 s while someone else is in.
+  - **In the app**: **Share** (the top bar) invites people by their tailnet login and removes them, and lists who's in and where; a round mark for each person in now sits in the top bar (a click goes where they are) and on the tree row they're on; universes shared with you are listed under the device list, with **Copy here**.
 - Not done (yet): keeping the losing version of a conflict as a note; text fields (notes) merge whole, not line by line; a record two devices first create apart with the same id (a world's timeline settings, a star) keeps the later one whole.
 
 ## 8. Persistence
@@ -569,7 +570,7 @@ A world's canvas does everything Obsidian's Canvas does, with the world's events
 - [x] **Through the command bus** (`packages/core/src/canvas.ts`: card and connection records, undoable, synced like every record; a card's or event's connections go with it); the API and MCP: `get_canvas`, `add_canvas_card`, `update_canvas_card` and `connect_on_canvas`; the world bible has the text cards under their first lines.
 - [x] Tests: the records and commands (`canvas.test.ts`); the geometry and the Markdown (`world/canvas/*.test.ts`); the operations and the bible; `e2e/canvas.spec.ts`: every kind of card, connections, selection, groups, colours, resizing, duplicating, the board's tools, export and a card turned into an event.
 
-### M18 — Live collaboration (4–6 weeks) — *in progress*
+### M18 — Live collaboration (4–6 weeks) — *done*
 - Several people editing one universe at once over their tailnets: invite someone (Tailscale sharing), see who's in and where, changes appearing as they're made.
 - A real merge story beyond M12's row-level last-writer-wins: field-level merges (or CRDTs) so two people editing one event don't lose each other's work, and per-person undo.
 - [x] **Members** (`packages/core/src/members.ts`): the people a universe is shared with, by tailnet login, records of the universe that sync with it; `member.create` (the inviter listed too), `member.update`, `member.delete`; `list_universe_members` in the API, which can't change them.
@@ -577,9 +578,9 @@ A world's canvas does everything Obsidian's Canvas does, with the world's events
 - [x] **Sync with other people** (`device-sync.ts`, `phone-app.ts`; §6.7): members' devices answered on sync's four questions alone; a visitor pushes its changes (`/sync/push`); members' devices visited, pulled from and pushed to like the owner's; universes shared with you listed with their owners, and copied here.
 - [x] **Who's in and where** (`presence.ts`): hellos carry where each person is and pass on who's in, for half a minute; every 3 s while someone else is in.
 - [x] **The window's contract** (`src/shared/api.ts`, `Collaboration`): `collaboration()`, `onCollaboration`, `setWhere`, `copyFromDevice` for shared devices, and inviting and removing as commands.
-- [ ] **In the app**: inviting and removing people, who's in and where, and universes shared with you.
+- [x] **In the app** (`components/Share.tsx`, `collaboration.ts`, `people.ts`): **Share** in the top bar invites people by tailnet login (those Tailscale knows offered in a click), says what they need (your tailnet, or this computer shared with them; Tailscale's machines page opens in the browser), lists who it's shared with, who's in now and where, and removes them (right-click too), and offers to turn sync on while it's off; a round mark for each person in now in the top bar ("bea, on Sol", a click goes there) and on the tree row they're on, redrawn only when who's in changes; where the user is told to main as the selection or view changes; universes shared with you, with their owners, under the device list (Connect AI and the start screen), each with **Copy here**.
 - [x] **Merging per field** and **per-person undo** (`fields.ts`, `field-stamps.ts`, `sync-commands.ts`, `command-kit.ts`; §6.7): stamps per field (migration 8), merges field by field, and undo that leaves a field someone has changed since.
-- [x] Tests: members (core), the API's refusal, Tailscale's shared and sharee peers, the sync routes for the owner, a member and a stranger, a pushed page, two people sharing both ways, removing someone, three people passing on where they are, and a device claiming a universe it isn't shared (`device-sync.test.ts`, `presence.test.ts`, `phone-app.test.ts`). The e2e stand-in Tailscale can be another login with other people's devices.
+- [x] Tests: members (core), the API's refusal, Tailscale's shared and sharee peers, the sync routes for the owner, a member and a stranger, a pushed page, two people sharing both ways, removing someone, three people passing on where they are, and a device claiming a universe it isn't shared (`device-sync.test.ts`, `presence.test.ts`, `phone-app.test.ts`); where someone is in words, their marks and who's on each node (`people.test.ts`). The e2e stand-in Tailscale can be another login with other people's devices; `e2e/collaboration.spec.ts`: two people on two computers, one inviting the other from the Share dialog (sync turned on there), the other copying it from Shared with you, each seeing the other in and where (the top bar, the tree, the list of people, a click going there), both changing different fields of one event at once and both changes ending up on both, and the one removed no longer answered.
 
 ### M19 — Signed installers (1 week, when the certificates are in hand) — *planned*
 - Windows NSIS and portable signed with a code-signing certificate; macOS dmg and zip signed with a Developer ID and notarized; certificates as repository secrets, used only on `main` and `staging`.
@@ -616,7 +617,7 @@ A world's canvas does everything Obsidian's Canvas does, with the world's events
 ---
 
 ## 12. Post-v1 ideas
-- Factions and relationships (M14), rivers and erosion (M15), plugins (M16), the canvas (M17) and live collaboration (M18) are milestones now (M14 to M17 done).
+- Factions and relationships (M14), rivers and erosion (M15), plugins (M16), the canvas (M17) and live collaboration (M18) are milestones now (M14 to M18 done).
 - Image generation for structures/themes via AI; ambient soundscapes per theme. (Image generation would need a remote service, against keeping everything local.)
 
 ---

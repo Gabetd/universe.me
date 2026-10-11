@@ -6,7 +6,7 @@ a local API and MCP server. See [PLAN.md](PLAN.md) for the full design and roadm
 
 **Status:** M0 to M13 are done (v1: up to phone access, sync between your
 devices, and polish), and so are M14 (factions and relationships), M15
-(rivers and erosion), M16 (plugins) and M17 (the canvas, as Obsidian has it). M18 (live collaboration) is next. New here? On the start screen,
+(rivers and erosion), M16 (plugins), M17 (the canvas, as Obsidian has it) and M18 (live collaboration, with people on other tailnets). New here? On the start screen,
 **Explore a sample universe** opens Calder, a world with fifteen centuries of
 history to look around in. Press `?` for the keyboard shortcuts.
 
@@ -191,8 +191,23 @@ or on the start screen). Each lists your other devices online and what they
 have open. To start, open the universe on one, and on the other choose **Copy
 “…” here**: it makes a copy in a new file. From then on, while both have it
 open, a change on either shows on the other within seconds; a device that was
-off catches up when it's back. When both changed the same thing, the later
-change wins.
+off catches up when it's back. When both changed the same field of something,
+the later change wins; changes to different fields of it (one event's title on
+one, its date on the other) are both kept. Undo takes back only your own
+changes, leaving what someone changed since as it is.
+
+### Sharing a universe with other people
+
+**Share** (in the top bar) invites someone into the open universe by their
+Tailscale login: anyone on your tailnet, or someone you share this computer
+with in Tailscale (on the admin console's Machines page). They turn on sync,
+find the universe under **Shared with you** (in **Connect AI**, or on the
+start screen) and copy it; from then on your copies keep each other up to
+date as you both work, as your own devices do. A round mark in the top bar
+for each person in now says where they are ("Bea, on Terra, the map") and
+takes you there with a click, and a smaller one shows on the tree beside what
+they have open. Remove someone in the Share dialog (or with a right-click),
+and your computer stops answering theirs.
 
 ## Download and run
 
