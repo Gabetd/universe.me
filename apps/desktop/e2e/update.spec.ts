@@ -4,6 +4,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
+import { CHANNELS, CHANNEL_ORDER, type Channel } from '../src/shared/update'
 import { launch, menu, shot, SLOW } from './helpers'
 
 /**
@@ -13,11 +14,15 @@ import { launch, menu, shot, SLOW } from './helpers'
  * Windows swaps the portable exe from a script once the app has quit.
  */
 const PLATFORMS: Partial<Record<NodeJS.Platform, { kind: string; file: string; served: string; body: () => Buffer; env: string }>> = {
-  linux: { kind: 'linux-appimage', file: 'Universe.AppImage', served: 'Universe-99.0.0-linux-x86_64.AppImage', body: () => Buffer.from('#!/bin/sh\necho started > "$UNIVERSE_E2E_MARKER"\n'), env: 'APPIMAGE' },
+  linux: { kind: 'linux-appimage', file: 'This copy.AppImage', served: 'Universe-99.0.0-linux-x86_64.AppImage', body: () => Buffer.from('#!/bin/sh\necho started > "$UNIVERSE_E2E_MARKER"\n'), env: 'APPIMAGE' },
   // Any small real program will do as the new exe; it's started after the swap.
-  win32: { kind: 'win-portable', file: 'Universe.exe', served: 'Universe-99.0.0-windows-portable.exe', body: () => readFileSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'whoami.exe')), env: 'PORTABLE_EXECUTABLE_FILE' }
+  win32: { kind: 'win-portable', file: 'This copy.exe', served: 'Universe-99.0.0-windows-portable.exe', body: () => readFileSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'whoami.exe')), env: 'PORTABLE_EXECUTABLE_FILE' }
 }
 const platform = PLATFORMS[process.platform]
+
+/** The channel the app under test was built as (CI builds each branch's: build.yml), and the two others. */
+const OWN = (process.env.UNIVERSE_CHANNEL || 'main') as Channel
+const [OTHER, MISSING] = CHANNEL_ORDER.filter((c) => c !== OWN) as [Channel, Channel]
 
 let server: Server
 let manifestUrl: string
@@ -76,7 +81,7 @@ test('offers a newer build, can be dismissed, and upgrades itself with one click
   await expect(banner).toBeHidden()
   await menu(app, 'Help', 'Change Version…')
   const versions = page.getByRole('dialog', { name: 'Change version' })
-  await expect(versions.getByRole('listitem', { name: 'Live' }).getByRole('button', { name: 'Update to 99.0.0' })).toBeVisible()
+  await expect(versions.getByRole('listitem', { name: CHANNELS[OWN].label }).getByRole('button', { name: 'Update to 99.0.0' })).toBeVisible()
   await expect(banner).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(versions).toBeHidden()
@@ -130,11 +135,12 @@ test('Change version says when this copy has nothing to update to, and why', asy
 })
 
 test('Change version lists Live, Staging and Dev, and installs another beside this copy, which stays open', async () => {
+  const [own, other, missing] = [CHANNELS[OWN], CHANNELS[OTHER], CHANNELS[MISSING]]
   const { kind, file, env } = platform!
   const base = manifestUrl.replace('/update.json', '')
   const { app, page, dir } = await launch((dir) => ({
     UNIVERSE_UPDATE_URL: `${base}/old.json`,
-    UNIVERSE_UPDATE_URLS: JSON.stringify({ dev: `${base}/dev.json`, staging: `${base}/missing.json` }),
+    UNIVERSE_UPDATE_URLS: JSON.stringify({ [OTHER]: `${base}/dev.json`, [MISSING]: `${base}/missing.json` }),
     UNIVERSE_UPDATE_PUBLIC_KEY: PUBLIC_KEY,
     UNIVERSE_UPDATE_KIND: kind,
     [env]: join(dir, file),
@@ -144,16 +150,16 @@ test('Change version lists Live, Staging and Dev, and installs another beside th
   await page.getByRole('button', { name: 'Change version' }).click()
   const versions = page.getByRole('dialog', { name: 'Change version' })
   const row = (name: string) => versions.getByRole('listitem', { name })
-  await expect(row('Live')).toContainText('this copy')
-  await expect(row('Live').getByRole('status', { name: 'Update check' })).toHaveText(/is the latest version/)
-  await expect(row('Staging')).toContainText('being published right now')
-  await expect(row('Dev')).toContainText('0.1.999')
+  await expect(row(own.label)).toContainText('this copy')
+  await expect(row(own.label).getByRole('status', { name: 'Update check' })).toHaveText(/is the latest version/)
+  await expect(row(missing.label)).toContainText('being published right now')
+  await expect(row(other.label)).toContainText('0.1.999')
   await shot(page, '142-change-version', { views: false })
 
-  await row('Dev').getByRole('button', { name: 'Install Universe (dev)' }).click()
-  await expect(row('Dev').getByRole('status', { name: 'Dev install' })).toHaveText('Universe (dev) is installed beside this one, and opening.', { timeout: SLOW })
+  await row(other.label).getByRole('button', { name: `Install ${other.name}` }).click()
+  await expect(row(other.label).getByRole('status', { name: `${other.label} install` })).toHaveText(`${other.name} is installed beside this one, and opening.`, { timeout: SLOW })
   // Beside this one, named for its channel, and started; this copy is untouched and still open.
-  const beside = join(dir, process.platform === 'win32' ? 'Universe (dev).exe' : 'Universe-dev.AppImage')
+  const beside = join(dir, process.platform === 'win32' ? `${other.name}.exe` : `Universe-${OTHER}.AppImage`)
   expect(readFileSync(beside).equals(body)).toBe(true)
   expect(readFileSync(join(dir, file), 'utf8')).toBe('this copy')
   if (process.platform === 'linux') await expect.poll(() => existsSync(join(dir, 'started')), { timeout: SLOW }).toBe(true)
