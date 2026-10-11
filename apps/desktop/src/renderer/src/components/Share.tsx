@@ -133,7 +133,7 @@ function SharingOff({ status, set }: { status: ApiStatus | undefined; set(patch:
 /** Inviting someone: one of the people Tailscale knows in a click, or anyone by their login. */
 function Invite({ me, people, members }: { me: Person; people: Person[]; members: Member[] }) {
   const [login, setLogin] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string>()
   const suggestions = people.filter((p) => !memberWithLogin(members, p.login))
 
   const invite = async (person: { login: string; name?: string }) => {
@@ -145,7 +145,7 @@ function Invite({ me, people, members }: { me: Person; people: Person[]; members
     const done = await execute({ type: 'member.create', payload: { ownerId: project!.rootId, login: parsed.data, ...(name && { name }), invitedBy: me } })
     if (done) {
       setLogin('')
-      setError(null)
+      setError(undefined)
     }
   }
   const submit = (e: FormEvent) => {
@@ -171,11 +171,7 @@ function Invite({ me, people, members }: { me: Person; people: Person[]; members
           Invite
         </button>
       </form>
-      {error && (
-        <p className="small phone-error" role="alert">
-          {error}
-        </p>
-      )}
+      <SectionError error={error} />
       <p className="muted small">
         They need to be on your tailnet, or have this computer shared with them in Tailscale (Share, on its machine’s menu).{' '}
         <a href={TAILSCALE_MACHINES} target="_blank" rel="noreferrer">

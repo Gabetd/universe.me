@@ -1,4 +1,4 @@
-import type { SpatialNode } from '@universe/core'
+import { groupBy, type SpatialNode } from '@universe/core'
 import { hueOf, seedNumber } from '@universe/procgen'
 import type { PersonIn, Where } from '../../shared/api'
 import type { EditorView } from './world/editorStore'
@@ -51,12 +51,16 @@ export function initials(name: string): string {
 /** Someone's colour, the same on every computer: a hue from their login. */
 export const personHue = (login: string) => hueOf(seedNumber(login))
 
-/** The people on each node, by its id. */
-export function peopleByNode(here: readonly PersonIn[]): Map<string, PersonIn[]> {
-  const byNode = new Map<string, PersonIn[]>()
-  for (const person of here) {
-    const id = person.where?.nodeId
-    if (id) byNode.set(id, [...(byNode.get(id) ?? []), person])
+/**
+ * The people on each node, by its id. A node's list is the one it had
+ * `before` (the last grouping) while the same people are on it, where they
+ * were, so its tree row doesn't redraw when someone elsewhere moves.
+ */
+export function peopleByNode(here: readonly PersonIn[], before?: ReadonlyMap<string, PersonIn[]>): Map<string, PersonIn[]> {
+  const byNode = groupBy(here.filter((p) => p.where?.nodeId), (p) => p.where!.nodeId!)
+  for (const [id, people] of byNode) {
+    const was = before?.get(id)
+    if (was && JSON.stringify(was) === JSON.stringify(people)) byNode.set(id, was)
   }
   return byNode
 }

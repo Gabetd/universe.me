@@ -43,4 +43,16 @@ describe('people', () => {
     expect(byNode.get('w')).toEqual([ana, bea])
     expect([...byNode.keys()]).toEqual(['w'])
   })
+
+  it('keeps a node’s list while the same people are on it, as they were', () => {
+    const [ana, bea, cy] = [person('ana@x.com', 'w', 'Terra, the map'), person('bea@x.com', 's', 'Sol'), person('cy@x.com', 'w', 'Terra, the map')]
+    const before = peopleByNode([ana, bea, cy])
+    // Bea moves elsewhere: the world's list is the one it had.
+    const after = peopleByNode([{ ...ana }, { ...bea, where: { nodeId: 'p', view: 'space', label: 'Pluto' } }, { ...cy }], before)
+    expect(after.get('w')).toBe(before.get('w'))
+    expect(after.get('p')).toHaveLength(1)
+    expect(after.has('s')).toBe(false)
+    // Cy changes view on the world: its list is new.
+    expect(peopleByNode([ana, { ...cy, where: { nodeId: 'w', view: 'globe', label: 'Terra, the globe' } }], after).get('w')).not.toBe(before.get('w'))
+  })
 })

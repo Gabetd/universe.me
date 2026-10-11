@@ -920,7 +920,8 @@ input.invalid {
   text-decoration: underline;
 }
 .versions-dialog,
-.plugins-dialog {
+.plugins-dialog,
+.share-dialog {
   width: min(640px, 94vw);
   max-height: 86vh;
   overflow: auto;
@@ -2764,11 +2765,8 @@ kbd {
 /* Sharing a universe (Share.tsx): the dialog, and each person's round mark in their own colour. */
 .share-dialog {
   width: min(560px, 94vw);
-  max-height: 86vh;
-  overflow: auto;
   display: grid;
   gap: 12px;
-  padding: 18px 22px;
 }
 .share-dialog h3 {
   margin: 0 0 6px;

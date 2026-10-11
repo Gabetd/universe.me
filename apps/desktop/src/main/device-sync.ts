@@ -1,4 +1,4 @@
-import { DEVICE_ID, MAX_MERGE_ROWS, SyncPage, personOf } from '@universe/core'
+import { DEVICE_ID, MAX_MERGE_ROWS, Name, SyncPage, personOf } from '@universe/core'
 import { z } from 'zod'
 import type { AppState, Collaboration, DeviceStatus, Person, SharedDevice, TailnetPeer } from '../shared/api'
 import { MAX_PEOPLE, PresenceWire, Presences, Where } from './presence'
@@ -54,7 +54,7 @@ const Hello = z.object({
 type Hello = z.infer<typeof Hello>
 
 /** What a visitor's hello says (newer versions): the universe it has open, and where its person is in it. */
-const Visit = z.object({ syncId: SyncId, name: z.string().min(1).max(200), where: Where.nullable() }).partial()
+const Visit = z.object({ syncId: SyncId, name: Name, where: Where.nullable() }).partial()
 
 /** Rows a visitor gives, checked as they're merged. */
 const Push = z.object({ syncId: SyncId, rows: z.array(z.unknown()).max(MAX_MERGE_ROWS) })

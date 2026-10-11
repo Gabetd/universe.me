@@ -1,3 +1,4 @@
+import { memoize } from '@universe/core'
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import { NO_COLLABORATION, type Collaboration, type PersonIn, type Where } from '../../shared/api'
@@ -28,10 +29,11 @@ export function listenToCollaboration(): () => void {
   return window.universe.onCollaboration(take)
 }
 
-let grouped: { here: PersonIn[]; byNode: Map<string, PersonIn[]> } | undefined
-const byNode = (here: PersonIn[]) => (grouped?.here === here ? grouped.byNode : (grouped = { here, byNode: peopleByNode(here) }).byNode)
+/** The people on each node, worked out once for each list of who's in, each node's list kept while its people stay put. */
+let grouped: ReadonlyMap<string, PersonIn[]> | undefined
+const byNode = memoize((here: PersonIn[]) => (grouped = peopleByNode(here, grouped)))
 
-/** The people on a node now (undefined with no one there): the same list until someone comes, goes or moves. */
+/** The people on a node now (undefined with no one there): the same list until someone comes to it, goes or moves on it. */
 export const usePeopleOn = (nodeId: string): PersonIn[] | undefined => useCollaboration((s) => byNode(s.here).get(nodeId))
 
 /** How long the selection or view stays put before the others are told: going through several says only the last. */
@@ -50,22 +52,16 @@ function whereNow(): Where | null {
 
 /**
  * Tells main where the user is (`setWhere`), for the others in the universe
- * to see, each time the selection or the view changes; with the project
- * closed (the workspace gone), that they're nowhere.
+ * to see, each time the selection or the view changes (main lets one that's
+ * the same as before go); with the project closed (the workspace gone), that
+ * they're nowhere.
  */
 export function useTellWhere(): void {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
-    let told = ''
     const tell = () => {
       clearTimeout(timer)
-      timer = setTimeout(() => {
-        const where = whereNow()
-        const json = JSON.stringify(where)
-        if (json === told) return
-        told = json
-        void window.universe.setWhere(where)
-      }, WHERE_MS)
+      timer = setTimeout(() => void window.universe.setWhere(whereNow()), WHERE_MS)
     }
     tell()
     const offUi = useUi.subscribe((s, before) => (s.selectedId !== before.selectedId || s.nodes !== before.nodes) && tell())

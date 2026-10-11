@@ -46,24 +46,24 @@ export class Presences {
 
   /** Who's in a universe now, but `skip` (someone's own entry never goes back to them). */
   in(syncId: string, skip: string | undefined, now = Date.now()): PersonIn[] {
-    return this.fresh(syncId, now).flatMap(([login, h]) => (login === skip ? [] : [h.person]))
+    return this.fresh(syncId, skip, now).map((h) => h.person)
   }
 
   /** The same, as a hello passes them on. */
   wire(syncId: string, skip: string | undefined, now = Date.now()): PresenceWire[] {
-    return this.fresh(syncId, now).flatMap(([login, h]) => (login === skip ? [] : [{ ...h.person, age: now - h.at }]))
+    return this.fresh(syncId, skip, now).map((h) => ({ ...h.person, age: now - h.at }))
   }
 
   clear(): void {
     this.heard.clear()
   }
 
-  /** A universe's entries heard in the last half minute; older ones are forgotten. */
-  private fresh(syncId: string, now: number): [string, Heard][] {
+  /** A universe's entries heard in the last half minute, but `skip`'s; older ones are forgotten. */
+  private fresh(syncId: string, skip: string | undefined, now: number): Heard[] {
     const book = this.heard.get(syncId)
     if (!book) return []
     for (const [login, h] of book) if (now - h.at >= PRESENCE_MS) book.delete(login)
     if (!book.size) this.heard.delete(syncId)
-    return [...book]
+    return [...book.values()].filter((h) => h.person.login !== skip)
   }
 }
