@@ -1,5 +1,5 @@
 import type { Command, Region, SpatialNode, Target, TerrainLayers, TimelineData, TerrainParams, WorldInfo } from '@universe/core'
-import type { BaseTerrain } from '@universe/procgen'
+import type { BaseTerrain, Hydrology, HydrologyInput } from '@universe/procgen'
 
 /** Everything live in a project, as the app and the API see it (unchanged parts are shared between reads). */
 export interface ProjectData {
@@ -33,7 +33,12 @@ export interface ApiHost {
   write(command: Command, summary: string, options?: WriteOptions): WriteOutcome
   /** A world's generated terrain, worked out off the main thread where the host can; generated in place otherwise. */
   baseTerrain?(seed: number, params: TerrainParams): Promise<BaseTerrain>
+  /** A world's rivers and lakes from its terrain, worked out off the main thread where the host can; in place otherwise. */
+  water?(input: HydrologyInput): Promise<WorldWater>
 }
+
+/** A world's rivers and lakes, as the API tells of them. */
+export type WorldWater = Pick<Hydrology, 'rivers' | 'lakes'>
 
 /** An answer the API can't give, with the HTTP status that says why. */
 export class ApiError extends Error {

@@ -1,6 +1,7 @@
 import { biomeName, describeCalendar, describeCharacter, describeEvent, describeFactionHistory, describePowerSystem, describeRelationship, describeStructure, nodePath } from './describe'
 import type { ApiContext } from './operation'
 import { htmlToText } from './text'
+import { describeWaterway, waterwaysOf } from './waterways'
 
 /**
  * A world written up as one document (PLAN.md §6.1's "world bible"): what a
@@ -17,10 +18,25 @@ export const worldBible = async (ctx: ApiContext, worldId: string): Promise<stri
 
 type BibleData = Awaited<ReturnType<typeof bibleData>>
 
+/** How many of the greatest rivers, and of the largest lakes, the bible names. */
+const BIGGEST = 5
+
+/** A river or lake in a line: what it is, how big, where it runs and where it is. */
+const waterLine = (x: BibleData['water']['named'][number]) =>
+  [
+    'lengthKm' in x ? `river, ${x.lengthKm.toLocaleString('en')} km, into ${x.runsInto}` : `lake, ${x.areaKm2.toLocaleString('en')} km², ${x.surfaceM.toLocaleString('en')} m above the sea`,
+    x.region && `in ${x.region}`,
+    x.madeAs && `once called ${x.madeAs}`
+  ]
+    .filter(Boolean)
+    .join(', ')
+
 async function bibleData({ models: m }: ApiContext, worldId: string) {
   const view = m.world(worldId)
   const now = m.now(worldId)
   const regions = view.regions
+  // One after the other: both work from the world's terrain, made once.
+  const w = await waterwaysOf(m, worldId)
   const { curves } = await m.structures(worldId)
   const cal = m.calendar(worldId)
   const t = view.timeline
@@ -33,6 +49,12 @@ async function bibleData({ models: m }: ApiContext, worldId: string) {
     calendar: describeCalendar(cal),
     surface: { radiusKm: view.info.settings.radiusKm, landform: view.info.settings.terrain.landform, seed: view.info.settings.seedText },
     regions: regions.map((r) => ({ name: r.name, notes: htmlToText(r.notes) })),
+    water: {
+      rivers: w.water.rivers.length,
+      lakes: w.water.lakes.length,
+      greatest: [...w.water.rivers.slice(0, BIGGEST), ...w.water.lakes.slice(0, BIGGEST)].map((x) => describeWaterway(w, x, regions)),
+      named: [...w.water.rivers, ...w.water.lakes].filter((x) => w.own.has(x.id)).map((x) => describeWaterway(w, x, regions))
+    },
     eras: [...t.eras].sort((a, b) => a.start - b.start).map((e) => ({ name: e.name, when: m.spanDates(worldId, e) })),
     history: [...t.events].sort((a, b) => a.start - b.start).map((e) => describeEvent(m, view, e, regions, true)),
     structures: t.structures.map((s) => ({ ...describeStructure(m, view, s, curves.get(s.id), now, regions), notes: htmlToText(s.notes) })),
@@ -93,6 +115,25 @@ function markdown(b: BibleData): string {
     `- A year of ${b.calendar.daysPerYear} days of ${b.calendar.hoursPerDay} hours: ${b.calendar.months.map(md).join(', ')}`
   ])
   section('Regions', b.regions.flatMap((r) => [`### ${md(r.name)}`, '', ...para(r.notes)]))
+  const { water } = b
+  const greatest = (kind: string) =>
+    water.greatest
+      .filter((x) => x.kind === kind)
+      .map((x) => `${md(x.name)} (${md(waterLine(x))})`)
+      .join('; ')
+  section(
+    'Rivers and lakes',
+    water.rivers + water.lakes
+      ? [
+          `${water.rivers.toLocaleString('en')} rivers and ${water.lakes.toLocaleString('en')} lakes.`,
+          '',
+          ...(water.rivers ? [`- The greatest rivers: ${greatest('river')}`] : []),
+          ...(water.lakes ? [`- The largest lakes: ${greatest('lake')}`] : []),
+          '',
+          ...water.named.flatMap((x) => [`### ${md(x.name)}`, '', `*${md(waterLine(x))}.*`, '', ...para(x.notes ?? '')])
+        ]
+      : []
+  )
   section('Eras', b.eras.map((e) => `- **${md(e.name)}**, ${md(e.when)}`))
   section(
     'History',

@@ -39,6 +39,7 @@ import { ApiError, findOr404, type WriteOptions } from './host'
 import { When, operation, written, type ApiContext } from './operation'
 import type { WorldView } from './model'
 import { textToHtml } from './text'
+import { nameOf, waterwayOf, waterwaysOf } from './waterways'
 
 const newId = () => crypto.randomUUID()
 const Place = z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) })
@@ -594,6 +595,26 @@ export const WRITES = [
       const target = notesTarget(ctx, p.id)
       const notes = (p.mode === 'append' ? target.notes : '') + textToHtml(p.text)
       return write(ctx, [{ type: target.type, payload: { id: p.id, patch: { notes } } } as Command], `${p.mode === 'append' ? 'Added to' : 'Wrote'} the notes of ${target.name}`)
+    }
+  }),
+  operation({
+    name: 'name_waterway',
+    title: 'Name a river or lake',
+    description:
+      'Gives a river or lake (by its id from list_waterways) a name of its own, or its notes (replaced, or added to with mode "append"). It keeps both while the land around it changes; an empty name gives it back the one it was made with.',
+    input: z.object({ worldId: z.string(), key: z.string(), name: z.string().max(200).optional(), notes: Notes.optional(), mode: z.enum(['replace', 'append']).optional() }),
+    route: { method: 'POST', path: '/worlds/:worldId/waterways/:key' },
+    write: true,
+    run: async (ctx, p) => {
+      if (p.name === undefined && p.notes === undefined) throw new ApiError(400, 'Give it a name, notes or both')
+      const w = await waterwaysOf(ctx.models, p.worldId)
+      const found = waterwayOf(w, p.key)
+      const was = nameOf(w, p.key)
+      const name = p.name?.trim()
+      const notes = p.notes === undefined ? undefined : (p.mode === 'append' ? (w.own.get(p.key)?.notes ?? '') : '') + textToHtml(p.notes)
+      const patch = { ...(name !== undefined && { name: name === found.name ? '' : name }), ...(notes !== undefined && { notes }) }
+      const summary = name !== undefined && name !== was ? `Named ${was} ${name || found.name}` : `Wrote the notes of ${was}`
+      return write(ctx, [{ type: 'waterway.set', payload: { worldId: p.worldId, key: p.key, patch } }], summary)
     }
   }),
   operation({

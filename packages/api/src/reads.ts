@@ -17,6 +17,7 @@ import {
   BUILTIN_BLUEPRINTS,
   type SpatialNode
 } from '@universe/core'
+import type { Lake, River } from '@universe/procgen'
 import { formatPeriod, deriveCalendar, moonsOf, skyEvents } from '@universe/sim'
 import { z } from 'zod'
 import { exportWorldBible } from './bible'
@@ -24,6 +25,7 @@ import { biomeName, describeCalendar, describeCharacter, describeEvent, describe
 import { ApiError, notFound } from './host'
 import { QueryFlag, QueryList, QueryNumber, When, operation, type ApiContext } from './operation'
 import { htmlToText } from './text'
+import { describeWaterway, waterwayOf, waterwaysOf } from './waterways'
 
 /** Stages as the API names them. */
 const STAGE_LABELS: [string, ...string[]] = ['Gone', ...STAGES.map((s) => s.label)]
@@ -500,6 +502,45 @@ export const READS = [
       if (!of) return { date: m.date(worldId, t), relationships: relationshipsAt(tl.relationships, t).map((r) => describeRelationship(m, view, r)) }
       const side = partyOf(view, of)
       return { date: m.date(worldId, t), relationships: relationshipsAt(tl.relationships, t, side).map((r) => describeRelationFrom(m, view, r, side)) }
+    }
+  }),
+  operation({
+    name: 'list_waterways',
+    title: 'List rivers and lakes',
+    description:
+      'A world’s rivers and lakes, worked out from its terrain (where the land sends its rain), the biggest first: each one’s id, name (and the one it was made with, if it’s been renamed), a river’s length and where it runs, a lake’s area and surface height, which region it’s in, how many rivers feed it and its notes. With named: true, only those given a name or notes. Name one with name_waterway.',
+    input: z.object({
+      worldId: WorldId,
+      kind: z.enum(['river', 'lake']).optional(),
+      named: QueryFlag.optional(),
+      limit: QueryNumber.int().min(1).max(5000).optional().describe('How many of each kind, the biggest first (50 if left out)')
+    }),
+    route: { method: 'GET', path: '/worlds/:worldId/waterways' },
+    run: async ({ models: m }, { worldId, kind, named, limit = 50 }) => {
+      const w = await waterwaysOf(m, worldId)
+      const regions = m.regionsAt(worldId, m.now(worldId))
+      const pick = (list: (River | Lake)[]) =>
+        list
+          .filter((x) => !named || w.own.has(x.id))
+          .slice(0, limit)
+          .map((x) => describeWaterway(w, x, regions))
+      return {
+        rivers: w.water.rivers.length,
+        lakes: w.water.lakes.length,
+        ...(kind !== 'lake' && { riverList: pick(w.water.rivers) }),
+        ...(kind !== 'river' && { lakeList: pick(w.water.lakes) })
+      }
+    }
+  }),
+  operation({
+    name: 'get_waterway',
+    title: 'A river or lake',
+    description: 'One river or lake (by its id from list_waterways) in full: as list_waterways has it, with a river’s course (its points from source to mouth) and the rivers that feed it, by id.',
+    input: z.object({ worldId: WorldId, key: z.string().describe('Its id from list_waterways, like r12345 or l6789') }),
+    route: { method: 'GET', path: '/worlds/:worldId/waterways/:key' },
+    run: async ({ models: m }, { worldId, key }) => {
+      const w = await waterwaysOf(m, worldId)
+      return describeWaterway(w, waterwayOf(w, key), m.regionsAt(worldId, m.now(worldId)), true)
     }
   }),
   operation({

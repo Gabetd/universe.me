@@ -207,6 +207,39 @@ describe('the operations', () => {
     await expect(p.call('set_relationship', { fromId: aldric, toId: 'nobody', type: 'ally' })).rejects.toThrow(/no character or faction/)
   })
 
+  it('tell of a world’s rivers and lakes, and name them', async () => {
+    type Listed = { id: string; kind: string; name: string; madeAs?: string; lengthKm?: number; runsInto?: string; areaKm2?: number; notes?: string }
+    const all = await p.call<{ rivers: number; lakes: number; riverList: Listed[]; lakeList: Listed[] }>('list_waterways', { worldId: p.worldId, limit: 5 })
+    expect(all.rivers).toBeGreaterThan(10)
+    expect(all.riverList).toHaveLength(5)
+    const [river] = all.riverList
+    expect(river).toMatchObject({ kind: 'river', lengthKm: expect.any(Number), runsInto: expect.any(String) })
+    if (all.lakes) expect(all.lakeList[0]).toMatchObject({ kind: 'lake', areaKm2: expect.any(Number) })
+
+    // In full: its course from source to mouth.
+    const full = await p.call<{ course: { lat: number; lon: number }[] }>('get_waterway', { worldId: p.worldId, key: river!.id })
+    expect(full.course.length).toBeGreaterThan(1)
+    await expect(p.call('get_waterway', { worldId: p.worldId, key: 'r1' })).rejects.toThrow('There is no river or lake on that world r1')
+
+    // Named and noted, it keeps both; named again as it was made, it's only noted.
+    const named = await p.call<{ status: string; summary: string }>('name_waterway', { worldId: p.worldId, key: river!.id, name: 'Silverrun', notes: 'Clear and cold.' })
+    expect(named).toMatchObject({ status: 'applied', summary: `Named ${river!.name} Silverrun` })
+    await p.call('name_waterway', { worldId: p.worldId, key: river!.id, notes: 'Salmon run in spring.', mode: 'append' })
+    const mine = await p.call<{ riverList: Listed[]; lakeList: Listed[] }>('list_waterways', { worldId: p.worldId, named: true })
+    expect(mine.riverList).toEqual([expect.objectContaining({ id: river!.id, name: 'Silverrun', madeAs: river!.name, notes: 'Clear and cold.\n\nSalmon run in spring.' })])
+    expect(mine.lakeList).toEqual([])
+    // The bible tells of it, and of the greatest rivers and lakes.
+    const bible = await p.call<string>('export_world_bible', { worldId: p.worldId })
+    expect(bible).toContain('## Rivers and lakes')
+    expect(bible).toContain('- The greatest rivers: Silverrun (river, ')
+    expect(bible).toMatch(/### Silverrun\n\n\*river, [\d,]+ km, into .*, once called .*\.\*\n\nClear and cold\./)
+    await p.call('name_waterway', { worldId: p.worldId, key: river!.id, name: river!.name })
+    const back = await p.call<Listed>('get_waterway', { worldId: p.worldId, key: river!.id })
+    expect(back.name).toBe(river!.name)
+    expect(back.madeAs).toBeUndefined()
+    await expect(p.call('name_waterway', { worldId: p.worldId, key: river!.id })).rejects.toThrow('Give it a name, notes or both')
+  })
+
   it('report inconsistencies, once each, about what is really there, and resolve or dismiss them', async () => {
     const { eventId } = await p.call<{ eventId: string }>('create_event', { worldId: p.worldId, title: 'Mira crowned in Tarn', start: '1204' })
     const report = { worldId: p.worldId, severity: 'contradiction', title: 'Mira in two places', explanation: 'She is crowned in Tarn while at sea.', about: [{ kind: 'event', id: eventId }], suggestion: 'Move the crowning a year later.' }

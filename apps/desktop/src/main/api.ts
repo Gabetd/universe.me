@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ApiServer, OAuth, apiContext, clearDiscovery, fileStore, worldBible, writeDiscovery, writePrivate, type ApiContext, type ApiHost } from '@universe/api'
+import { ApiServer, OAuth, apiContext, clearDiscovery, fileStore, worldBible, writeDiscovery, writePrivate, type ApiContext, type ApiHost, type WorldWater } from '@universe/api'
 import type { TerrainParams } from '@universe/core'
-import type { BaseTerrain } from '@universe/procgen'
+import type { BaseTerrain, HydrologyInput } from '@universe/procgen'
 import { app } from 'electron'
 import createTerrainWorker from './terrain.worker?nodeWorker'
+import type { TerrainJob } from './terrain.worker'
 import type { AiChange, ApiSettingsPatch, ApiStatus, AppState, PhoneStatus, RemoteEvent, RemoteMethod, TailscaleState } from '../shared/api'
 import { PhoneAppServer, type PhoneAppPlace } from './phone-app'
 import { DeviceSync } from './device-sync'
@@ -367,7 +368,8 @@ export class ApiController {
         this.server?.changed({ summary, source: 'ai', at: new Date().toISOString() })
         return { status: 'applied' }
       },
-      baseTerrain
+      baseTerrain,
+      water
     }
   }
 
@@ -409,21 +411,21 @@ function stdioCommand(project: string | undefined): string {
   return `claude mcp add universe -- ${[exe, ...args].map(shellWord).join(' ')} --mcp --project ${project ? shellWord(project) : '<path to your .universe file>'}`
 }
 
-/** Worlds' base terrain from a worker thread, so a query about structures doesn't hold up the window. */
+/** Worlds' base terrain, and their rivers and lakes, from a worker thread, so a query about structures or rivers doesn't hold up the window. */
 let worker: ReturnType<typeof createTerrainWorker> | undefined
-const pending = new Map<number, { resolve(base: BaseTerrain): void; reject(err: Error): void }>()
+const pending = new Map<number, { resolve(result: unknown): void; reject(err: Error): void }>()
 let nextId = 0
 
-function baseTerrain(seed: number, params: TerrainParams): Promise<BaseTerrain> {
+function terrainWork<T>(job: TerrainJob, transfer: ArrayBuffer[] = []): Promise<T> {
   if (!worker) {
     const w = createTerrainWorker({})
     worker = w
     w.unref()
-    w.on('message', ({ id, base, error }: { id: number; base?: BaseTerrain; error?: string }) => {
+    w.on('message', ({ id, result, error }: { id: number; result?: unknown; error?: string }) => {
       const call = pending.get(id)
       pending.delete(id)
       if (error) call?.reject(new Error(error))
-      else call?.resolve(base!)
+      else call?.resolve(result)
     })
     // A worker that fails or stops takes its unanswered calls with it; the next call starts a new one.
     const fail = (err: Error) => {
@@ -436,7 +438,12 @@ function baseTerrain(seed: number, params: TerrainParams): Promise<BaseTerrain> 
   }
   const id = nextId++
   return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject })
-    worker!.postMessage({ id, seed, params })
+    pending.set(id, { resolve: resolve as (result: unknown) => void, reject })
+    worker!.postMessage({ id, ...job }, transfer)
   })
 }
+
+const baseTerrain = (seed: number, params: TerrainParams) => terrainWork<BaseTerrain>({ job: 'base', seed, params })
+
+/** The heights are made for the call, so they're handed over; the moisture is the model's own, so it's copied. */
+const water = (input: HydrologyInput) => terrainWork<WorldWater>({ job: 'water', ...input }, input.heights.map((h) => (h as Float32Array).buffer as ArrayBuffer))

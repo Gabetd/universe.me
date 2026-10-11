@@ -1,4 +1,4 @@
-import { expect, inspector, newWorld, openMap, shot, SLOW, test } from './helpers'
+import { expect, httpMcp, inspector, newWorld, openMap, shot, SLOW, state, test, tool } from './helpers'
 
 test('a world has rivers and lakes from its land, each named, selectable and seen up close', async ({ h }) => {
   test.slow()
@@ -29,6 +29,18 @@ test('a world has rivers and lakes from its land, each named, selectable and see
   await expect(rivers.first()).toHaveText(generated)
   await page.getByRole('button', { name: '↷ Redo' }).click()
   await expect(rivers.first()).toHaveText('Silverrun')
+
+  // An AI sees the same rivers by the same ids (worked out in the app's own worker), and can name a lake.
+  const mcp = httpMcp(h)
+  await mcp('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'e2e', version: '1' } })
+  const worldId = (await state(page, 'nodes')).find((n) => n.kind === 'world')!.id
+  const named = await tool(mcp, 'list_waterways', { worldId, named: true })
+  expect(named.riverList).toEqual([expect.objectContaining({ name: 'Silverrun', madeAs: generated })])
+  const lakes = await tool(mcp, 'list_waterways', { worldId, kind: 'lake', limit: 1 })
+  const lakeRows = water.getByRole('group', { name: 'Lakes' }).locator('.region-row')
+  await expect(lakeRows.first()).toHaveText(lakes.lakeList[0].name)
+  await tool(mcp, 'name_waterway', { worldId, key: lakes.lakeList[0].id, name: 'Mirrormere' })
+  await expect(lakeRows.first()).toHaveText('Mirrormere')
 
   // Its menu gives it its own name back, or a new one.
   const menu = page.getByRole('menu')

@@ -22,9 +22,9 @@ import {
   type TimelineData,
   type WorldInfo
 } from '@universe/core'
-import { TerrainModel, generateBase, shapeKey, type BaseTerrain } from '@universe/procgen'
+import { TerrainModel, generateBase, hydrology, shapeKey, type BaseTerrain } from '@universe/procgen'
 import { exposureAt, systemIdOf, systemModel, worldCalendar, worldClimateOf, type SystemModel, type WorldClimate } from '@universe/sim'
-import { ApiError, findOr404, type ApiHost, type ProjectData } from './host'
+import { ApiError, findOr404, type ApiHost, type ProjectData, type WorldWater } from './host'
 
 /** A date as an API client writes it: text in the world's calendar ("1204", "15 Mar 1204", "c. 1200", "4.5 billion years ago"), or a year. */
 export type When = string | number
@@ -46,6 +46,8 @@ interface Terrain {
   revision: number
   model: TerrainModel
   exposures: Map<string, Exposure>
+  /** Its rivers and lakes, once asked for: worked out again when its edits change. */
+  water?: Promise<WorldWater>
 }
 
 /** Worlds' terrain kept at once (each holds its generated base and edit layers, a few MB). */
@@ -238,6 +240,7 @@ export class ProjectModels {
         cached.model.setLayers(this.host.terrainLayers(worldId))
         cached.revision = info.terrainRevision
         cached.exposures.clear()
+        cached.water = undefined
       }
       return cached
     }
@@ -261,6 +264,21 @@ export class ProjectModels {
       base.catch(() => this.bases.get(key) === base && this.bases.delete(key))
     }
     return base
+  }
+
+  /** A world's rivers and lakes as its terrain is now (as the app works them out, so with the same ids and names). */
+  async water(worldId: string): Promise<WorldWater> {
+    const { node } = this.world(worldId)
+    const terrain = await this.terrain(worldId)
+    if (!terrain.water) {
+      const { model } = terrain
+      const input = { heights: model.heightsAboveSea(), moisture: model.base.moisture, seed: node.seed, radiusKm: model.settings.radiusKm }
+      const water = this.host.water ? this.host.water(input) : Promise.resolve(hydrology(input))
+      terrain.water = water
+      // Asked again next time rather than failing for good.
+      water.catch(() => terrain.water === water && (terrain.water = undefined))
+    }
+    return terrain.water
   }
 
   /** Every structure's condition curve on a world, with the weather where each stands (as the app works them out). */
