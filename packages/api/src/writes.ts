@@ -30,7 +30,9 @@ import {
   type Era,
   type PowerAspect,
   type PowerSystem,
-  ownName
+  ownName,
+  PLANET_SIZE,
+  radiusOfSize
 } from '@universe/core'
 import { readSeed } from '@universe/procgen'
 import { EARTH_ORBIT, luminosityOf } from '@universe/sim'
@@ -881,8 +883,14 @@ export const WRITES = [
     name: 'create_world',
     title: 'Create a world',
     description:
-      'Adds a planet to a star system with a world surface to build on, optionally at a distance from its star (AU) and grown from a seed word (any text: the same text grows the same planet). Returns the world’s id.',
-    input: z.object({ systemId: z.string(), name: z.string().min(1).max(200), distanceAu: z.number().positive().max(1000).optional(), seed: z.string().min(1).max(200).optional() }),
+      'Adds a planet to a star system with a world surface to build on, optionally at a distance from its star (AU), grown from a seed word (any text: the same text grows the same planet) and of a size (Earth’s radius is 10: Mars is about 5, Jupiter 112). Returns the world’s id.',
+    input: z.object({
+      systemId: z.string(),
+      name: z.string().min(1).max(200),
+      distanceAu: z.number().positive().max(1000).optional(),
+      seed: z.string().min(1).max(200).optional(),
+      size: z.number().min(PLANET_SIZE.min).max(PLANET_SIZE.max).optional().describe('Its radius with Earth’s as 10')
+    }),
     route: { method: 'POST', path: '/worlds' },
     write: true,
     run: (ctx, p) => {
@@ -894,6 +902,7 @@ export const WRITES = [
         { type: 'node.create', payload: { id: worldId, parentId: bodyId, kind: 'world', name: `${p.name} Surface`, ...(seeded && { seed: seeded.seed }) } }
       ]
       if (seeded) commands.push({ type: 'world.update', payload: { id: worldId, patch: { seedText: p.seed!.trim(), radiusKm: seeded.radiusKm, terrain: seeded.terrain } } })
+      if (p.size) commands.push({ type: 'world.update', payload: { id: worldId, patch: { radiusKm: radiusOfSize(p.size) } } })
       if (p.distanceAu) commands.push({ type: 'orbit.set', payload: { bodyId, orbit: { ...EARTH_ORBIT, semiMajorAxisKm: p.distanceAu * AU_KM } } })
       return write(ctx, commands, `Added the world ${p.name}`, { bodyId, worldId })
     }

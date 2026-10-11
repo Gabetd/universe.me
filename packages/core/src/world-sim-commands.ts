@@ -8,7 +8,7 @@ import { Id } from './schema'
 
 const StarFields = Star.pick({ massSun: true, luminositySun: true })
 const OrbitFields = Orbit.pick({
-  semiMajorAxisKm: true, eccentricity: true, inclinationDeg: true, phaseDeg: true, rotationHours: true, axialTiltDeg: true, massEarth: true, radiusKm: true, monthNames: true
+  semiMajorAxisKm: true, eccentricity: true, inclinationDeg: true, phaseDeg: true, rotationHours: true, axialTiltDeg: true, massEarth: true, radiusKm: true, monthNames: true, massFollowsSize: true
 })
 const SpeciesFields = Species.pick({ name: true, kind: true, diet: true, biomes: true, color: true, notes: true, tags: true })
 export type SpeciesPatch = Partial<z.infer<typeof SpeciesFields>>

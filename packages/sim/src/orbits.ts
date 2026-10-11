@@ -1,4 +1,4 @@
-import { AU_KM, orbitId, starId, type Orbit, type OrbitFields, type SpatialNode, type Star } from '@universe/core'
+import { AU_KM, massOfRadius, orbitId, radiusOfMass, starId, type Orbit, type OrbitFields, type SpatialNode, type Star } from '@universe/core'
 import { RAD, TAU, rng, subSeed, wrapTau } from '@universe/procgen'
 import { GM_EARTH, GM_SUN, starInfo, type StarInfo } from './star'
 
@@ -93,7 +93,7 @@ function planetAt(r: () => number, au: number, giant: boolean, phaseDeg: number)
     rotationHours: giant ? 9 + r() * 8 : 15 + r() * 40,
     axialTiltDeg: r() * 30,
     massEarth,
-    radiusKm: giant ? 6371 * massEarth ** 0.5 * 1.9 : 6371 * massEarth ** 0.28,
+    radiusKm: radiusOfMass(massEarth),
     monthNames: null
   }
 }
@@ -140,9 +140,12 @@ export function systemModel(nodes: SpatialNode[], records: Records, systemId: st
       const stored = records.orbits.find((o) => o.id === orbitId(body.id) && !o.deletedAt)
       const withWorld = hasWorld(nodes, body.id)
       const index = parentBody ? children.indexOf(body) : withWorld ? worlds.indexOf(body) : bare.indexOf(body)
-      const fields = stored ?? defaultOrbit(body, index, !!parentBody, withWorld)
       const world = nodes.find((n) => n.parentId === body.id && n.kind === 'world')
-      const orbit = { ...bodyOrbit(fields, body.id, parentBody, star, !stored), radiusKm: (world && worldRadiusKm?.get(world.id)) || fields.radiusKm }
+      const given = stored ?? defaultOrbit(body, index, !!parentBody, withWorld)
+      const radiusKm = (world && worldRadiusKm?.get(world.id)) || given.radiusKm
+      // Its mass follows its size unless it's been unlinked.
+      const fields = { ...given, radiusKm, ...(given.massFollowsSize !== false && { massEarth: massOfRadius(radiusKm) }) }
+      const orbit = bodyOrbit(fields, body.id, parentBody, star, !stored)
       bodies.set(body.id, orbit)
       visit(body.id, orbit)
     })
@@ -191,8 +194,8 @@ export function unclaimedPlanets(system: SystemModel, systemNode: SpatialNode, n
 
 /** Just the stored fields of an orbit (what `orbit.set` takes). */
 export function orbitFields(o: OrbitFields): OrbitFields {
-  const { semiMajorAxisKm, eccentricity, inclinationDeg, phaseDeg, rotationHours, axialTiltDeg, massEarth, radiusKm, monthNames } = o
-  return { semiMajorAxisKm, eccentricity, inclinationDeg, phaseDeg, rotationHours, axialTiltDeg, massEarth, radiusKm, monthNames }
+  const { semiMajorAxisKm, eccentricity, inclinationDeg, phaseDeg, rotationHours, axialTiltDeg, massEarth, radiusKm, monthNames, massFollowsSize } = o
+  return { semiMajorAxisKm, eccentricity, inclinationDeg, phaseDeg, rotationHours, axialTiltDeg, massEarth, radiusKm, monthNames, ...(massFollowsSize === false && { massFollowsSize }) }
 }
 
 /** Solves Kepler's equation M = E − e·sin E for the eccentric anomaly. */

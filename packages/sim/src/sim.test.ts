@@ -1,4 +1,4 @@
-import { AU_KM, DEFAULT_CALENDAR, orbitId, type Orbit, type SpatialNode } from '@universe/core'
+import { AU_KM, DEFAULT_CALENDAR, massOfRadius, orbitId, type Orbit, type SpatialNode } from '@universe/core'
 import { describe, expect, it } from 'vitest'
 import { DAY_S, EARTH_ORBIT, MOON_ORBIT, claimGenerated, claimPlanet, deriveCalendar, generatedPlanets, luminosityOf, moonPhase, orbitPosition, skyEvents, starInfo, systemModel, unclaimedPlanets, worldCalendar, worldClimate } from './index'
 
@@ -30,6 +30,15 @@ describe('orbits', () => {
     // Unedited bodies have defaults: the moon Moon-like, the bare planet farther out.
     expect(s.bodies.get('moon')!.isDefault).toBe(true)
     expect(s.bodies.get('mars')!.semiMajorAxisKm / AU_KM).toBeCloseTo(0.4, 5)
+  })
+
+  it('weigh what their size says, unless unlinked: then their own mass holds', () => {
+    // The world on Earth's body is twice Earth's size: its planet weighs as a super-Earth does.
+    const big = systemModel(nodes, { stars: [], orbits: [earthOrbit] }, 'sys', new Map([['w', 12_742]]))
+    expect(big.bodies.get('earth')).toMatchObject({ radiusKm: 12_742, massEarth: massOfRadius(12_742) })
+    expect(big.bodies.get('earth')!.massEarth).toBeGreaterThan(3)
+    const unlinked = systemModel(nodes, { stars: [], orbits: [orbit('earth', { massEarth: 0.5, massFollowsSize: false })] }, 'sys', new Map([['w', 12_742]]))
+    expect(unlinked.bodies.get('earth')!.massEarth).toBe(0.5)
   })
 
   it('follow Kepler: perihelion is closest, aphelion farthest', () => {

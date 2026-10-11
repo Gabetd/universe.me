@@ -44,6 +44,18 @@ export const WORLD_RANGES = {
 } as const
 export type WorldRange = keyof typeof WORLD_RANGES
 
+/** Earth's radius in km: a planet's size 10. */
+export const EARTH_RADIUS_KM = 6371
+
+/** A planet's size on the Earth scale, its radius with Earth's as 10 (Mercury is about 4, Mars 5, Neptune 39, Jupiter 112), to a tenth. */
+export const planetSize = (radiusKm: number) => Math.round((radiusKm / EARTH_RADIUS_KM) * 100) / 10
+
+/** The radius (km) of a planet of a size on the Earth scale. */
+export const radiusOfSize = (size: number) => Math.round((size / 10) * EARTH_RADIUS_KM)
+
+/** The sizes a world can be on the Earth scale: those of the radii it can have. */
+export const PLANET_SIZE = { min: 0.1, max: planetSize(WORLD_RANGES.radiusKm.max), step: 0.1 } as const
+
 /** How fast structures weather on a world, as a multiple of the material defaults. Not part of generation. */
 export const EROSION_SPEED = { min: 0, max: 10, step: 0.1 } as const
 

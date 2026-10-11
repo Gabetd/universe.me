@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   CommandBus,
+  EARTH_RADIUS_KM,
+  massOfRadius,
+  radiusOfMass,
+  PLANET_SIZE,
+  planetSize,
+  radiusOfSize,
   DEFAULT_WORLD_SETTINGS,
   MemoryStore,
   TERRAIN_RES,
@@ -149,5 +155,23 @@ describe('regions', () => {
   it('needs at least three points on a world', () => {
     expect(() => bus.execute({ type: 'region.create', payload: { worldId, points: triangle.slice(0, 2) } })).toThrow()
     expect(() => bus.execute({ type: 'region.create', payload: { worldId: planetId, points: triangle } })).toThrow(/not a world/)
+  })
+
+  it('measures planets on the Earth scale, Earth’s radius being 10', () => {
+    expect(planetSize(EARTH_RADIUS_KM)).toBe(10)
+    expect(planetSize(3390)).toBe(5.3)
+    expect(radiusOfSize(10)).toBe(6371)
+    expect(radiusOfSize(5.3)).toBe(3377)
+    expect(planetSize(radiusOfSize(112))).toBe(112)
+    expect(radiusOfSize(PLANET_SIZE.min)).toBeGreaterThanOrEqual(50)
+    expect(radiusOfSize(PLANET_SIZE.max)).toBeLessThanOrEqual(200_000)
+  })
+
+  it('weighs planets by their size, as planets go, and back', () => {
+    expect(massOfRadius(EARTH_RADIUS_KM)).toBeCloseTo(1, 5)
+    // Mars, Neptune: about right.
+    expect(massOfRadius(3390)).toBeCloseTo(0.1, 1)
+    expect(massOfRadius(24_622)).toBeGreaterThan(10)
+    for (const m of [0.05, 1, 2, 17, 300]) expect(massOfRadius(radiusOfMass(m))).toBeCloseTo(m, 6)
   })
 })

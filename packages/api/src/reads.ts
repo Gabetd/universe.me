@@ -16,6 +16,7 @@ import {
   relationshipsAt,
   BUILTIN_BLUEPRINTS,
   WaterwayKind,
+  planetSize,
   type SpatialNode
 } from '@universe/core'
 import { latLonToDir, planetCell, renderEquirect, type Lake, type River } from '@universe/procgen'
@@ -106,7 +107,7 @@ export const READS = [
         ...worldSummary(ctx, view.node),
         notes: htmlToText(view.node.notes),
         tags: view.node.tags,
-        surface: { radiusKm: s.radiusKm, seed: s.seedText, landform: s.terrain.landform, water: s.terrain.water, seaLevelM: s.seaLevel, erosionSpeed: s.erosionSpeed },
+        surface: { radiusKm: s.radiusKm, size: planetSize(s.radiusKm), seed: s.seedText, landform: s.terrain.landform, water: s.terrain.water, seaLevelM: s.seaLevel, erosionSpeed: s.erosionSpeed },
         ...(climate && { climate: { meanTempC: round(climate.meanTempC, 1), distanceAu: round(climate.distanceAu, 3), inHabitableZone: climate.inHabitableZone } }),
         calendar: describeCalendar(m.calendar(worldId)),
         regions: m.world(worldId).regions.map((r) => ({ id: r.id, name: r.name, ...(r.notes && { notes: htmlToText(r.notes) }) })),

@@ -35,8 +35,26 @@ export const Orbit = z.object({
   /** Used when the body has no world (whose own radius wins). */
   radiusKm: z.number().positive(),
   /** Month names for the calendar of a world on this body; null for generated ones. */
-  monthNames: z.array(z.string().min(1).max(40)).nullable()
+  monthNames: z.array(z.string().min(1).max(40)).nullable(),
+  /** Whether its mass follows its size (by `massOfRadius`), as it does unless it's been unlinked (false): then `massEarth` is its own. */
+  massFollowsSize: z.boolean().optional()
 })
 export type Orbit = z.infer<typeof Orbit>
+
+/** Where rocky planets end and Neptune-like ones begin, in Earth radii (2 Earth masses), and the slopes of radius against mass either side (Chen & Kipping 2017). */
+const ROCKY_RADIUS = 2 ** 0.279
+const ROCKY = 0.279
+const NEPTUNIAN = 0.589
+
+/** A planet's mass (Earth masses) for its radius, as planets go: rocky up to about 1.2 Earth radii, then Neptune-like and on to the giants. */
+export function massOfRadius(radiusKm: number): number {
+  const r = radiusKm / 6371
+  return r <= ROCKY_RADIUS ? r ** (1 / ROCKY) : 2 * (r / ROCKY_RADIUS) ** (1 / NEPTUNIAN)
+}
+
+/** A planet's radius (km) for its mass: the inverse of `massOfRadius`. */
+export function radiusOfMass(massEarth: number): number {
+  return 6371 * (massEarth <= 2 ? massEarth ** ROCKY : ROCKY_RADIUS * (massEarth / 2) ** NEPTUNIAN)
+}
 
 export const AU_KM = 149_597_870.7
