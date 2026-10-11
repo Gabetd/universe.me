@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test'
-import { center, dragPoints, drawRegion, expect, inspector, newWorld, openGlobe, openMap, row, setPlayhead, shot, state, test, viewReady, type Fraction } from './helpers'
+import { center, dragPoints, drawRegion, expect, inspector, newWorld, openGlobe, openMap, row, setPlayhead, shot, state, test, viewReady, waterReady, type Fraction } from './helpers'
 
 const timeline = (page: Page) => state(page, 'timeline')
 
@@ -116,6 +116,8 @@ test('the views take on the theme in force: its light and colours on the globe, 
   await newWorld(h, 'Seasons')
   const themes = inspector(page).getByRole('region', { name: 'Themes' })
   await openGlobe(page)
+  // Once the rivers and lakes are on it, so the globe stays as it is but for the theme.
+  await waterReady(page)
   const planet = () => patch(page, 'globe', [0.5, 0.5], 0.2)
   const plain = await planet()
   expect(await shows(page, 'globe')).toBe('')

@@ -253,6 +253,9 @@ export async function viewReady(page: Page): Promise<void> {
   await frames(page)
 }
 
+/** Waits for the selected world's rivers and lakes to be worked out (they're drawn on every view once they are). */
+export const waterReady = (page: Page) => expect(inspector(page).getByRole('region', { name: 'Rivers and lakes' }).getByText(/ rivers and /)).toBeVisible({ timeout: SLOW })
+
 /** Switches the world to its flat map, once it's drawn. */
 export async function openMap(page: Page): Promise<void> {
   await page.getByRole('button', { name: '🗺 Map' }).click()
