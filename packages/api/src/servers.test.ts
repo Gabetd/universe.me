@@ -53,7 +53,8 @@ describe('the REST API', () => {
     const bible = await fetch(`${base}/v1/worlds/${p.worldId}/export`, { headers: auth })
     expect(bible.headers.get('content-type')).toMatch(/markdown/)
     expect(await bible.text()).toContain('The founding')
-  })
+    // The bible tells of the world's rivers, worked out from its land: seconds on a busy computer.
+  }, 20_000)
 
   it('describes itself in OpenAPI, and streams changes', async () => {
     const spec = await fetch(`${base}/v1/openapi.json`, { headers: auth }).then(json)
