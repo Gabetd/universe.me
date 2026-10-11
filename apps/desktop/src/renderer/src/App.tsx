@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { VersionsDialog, useVersionsDialog } from './components/ChangeVersion'
-import { DictionaryDialog, useDictionaryDialog, useSpellingNames } from './components/DictionaryDialog'
+import { DictionaryDialog, SpellingNames, useDictionaryDialog } from './components/DictionaryDialog'
 import { ShortcutsSheet } from './components/ShortcutsSheet'
 import { UpdateBanner } from './components/UpdateBanner'
 import { Welcome } from './components/Welcome'
@@ -16,7 +16,6 @@ export function App() {
   const ready = useUi((s) => s.ready)
   const hasProject = useUi((s) => s.project !== null)
   useShortcuts({ shortcuts: showShortcuts })
-  useSpellingNames()
 
   useEffect(() => {
     const { apply } = useUi.getState()
@@ -44,6 +43,8 @@ export function App() {
       <ShortcutsSheet />
       {!isPhoneApp() && <VersionsDialog />}
       {!isPhoneApp() && <DictionaryDialog />}
+      {/* On a phone the phone's browser checks spelling; this computer's dictionary is for its own window. */}
+      {!isPhoneApp() && <SpellingNames />}
     </div>
   )
 }

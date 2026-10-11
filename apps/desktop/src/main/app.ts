@@ -9,7 +9,6 @@ import type { ApiController } from './api'
 import type { Session } from './session'
 import { TAILNET_URLS } from './tailnet'
 import { CHANNELS } from '../shared/update'
-import { Dictionary } from './dictionary'
 import { Updater } from './updater'
 
 declare const __BUILD_INFO__: BuildInfo
@@ -45,8 +44,8 @@ let api: ApiController
 let markLoaded!: () => void
 const loaded = new Promise<void>((resolve) => (markLoaded = resolve))
 /** The spelling dictionary, loaded the first time it's asked (it takes a moment to read). */
-let spelling: Dictionary | undefined
-const dictionary = () => (spelling ??= new Dictionary(app.getPath('userData')))
+let spelling: Promise<import('./dictionary').Dictionary> | undefined
+const dictionary = () => (spelling ??= import('./dictionary').then(({ Dictionary }) => new Dictionary(app.getPath('userData'))))
 
 const updater = new Updater(__BUILD_INFO__.channel, (status) => win?.webContents.send(EVENTS.update, status))
 /** A .universe file passed on the command line or via Finder before the window was ready. */
@@ -417,12 +416,12 @@ function registerIpc(): void {
   handle('checkForUpdates', () => updater.check(true))
   handle('versions', () => updater.versions())
   handle('installVersion', (channel) => updater.installBeside(channel))
-  handle('spellCheck', (words) => dictionary().misspelled(words.filter((w) => typeof w === 'string').slice(0, 2000)))
-  handle('spellSuggest', (word) => dictionary().suggest(String(word)))
-  handle('dictionaryWords', () => dictionary().words())
-  handle('addWord', (word) => dictionary().add(String(word)))
-  handle('removeWord', (word) => dictionary().remove(String(word)))
-  handle('setSpellingNames', (names) => dictionary().setNames(names.filter((n) => typeof n === 'string')))
+  handle('spellCheck', async (words) => (await dictionary()).misspelled(words.filter((w) => typeof w === 'string').slice(0, 2000)))
+  handle('spellWord', async (word) => (await dictionary()).check(String(word)))
+  handle('dictionaryWords', async () => (await dictionary()).words())
+  handle('addWord', async (word) => (await dictionary()).add(String(word)))
+  handle('removeWord', async (word) => (await dictionary()).remove(String(word)))
+  handle('setSpellingNames', async (names) => (await dictionary()).setNames(names.filter((n) => typeof n === 'string')))
   handle('paste', () => win?.webContents.paste())
 }
 

@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { create } from 'zustand'
 import { useUi } from '../store'
-import { isPhoneApp } from '../webBridge'
+import { Modal, dialogStore } from './Modal'
 
 /** Whether the dictionary is open (Edit → Dictionary…). */
-export const useDictionaryDialog = create<{ open: boolean; set(open: boolean): void }>((set) => ({ open: false, set: (open) => set({ open }) }))
+export const useDictionaryDialog = dialogStore()
 
 const close = () => useDictionaryDialog.getState().set(false)
 
@@ -21,17 +20,7 @@ export function DictionaryDialog() {
 function Words() {
   const [words, setWords] = useState<string[] | null>(null)
   const [word, setWord] = useState('')
-  useEffect(() => {
-    void window.universe.dictionaryWords().then(setWords)
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      e.preventDefault()
-      e.stopPropagation()
-      close()
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [])
+  useEffect(() => void window.universe.dictionaryWords().then(setWords), [])
   const add = () => {
     const w = word.trim()
     if (!w || /\s/.test(w)) return
@@ -39,43 +28,35 @@ function Words() {
     setWord('')
   }
   return (
-    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="modal versions-dialog" role="dialog" aria-label="Dictionary">
-        <header className="shortcuts-header">
-          <h2>Dictionary</h2>
-          <button className="icon" aria-label="Close dictionary" onClick={close}>
-            ✕
-          </button>
-        </header>
-        <p className="muted small">
-          Misspelled words are underlined as you type: right-click one for corrections, or to add it here. The names of everything in the open universe count as words already.
-        </p>
-        <div className="field-row">
-          <input aria-label="New word" placeholder="A word to add" value={word} onChange={(e) => setWord(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
-          <button onClick={add} disabled={!word.trim() || /\s/.test(word.trim())}>
-            Add
-          </button>
-        </div>
-        {words && words.length === 0 && <p className="muted small">No words of your own yet.</p>}
-        {words && words.length > 0 && (
-          <ul className="chip-list dictionary-words" aria-label="Your words">
-            {words.map((w) => (
-              <li key={w}>
-                {w}
-                <button className="link" aria-label={`Remove ${w}`} onClick={() => void window.universe.removeWord(w).then(setWords)}>
-                  ✕
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+    <Modal title="Dictionary" closeLabel="Close dictionary" className="versions-dialog" onClose={close}>
+      <p className="muted small">
+        Misspelled words are underlined as you type: right-click one for corrections, or to add it here. The names of everything in the open universe count as words already.
+      </p>
+      <div className="field-row">
+        <input aria-label="New word" placeholder="A word to add" value={word} onChange={(e) => setWord(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <button onClick={add} disabled={!word.trim() || /\s/.test(word.trim())}>
+          Add
+        </button>
       </div>
-    </div>
+      {words && words.length === 0 && <p className="muted small">No words of your own yet.</p>}
+      {words && words.length > 0 && (
+        <ul className="chip-list dictionary-words" aria-label="Your words">
+          {words.map((w) => (
+            <li key={w}>
+              {w}
+              <button className="link" aria-label={`Remove ${w}`} onClick={() => void window.universe.removeWord(w).then(setWords)}>
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Modal>
   )
 }
 
-/** Tells the dictionary the names in the open universe as they change, so they aren't underlined. */
-export function useSpellingNames(): void {
+/** Tells the dictionary the names in the open universe as they change, so they aren't underlined. (A component of its own, so only it redraws when they do.) */
+export function SpellingNames(): null {
   const nodes = useUi((s) => s.nodes)
   const regions = useUi((s) => s.regions)
   const timeline = useUi((s) => s.timeline)
@@ -88,6 +69,6 @@ export function useSpellingNames(): void {
       ...[t.events, t.groups].flatMap((list: { title: string }[]) => list.map((r) => r.title))
     ].join('\n')
   }, [nodes, regions, timeline])
-  // On a phone the phone's browser checks spelling; this computer's dictionary is for its own window.
-  useEffect(() => void (!isPhoneApp() && window.universe.setSpellingNames(names.split('\n'))), [names])
+  useEffect(() => void window.universe.setSpellingNames(names.split('\n')), [names])
+  return null
 }

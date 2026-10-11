@@ -7,7 +7,7 @@ import {
   otherParty,
   relationLabel,
   relationshipsAt,
-  sameParty,
+  involves,
   territoryAt,
   KIND_LABELS,
   STAGES,
@@ -153,6 +153,13 @@ export function spanText(m: ProjectModels, worldId: string, s: Pick<Span, 'start
   return 'always'
 }
 
+/** A character or faction on a world, by id. */
+export function partyOf(view: WorldView, id: string): Party {
+  if (view.timeline.characters.some((c) => c.id === id)) return { kind: 'character', id }
+  if (view.timeline.factions.some((f) => f.id === id)) return { kind: 'faction', id }
+  throw new ApiError(404, `There is no character or faction ${id} on ${view.node.name}`)
+}
+
 /** A character's or faction's name; undefined if it's gone. */
 export function partyName(view: WorldView, p: Party): string | undefined {
   return (p.kind === 'faction' ? view.timeline.factions : view.timeline.characters).find((x) => x.id === p.id)?.name
@@ -203,7 +210,7 @@ export function describeFactionHistory(m: ProjectModels, view: WorldView, f: Fac
     ...factionBasics(m, view, f),
     members: tl.memberships.filter((x) => x.factionId === f.id).map((x) => ({ name: characterNamed(view, x.characterId), ...(x.role && { role: x.role }), when: spanText(m, f.ownerId, x) })),
     territory: tl.holdings.filter((h) => h.factionId === f.id).map((h) => ({ region: regionNamed(view, h.regionId), when: spanText(m, f.ownerId, h) })),
-    relationships: tl.relationships.filter((r) => sameParty(r.from, self) || sameParty(r.to, self)).map((r) => describeRelationFrom(m, view, r, self)),
+    relationships: tl.relationships.filter((r) => involves(r, self)).map((r) => describeRelationFrom(m, view, r, self)),
     notes: htmlToText(f.notes)
   }
 }
@@ -312,6 +319,12 @@ export function refName(m: ProjectModels, view: WorldView, { kind, id }: Finding
     }
     case 'power':
       return find(t.powers)?.name
+    case 'faction':
+      return find(t.factions)?.name
+    case 'relationship': {
+      const r = find(t.relationships)
+      return r && `${partyName(view, r.from) ?? '?'} and ${partyName(view, r.to) ?? '?'}`
+    }
   }
 }
 

@@ -526,6 +526,7 @@ Each milestone ends with something you can launch and demo.
 
 - [x] *Added during M14:* **Universe (dev)** and **Universe (staging)**, builds of those branches as apps of their own, and **Change version** in place of Check for updates (see M13's items). The globe and the ground fill their box when they open during the zoom between levels.
 - [x] *Added during M14:* **spelling**. Misspelled words are underlined as they're typed, in every text field and the notes editor, by the app's own dictionary (English, Hunspell's, through nspell, bundled: the same everywhere, nothing downloaded; `main/dictionary.ts`). Right-clicking text gives the word's corrections (closest first, a swap of two letters counting as one change), **Add to the dictionary**, and cut, copy, paste and select all. The user's own words are kept in their profile (Edit → Dictionary… lists them, to add to or take out); the names of everything in the open universe count as words already.
+- [x] *Added during M14:* **walking the ground**. On the ground, W A S D (or the arrow keys) move over it the way the camera faces, at the speed picked in the toolbar (Walk, Run, Ride, Fly), Shift for three times as fast.
 
 ### M15 — Rivers & erosion (3 weeks) — *planned*
 - Rivers that run downhill from the terrain to the sea or a lake (flow accumulation on the cube-sphere heightmap, in a worker), redrawn as land is sculpted; lakes in basins; named and selectable like regions; on the globe, map and ground.

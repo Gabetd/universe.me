@@ -14,7 +14,7 @@ import dic from 'dictionary-en-files/index.dic?raw'
  * factions…) count as words too, without being added.
  */
 export class Dictionary {
-  private readonly spell = nspell(aff, dic)
+  private checker: ReturnType<typeof nspell> | undefined
   private readonly own: Set<string>
   private readonly file: string
   private names = new Set<string>()
@@ -22,7 +22,15 @@ export class Dictionary {
   constructor(profile: string) {
     this.file = join(profile, 'dictionary.txt')
     this.own = new Set(read(this.file))
-    for (const word of this.own) this.spell.add(word)
+  }
+
+  /** Hunspell's English, built the first time a word is checked (it takes a moment). */
+  private get spell(): ReturnType<typeof nspell> {
+    if (!this.checker) {
+      this.checker = nspell(aff, dic)
+      for (const word of this.own) this.checker.add(word)
+    }
+    return this.checker
   }
 
   /** The words among `words` that aren't spelled right. */
@@ -30,9 +38,10 @@ export class Dictionary {
     return words.filter((w) => !this.known(w))
   }
 
-  /** Corrections for a word, best first (see `rank`); none for one that's spelled right. */
-  suggest(word: string): string[] {
-    return this.known(word) ? [] : rank(word, this.spell.suggest(word)).slice(0, 6)
+  /** Whether a word is misspelled, and its corrections, best first (see `rank`). */
+  check(word: string): { misspelled: boolean; suggestions: string[] } {
+    if (this.known(word)) return { misspelled: false, suggestions: [] }
+    return { misspelled: true, suggestions: rank(word, this.spell.suggest(word)).slice(0, 6) }
   }
 
   /** The words the user added, A to Z. */
@@ -45,7 +54,7 @@ export class Dictionary {
     const w = clean(word)
     if (w && !this.own.has(w)) {
       this.own.add(w)
-      this.spell.add(w)
+      this.checker?.add(w)
       await this.save()
     }
     return this.words()
@@ -53,7 +62,7 @@ export class Dictionary {
 
   async remove(word: string): Promise<string[]> {
     if (this.own.delete(word)) {
-      this.spell.remove(word)
+      this.checker?.remove(word)
       await this.save()
     }
     return this.words()

@@ -1,7 +1,7 @@
 import { formatTime, sameParty, type Calendar, type Party, type SpatialNode } from '@universe/core'
 import { memo, useMemo } from 'react'
 import { openElement } from '../contextMenu'
-import { useUi } from '../store'
+import { byId, useOwnRecords, useUi, useWorld } from '../store'
 import { TimeScale, type TimeRange } from './scale'
 import { useTimelineView } from './timelineStore'
 import { TrackRow } from './TrackRow'
@@ -22,27 +22,32 @@ function bar(scale: TimeScale, start: number | null, end: number | null, width: 
  */
 export const LivesTrack = memo(function LivesTrack({ owner, range, width, cal, labelWidth }: { owner: SpatialNode; range: TimeRange; width: number; cal: Calendar; labelWidth: number }) {
   const shown = useTimelineView((s) => s.lives[owner.id])
-  const timeline = useUi((s) => s.timeline)
+  const characters = useOwnRecords('characters', owner.id)
+  const factions = useOwnRecords('factions', owner.id)
+  const memberships = useOwnRecords('memberships', owner.id)
+  const holdings = useOwnRecords('holdings', owner.id)
+  const events = useOwnRecords('events', owner.id)
+  const { regions } = useWorld(owner.id)
   const lives = useMemo(() => {
     if (!shown?.length) return []
-    const { characters, factions, memberships, holdings, events } = timeline
+    const [characterById, factionById, regionById] = [byId(characters), byId(factions), byId(regions)]
     return shown.flatMap((id) => {
-      const character = characters.find((c) => c.id === id && c.ownerId === owner.id)
-      const faction = factions.find((f) => f.id === id && f.ownerId === owner.id)
+      const character = characterById.get(id)
+      const faction = factionById.get(id)
       const party: Party | undefined = character ? { kind: 'character', id } : faction ? { kind: 'faction', id } : undefined
       if (!party) return []
-      const took = events.filter((e) => e.ownerId === owner.id && (e.participants?.some((p) => sameParty(p, party)) || character?.stops.some((s) => s.eventId === e.id)))
+      const took = events.filter((e) => e.participants?.some((p) => sameParty(p, party)) || character?.stops.some((s) => s.eventId === e.id))
       if (character) {
         const parts = memberships.filter((m) => m.characterId === id).flatMap((m) => {
-          const f = factions.find((x) => x.id === m.factionId)
+          const f = factionById.get(m.factionId)
           return f ? [{ id: m.id, start: m.start ?? character.born, end: m.end ?? character.died, color: f.color, title: `${f.name}${m.role ? `, ${m.role}` : ''}` }] : []
         })
         return [{ party, name: character.name, color: character.color, start: character.born, end: character.died, parts, events: took, stops: character.stops.map((s) => s.at) }]
       }
-      const parts = holdings.filter((h) => h.factionId === id).map((h) => ({ id: h.id, start: h.start ?? faction!.start, end: h.end ?? faction!.end, color: faction!.color, title: useUi.getState().regions.find((r) => r.id === h.regionId)?.name ?? 'A region' }))
+      const parts = holdings.filter((h) => h.factionId === id).map((h) => ({ id: h.id, start: h.start ?? faction!.start, end: h.end ?? faction!.end, color: faction!.color, title: regionById.get(h.regionId)?.name ?? 'A region' }))
       return [{ party, name: `${faction!.emblem ? `${faction!.emblem} ` : ''}${faction!.name}`, color: faction!.color, start: faction!.start, end: faction!.end, parts, events: took, stops: [] as number[] }]
     })
-  }, [shown, timeline, owner.id])
+  }, [shown, characters, factions, memberships, holdings, events, regions])
   if (!lives.length) return null
   const scale = new TimeScale(range, width)
   const { selectTimeline } = useUi.getState()

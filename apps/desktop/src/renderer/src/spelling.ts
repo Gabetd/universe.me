@@ -74,8 +74,7 @@ export function editableAt(target: Element): HTMLElement | undefined {
 /** The menu for a right-click at (x, y) in `editable`: the word's corrections and adding it to the dictionary, then editing. */
 export async function textMenu(editable: HTMLElement, x: number, y: number): Promise<{ title?: string; items: MenuItem[] }> {
   const found = wordAt(editable, x, y)
-  const suggestions = found ? await window.universe.spellSuggest(found.word) : []
-  const misspelled = !!found && (suggestions.length > 0 || (await window.universe.spellCheck([found.word])).length > 0)
+  const { misspelled, suggestions } = found ? await window.universe.spellWord(found.word) : { misspelled: false, suggestions: [] }
   const selected = () => {
     if (isTextField(editable)) return editable.selectionStart !== editable.selectionEnd
     return !!getSelection()?.toString()

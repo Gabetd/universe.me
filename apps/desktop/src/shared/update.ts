@@ -16,7 +16,8 @@ export const CHANNELS = {
   dev: { label: 'Dev', name: 'Universe (dev)', release: 'dev-build', about: 'What’s being worked on now; it may break.', command: 'universe-desktop-dev' }
 } as const
 export type Channel = keyof typeof CHANNELS
-export const CHANNEL_ORDER: readonly Channel[] = ['main', 'staging', 'dev']
+/** Live first, then the ones before it. */
+export const CHANNEL_ORDER = Object.keys(CHANNELS) as Channel[]
 
 /** What Change version lists for a channel: its newest build, or why it isn't known. */
 export interface ChannelVersion {

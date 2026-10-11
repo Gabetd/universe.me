@@ -1,4 +1,4 @@
-import { CommandError, liveRecord, liveRegion, liveWorld, type Check } from './command-kit'
+import { CommandError, liveRecord, liveRegion, liveWorld, sameOwner, type Check } from './command-kit'
 import { sameParty, wouldLoop, type Faction, type Holding, type Membership, type Party, type Relationship, type Span } from './factions'
 import type { Store } from './store'
 
@@ -36,9 +36,7 @@ export function liveParty(store: Store, p: Party, worldId: string) {
   onWorld(liveRecord(store, p.kind, p.id), worldId, p.kind)
 }
 
-function onWorld(record: { ownerId: string }, worldId: string, what: string) {
-  if (record.ownerId !== worldId) throw new CommandError(`That ${what} is on another world`)
-}
+const onWorld = (record: { ownerId: string }, worldId: string, what: string) => sameOwner(record, worldId, what, 'world')
 
 function checkSpan(store: Store, s: Span, worldId: string, backwards: string) {
   if (s.start !== null && s.end !== null && s.end < s.start) throw new CommandError(backwards)

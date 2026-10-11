@@ -12,11 +12,11 @@ import {
   type Party
 } from '@universe/core'
 import { useMemo, useRef, useState } from 'react'
-import { LaneToggle, RelationshipList, SpanFields } from '../components/FactionParts'
+import { LaneToggle, MembershipRow, RelationshipList, SpanFields, execute, rowClass } from '../components/FactionParts'
 import { ColorField, DeleteButton, NotesField, SelectField, Swatch, TagsField, TextField } from '../components/fields'
 import { menuRef, openElement, openElementMenu } from '../contextMenu'
 import { flagClass, useFlaggedIds } from '../flags'
-import { useOwnRecords, useUi } from '../store'
+import { useOwnRecords, useUi, useWorld } from '../store'
 import { usePlayhead } from '../timeline/timelineStore'
 import { useSteadyScroll } from '../useSteadyScroll'
 import { useEditor } from './editorStore'
@@ -29,7 +29,6 @@ import { useCalendar } from './useSky'
  * stands with others. Or the graph of who's related to whom at the playhead.
  */
 
-const execute = (command: Parameters<ReturnType<typeof useUi.getState>['execute']>[0]) => useUi.getState().execute(command)
 
 type Tab = 'factions' | 'graph'
 
@@ -147,7 +146,8 @@ function FactionEditor({ worldId, faction, factions }: { worldId: string; factio
   const content = useRef<HTMLElement>(null)
   useSteadyScroll(content, faction.id)
   // What it can be part of: not itself, nor one of its own parts.
-  const parents = factions.filter((f) => f.id !== faction.id && !wouldLoop(factions, faction.id, f.id))
+  const parents = useMemo(() => factions.filter((f) => f.id !== faction.id && !wouldLoop(factions, faction.id, f.id)), [factions, faction.id])
+  const self = useMemo(() => ({ kind: 'faction' as const, id: faction.id }), [faction.id])
   const exists = holdsAt(faction, playhead)
   const eventOptions = useMemo(
     () =>
@@ -209,7 +209,7 @@ function FactionEditor({ worldId, faction, factions }: { worldId: string; factio
         <LaneToggle worldId={worldId} id={faction.id} />
         <MemberRows worldId={worldId} factionId={faction.id} />
         <TerritoryRows worldId={worldId} factionId={faction.id} />
-        <RelationshipList worldId={worldId} self={{ kind: 'faction', id: faction.id }} label="Stands with" />
+        <RelationshipList worldId={worldId} self={self} label="Stands with" />
         <TagsField label="Faction tags" tags={faction.tags} onCommit={(tags) => update({ tags })} />
         <NotesField label="Faction notes" value={faction.notes} onCommit={(notes) => update({ notes })} />
         <DeleteButton kind="faction" ids={[faction.id]}>
@@ -233,16 +233,14 @@ function MemberRows({ worldId, factionId }: { worldId: string; factionId: string
       {memberships.length > 0 && (
         <ul className="plain-list faction-rows" aria-label="Members">
           {memberships.map((m) => (
-            <li key={m.id} className={`faction-row${holdsAt(m, playhead) ? '' : ' absent'}`}>
-              <button className="link" onClick={() => useUi.getState().selectCharacter(m.characterId)}>
-                {name(m.characterId)}
-              </button>
-              <TextField label={`${name(m.characterId)}’s role`} value={m.role} placeholder="Role" onCommit={(role) => void execute({ type: 'membership.update', payload: { id: m.id, patch: { role } } })} />
-              <SpanFields span={m} label={`${name(m.characterId)} a member`} onCommit={(patch) => void execute({ type: 'membership.update', payload: { id: m.id, patch } })} />
-              <button className="link" aria-label={`Remove ${name(m.characterId)}`} onClick={() => void execute({ type: 'membership.delete', payload: { id: m.id } })}>
-                ✕
-              </button>
-            </li>
+            <MembershipRow
+              key={m.id}
+              membership={m}
+              playhead={playhead}
+              name={name(m.characterId)}
+              onOpen={() => useUi.getState().selectCharacter(m.characterId)}
+              labels={{ role: `${name(m.characterId)}’s role`, span: `${name(m.characterId)} a member`, remove: `Remove ${name(m.characterId)}` }}
+            />
           ))}
         </ul>
       )}
@@ -266,8 +264,7 @@ function MemberRows({ worldId, factionId }: { worldId: string; factionId: string
 function TerritoryRows({ worldId, factionId }: { worldId: string; factionId: string }) {
   const all = useOwnRecords('holdings', worldId)
   const holdings = useMemo(() => all.filter((h) => h.factionId === factionId), [all, factionId])
-  const allRegions = useUi((s) => s.regions)
-  const regions = useMemo(() => allRegions.filter((r) => r.worldId === worldId), [allRegions, worldId])
+  const { regions } = useWorld(worldId)
   const playhead = usePlayhead(worldId)
   const name = (id: string) => regions.find((r) => r.id === id)?.name ?? '(a deleted region)'
   return (
@@ -276,7 +273,7 @@ function TerritoryRows({ worldId, factionId }: { worldId: string; factionId: str
       {holdings.length > 0 && (
         <ul className="plain-list faction-rows" aria-label="Territory">
           {holdings.map((h) => (
-            <li key={h.id} className={`faction-row${holdsAt(h, playhead) ? '' : ' absent'}`}>
+            <li key={h.id} className={rowClass(h, playhead)}>
               <button className="link" onClick={() => useUi.getState().selectRegion(h.regionId)}>
                 {name(h.regionId)}
               </button>

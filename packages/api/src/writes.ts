@@ -25,13 +25,12 @@ import {
   type Command,
   type AspectValues,
   type LatLon,
-  type Party,
   type PowerAspect
 } from '@universe/core'
 import { readSeed } from '@universe/procgen'
 import { EARTH_ORBIT, luminosityOf } from '@universe/sim'
 import { z } from 'zod'
-import { biomeIds, partyName, refName } from './describe'
+import { biomeIds, partyName, partyOf, refName } from './describe'
 import { ApiError, findOr404, type WriteOptions } from './host'
 import { When, operation, written, type ApiContext } from './operation'
 import type { WorldView } from './model'
@@ -100,13 +99,6 @@ function blueprintId(ctx: ApiContext, nameOrId: string): string {
   return b.id
 }
 
-/** A character or faction on a world, by id. */
-function partyOf(view: WorldView, id: string): Party {
-  if (view.timeline.characters.some((c) => c.id === id)) return { kind: 'character', id }
-  if (view.timeline.factions.some((f) => f.id === id)) return { kind: 'faction', id }
-  throw new ApiError(404, `There is no character or faction ${id} on ${view.node.name}`)
-}
-
 /** A faction on a world by id or name. */
 function factionNamed(view: WorldView, nameOrId: string) {
   const all = view.timeline.factions
@@ -122,20 +114,13 @@ const SpanInput = {
   untilEventId: z.string().optional().describe('The event that ended it')
 }
 
-/** A span's fields from a client's dates and events (an event's date standing in for one not given). */
+/** A span's fields from a client's dates and events (an event's date standing in for one not given); the bus checks the rest. */
 function spanOf(ctx: ApiContext, worldId: string, p: { from?: string | number; until?: string | number; fromEventId?: string; untilEventId?: string }) {
   const m = ctx.models
-  const event = (id: string | undefined) => {
-    if (!id) return undefined
-    const e = m.event(id)
-    if (e.ownerId !== worldId) throw new ApiError(400, `“${e.title}” is on another world`)
-    return e
-  }
-  const [begin, finish] = [event(p.fromEventId), event(p.untilEventId)]
-  const start = p.from !== undefined ? m.when(worldId, p.from) : (begin?.start ?? null)
+  const [begin, finish] = [p.fromEventId && m.event(p.fromEventId), p.untilEventId && m.event(p.untilEventId)]
+  const start = p.from !== undefined ? m.when(worldId, p.from) : begin ? begin.start : null
   const end = p.until !== undefined ? m.when(worldId, p.until) : finish ? (finish.end ?? finish.start) : null
-  if (start !== null && end !== null && end < start) throw new ApiError(400, 'It ends before it begins')
-  return { start, end, startEventId: begin?.id ?? null, endEventId: finish?.id ?? null }
+  return { start, end, startEventId: begin ? begin.id : null, endEventId: finish ? finish.id : null }
 }
 
 const Who = z.array(z.string()).describe('Characters’ and factions’ ids: who took part')

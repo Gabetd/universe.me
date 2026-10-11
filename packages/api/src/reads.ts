@@ -20,7 +20,7 @@ import {
 import { formatPeriod, deriveCalendar, moonsOf, skyEvents } from '@universe/sim'
 import { z } from 'zod'
 import { exportWorldBible } from './bible'
-import { biomeName, describeCalendar, describeCharacter, describeEvent, describeFactionAt, describeFactionHistory, describeFinding, describeRelationFrom, describeRelationship, describeMoons, describePowerAt, describePowerSystem, describeStructure, describeTheme, kindLabel, nodePath, round, worldSnapshot } from './describe'
+import { biomeName, describeCalendar, describeCharacter, describeEvent, describeFactionAt, describeFactionHistory, describeFinding, describeRelationFrom, describeRelationship, describeMoons, describePowerAt, describePowerSystem, describeStructure, describeTheme, kindLabel, nodePath, partyOf, round, worldSnapshot } from './describe'
 import { ApiError, notFound } from './host'
 import { QueryFlag, QueryList, QueryNumber, When, operation, type ApiContext } from './operation'
 import { htmlToText } from './text'
@@ -498,9 +498,7 @@ export const READS = [
       const t = m.whenOrNow(worldId, at)
       const tl = view.timeline
       if (!of) return { date: m.date(worldId, t), relationships: relationshipsAt(tl.relationships, t).map((r) => describeRelationship(m, view, r)) }
-      const kind = tl.factions.some((f) => f.id === of) ? 'faction' : tl.characters.some((c) => c.id === of) ? 'character' : undefined
-      if (!kind) throw new ApiError(404, `There is no character or faction ${of} on that world`)
-      const side = { kind, id: of } as const
+      const side = partyOf(view, of)
       return { date: m.date(worldId, t), relationships: relationshipsAt(tl.relationships, t, side).map((r) => describeRelationFrom(m, view, r, side)) }
     }
   }),

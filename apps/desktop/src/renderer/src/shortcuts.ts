@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { create } from 'zustand'
+import { dialogStore } from './components/Modal'
 import { isEditingText } from './input'
 
 /**
@@ -100,4 +100,4 @@ export function onShortcutKey(e: KeyboardEvent): void {
 }
 
 /** Whether the shortcuts sheet is open. */
-export const useShortcutSheet = create<{ open: boolean; set(open: boolean): void }>((set) => ({ open: false, set: (open) => set({ open }) }))
+export const useShortcutSheet = dialogStore()

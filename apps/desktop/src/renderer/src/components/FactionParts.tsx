@@ -1,4 +1,4 @@
-import { RELATION_INFO, RELATION_TYPES, holdsAt, otherParty, relationLabel, sameParty, type Party, type Span } from '@universe/core'
+import { RELATION_INFO, RELATION_TYPES, holdsAt, involves, otherParty, relationLabel, sameParty, type Membership, type Party, type Span } from '@universe/core'
 import { useMemo, useState } from 'react'
 import { menuRef, openElement, showFaction } from '../contextMenu'
 import { useOwnRecords, useUi } from '../store'
@@ -11,7 +11,8 @@ import { TextField, TimeField } from './fields'
  * row dimmed when it doesn't hold at the playhead.
  */
 
-const execute = (command: Parameters<ReturnType<typeof useUi.getState>['execute']>[0]) => useUi.getState().execute(command)
+/** Runs a command through the bus (for the rows' edits, which need nothing back). */
+export const execute = (command: Parameters<ReturnType<typeof useUi.getState>['execute']>[0]) => useUi.getState().execute(command)
 
 /** From and until, as dates in the world's calendar; empty is "from the start" and "still". */
 export function SpanFields({ span, label, from = 'From', until = 'Until', onCommit }: { span: Pick<Span, 'start' | 'end'>; label: string; from?: string; until?: string; onCommit(patch: Partial<Span>): void }) {
@@ -25,7 +26,23 @@ export function SpanFields({ span, label, from = 'From', until = 'Until', onComm
 }
 
 /** A row's class: dimmed while it doesn't hold at the playhead. */
-const rowClass = (span: Pick<Span, 'start' | 'end'>, t: number) => `faction-row${holdsAt(span, t) ? '' : ' absent'}`
+export const rowClass = (span: Pick<Span, 'start' | 'end'>, t: number) => `faction-row${holdsAt(span, t) ? '' : ' absent'}`
+
+/** One membership, from either side (a faction's member, a character's faction): who or what, the role, when, and removing it. */
+export function MembershipRow({ membership: m, playhead, name, onOpen, labels }: { membership: Membership; playhead: number; name: string; onOpen(): void; labels: { role: string; span: string; remove: string } }) {
+  return (
+    <li className={rowClass(m, playhead)}>
+      <button className="link" onClick={onOpen}>
+        {name}
+      </button>
+      <TextField label={labels.role} value={m.role} placeholder="Role" onCommit={(role) => void execute({ type: 'membership.update', payload: { id: m.id, patch: { role } } })} />
+      <SpanFields span={m} label={labels.span} onCommit={(patch) => void execute({ type: 'membership.update', payload: { id: m.id, patch } })} />
+      <button className="link" aria-label={labels.remove} onClick={() => void execute({ type: 'membership.delete', payload: { id: m.id } })}>
+        ✕
+      </button>
+    </li>
+  )
+}
 
 /** A world's characters and factions by id, for names. */
 function usePartyNames(worldId: string) {
@@ -49,7 +66,7 @@ const RELATION_CHOICES = RELATION_TYPES.flatMap((type) => {
 /** Everyone `self` is related to: who, as what, and when; and a row to add another. */
 export function RelationshipList({ worldId, self, label }: { worldId: string; self: Party; label: string }) {
   const all = useOwnRecords('relationships', worldId)
-  const rels = useMemo(() => all.filter((r) => sameParty(r.from, self) || sameParty(r.to, self)), [all, self])
+  const rels = useMemo(() => all.filter((r) => involves(r, self)), [all, self])
   const { characters, factions, name } = usePartyNames(worldId)
   const playhead = usePlayhead(worldId)
   const others: Party[] = [...characters.map((c) => ({ kind: 'character' as const, id: c.id })), ...factions.map((f) => ({ kind: 'faction' as const, id: f.id }))].filter((p) => !sameParty(p, self))
@@ -127,16 +144,14 @@ export function MembershipList({ worldId, characterId }: { worldId: string; char
       {memberships.length > 0 && (
         <ul className="plain-list faction-rows" aria-label="Factions">
           {memberships.map((m) => (
-            <li key={m.id} className={rowClass(m, playhead)}>
-              <button className="link" onClick={() => showFaction(m.factionId)}>
-                {name(m.factionId)}
-              </button>
-              <TextField label={`Role in ${name(m.factionId)}`} value={m.role} placeholder="Role" onCommit={(role) => void execute({ type: 'membership.update', payload: { id: m.id, patch: { role } } })} />
-              <SpanFields span={m} label={`In ${name(m.factionId)}`} onCommit={(patch) => void execute({ type: 'membership.update', payload: { id: m.id, patch } })} />
-              <button className="link" aria-label={`Leave ${name(m.factionId)}`} onClick={() => void execute({ type: 'membership.delete', payload: { id: m.id } })}>
-                ✕
-              </button>
-            </li>
+            <MembershipRow
+              key={m.id}
+              membership={m}
+              playhead={playhead}
+              name={name(m.factionId)}
+              onOpen={() => showFaction(m.factionId)}
+              labels={{ role: `Role in ${name(m.factionId)}`, span: `In ${name(m.factionId)}`, remove: `Leave ${name(m.factionId)}` }}
+            />
           ))}
         </ul>
       )}

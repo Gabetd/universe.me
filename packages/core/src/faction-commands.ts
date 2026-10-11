@@ -1,8 +1,8 @@
 import { z } from 'zod'
 import { pickColor } from './command-kit'
 import type { Command, HandlerMap } from './commands'
-import { Faction, FactionKind, Holding, Membership, Party, Relationship, RelationType, sameParty } from './factions'
-import { NewId, create, deleteWith, live, recordCrud, refsWhere } from './record-kit'
+import { Faction, FactionKind, Holding, Membership, Party, Relationship, RelationType, involves, sameParty } from './factions'
+import { NewId, clearRefs, create, deleteWith, live, recordCrud, refsWhere } from './record-kit'
 import { Id } from './schema'
 import type { Store } from './store'
 import { stripUndefined } from './util'
@@ -89,17 +89,10 @@ const dropParticipant = (store: Store, ownerId: string, party: Party): Command[]
       : []
   )
 
-const relationshipsWith = (store: Store, ownerId: string, party: Party) =>
-  refsWhere(store, 'relationship', ownerId, (r) => sameParty(r.from, party) || sameParty(r.to, party))
+const relationshipsWith = (store: Store, ownerId: string, party: Party) => refsWhere(store, 'relationship', ownerId, (r) => involves(r, party))
 
-/** Updates that forget an event that's going wherever these records name it as a cause. */
-export function forgetCause(store: Store, eventId: string): Command[] {
-  const out: Command[] = []
-  for (const kind of ['faction', 'membership', 'holding', 'relationship'] as const) {
-    for (const r of live(store, kind)) {
-      const patch = { ...(r.startEventId === eventId && { startEventId: null }), ...(r.endEventId === eventId && { endEventId: null }) }
-      if (Object.keys(patch).length) out.push({ type: `${kind}.update`, payload: { id: r.id, patch } } as Command)
-    }
-  }
-  return out
-}
+/** Updates that forget an event that's going wherever these records on its world name it as a cause. */
+export const forgetCause = (store: Store, ownerId: string, eventId: string): Command[] =>
+  (['faction', 'membership', 'holding', 'relationship'] as const).flatMap((kind) =>
+    (['startEventId', 'endEventId'] as const).flatMap((field) => clearRefs(store, kind, ownerId, field, eventId))
+  )

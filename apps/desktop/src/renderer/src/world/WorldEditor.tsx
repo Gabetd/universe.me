@@ -25,6 +25,7 @@ import { useCharactersAt } from './useCharacters'
 import { useWorldAtTime } from './useWorldAtTime'
 import { WEBGL } from './webgl'
 import { BlueprintOptions } from '../components/BlueprintOptions'
+import { Swatch } from '../components/fields'
 
 const TOOLS: { tool: EditorTool; label: string; icon: string; hint: string }[] = [
   { tool: 'navigate', label: 'Navigate', icon: '✋', hint: 'Drag to rotate or pan, scroll to zoom. Click a region to select it.' },
@@ -217,13 +218,13 @@ function SpeedPicker() {
 
 /** Who holds the regions coloured on the view, at the playhead. */
 function TerritoryLegend({ holders }: { holders: Map<string, Faction> }) {
-  const factions = [...new Map([...holders.values()].map((f) => [f.id, f])).values()]
+  const factions = [...new Set(holders.values())]
   return (
     <aside className="territory-legend" aria-label="Territory">
       {factions.length ? (
         factions.map((f) => (
           <button key={f.id} className="link" onClick={() => showFaction(f.id)}>
-            <span className="swatch" style={{ background: f.color }} /> {f.emblem} {f.name}
+            <Swatch color={f.color} /> {f.emblem} {f.name}
           </button>
         ))
       ) : (

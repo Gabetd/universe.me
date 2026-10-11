@@ -188,3 +188,8 @@ export const pickColor = (ctx: CommandContext) => PALETTE[ctx.randomSeed() % PAL
 export function batchOf(commands: Command[]): Command {
   return commands.length === 1 ? commands[0]! : { type: 'batch', payload: { commands } }
 }
+
+/** Checks that a record is on the same timeline (or world) as the one it's used on. */
+export function sameOwner(record: { ownerId: string }, ownerId: string, what: string, where = 'timeline'): void {
+  if (record.ownerId !== ownerId) throw new CommandError(`That ${what} is on another ${where}`)
+}

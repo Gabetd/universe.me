@@ -1,5 +1,5 @@
 import type { Character } from './characters'
-import { RELATION_INFO, sameParty, spansOverlap, type Faction, type Holding, type Membership, type Party, type Relationship, type Span } from './factions'
+import { RELATION_INFO, ancestors, otherParty, relationLabel, spansOverlap, type Faction, type Holding, type Membership, type Party, type Relationship, type Span } from './factions'
 import type { TimelineEvent } from './timeline'
 import { eventSpan, type Warning } from './timeline-queries'
 import { byId, groupBy } from './util'
@@ -50,7 +50,7 @@ export function factionWarnings(data: FactionData, regions: readonly Region[]): 
     for (let i = 0; i < held.length; i++) {
       for (let j = i + 1; j < held.length; j++) {
         const [a, b] = [factions.get(held[i]!.factionId)!, factions.get(held[j]!.factionId)!]
-        if (a.id === b.id || within(a, b, factions) || within(b, a, factions) || !spansOverlap(held[i]!, held[j]!)) continue
+        if (a.id === b.id || [...ancestors(a, factions)].includes(b.id) || [...ancestors(b, factions)].includes(a.id) || !spansOverlap(held[i]!, held[j]!)) continue
         warn(`${regionName(regionId)} is held by both ${a.name} and ${b.name} at once`, { kind: 'region', id: regionId }, { kind: 'faction', id: a.id }, { kind: 'faction', id: b.id })
       }
     }
@@ -60,7 +60,8 @@ export function factionWarnings(data: FactionData, regions: readonly Region[]): 
     for (const side of [r.from, r.to]) {
       const c = side.kind === 'character' ? characters.get(side.id) : undefined
       if (c && r.start !== null && c.died !== null && r.start > c.died) {
-        warn(`${c.name} is ${RELATION_INFO[r.type].from.toLowerCase()} to ${partyName(sameParty(side, r.from) ? r.to : r.from)} after they die`, { kind: 'relationship', id: r.id }, { kind: 'character', id: c.id })
+        const other = otherParty(r, side)
+        warn(`${c.name} is ${relationLabel(r, other).toLowerCase()} to ${partyName(other)} after they die`, { kind: 'relationship', id: r.id }, { kind: 'character', id: c.id })
       }
     }
   }
@@ -94,10 +95,4 @@ export function factionWarnings(data: FactionData, regions: readonly Region[]): 
     if (s.start !== null && f.start !== null && s.start < f.start) warn(`${what} before it’s founded`, ...refs)
     else if (s.start !== null && f.end !== null && s.start >= f.end) warn(`${what} after it’s dissolved`, ...refs)
   }
-}
-
-/** Whether `inner` is part of `outer` (at any depth). */
-function within(inner: Faction, outer: Faction, factions: ReadonlyMap<string, Faction>): boolean {
-  for (let p = inner.parentId, n = 0; p && n < 50; p = factions.get(p)?.parentId ?? null, n++) if (p === outer.id) return true
-  return false
 }

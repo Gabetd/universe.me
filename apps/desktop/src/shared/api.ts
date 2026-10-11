@@ -188,8 +188,8 @@ export interface UniverseApi {
   installVersion(channel: Channel): Promise<string | null>
   /** The spelling dictionary: which of these words are misspelled (what's underlined as it's typed). */
   spellCheck(words: string[]): Promise<string[]>
-  /** Corrections for a misspelled word, best first. */
-  spellSuggest(word: string): Promise<string[]>
+  /** Whether a word is misspelled, and its corrections, best first. */
+  spellWord(word: string): Promise<{ misspelled: boolean; suggestions: string[] }>
   /** The words the user added to the dictionary. */
   dictionaryWords(): Promise<string[]>
   addWord(word: string): Promise<string[]>
@@ -234,7 +234,7 @@ export const INVOKE: Record<InvokeMethod, string> = {
   versions: 'update:versions',
   installVersion: 'update:install-version',
   spellCheck: 'spell:check',
-  spellSuggest: 'spell:suggest',
+  spellWord: 'spell:word',
   dictionaryWords: 'spell:words',
   addWord: 'spell:add',
   removeWord: 'spell:remove',

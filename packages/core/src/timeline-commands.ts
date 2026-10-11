@@ -87,7 +87,7 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
         ...live(store, 'character')
           .filter((c) => c.stops.some((s) => s.eventId === id))
           .map((c): Command => ({ type: 'character.update', payload: { id: c.id, patch: { stops: c.stops.map((s) => (s.eventId === id ? { ...s, eventId: null } : s)) } } })),
-        ...forgetCause(store, id)
+        ...forgetCause(store, ownerId, id)
       ],
       remove: [...refsWhere(store, 'link', ownerId, (l) => l.fromId === id || l.toId === id), ...refsWhere(store, 'effect', ownerId, (e) => e.eventId === id)]
     })),

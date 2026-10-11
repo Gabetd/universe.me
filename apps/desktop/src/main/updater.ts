@@ -56,7 +56,7 @@ export class Updater {
   private async manifest(channel: Channel): Promise<UpdateManifest> {
     const res = await net.fetch(this.urlOf(channel), { cache: 'no-store' })
     // Missing while CI swaps the release's files; try again next time.
-    if (!res.ok) throw new Error('Being published right now: try again in a few minutes.')
+    if (!res.ok) throw new NotPublishedYet()
     return readSignedManifest(await res.text(), this.publicKey)
   }
 
@@ -71,7 +71,7 @@ export class Updater {
           const manifest = await this.manifest(channel)
           return { ...base, version: manifest.version, installable: !!this.kind && !!pickUpdate(manifest, '0', this.kind, process.arch) }
         } catch (err) {
-          return { ...base, installable: false, error: err instanceof UntrustedUpdate || (err instanceof Error && err.message.startsWith('Being published')) ? err.message : 'Couldn’t reach GitHub.' }
+          return { ...base, installable: false, error: err instanceof UntrustedUpdate || err instanceof NotPublishedYet ? err.message : 'Couldn’t reach GitHub.' }
         }
       })
     )
@@ -91,9 +91,7 @@ export class Updater {
       const manifest = await this.manifest(channel)
       const file = pickUpdate(manifest, '0', kind, process.arch)
       if (!file) return `${CHANNELS[channel].name} has no build for this computer yet.`
-      const dir = await mkdtemp(join(tmpdir(), 'universe-version-'))
-      const downloaded = join(dir, file.name)
-      await download(new URL(file.name, this.urlOf(channel)).href, downloaded, file, () => {})
+      const { dir, downloaded } = await downloadToTemp(this.urlOf(channel), file, () => {})
       await BESIDE[kind](downloaded, dir, channel)
       return null
     } catch (err) {
@@ -128,10 +126,7 @@ export class Updater {
     if (this.status.state === 'downloading' || this.status.state === 'installing') return null
     if (manual) this.dismissed = undefined
     try {
-      const res = await net.fetch(this.manifestUrl, { cache: 'no-store' })
-      // Missing while CI swaps the release's files; try again next time.
-      if (!res.ok) return 'The latest build is being published right now. Try again in a few minutes.'
-      const manifest = readSignedManifest(await res.text(), this.publicKey)
+      const manifest = await this.manifest(this.channel)
       const latest = `Universe ${app.getVersion()} is the latest version.`
       if (compareVersions(manifest.version, app.getVersion()) <= 0) return latest
       // A copy that can't replace itself (a development build, one unpacked by hand, or a kind of install the build has no file for) can still say what's new.
@@ -142,7 +137,7 @@ export class Updater {
       this.set({ state: 'available', version: manifest.version, needsPassword: this.kind === 'linux-deb' })
       return null
     } catch (err) {
-      return err instanceof UntrustedUpdate ? err.message : "Couldn't reach GitHub to check for updates."
+      return err instanceof UntrustedUpdate || err instanceof NotPublishedYet ? err.message : "Couldn't reach GitHub to check for updates."
     }
   }
 
@@ -153,9 +148,7 @@ export class Updater {
     const version = status.version
     try {
       this.set({ state: 'downloading', version, progress: 0 })
-      const dir = await mkdtemp(join(tmpdir(), 'universe-update-'))
-      const downloaded = join(dir, file.name)
-      await download(new URL(file.name, this.manifestUrl).href, downloaded, file, (progress) => this.set({ state: 'downloading', version, progress }))
+      const { dir, downloaded } = await downloadToTemp(this.manifestUrl, file, (progress) => this.set({ state: 'downloading', version, progress }))
       this.set({ state: 'installing', version })
       await INSTALLERS[kind](downloaded, dir)
     } catch (err) {
@@ -169,8 +162,40 @@ export class Updater {
   }
 }
 
+/** The release's file is missing: CI is swapping the release's files. */
+class NotPublishedYet extends Error {
+  constructor() {
+    super('The build is being published right now. Try again in a few minutes.')
+  }
+}
+
 /** Starts a program on its own, not as this app's child, so it outlives it. */
 const startApart = (file: string, args: string[] = []) => spawn(file, args, { detached: true, stdio: 'ignore' }).unref()
+
+/** This copy's .app bundle, refusing one macOS runs from a read-only place (a disk image, or translocated from Downloads). */
+function appBundle(): string {
+  const bundle = resolve(process.execPath, '../../..')
+  if (bundle.includes('/AppTranslocation/') || bundle.startsWith('/Volumes/')) throw new Error('Move Universe to your Applications folder first.')
+  return bundle
+}
+
+/** Unzips a macOS download into `dir`, and finds the .app in it. */
+async function unzipApp(file: string, dir: string): Promise<string> {
+  const unpacked = join(dir, 'unpacked')
+  await run('/usr/bin/ditto', ['-x', '-k', file, unpacked])
+  const name = (await readdir(unpacked)).find((n) => n.endsWith('.app'))
+  if (!name) throw new Error('The download has no app in it.')
+  return join(unpacked, name)
+}
+
+/** Copies an executable to `target` through a file beside it, so the last step is an atomic rename on the same filesystem. */
+async function placeExecutable(file: string, target: string): Promise<void> {
+  const staged = `${target}.download`
+  await rm(staged, { force: true })
+  await run('cp', [file, staged])
+  await chmod(staged, 0o755)
+  await rename(staged, target)
+}
 
 /**
  * Installs another channel's app beside this one, and opens it: the same
@@ -190,26 +215,18 @@ const BESIDE: Record<InstallKind, (file: string, dir: string, channel: Channel) 
   },
 
   'mac-zip': async (file, dir, channel) => {
-    const bundle = resolve(process.execPath, '../../..')
-    const unpacked = join(dir, 'unpacked')
-    await run('/usr/bin/ditto', ['-x', '-k', file, unpacked])
-    const name = (await readdir(unpacked)).find((n) => n.endsWith('.app'))
-    if (!name) throw new Error('The download has no app in it.')
+    const unpacked = await unzipApp(file, dir)
     // Next to this one (Applications, usually), replacing an older copy of that channel.
-    const target = join(dirname(bundle), `${CHANNELS[channel].name}.app`)
+    const target = join(dirname(appBundle()), `${CHANNELS[channel].name}.app`)
     await rm(target, { recursive: true, force: true })
-    await run('/bin/mv', [join(unpacked, name), target])
+    await run('/bin/mv', [unpacked, target])
     await run('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', target]).catch(() => {})
     startApart('/usr/bin/open', [target])
   },
 
   'linux-appimage': async (file, _dir, channel) => {
     const target = join(dirname(process.env.APPIMAGE!), `Universe-${channel}.AppImage`)
-    const staged = `${target}.download`
-    await rm(staged, { force: true })
-    await run('cp', [file, staged])
-    await chmod(staged, 0o755)
-    await rename(staged, target)
+    await placeExecutable(file, target)
     startApart(target)
   },
 
@@ -230,6 +247,14 @@ function installKind(): InstallKind | null {
     if (process.execPath.startsWith('/opt/')) return 'linux-deb'
   }
   return null
+}
+
+/** Downloads a manifest's file (named relative to the manifest's URL) into a new temporary folder. */
+async function downloadToTemp(manifestUrl: string, file: UpdateFile, onProgress: (p: number) => void) {
+  const dir = await mkdtemp(join(tmpdir(), 'universe-update-'))
+  const downloaded = join(dir, file.name)
+  await download(new URL(file.name, manifestUrl).href, downloaded, file, onProgress)
+  return { dir, downloaded }
 }
 
 /** Streams `url` to `dest`, reporting progress (0–1) and checking size and SHA-512. */
@@ -266,7 +291,7 @@ function afterExit(script: string, ...args: string[]): void {
 const INSTALLERS: Record<InstallKind, (file: string, dir: string) => Promise<void>> = {
   // The NSIS installer closes the app itself, installs where it was installed before, then starts it.
   'win-nsis': async (file) => {
-    spawn(file, ['/S', '--updated', '--force-run'], { detached: true, stdio: 'ignore' }).unref()
+    startApart(file, ['/S', '--updated', '--force-run'])
     app.quit()
   },
 
@@ -295,27 +320,17 @@ const INSTALLERS: Record<InstallKind, (file: string, dir: string) => Promise<voi
 
   // Replace the whole .app bundle once the app exits, then open the new one.
   'mac-zip': async (file, dir) => {
-    const bundle = resolve(process.execPath, '../../..')
-    if (bundle.includes('/AppTranslocation/') || bundle.startsWith('/Volumes/')) throw new Error('Move Universe to your Applications folder, then update.')
+    const bundle = appBundle()
     await access(dirname(bundle), constants.W_OK).catch(() => {
       throw new Error(`Universe can't write to ${dirname(bundle)}.`)
     })
-    const unpacked = join(dir, 'unpacked')
-    await run('/usr/bin/ditto', ['-x', '-k', file, unpacked])
-    const name = (await readdir(unpacked)).find((n) => n.endsWith('.app'))
-    if (!name) throw new Error('The update has no app in it.')
-    afterExit('rm -rf "$1.old" && mv "$1" "$1.old" && mv "$2" "$1" && rm -rf "$1.old"; xattr -dr com.apple.quarantine "$1" 2>/dev/null; open "$1"', bundle, join(unpacked, name))
+    afterExit('rm -rf "$1.old" && mv "$1" "$1.old" && mv "$2" "$1" && rm -rf "$1.old"; xattr -dr com.apple.quarantine "$1" 2>/dev/null; open "$1"', bundle, await unzipApp(file, dir))
   },
 
   // A running AppImage can be renamed over (the old file stays open), so swap it now and relaunch.
   'linux-appimage': async (file) => {
     const target = process.env.APPIMAGE!
-    const staged = `${target}.update`
-    await rm(staged, { force: true })
-    // Next to the target so the final rename is atomic on the same filesystem.
-    await run('cp', [file, staged])
-    await chmod(staged, 0o755)
-    await rename(staged, target)
+    await placeExecutable(file, target)
     app.relaunch({ execPath: target, args: process.argv.slice(1) })
     app.quit()
   },

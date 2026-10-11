@@ -11,6 +11,7 @@ import {
   patchRow,
   previousValues,
   requireRow,
+  sameOwner,
   softDelete,
   type Check,
   type CommandContext,
@@ -129,9 +130,7 @@ export function blueprintOf(store: Store, id: string): Blueprint {
   return found
 }
 
-export function sameOwner(record: { ownerId: string }, ownerId: string, what: string): void {
-  if (record.ownerId !== ownerId) throw new CommandError(`That ${what} is on another timeline`)
-}
+export { sameOwner } from './command-kit'
 
 export type Fields<K extends RecordKind> = Omit<RecordOf<K>, 'id' | 'ownerId' | 'createdAt' | 'updatedAt' | 'deletedAt'>
 
@@ -207,7 +206,7 @@ export const refsWhere = <K extends RecordKind>(store: Store, kind: K, ownerId: 
   store.records(kind).byOwner(ownerId).flatMap((r) => (keep(r) ? [{ kind, id: r.id }] : []))
 
 /** Updates that set `field` to null on an owner's records where it is `id` (a lane, a group or a cause that's going). */
-export function clearRefs<K extends 'event' | 'maintenance'>(store: Store, kind: K, ownerId: string, field: keyof Fields<K> & string, id: string): Command[] {
+export function clearRefs<K extends RecordKind>(store: Store, kind: K, ownerId: string, field: keyof Fields<K> & string, id: string): Command[] {
   return store.records(kind).byOwner(ownerId).flatMap((r) => ((r as Record<string, unknown>)[field] === id ? [{ type: `${kind}.update`, payload: { id: r.id, patch: { [field]: null } } } as Command] : []))
 }
 

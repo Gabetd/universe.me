@@ -229,7 +229,7 @@ export function useOwnRecords<K extends keyof TimelineData>(key: K, ownerId: str
 const indexes = new WeakMap<object, Map<string, unknown>>()
 
 /** A list's records by id, built once per list (the store keeps a list while none of its records change). */
-function byId<T extends { id: string }>(list: T[]): Map<string, T> {
+export function byId<T extends { id: string }>(list: T[]): Map<string, T> {
   let index = indexes.get(list) as Map<string, T> | undefined
   if (!index) {
     index = new Map(list.map((r) => [r.id, r]))

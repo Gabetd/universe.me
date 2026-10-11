@@ -146,7 +146,7 @@ test('Change version lists Live, Staging and Dev, and installs another beside th
   const row = (name: string) => versions.getByRole('listitem', { name })
   await expect(row('Live')).toContainText('this copy')
   await expect(row('Live').getByRole('status', { name: 'Update check' })).toHaveText(/is the latest version/)
-  await expect(row('Staging')).toContainText('Being published right now')
+  await expect(row('Staging')).toContainText('being published right now')
   await expect(row('Dev')).toContainText('0.1.999')
   await shot(page, '142-change-version', { views: false })
 

@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import pkg from './package.json'
+import { CHANNELS } from './src/shared/update'
 
 function commit(): string {
   if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA.slice(0, 7)
@@ -16,7 +17,7 @@ function commit(): string {
 
 /** The branch it's built from (build.yml sets it): main, staging or dev. */
 const channel = process.env.UNIVERSE_CHANNEL || 'main'
-if (!['main', 'staging', 'dev'].includes(channel)) throw new Error(`UNIVERSE_CHANNEL is ${channel}: it's main, staging or dev`)
+if (!Object.hasOwn(CHANNELS, channel)) throw new Error(`UNIVERSE_CHANNEL is ${channel}: it's main, staging or dev`)
 
 const buildInfo = JSON.stringify({ version: pkg.version, commit: commit(), builtAt: new Date().toISOString(), channel })
 

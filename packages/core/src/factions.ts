@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { Id, Name, Notes, RecordMeta } from './schema'
 import { Time } from './time'
+import { byId } from './util'
 import { HexColor } from './world'
 
 /**
@@ -130,6 +131,18 @@ export const spansOverlap = (a: Pick<Span, 'start' | 'end'>, b: Pick<Span, 'star
 
 export const sameParty = (a: Party, b: Party) => a.kind === b.kind && a.id === b.id
 
+/** Whether `party` is one side of `rel`. */
+export const involves = (rel: Pick<Relationship, 'from' | 'to'>, party: Party) => sameParty(rel.from, party) || sameParty(rel.to, party)
+
+/** A faction's ancestors' ids, its parent first; stops at a loop (which validation keeps out) rather than going round it. */
+export function* ancestors(f: Pick<Faction, 'parentId'>, factions: ReadonlyMap<string, Pick<Faction, 'parentId'>>): Generator<string> {
+  const seen = new Set<string>()
+  for (let p = f.parentId; p && !seen.has(p); p = factions.get(p)?.parentId ?? null) {
+    seen.add(p)
+    yield p
+  }
+}
+
 /** What `rel` makes the other side, seen from `side` ("Child" from the parent's side reads the child as their child). */
 export function relationLabel(rel: Pick<Relationship, 'type' | 'label' | 'from'>, side: Party): string {
   if (rel.label.trim()) return rel.label.trim()
@@ -140,8 +153,6 @@ export function relationLabel(rel: Pick<Relationship, 'type' | 'label' | 'from'>
 /** The other side of `rel` from `side`. */
 export const otherParty = (rel: Pick<Relationship, 'from' | 'to'>, side: Party): Party => (sameParty(rel.from, side) ? rel.to : rel.from)
 
-export const factionsAt = (factions: readonly Faction[], t: Time) => factions.filter((f) => holdsAt(f, t))
-
 /** A faction's members at `t` (memberships that hold then, of a faction that exists then). */
 export function membersAt(faction: Faction, memberships: readonly Membership[], t: Time): Membership[] {
   if (!holdsAt(faction, t)) return []
@@ -150,19 +161,19 @@ export function membersAt(faction: Faction, memberships: readonly Membership[], 
 
 /** The factions a character belongs to at `t`. */
 export function factionsOf(characterId: string, factions: readonly Faction[], memberships: readonly Membership[], t: Time): Faction[] {
-  const byId = new Map(factions.map((f) => [f.id, f]))
+  const all = byId(factions)
   const out: Faction[] = []
   for (const m of memberships) {
-    const f = m.characterId === characterId && holdsAt(m, t) ? byId.get(m.factionId) : undefined
+    const f = m.characterId === characterId && holdsAt(m, t) ? all.get(m.factionId) : undefined
     if (f && holdsAt(f, t) && !out.includes(f)) out.push(f)
   }
   return out
 }
 
 /** How deep a faction is (0: no parent). */
-function depthOf(f: Faction, byId: ReadonlyMap<string, Faction>): number {
+function depthOf(f: Faction, factions: ReadonlyMap<string, Faction>): number {
   let depth = 0
-  for (let p = f.parentId; p && depth < 50; p = byId.get(p)?.parentId ?? null) depth++
+  for (const _ of ancestors(f, factions)) depth++
   return depth
 }
 
@@ -172,12 +183,12 @@ function depthOf(f: Faction, byId: ReadonlyMap<string, Faction>): number {
  * the one that took it last.
  */
 export function holdersAt(factions: readonly Faction[], holdings: readonly Holding[], t: Time): Map<string, Faction> {
-  const byId = new Map(factions.map((f) => [f.id, f]))
+  const all = byId(factions)
   const best = new Map<string, { faction: Faction; depth: number; since: number }>()
   for (const h of holdings) {
-    const faction = byId.get(h.factionId)
+    const faction = all.get(h.factionId)
     if (!faction || !holdsAt(h, t) || !holdsAt(faction, t)) continue
-    const depth = depthOf(faction, byId)
+    const depth = depthOf(faction, all)
     const since = h.start ?? -Infinity
     const was = best.get(h.regionId)
     if (!was || depth > was.depth || (depth === was.depth && since > was.since)) best.set(h.regionId, { faction, depth, since })
@@ -205,12 +216,10 @@ export function territoryAt(faction: Faction, factions: readonly Faction[], hold
 
 /** Relationships in force at `t`, optionally only those `party` is in. */
 export function relationshipsAt(rels: readonly Relationship[], t: Time, party?: Party): Relationship[] {
-  return rels.filter((r) => holdsAt(r, t) && (!party || sameParty(r.from, party) || sameParty(r.to, party)))
+  return rels.filter((r) => holdsAt(r, t) && (!party || involves(r, party)))
 }
 
 /** Whether making `parentId` the parent of `id` would put a faction inside itself. */
 export function wouldLoop(factions: readonly Pick<Faction, 'id' | 'parentId'>[], id: string, parentId: string | null): boolean {
-  const byId = new Map(factions.map((f) => [f.id, f]))
-  for (let p = parentId, n = 0; p && n <= factions.length; p = byId.get(p)?.parentId ?? null, n++) if (p === id) return true
-  return false
+  return parentId === id || [...ancestors({ parentId }, byId(factions))].includes(id)
 }

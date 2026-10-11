@@ -7,10 +7,10 @@ export function rank(typed: string, suggestions: readonly string[]): string[] {
   const t = typed.toLowerCase()
   const letters = (w: string) => [...w.toLowerCase()].sort().join('')
   const same = letters(typed)
-  const key = (s: string, i: number) => [editDistance(t, s.toLowerCase()), letters(s) === same ? 0 : 1, i] as const
+  // The sort is stable, so ties keep Hunspell's order.
   return suggestions
-    .map((s, i) => ({ s, k: key(s, i) }))
-    .sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.k[2] - b.k[2])
+    .map((s) => ({ s, changes: editDistance(t, s.toLowerCase()), shuffled: letters(s) === same ? 0 : 1 }))
+    .sort((a, b) => a.changes - b.changes || a.shuffled - b.shuffled)
     .map((x) => x.s)
 }
 
