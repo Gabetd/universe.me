@@ -1,7 +1,8 @@
-import { LANDFORMS, WORLD_RANGES, type Landform, type SpatialNode, type TerrainParams, type WorldSettings } from '@universe/core'
+import { LANDFORMS, PLANET_SIZE, WORLD_RANGES, planetSize, radiusOfSize, type Landform, type SpatialNode, type TerrainParams, type WorldSettings } from '@universe/core'
 import { WORLD_PRESETS, encodeWorldCode, randomSeedName, readSeed } from '@universe/procgen'
 import { updater, useUi } from '../store'
 import { ColorField, CommitSlider, CopyButton, NumberInput, TextField, randomSeed } from './fields'
+import { MassLink } from './SkyPanels'
 
 const LANDFORM_LABELS: Record<Landform, string> = { continents: 'Continents', supercontinent: 'Supercontinent', archipelago: 'Archipelago' }
 
@@ -23,7 +24,7 @@ export const WORLD_HINTS = {
   vegetation: 'The colour of plants and forests, on the globe, the map and the ground.',
   sand: 'The colour of beaches and deserts.',
   waterColor: 'The colour of the sea and lakes.',
-  radius: 'How big the planet is. Earth’s is 6,371 km. It sets distances on the ground and the scale of the map.',
+  radius: 'How big the planet is, on a scale where Earth is 10: Mercury is about 4, Mars 5, a super-Earth 15 to 20, Neptune 39, Jupiter 112. Its radius in km is beside it. It sets distances on the ground and the scale of the map.',
   newShape: 'Keeps every option but grows different continents: a new seed for the same kind of world.',
   seaLevel: 'Raises or lowers the sea over the whole world, flooding coasts or uncovering land, on top of what was generated.',
   erosionSpeed: 'How fast structures weather and crumble over time when nobody maintains them.'
@@ -148,10 +149,18 @@ export function WorldGenPanel({ world, settings }: { world: SpatialNode; setting
           <ColorField label="Sand" hint={WORLD_HINTS.sand} value={t.sandColor} onCommit={(sandColor) => setTerrain({ sandColor })} />
           <ColorField label="Water color" hint={WORLD_HINTS.waterColor} value={t.waterColor} onCommit={(waterColor) => setTerrain({ waterColor })} />
         </div>
-        <label className="field" title={WORLD_HINTS.radius}>
-          <span>Planet radius (km)</span>
-          <NumberInput value={settings.radiusKm} min={WORLD_RANGES.radiusKm.min} max={WORLD_RANGES.radiusKm.max} integer onCommit={(v) => update({ radiusKm: v })} />
-        </label>
+        <CommitSlider label="Planet size" hint={WORLD_HINTS.radius} unit=" (Earth is 10)" min={1} max={50} step={PLANET_SIZE.step} value={planetSize(settings.radiusKm)} onCommit={(v) => update({ radiusKm: radiusOfSize(v) })} />
+        <div className="field-pair">
+          <label className="field" title={WORLD_HINTS.radius}>
+            <span>Size (Earth = 10)</span>
+            <NumberInput value={planetSize(settings.radiusKm)} min={PLANET_SIZE.min} max={PLANET_SIZE.max} onCommit={(v) => update({ radiusKm: radiusOfSize(v) })} />
+          </label>
+          <label className="field" title={WORLD_HINTS.radius}>
+            <span>Planet radius (km)</span>
+            <NumberInput value={settings.radiusKm} min={WORLD_RANGES.radiusKm.min} max={WORLD_RANGES.radiusKm.max} integer onCommit={(v) => update({ radiusKm: v })} />
+          </label>
+        </div>
+        {world.parentId && <MassLink bodyId={world.parentId} />}
         <button title={WORLD_HINTS.newShape} onClick={() => updater('node', world.id)({ seed: randomSeed() })}>
           🎲 New shape
         </button>

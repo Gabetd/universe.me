@@ -1,4 +1,4 @@
-import { AU_KM, daysPerYear, type OrbitFields, type SpatialNode, type WorldSettings } from '@universe/core'
+import { AU_KM, WORLD_RANGES, daysPerYear, planetSize, radiusOfMass, radiusOfSize, type OrbitFields, type SpatialNode, type WorldSettings } from '@universe/core'
 import { surfaceTemperature, withSky } from '@universe/procgen'
 import { deriveCalendar, formatPeriod, orbitFields, worldOrbit, luminosityOf, moonsOf, planetOf, worldClimate, type BodyOrbit, type SystemModel } from '@universe/sim'
 import { useUi } from '../store'
@@ -59,7 +59,7 @@ export function OrbitPanel({ body }: { body: SpatialNode }) {
   if (!system || !orbit) return null
   const isMoon = !!orbit.parentBodyId
   const world = nodes.find((n) => n.parentId === body.id && n.kind === 'world')
-  const set = (patch: Partial<OrbitFields>) => void execute({ type: 'orbit.set', payload: { bodyId: body.id, orbit: { ...orbitFields(orbit), ...patch } } })
+  const set = (patch: Partial<OrbitFields>) => setOrbit(body.id, orbit, patch)
   const distance = isMoon ? orbit.semiMajorAxisKm : orbit.semiMajorAxisKm / AU_KM
 
   return (
@@ -74,9 +74,15 @@ export function OrbitPanel({ body }: { body: SpatialNode }) {
         <Num label="Axial tilt (°)" value={round(orbit.axialTiltDeg, 2)} min={0} max={180} onCommit={(axialTiltDeg) => set({ axialTiltDeg })} />
         <Num label="Inclination (°)" value={round(orbit.inclinationDeg, 2)} min={0} max={180} onCommit={(inclinationDeg) => set({ inclinationDeg })} />
         <Num label="Start angle (°)" value={round(((orbit.phaseDeg % 360) + 360) % 360, 1)} min={0} max={360} onCommit={(phaseDeg) => set({ phaseDeg })} />
-        <Num label="Mass (Earths)" value={round(orbit.massEarth, 4)} min={0.0001} max={1e5} onCommit={(massEarth) => set({ massEarth })} />
-        {!world && <Num label="Radius (km)" value={Math.round(orbit.radiusKm)} min={1} max={1e6} onCommit={(radiusKm) => set({ radiusKm })} />}
+        <Num label="Mass (Earths)" value={round(orbit.massEarth, 4)} min={0.0001} max={1e5} onCommit={(massEarth) => setMass(body.id, orbit, world?.id, massEarth)} />
+        {!world && (
+          <>
+            <Num label="Size (Earth = 10)" value={planetSize(orbit.radiusKm)} min={0.01} max={1600} onCommit={(size) => set({ radiusKm: radiusOfSize(size) })} />
+            <Num label="Radius (km)" value={Math.round(orbit.radiusKm)} min={1} max={1e6} onCommit={(radiusKm) => set({ radiusKm })} />
+          </>
+        )}
       </div>
+      <MassLink bodyId={body.id} />
       <Derived system={system} orbit={orbit} hasWorld={!!world} />
       {!orbit.isDefault && (
         <button className="link" onClick={() => void execute({ type: 'orbit.reset', payload: { bodyId: body.id } })}>
@@ -84,6 +90,36 @@ export function OrbitPanel({ body }: { body: SpatialNode }) {
         </button>
       )}
     </section>
+  )
+}
+
+/** Sets a body's orbit, from what it is now with `patch`. */
+const setOrbit = (bodyId: string, orbit: BodyOrbit, patch: Partial<OrbitFields>) =>
+  void useUi.getState().execute({ type: 'orbit.set', payload: { bodyId, orbit: { ...orbitFields(orbit), ...patch } } })
+
+/**
+ * A body's mass, given: while it follows the body's size, the size follows
+ * it instead (the world's radius, or the body's); unlinked, it's its own.
+ */
+function setMass(bodyId: string, orbit: BodyOrbit, worldId: string | undefined, massEarth: number) {
+  if (orbit.massFollowsSize === false) return setOrbit(bodyId, orbit, { massEarth })
+  const radiusKm = Math.round(radiusOfMass(massEarth))
+  if (!worldId) return setOrbit(bodyId, orbit, { radiusKm })
+  const { min, max } = WORLD_RANGES.radiusKm
+  void useUi.getState().execute({ type: 'world.update', payload: { id: worldId, patch: { radiusKm: Math.min(max, Math.max(min, radiusKm)) } } })
+}
+
+/** Whether a body's mass follows its size (as it does unless unlinked), and switching that; its mass as it is. */
+export function MassLink({ bodyId }: { bodyId: string }) {
+  const system = useSystem(bodyId)
+  const orbit = system?.bodies.get(bodyId)
+  if (!orbit) return null
+  const linked = orbit.massFollowsSize !== false
+  return (
+    <label className="checkbox small" title="Linked, a planet weighs what a planet its size does (and setting its mass sets its size); unlinked, its mass is its own.">
+      <input type="checkbox" checked={linked} onChange={(e) => setOrbit(bodyId, orbit, { massFollowsSize: e.target.checked })} /> Mass follows size
+      <span className="muted"> · {round(orbit.massEarth, orbit.massEarth < 0.1 ? 4 : 2)} Earth masses</span>
+    </label>
   )
 }
 

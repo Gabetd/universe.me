@@ -945,12 +945,6 @@ input.invalid {
   gap: 10px;
   flex-wrap: wrap;
 }
-.plugin-head .check,
-.plugin-options .check {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
 .plugin-buttons {
   margin-left: auto;
   display: flex;

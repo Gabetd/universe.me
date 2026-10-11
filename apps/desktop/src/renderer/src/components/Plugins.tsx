@@ -68,7 +68,7 @@ function PluginEntry({ plugin, onReply }: { plugin: PluginInfo; onReply(reply: P
   return (
     <li className="plugin-entry" aria-label={name}>
       <div className="plugin-head">
-        <label className="check">
+        <label className="checkbox">
           <input type="checkbox" checked={plugin.enabled} disabled={!!plugin.error} aria-label={`${name} on`} onChange={(e) => void window.universe.setPluginEnabled(plugin.id, e.target.checked).then(usePlugins.getState().set)} />
           <b>{name}</b>
         </label>
@@ -142,7 +142,7 @@ function OptionFields({ options, values, onChange }: { options: readonly PluginO
   return (
     <div className="plugin-options">
       {options.map((o) => (
-        <label key={o.id} className={o.type === 'flag' ? 'check' : 'field'} title={o.description}>
+        <label key={o.id} className={o.type === 'flag' ? 'checkbox' : 'field'} title={o.description}>
           {o.type === 'flag' ? (
             <>
               <input type="checkbox" checked={!!values[o.id]} onChange={(e) => onChange(o.id, e.target.checked)} /> {o.label}
