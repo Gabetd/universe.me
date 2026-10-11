@@ -65,6 +65,22 @@ jobs:
         run: npm pkg set version=${{ env.VERSION }}
       - name: Build and package
         run: pnpm dist
+        # Signing (PLAN.md §9, M19), for main's and staging's builds alone: Windows through Azure
+        # Artifact Signing, macOS with a Developer ID and notarized. Each is empty, and that
+        # system's build unsigned as before, until its secrets are added to the repository.
+        env:
+          AZURE_TENANT_ID: ${{ runner.os == 'Windows' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ runner.os == 'Windows' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ runner.os == 'Windows' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.AZURE_CLIENT_SECRET || '' }}
+          AZURE_SIGNING_ENDPOINT: ${{ runner.os == 'Windows' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.AZURE_SIGNING_ENDPOINT || '' }}
+          AZURE_SIGNING_ACCOUNT: ${{ runner.os == 'Windows' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.AZURE_SIGNING_ACCOUNT || '' }}
+          AZURE_SIGNING_PROFILE: ${{ runner.os == 'Windows' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.AZURE_SIGNING_PROFILE || '' }}
+          AZURE_SIGNING_PUBLISHER: ${{ runner.os == 'Windows' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.AZURE_SIGNING_PUBLISHER || '' }}
+          CSC_LINK: ${{ runner.os == 'macOS' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.MAC_CERTIFICATE || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.MAC_CERTIFICATE_PASSWORD || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ runner.os == 'macOS' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.APPLE_TEAM_ID || '' }}
       # Tarred, as artifacts don't keep the executable bit.
       - name: Keep the unpacked app for the tests
         if: runner.os != 'macOS'
