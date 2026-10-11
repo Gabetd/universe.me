@@ -113,6 +113,11 @@ export class CommandBus {
     })
   }
 
+  /** Forgets what could be redone (changes taken back for good). */
+  clearRedo(): void {
+    this.redoStack = []
+  }
+
   undo(): ExecuteResult | undefined {
     const entry = this.undoStack.pop()
     if (!entry) return undefined

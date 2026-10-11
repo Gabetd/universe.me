@@ -54,3 +54,15 @@ export const QueryNumber = z.coerce.number()
 /** A query-string flag (true or "true"). */
 export const QueryFlag = z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')])
 export const QueryList = z.union([z.array(z.string()), z.string().transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean))])
+
+/** A place on a world. */
+export const Place = z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) })
+
+/** Places, as a list or (in a query string) "lat,lon;lat,lon". */
+export const Places = z.union([
+  z.array(Place),
+  z
+    .string()
+    .transform((text) => text.split(';').filter((p) => p.trim()).map((p) => { const [lat, lon] = p.split(',').map(Number); return { lat, lon } }))
+    .pipe(z.array(Place))
+])

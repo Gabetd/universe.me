@@ -304,6 +304,11 @@ export class ApiController {
     void this.devices.round()
   }
 
+  /** The API's operations for a plugin run (PLAN.md §9, M16): as AI clients have them, but `write` makes its changes (at once: the user ran it, so nothing waits for review). */
+  pluginContext(write: ApiHost['write']): ApiContext {
+    return apiContext({ ...this.host(), write })
+  }
+
   /** A world's bible as Markdown. */
   bible(worldId: string): Promise<string> {
     return worldBible(this.ctx, worldId)

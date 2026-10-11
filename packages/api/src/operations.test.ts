@@ -240,6 +240,23 @@ describe('the operations', () => {
     await expect(p.call('name_waterway', { worldId: p.worldId, key: river!.id })).rejects.toThrow('Give it a name, notes or both')
   })
 
+  it('tell what the land is like at places, and draw the world’s map', async () => {
+    type At = { surface: string; elevationM: number; biome?: string; lake?: { name: string } }
+    const lakes = await p.call<{ lakeList: { id: string; center: { lat: number; lon: number } }[] }>('list_waterways', { worldId: p.worldId, kind: 'lake', limit: 1 })
+    const { places } = await p.call<{ places: At[] }>('get_terrain_at', { worldId: p.worldId, places: `0,0;${lakes.lakeList[0]!.center.lat},${lakes.lakeList[0]!.center.lon}` })
+    expect(places).toHaveLength(2)
+    expect(['sea', 'land', 'lake']).toContain(places[0]!.surface)
+    if (places[0]!.surface === 'land') expect(places[0]!.biome).toEqual(expect.any(String))
+    expect(places[1]).toMatchObject({ surface: 'lake', lake: { name: expect.stringMatching(/^Lake /) } })
+    await expect(p.call('get_terrain_at', { worldId: p.worldId, places: [] })).rejects.toThrow(/1 to 1,000/)
+
+    const map = await p.call<{ width: number; height: number; rgba: string }>('get_world_map', { worldId: p.worldId, width: 128 })
+    expect([map.width, map.height]).toEqual([128, 64])
+    const bytes = Buffer.from(map.rgba, 'base64')
+    expect(bytes).toHaveLength(128 * 64 * 4)
+    expect(bytes[3]).toBe(255)
+  })
+
   it('report inconsistencies, once each, about what is really there, and resolve or dismiss them', async () => {
     const { eventId } = await p.call<{ eventId: string }>('create_event', { worldId: p.worldId, title: 'Mira crowned in Tarn', start: '1204' })
     const report = { worldId: p.worldId, severity: 'contradiction', title: 'Mira in two places', explanation: 'She is crowned in Tarn while at sea.', about: [{ kind: 'event', id: eventId }], suggestion: 'Move the crowning a year later.' }

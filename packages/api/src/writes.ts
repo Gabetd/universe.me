@@ -37,13 +37,12 @@ import { EARTH_ORBIT, luminosityOf } from '@universe/sim'
 import { z } from 'zod'
 import { biomeIds, partyName, partyOf, refName } from './describe'
 import { ApiError, findOr404, type WriteOptions } from './host'
-import { When, operation, written, type ApiContext } from './operation'
+import { Place, When, operation, written, type ApiContext } from './operation'
 import type { WorldView } from './model'
 import { textToHtml } from './text'
 import { nameOf, waterwayOf, waterwaysOf } from './waterways'
 
 const newId = () => crypto.randomUUID()
-const Place = z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) })
 const Tags = z.array(z.string().min(1).max(60))
 const Notes = z.string().describe('Plain text: paragraphs separated by a blank line, "- " for list items')
 

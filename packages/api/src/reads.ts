@@ -18,13 +18,13 @@ import {
   WaterwayKind,
   type SpatialNode
 } from '@universe/core'
-import type { Lake, River } from '@universe/procgen'
+import { latLonToDir, planetCell, renderEquirect, type Lake, type River } from '@universe/procgen'
 import { formatPeriod, deriveCalendar, moonsOf, skyEvents } from '@universe/sim'
 import { z } from 'zod'
 import { exportWorldBible } from './bible'
-import { biomeName, describeCalendar, describeCharacter, describeEvent, describeFactionAt, describeFactionHistory, describeFinding, describeRelationFrom, describeRelationship, describeMoons, describePowerAt, describePowerSystem, describeStructure, describeTheme, kindLabel, nodePath, partyOf, round, worldSnapshot } from './describe'
+import { regionsHere, biomeName, describeCalendar, describeCharacter, describeEvent, describeFactionAt, describeFactionHistory, describeFinding, describeRelationFrom, describeRelationship, describeMoons, describePowerAt, describePowerSystem, describeStructure, describeTheme, kindLabel, nodePath, partyOf, round, worldSnapshot } from './describe'
 import { ApiError, notFound } from './host'
-import { QueryFlag, QueryList, QueryNumber, When, operation, type ApiContext } from './operation'
+import { Places, QueryFlag, QueryList, QueryNumber, When, operation, type ApiContext } from './operation'
 import { htmlToText } from './text'
 import { describeWaterway, waterwayOf, waterwaysOf } from './waterways'
 
@@ -542,6 +542,51 @@ export const READS = [
     run: async ({ models: m }, { worldId, key }) => {
       const w = await waterwaysOf(m, worldId)
       return describeWaterway(w, waterwayOf(w, key), m.regionsAt(worldId, m.now(worldId)), true)
+    }
+  }),
+  operation({
+    name: 'get_terrain_at',
+    title: 'The land at places',
+    description:
+      'What the land is like at places on a world (up to 1,000): its height above the sea in metres (below 0 under it), its biome, whether it’s sea, a lake (and which) or land, and the regions it’s in now. For putting things where they belong: villages on land, harbours on the coast.',
+    input: z.object({ worldId: WorldId, places: Places.refine((p) => p.length >= 1 && p.length <= 1000, 'From 1 to 1,000 places').describe('Places as [{ lat, lon }], or in a query string "lat,lon;lat,lon"') }),
+    route: { method: 'GET', path: '/worlds/:worldId/terrain' },
+    run: async ({ models: m }, { worldId, places }) => {
+      const [model, water] = await Promise.all([m.terrainModel(worldId), m.water(worldId)])
+      const regions = m.regionsAt(worldId, m.now(worldId))
+      const sea = model.settings.seaLevel
+      return {
+        places: places.map((p) => {
+          const { face, cell } = model.cellAt(...latLonToDir(p.lat, p.lon))
+          const elevation = model.sampleHeight(...latLonToDir(p.lat, p.lon)) - sea
+          const lake = water.lakes[water.lakeOf[planetCell(face, cell)]!]
+          const where = regionsHere(p, regions).map((r) => r.name)
+          return {
+            lat: p.lat,
+            lon: p.lon,
+            elevationM: Math.round(elevation),
+            surface: lake ? 'lake' : elevation < 0 ? 'sea' : 'land',
+            ...(lake && { lake: { id: lake.id, name: lake.name } }),
+            ...(elevation >= 0 && !lake && { biome: biomeName(model.biome(face, cell)) }),
+            ...(where.length && { regions: where })
+          }
+        })
+      }
+    }
+  }),
+  operation({
+    name: 'get_world_map',
+    title: 'The world’s map',
+    description:
+      'A world’s map as an image: every pixel’s colour as the app’s map shows it (land by its biome and height, the sea and lakes by their depth), in the equirectangular projection (x is longitude from −180° at the left, y latitude from 90° at the top), as RGBA bytes in base64. Width 64 to 2048 (512 if left out); the height is half of it.',
+    input: z.object({ worldId: WorldId, width: QueryNumber.int().min(64).max(2048).optional() }),
+    route: { method: 'GET', path: '/worlds/:worldId/map' },
+    run: async ({ models: m }, { worldId, width = 512 }) => {
+      const model = await m.terrainModel(worldId)
+      const height = width / 2
+      const rgba = new Uint8ClampedArray(width * height * 4)
+      renderEquirect(model, rgba, width, height)
+      return { width, height, projection: 'equirectangular', rgba: Buffer.from(rgba.buffer).toString('base64') }
     }
   }),
   operation({

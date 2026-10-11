@@ -125,6 +125,20 @@ export class Session {
     return source === 'user' ? this.applied(result) : this.state()
   }
 
+  /** The latest `n` changes made one step, undone and redone together: what a plugin did in one run. */
+  groupLatest(n: number): AppState {
+    this.require().bus.group(n)
+    return this.state()
+  }
+
+  /** The latest `n` changes taken back, and not to be redone: a plugin run that failed part way leaves nothing behind. */
+  undoLatest(n: number): AppState {
+    const { bus } = this.require()
+    for (let k = 0; k < n; k++) bus.undo()
+    bus.clearRedo()
+    return this.state()
+  }
+
   /** Every one of the latest changes an AI client made, one after another, taken back. */
   undoAi(): AppState {
     const { bus } = this.require()

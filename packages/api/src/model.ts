@@ -268,6 +268,11 @@ export class ProjectModels {
     return base
   }
 
+  /** A world's terrain as it is now (generated, sculpted, painted), to read heights, biomes and colours from. */
+  async terrainModel(worldId: string): Promise<TerrainModel> {
+    return (await this.terrain(worldId)).model
+  }
+
   /** A world's rivers and lakes as its terrain is now (as the app works them out, so with the same ids and names). */
   async water(worldId: string): Promise<WorldWater> {
     const { node } = this.world(worldId)
