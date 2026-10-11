@@ -26,8 +26,13 @@ const azure = signed && env.AZURE_SIGNING_ENDPOINT && {
   codeSigningAccountName: env.AZURE_SIGNING_ACCOUNT,
   certificateProfileName: env.AZURE_SIGNING_PROFILE
 }
-/** macOS, with a Developer ID certificate (CSC_LINK, CSC_KEY_PASSWORD) and notarized with Apple's (APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID). */
-const apple = signed && !!env.CSC_LINK
+/**
+ * macOS, with a Developer ID certificate (MAC_CERTIFICATE, MAC_CERTIFICATE_PASSWORD) and notarized
+ * with Apple's (APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID). The certificate is handed
+ * over here, not as electron-builder's own CSC_LINK: CI sets its variables empty when there's no
+ * secret, and an empty CSC_LINK is taken for a path.
+ */
+const apple = signed && env.MAC_CERTIFICATE && { cscLink: env.MAC_CERTIFICATE, cscKeyPassword: env.MAC_CERTIFICATE_PASSWORD }
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
@@ -55,7 +60,7 @@ module.exports = {
     ],
     // Without a Developer ID certificate, builds are ad-hoc signed ("-"): Apple Silicon refuses to
     // run unsigned apps, and ad-hoc signing is enough to launch after approving in Settings.
-    ...(apple ? { hardenedRuntime: true, notarize: !!env.APPLE_TEAM_ID } : { identity: '-' })
+    ...(apple ? { ...apple, hardenedRuntime: true, notarize: !!env.APPLE_TEAM_ID } : { identity: '-' })
   },
   linux: {
     category: 'Graphics',

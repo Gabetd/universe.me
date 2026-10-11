@@ -76,8 +76,8 @@ jobs:
           AZURE_SIGNING_ACCOUNT: ${{ runner.os == 'Windows' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.AZURE_SIGNING_ACCOUNT || '' }}
           AZURE_SIGNING_PROFILE: ${{ runner.os == 'Windows' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.AZURE_SIGNING_PROFILE || '' }}
           AZURE_SIGNING_PUBLISHER: ${{ runner.os == 'Windows' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.AZURE_SIGNING_PUBLISHER || '' }}
-          CSC_LINK: ${{ runner.os == 'macOS' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.MAC_CERTIFICATE || '' }}
-          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.MAC_CERTIFICATE_PASSWORD || '' }}
+          MAC_CERTIFICATE: ${{ runner.os == 'macOS' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.MAC_CERTIFICATE || '' }}
+          MAC_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.MAC_CERTIFICATE_PASSWORD || '' }}
           APPLE_ID: ${{ runner.os == 'macOS' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.APPLE_ID || '' }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ runner.os == 'macOS' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ runner.os == 'macOS' && (github.ref_name == 'main' || github.ref_name == 'staging') && secrets.APPLE_TEAM_ID || '' }}
