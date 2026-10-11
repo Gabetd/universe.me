@@ -194,6 +194,14 @@ Each is an app of its own: it installs beside Universe, keeps its own settings
 and recent projects, and only updates to newer builds of its own branch. (Open
 a project in one at a time: they're the same files.)
 
+**On Windows, the easiest way in** skips the browser's "isn't commonly downloaded" block and SmartScreen's "Windows protected your PC". Run this in PowerShell (Start → type *PowerShell*):
+
+```powershell
+irm https://github.com/Gabetd/universe.me/releases/download/latest-build/install.ps1 | iex
+```
+
+It downloads the installer itself and checks it against the release's update manifest before running it. (Swap in `dev-build` or `staging-build` for Universe (dev) or Universe (staging). For the portable app instead, use `& ([scriptblock]::Create((irm <that url>))) -Portable`.) The warnings come from the mark a browser puts on what it downloads, and a file downloaded by PowerShell has no such mark. The script is [scripts/install.ps1](scripts/install.ps1).
+
 | OS | File | How to run |
 |---|---|---|
 | Windows | `Universe-…-windows-portable.exe` | Double-click. No install needed. If SmartScreen appears: **More info → Run anyway**. |
@@ -202,7 +210,7 @@ a project in one at a time: they're the same files.)
 | macOS, Intel | `Universe-…-mac-x64.dmg` | Same as above. |
 | Linux | `Universe-…-linux-x86_64.AppImage` | `chmod +x` it, then run it. Or install the `.deb`. |
 
-The builds aren't code-signed yet, which is why the OS asks for confirmation.
+The builds aren't code-signed yet, which is why the OS asks for confirmation when one is downloaded in a browser. The lasting fix is signing them (milestone M18); until then, the install script avoids the question on Windows. Windows 11's Smart App Control, if it's turned on, blocks unsigned apps however they arrive.
 Once installed, Universe updates itself from `main`'s builds, and only installs
 one whose manifest is signed with the project's key (an Ed25519 key kept as a
 GitHub secret; the app has its public half).

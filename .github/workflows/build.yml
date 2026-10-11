@@ -168,6 +168,8 @@ jobs:
           # version, or without the signing key (or with one the app doesn't check with).
           node scripts/update-manifest.mjs dist "0.1.${{ github.run_number }}" "$short" > update.json
           node scripts/sign-update.mjs update.json > update.signed.json
+          # The Windows install script, installing from this release.
+          sed "s/__TAG__/$TAG/" scripts/install.ps1 > dist/install.ps1
           cat > notes.md <<NOTES
           Automatic build of \`${GITHUB_REF_NAME}\` at ${short}.
 
@@ -181,7 +183,11 @@ jobs:
           Version 0.1.${{ github.run_number }} of **${APP_NAME}**. Installed copies offer to upgrade themselves when a newer build
           is published here (the \`.zip\` files and the signed \`update.signed.json\` are for that).${CHANNEL_NOTE}
 
-          These builds are not code-signed yet. Windows SmartScreen: click **More info → Run anyway**.
+          **Windows without the browser's or SmartScreen's warnings:** in PowerShell, run
+          \`irm https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/install.ps1 | iex\`
+          (it downloads the installer itself, checks it against this release's manifest, and runs it).
+
+          These builds are not code-signed yet. Downloaded in a browser on Windows, SmartScreen: click **More info → Run anyway**.
           macOS: open the app once, then **System Settings → Privacy & Security → Open Anyway**.
           NOTES
           case $GITHUB_REF_NAME in

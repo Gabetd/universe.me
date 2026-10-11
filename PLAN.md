@@ -558,6 +558,7 @@ Each milestone ends with something you can launch and demo.
 ### M18 — Signed installers (1 week, when the certificates are in hand) — *planned*
 - Windows NSIS and portable signed with a code-signing certificate; macOS dmg and zip signed with a Developer ID and notarized; certificates as repository secrets, used only on `main` and `staging`.
 - Electron fuses (asar integrity, no NODE_OPTIONS or inspect flags; RunAsNode stays for `--mcp`).
+- [x] *Meanwhile:* a PowerShell install script (`scripts/install.ps1`, published with each release) downloads the Windows installer itself, so it carries no mark of the web and neither the browser nor SmartScreen stops it, and checks it against the release's update manifest before running it.
 
 **Rough total: 19–25 weeks** to v1 (M0–M13); M14–M18 are after it. for one full-time developer. M7 (API/MCP) can be pulled earlier, right after M2, if AI assistance is wanted sooner. The core layer makes it cheap to add.
 
