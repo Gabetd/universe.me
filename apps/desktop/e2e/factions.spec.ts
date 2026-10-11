@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { expect, inspector, openMap, setPlayhead, shot, state, stubSaveDialog, test } from './helpers'
+import { expect, inspector, newWorld, openMap, setPlayhead, shot, state, stubSaveDialog, test } from './helpers'
 
 test('factions: founded, part of one another, with members and land over time; people related; the graph and the map at the playhead', async ({ h }) => {
   test.slow()
@@ -77,4 +77,46 @@ test('factions: founded, part of one another, with members and land over time; p
   await page.getByRole('button', { name: '↶ Undo' }).click()
   await expect(list).toContainText('The Silver Hand')
   expect((await state(page, 'timeline')).relationships.some((r) => r.from.id === silver.id || r.to.id === silver.id)).toBe(true)
+})
+
+test('sub-factions, as deep as they go: a kingdom’s house, the house’s branch and its own part; a part moves up when what held it goes', async ({ h }) => {
+  const { page } = h
+  await newWorld(h, 'Houses')
+  await page.keyboard.press('7')
+  const faction = page.getByRole('region', { name: 'Faction' })
+  const name = async (to: string) => {
+    await faction.getByLabel('Faction name').fill(to)
+    await faction.getByLabel('Faction name').press('Enter')
+  }
+  const idOf = async (n: string) => (await state(page, 'timeline')).factions.find((f) => f.name === n)!.id
+  await page.getByLabel('New faction').selectOption({ label: 'Kingdom' })
+  await name('Varn')
+
+  // From a faction's page, a part of it; and from that, a part of its own.
+  await faction.getByLabel('New sub-faction').selectOption({ label: 'House' })
+  await expect(faction.getByLabel('Faction name')).toHaveValue('New house')
+  await expect(faction.getByLabel('Part of')).toHaveValue(await idOf('Varn'))
+  await name('House Aldric')
+  await faction.getByLabel('New sub-faction').selectOption({ label: 'Band' })
+  await name('The Aldrics of Tarn')
+  await expect(faction.getByLabel('Part of')).toHaveValue(await idOf('House Aldric'))
+
+  // Or from its right-click menu: a fourth level.
+  const list = page.getByRole('list', { name: 'The world’s factions' })
+  await list.getByRole('button', { name: /The Aldrics of Tarn/ }).click({ button: 'right' })
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Add a sub-faction' }).click()
+  await expect(faction.getByLabel('Faction name')).toHaveValue('New sub-faction')
+  await expect(faction.getByLabel('Part of')).toHaveValue(await idOf('The Aldrics of Tarn'))
+
+  // The list nests them, each under what it's part of; each page lists its parts.
+  const indent = (n: string | RegExp) => list.getByRole('listitem').filter({ hasText: n }).evaluate((li) => (li as HTMLElement).style.paddingLeft || '0px')
+  expect([await indent(/^.*Varn/), await indent('House Aldric'), await indent('The Aldrics of Tarn'), await indent('New sub-faction')]).toEqual(['0px', '14px', '28px', '42px'])
+  await list.getByRole('button', { name: /House Aldric/ }).click()
+  await expect(faction.getByRole('group', { name: 'Sub-factions' })).toContainText('The Aldrics of Tarn')
+  await shot(page, '75-sub-factions')
+
+  // Gone, the house hands its branch up to the kingdom.
+  await faction.getByRole('button', { name: 'Delete faction' }).click()
+  await list.getByRole('button', { name: /The Aldrics of Tarn/ }).click()
+  await expect(faction.getByLabel('Part of')).toHaveValue(await idOf('Varn'))
 })

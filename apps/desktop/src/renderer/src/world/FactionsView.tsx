@@ -14,7 +14,7 @@ import {
 import { useMemo, useRef, useState } from 'react'
 import { LaneToggle, MembershipRow, RelationshipList, SpanFields, execute, rowClass } from '../components/FactionParts'
 import { ColorField, DeleteButton, NotesField, SelectField, Swatch, TagsField, TextField } from '../components/fields'
-import { menuRef, openElement, openElementMenu } from '../contextMenu'
+import { addFaction, menuRef, openElement, openElementMenu } from '../contextMenu'
 import { flagClass, useFlaggedIds } from '../flags'
 import { useOwnRecords, useUi, useWorld } from '../store'
 import { usePlayhead } from '../timeline/timelineStore'
@@ -44,8 +44,7 @@ export function FactionsView({ worldId }: { worldId: string }) {
     setTab('factions')
   }
   const add = async (kind: FactionKind) => {
-    const state = await execute({ type: 'faction.create', payload: { ownerId: worldId, kind, name: `New ${FACTION_KIND_LABELS[kind].toLowerCase()}` } })
-    if (state?.focus?.id) useEditor.getState().set({ factionId: state.focus.id })
+    await addFaction(worldId, kind)
     setTab('factions')
   }
 
@@ -99,11 +98,12 @@ function FactionTree({ factions, selectedId, playhead, onPick }: { factions: Fac
   const rows = useMemo(() => {
     const ids = new Set(factions.map((f) => f.id))
     const out: { faction: Faction; depth: number }[] = []
+    // Each faction under what it's part of, as deep as they go (a faction can't be part of itself, so this ends).
     const walk = (parentId: string | null, depth: number) => {
       for (const f of factions) {
         // A faction whose parent is gone shows at the top.
         const parent = f.parentId && ids.has(f.parentId) ? f.parentId : null
-        if (parent === parentId && depth < 20) {
+        if (parent === parentId) {
           out.push({ faction: f, depth })
           walk(f.id, depth + 1)
         }
@@ -188,6 +188,7 @@ function FactionEditor({ worldId, faction, factions }: { worldId: string; factio
             </select>
           </label>
         </div>
+        <SubFactions worldId={worldId} faction={faction} factions={factions} />
         <TextField label="What it is" value={faction.summary} placeholder="In a line: who they are and what they want" onCommit={(summary) => update({ summary })} />
         <div className="field">
           <span>When</span>
@@ -221,6 +222,37 @@ function FactionEditor({ worldId, faction, factions }: { worldId: string; factio
 }
 
 /** A faction's members, as what and when; and a row to add one (from the playhead). */
+/** The factions that are part of this one (each can have parts of its own), to open, and a new one to start. */
+function SubFactions({ worldId, faction, factions }: { worldId: string; faction: Faction; factions: Faction[] }) {
+  const parts = factions.filter((f) => f.parentId === faction.id)
+  return (
+    <div className="field" role="group" aria-label="Sub-factions">
+      <span>Sub-factions</span>
+      {parts.length > 0 ? (
+        <ul className="plain-list">
+          {parts.map((f) => (
+            <li key={f.id}>
+              <button className="link" data-menu={menuRef('faction', f.id)} onClick={() => useEditor.getState().set({ factionId: f.id })}>
+                <Swatch color={f.color} /> {f.emblem && <span aria-hidden>{f.emblem}</span>} {f.name} <span className="muted small">· {FACTION_KIND_LABELS[f.kind]}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="muted small">None yet: a kingdom's houses, a house's branches, a guild's chapters.</p>
+      )}
+      <select aria-label="New sub-faction" value="" onChange={(e) => e.target.value && void addFaction(worldId, e.target.value as FactionKind, faction.id)}>
+        <option value="">+ Sub-faction…</option>
+        {FACTION_KINDS.map((k) => (
+          <option key={k} value={k}>
+            {FACTION_KIND_LABELS[k]}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 function MemberRows({ worldId, factionId }: { worldId: string; factionId: string }) {
   const all = useOwnRecords('memberships', worldId)
   const memberships = useMemo(() => all.filter((m) => m.factionId === factionId), [all, factionId])

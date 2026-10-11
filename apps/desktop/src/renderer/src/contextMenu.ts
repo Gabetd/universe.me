@@ -1,4 +1,4 @@
-import { eventPlace, type Party } from '@universe/core'
+import { FACTION_KIND_LABELS, eventPlace, type FactionKind, type Party } from '@universe/core'
 import { waterwayIndex } from '@universe/procgen'
 import { create } from 'zustand'
 import { addChildCommand, addOptions, canDelete, kindLabel } from './kinds'
@@ -272,6 +272,13 @@ export function openElement({ kind, id }: ElementRef): void {
 /** Opens a faction on its world's Factions page. */
 export const showFaction = (id: string) => useEditor.getState().set({ view: 'factions', factionId: id })
 
+/** Starts a faction on a world (a part of another, if `parentId` is given, at any depth) and opens it. */
+export async function addFaction(worldId: string, kind: FactionKind, parentId?: string): Promise<void> {
+  const name = kind === 'other' ? (parentId ? 'New sub-faction' : 'New faction') : `New ${FACTION_KIND_LABELS[kind].toLowerCase()}`
+  const state = await useUi.getState().execute({ type: 'faction.create', payload: { ownerId: worldId, kind, name, ...(parentId && { parentId }) } })
+  if (state?.focus?.id) showFaction(state.focus.id)
+}
+
 /** How long a request for a name field waits for its panel to appear. */
 const FOCUS_WAIT_MS = 3000
 
@@ -320,6 +327,10 @@ function kindItems({ kind, id }: ElementRef): MenuItem[] {
   if (kind === 'themeSpan') {
     const span = t.themeSpans.find((x) => x.id === id)
     return span ? [{ label: 'Edit its theme', run: () => s.selectTimeline({ kind: 'theme', ids: [span.themeId] }) }] : []
+  }
+  if (kind === 'faction') {
+    const faction = t.factions.find((f) => f.id === id)
+    return faction ? ['separator', { label: 'Add a sub-faction', run: () => void addFaction(faction.ownerId, 'other', faction.id) }] : []
   }
   if (kind === 'waterway') {
     const w = waterwayOf(id)
