@@ -86,6 +86,21 @@ describe('a project between devices', () => {
     expect(again.changesSince(0).rows.find((r) => r.key === edited.key)).toEqual(edited)
   })
 
+  it('keeps two devices’ changes to different fields of one event, and stops sending it once both have both', () => {
+    const a = track(Project.create(join(dir, 'a.universe'), 'Shared', { device: 'laptop' }))
+    const event = a.bus.execute({ type: 'event.create', payload: { ownerId: a.info().rootId, title: 'Founding', start: fromParts({ year: 1 }) } }).targetId!
+    const b = track(Project.create(join(dir, 'b.universe'), 'Shared', { device: 'desktop', copyOf: a.syncId() }))
+    let seenA = pull(a, b)
+    a.bus.execute({ type: 'event.update', payload: { id: event, patch: { title: 'The Founding' } } })
+    b.bus.execute({ type: 'event.update', payload: { id: event, patch: { notes: 'In the rain.' } } })
+    const seenB = pull(b, a)
+    seenA = pull(a, b, seenA)
+    for (const p of [a, b]) expect(p.store.records('event').get(event)).toMatchObject({ title: 'The Founding', notes: 'In the rain.' })
+    // The desktop took the laptop's merge whole, with its stamp: neither has anything for the other.
+    expect(b.changesSince(seenB, { from: 'laptop' }).rows).toEqual([])
+    expect(a.changesSince(seenA, { from: 'desktop' }).rows).toEqual([])
+  })
+
   it('stamps a project made before sync on its first open, so a copy of it gets everything', () => {
     const path = join(dir, 'old.universe')
     const old = Project.create(path, 'Old')

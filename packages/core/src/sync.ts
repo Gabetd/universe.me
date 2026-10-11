@@ -5,7 +5,7 @@ import { RECORD_KINDS, type RecordKind } from './records'
 import type { Id } from './schema'
 import { ObservedStore } from './observed-store'
 import type { Store } from './store'
-import { TerrainLayerName } from './world'
+import { DEFAULT_WORLD_SETTINGS, TerrainLayerName } from './world'
 
 /**
  * Sync between devices (PLAN.md §6.7): rows, not commands. Every row a
@@ -202,10 +202,16 @@ export class StampedStore extends ObservedStore {
     return { rows, upTo: more ? got[rows.length - 1]!.seq : Math.max(since, this.table.latest), more }
   }
 
-  /** Notes a row of fields as it was before the transaction first wrote it, to find which fields it changed. */
+  /**
+   * Notes a row of fields as it was before the transaction first wrote it,
+   * to find which fields it changed. A world whose settings were never set
+   * has the defaults, so a first change to them stamps only what it changes
+   * (and two devices' first changes to different sliders both stay).
+   */
   protected override writing(ref: SyncRef, inserted: boolean): void {
     const key = refKey(ref)
-    if (hasFields(ref) && !this.before.has(key)) this.before.set(key, inserted ? undefined : readRow(this.inner, ref))
+    if (!hasFields(ref) || this.before.has(key)) return
+    this.before.set(key, inserted ? undefined : ref.t === 'world' ? (this.inner.worlds.getSettings(ref.id) ?? DEFAULT_WORLD_SETTINGS) : readRow(this.inner, ref))
   }
 
   protected wrote(ref: SyncRef): void {

@@ -50,6 +50,25 @@ function pull(from: Device, to: Device): number {
 
 const run = (d: Device, type: string, payload: object) => d.bus.execute({ type, payload } as Command)
 
+/** Pulls every way round until no device has anything new, and says how many rounds that took: a merge that changes nothing isn't sent on. */
+function settle(...devices: Device[]): number {
+  for (let round = 1; round <= 5; round++) {
+    let merged = 0
+    for (const from of devices) for (const to of devices) if (from !== to) merged += pull(from, to)
+    if (!merged) return round
+  }
+  throw new Error('The devices still had rows for each other after 5 rounds')
+}
+
+/** A device with a world (of its own universe's), and an event on it, and copies of it on others. */
+function withEvent(time: { now: number }, ...others: string[]) {
+  const a = device('A', time)
+  let parent = a.store.nodes.root()!.id
+  for (const kind of ['galaxy_cluster', 'galaxy', 'star_system', 'body', 'world']) parent = run(a, 'node.create', { parentId: parent, kind, name: kind }).targetId!
+  const event = run(a, 'event.create', { ownerId: parent, title: 'Founding', start: fromParts({ year: 1 }) }).targetId!
+  return { a, world: parent, event, copies: others.map((name) => device(name, time, a)) }
+}
+
 /** A row as a device sends it now. */
 const sent = (d: Device, ref: SyncRef) => d.store.changesSince(0, { limit: 1000 }).rows.find((r) => r.key === refKey(ref))!
 
@@ -153,6 +172,87 @@ describe('sync', () => {
     time.now += 10
     a.store.transaction(() => a.store.nodes.update({ ...a.store.nodes.get(cluster)! }))
     expect(sent(a, ref)).toEqual(edited)
+  })
+
+  it('keeps both of two changes to different fields of one row, an event’s or a world’s sliders, and the later of two to the same', () => {
+    const time = { now: Date.UTC(2026, 0, 1) }
+    const { a, world, event, copies: [b] } = withEvent(time, 'B')
+    time.now += 10
+    run(a, 'event.update', { id: event, patch: { title: 'The Founding' } })
+    run(a, 'world.update', { id: world, patch: { seaLevel: 10, terrain: { water: 0.4 } } })
+    time.now += 10
+    run(b!, 'event.update', { id: event, patch: { notes: 'In the rain.' } })
+    run(b!, 'world.update', { id: world, patch: { seaLevel: 20, terrain: { roughness: 0.9 } } })
+    pull(b!, a)
+    pull(a, b!)
+    for (const d of [a, b!]) {
+      expect(d.store.records('event').get(event)).toMatchObject({ title: 'The Founding', notes: 'In the rain.' })
+      expect(d.store.worlds.getSettings(world)).toMatchObject({ seaLevel: 20, terrain: { water: 0.4, roughness: 0.9 } })
+    }
+    expect(contents(b!.store)).toEqual(contents(a.store))
+    // B took A's merge whole, so neither sends it on again.
+    expect(settle(a, b!)).toBe(1)
+  })
+
+  it('brings three devices to the same row, each having changed a field of its own, and then stops', () => {
+    const time = { now: Date.UTC(2026, 0, 1) }
+    const { a, event, copies: [b, c] } = withEvent(time, 'B', 'C')
+    time.now += 10
+    run(a, 'event.update', { id: event, patch: { title: 'The Founding' } })
+    time.now += 10
+    run(b!, 'event.update', { id: event, patch: { notes: 'In the rain.' } })
+    time.now += 10
+    run(c!, 'event.update', { id: event, patch: { tags: ['wet'] } })
+    expect(settle(a, b!, c!)).toBeLessThanOrEqual(3)
+    for (const d of [a, b!, c!]) expect(d.store.records('event').get(event)).toMatchObject({ title: 'The Founding', notes: 'In the rain.', tags: ['wet'] })
+    expect(sent(b!, { t: 'record', kind: 'event', id: event })).toEqual(sent(a, { t: 'record', kind: 'event', id: event }))
+  })
+
+  it('takes a row from a copy from before field stamps as all at its stamp', () => {
+    const time = { now: Date.UTC(2026, 0, 1) }
+    const { a, event, copies: [b] } = withEvent(time, 'B')
+    const ref: SyncRef = { t: 'record', kind: 'event', id: event }
+    const old = (stamp: string, title: string) => b!.bus.merge({ type: 'sync.merge', payload: { rows: [{ key: refKey(ref), stamp, data: { ...a.store.records('event').get(event)!, title } }] } })
+    time.now += 10
+    const earlier = new SyncClock('Old', () => time.now).next()
+    time.now += 10
+    run(b!, 'event.update', { id: event, patch: { notes: 'In the rain.' } })
+    // Its title is later than B's (the one it was made with), its notes earlier.
+    old(earlier, 'Old title')
+    expect(b!.store.records('event').get(event)).toMatchObject({ title: 'Old title', notes: 'In the rain.' })
+    // One later than everything wins every field.
+    time.now += 10
+    old(new SyncClock('Old', () => time.now).next(), 'Older still')
+    expect(b!.store.records('event').get(event)).toMatchObject({ title: 'Older still', notes: '' })
+  })
+
+  it('falls back to the later row, whole, when the fields merged aren’t a row', () => {
+    const time = { now: Date.UTC(2026, 0, 1) }
+    const { a, event, copies: [b] } = withEvent(time, 'B')
+    const canvas = (d: Device, at: { x: number; y: number } | null) => run(d, 'event.update', { id: event, patch: { canvas: at } })
+    time.now += 10
+    canvas(b!, { x: 1, y: 2 })
+    pull(b!, a)
+    time.now += 10
+    canvas(a, null)
+    time.now += 10
+    canvas(b!, { x: 5, y: 2 })
+    // B's x is later than A's taking the card off, but A's took y out after B put it there: a card at x alone isn't one.
+    settle(a, b!)
+    for (const d of [a, b!]) expect(d.store.records('event').get(event)!.canvas).toEqual({ x: 5, y: 2 })
+  })
+
+  it('keeps a delete and another device’s change to the same row at once, for when it’s brought back', () => {
+    const time = { now: Date.UTC(2026, 0, 1) }
+    const { a, event, copies: [b] } = withEvent(time, 'B')
+    time.now += 10
+    run(a, 'event.delete', { id: event })
+    time.now += 10
+    run(b!, 'event.update', { id: event, patch: { title: 'The Founding' } })
+    settle(a, b!)
+    for (const d of [a, b!]) expect(d.store.records('event').get(event)).toMatchObject({ title: 'The Founding', deletedAt: expect.any(String) })
+    a.bus.undo()
+    expect(a.store.records('event').get(event)).toMatchObject({ title: 'The Founding', deletedAt: null })
   })
 
   it('passes on what it got from a third device, even with an older stamp than it has sent before', () => {

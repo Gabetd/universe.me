@@ -1,11 +1,13 @@
 import { z } from 'zod'
 import { CommandError } from './command-kit'
 import { base64ToBytes } from './encoding'
+import { mergeFields, sameStamps, type RowStamps } from './field-stamps'
+import { isPlainObject } from './fields'
 import { RECORD_SCHEMAS } from './records'
 import { SpatialNode } from './schema'
 import type { Store } from './store'
 import { AssetFields } from './structure-commands'
-import { MAX_MERGE_ROWS, SyncRow, parseRefKey, refKey, type SyncRef } from './sync'
+import { MAX_MERGE_ROWS, SyncRow, hasFields, parseRefKey, readRow, refKey, type SyncLedger, type SyncRef } from './sync'
 import { LAYER_BYTES_PER_CELL, Region, TERRAIN_RES, WorldSettings } from './world'
 
 /**
@@ -23,26 +25,68 @@ export interface LoggedMerge {
 /** The order rows land in after the nodes (their parents first): everything belongs to a node. */
 const ORDER: Record<Exclude<SyncRef['t'], 'node'>, number> = { world: 0, layer: 1, region: 2, record: 3, asset: 4 }
 
-/** Keeps each row whose stamp is later than this copy's, with that stamp, checked like any other write. */
+/** A row as a merge writes it: what it holds, and the stamps it keeps (without a row stamp, a new one: see `SyncLedger.adopt`). */
+interface Landing {
+  ref: SyncRef
+  data: unknown
+  stamps: RowStamps | { fields: Record<string, string> }
+}
+
+/**
+ * Keeps each field whose stamp is later than this copy's, with that stamp,
+ * checked like any other write: the other device's row as it is when it's
+ * later in every field, and otherwise a new one made of both.
+ */
 export function mergeRows(store: Store, rows: SyncRow[]): void {
   const ledger = store.sync
   if (!ledger) throw new CommandError('This project doesn’t sync')
-  const newer = rows
-    .map((row) => ({ ...row, ref: parseRefKey(row.key) }))
-    .filter((row) => {
-      const own = ledger.stampsOf(row.ref)
-      return own === undefined || row.stamp > own.stamp
-    })
-  const nodes = newer.filter((r) => r.ref.t === 'node')
-  const rest = newer.filter((r): r is typeof r & { ref: Exclude<SyncRef, { t: 'node' }> } => r.ref.t !== 'node').sort((a, b) => ORDER[a.ref.t] - ORDER[b.ref.t])
+  const landing = rows.flatMap((row) => landingOf(store, ledger, parseRefKey(row.key), row) ?? [])
+  const nodes = landing.filter((r) => r.ref.t === 'node')
+  const rest = landing.filter((r): r is Landing & { ref: Exclude<SyncRef, { t: 'node' }> } => r.ref.t !== 'node').sort((a, b) => ORDER[a.ref.t] - ORDER[b.ref.t])
   for (const row of [...parentsFirst(store, nodes), ...rest]) {
     write(store, row.ref, row.data)
-    ledger.adopt(row.ref, row.fields ? { stamp: row.stamp, fields: row.fields } : { stamp: row.stamp })
+    ledger.adopt(row.ref, row.stamps)
+  }
+}
+
+/**
+ * What a row from another device comes to here: theirs as it is, a merge of
+ * theirs and this copy's field by field, or nothing (this copy's is as late
+ * in every field). A merge that isn't a row (fields that only make sense
+ * together, such as a canvas card's place made null on one device as the
+ * other moved it) falls back to the later row, whole.
+ */
+function landingOf(store: Store, ledger: SyncLedger, ref: SyncRef, row: SyncRow): Landing | undefined {
+  const theirs = { ref, data: row.data, stamps: row.fields ? { stamp: row.stamp, fields: row.fields } : { stamp: row.stamp } }
+  const own = ledger.stampsOf(ref)
+  if (!own) return theirs
+  const later = row.stamp > own.stamp ? theirs : undefined
+  if (sameStamps(own, theirs.stamps)) return undefined
+  const data = hasFields(ref) ? readRow(store, ref) : undefined
+  if (!isPlainObject(data) || !isPlainObject(row.data)) return later
+  const merged = mergeFields({ data, stamps: own }, theirs)
+  if ('keep' in merged) return merged.keep === 'theirs' ? theirs : undefined
+  return schemaOf(ref).safeParse(merged.data).success ? { ref, data: merged.data, stamps: { fields: merged.fields } } : later
+}
+
+/** What a row of fields has to be (bytes, never merged by field, are checked as they're written). */
+function schemaOf(ref: SyncRef): z.ZodType {
+  switch (ref.t) {
+    case 'node':
+      return SpatialNode
+    case 'world':
+      return WorldSettings
+    case 'region':
+      return Region
+    case 'record':
+      return RECORD_SCHEMAS[ref.kind]
+    default:
+      return z.never()
   }
 }
 
 /** Nodes in an order where each one's parent is there before it (here already, or earlier in the list). */
-function parentsFirst<R extends { ref: SyncRef; data: unknown }>(store: Store, nodes: R[]): R[] {
+function parentsFirst<R extends Landing>(store: Store, nodes: R[]): R[] {
   const parentOf = (r: R) => (r.data as { parentId?: string | null } | null)?.parentId
   const pending = new Set(nodes.map((r) => r.ref.id))
   const orphan = (r: R) => {
