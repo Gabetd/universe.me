@@ -210,7 +210,7 @@ function SpeedPicker() {
   return (
     <div className="segmented" role="radiogroup" aria-label="Speed" title="How fast W, A, S and D move (Shift: three times as fast)">
       {GROUND_SPEEDS.map((s) => (
-        <button key={s.id} role="radio" aria-checked={speed === s.id} onClick={() => useEditor.getState().set({ groundSpeed: s.id })}>
+        <button key={s.id} role="radio" aria-checked={speed === s.id} title={`${s.label}: ${s.mps < 1000 ? `${s.mps} m/s` : `${s.mps / 1000} km/s`}`} onClick={() => useEditor.getState().set({ groundSpeed: s.id })}>
           {s.label}
         </button>
       ))}

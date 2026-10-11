@@ -14,7 +14,8 @@ test('on the ground, W A S D move over it at the speed picked, and S moves rathe
     await page.keyboard.up(key)
   }
 
-  await page.getByRole('radio', { name: 'Fly' }).click()
+  // Run: far enough in a moment to measure, near enough to stay in the view's frame (it starts a new one 2.5 km out).
+  await page.getByRole('radio', { name: 'Run' }).click()
   await shot(page, '64-ground-walk', { views: false })
   const start = await at()
   // The camera starts south of where it looks, so forward is north (smaller z).

@@ -11,12 +11,12 @@ import { useEditor } from './editorStore'
  * camera and what it looks at move together, so the view keeps its angle.
  */
 
-/** The speeds to pick from, in metres a second. */
+/** The speeds to pick from, in metres a second: quick enough to cross a world, Fly going over the whole 12 km view in a second. */
 export const GROUND_SPEEDS = [
-  { id: 'walk', label: 'Walk', mps: 6 },
-  { id: 'run', label: 'Run', mps: 20 },
-  { id: 'ride', label: 'Ride', mps: 60 },
-  { id: 'fly', label: 'Fly', mps: 250 }
+  { id: 'walk', label: 'Walk', mps: 300 },
+  { id: 'run', label: 'Run', mps: 1000 },
+  { id: 'ride', label: 'Ride', mps: 3000 },
+  { id: 'fly', label: 'Fly', mps: 12_500 }
 ] as const
 export type GroundSpeed = (typeof GROUND_SPEEDS)[number]['id']
 
