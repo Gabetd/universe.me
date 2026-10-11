@@ -200,6 +200,11 @@ h2 {
   margin: 0;
   padding: 0;
 }
+/* A list's heading inside an inspector section: Rivers, Lakes. */
+.inspector-section h4 {
+  margin: 8px 0 2px;
+  font-weight: 600;
+}
 .recent-list button {
   display: flex;
   flex-direction: column;

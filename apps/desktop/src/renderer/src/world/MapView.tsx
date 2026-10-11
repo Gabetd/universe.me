@@ -1,4 +1,4 @@
-import type { LatLon } from '@universe/core'
+import { TERRAIN_RES, type LatLon } from '@universe/core'
 import { brushRows, latLonToDir, latLonToPixel, pixelToLatLon, renderEquirect, type TerrainModel, type Vec3 } from '@universe/procgen'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { EdgePush, zoomOut } from '../components/zoom'
@@ -11,6 +11,7 @@ import { STAGE_COLORS } from './structureLook'
 import { useByValue } from '../useByValue'
 import { useRegionViewThemes, useViewTheme } from './useThemeLook'
 import { useWater } from './useWater'
+import type { Water } from './water.worker'
 import { RIVER_COLOR, riverWidth, smoothPath } from './waterLook'
 import type { SurfaceViewProps, TerrainChange } from './useTerrain'
 import { openElementMenu, useContextMenu, type ElementRef } from '../contextMenu'
@@ -168,9 +169,12 @@ export const MapView = memo(function MapView({
   /** For tests: "true" once the map has been drawn. */
   const [ready, setReady] = useState(false)
   const selectedRegionId = useUi((s) => s.selectedRegionId)
+  const selectedWaterwayKey = useUi((s) => s.selectedWaterwayKey)
   const draft = useEditor((s) => s.draft)
   const theme = useViewTheme(worldId)
   const water = useWater(worldId)
+  // Each river's path on the map, worked out once a water: for drawing and for picking.
+  const rivers = useMemo(() => (water?.rivers ?? []).map((r) => ({ river: r, path: smoothPath(polygon(r.points)), width: riverWidth(r) })), [water])
   const regionIds = useMemo(() => regions.map((r) => r.id), [regions])
   const regionThemes = useRegionViewThemes(worldId, regionIds)
   const shades = useByValue<MapShades>({ world: theme.shade, regions: [...regionThemes].flatMap(([id, t]) => (t.shade === theme.shade ? [] : [[id, t.shade]])) })
@@ -184,7 +188,7 @@ export const MapView = memo(function MapView({
 
   useEffect(() => {
     dirty.current = true
-  }, [regions, selectedRegionId, draft, pins, highlightRegionIds, structures, characters, water])
+  }, [regions, selectedRegionId, draft, pins, highlightRegionIds, structures, characters, water, selectedWaterwayKey])
 
   // Bring the selected event's place to the middle of the view, on the next frame (the view may not be sized yet).
   const pendingFocus = useRef<LatLon | null>(null)
@@ -200,7 +204,6 @@ export const MapView = memo(function MapView({
     const ctx = canvas.getContext('2d')!
     const map = mapImageOf(model)
     const outlines = new Map(regions.map((r) => [r.id, polygon(r.points)]))
-    const rivers = (water?.rivers ?? []).map((r) => ({ river: r, path: smoothPath(polygon(r.points)), width: riverWidth(r) }))
     const own = new Map(shades.regions)
     const outlined = regions.filter((r) => own.has(r.id))
     /** The map image with the themes' shading, drawn again only when the image, the shades or a shaded region's outline changes. */
@@ -273,12 +276,21 @@ export const MapView = memo(function MapView({
       const { draft: points, tool, radiusKm } = useEditor.getState()
       c.lineJoin = 'round'
       c.lineCap = 'round'
-      // Rivers under everything else, the smallest first so the great ones run over their tributaries.
+      // Rivers under everything else, the smallest first so the great ones run over their tributaries; the selected one in white, over them all.
+      const { selectedWaterwayKey } = useUi.getState()
       c.strokeStyle = RIVER_COLOR
       for (let k = rivers.length - 1; k >= 0; k--) {
-        const { path, width } = rivers[k]!
+        const { river, path, width } = rivers[k]!
+        if (river.id === selectedWaterwayKey) continue
         tracePath(c, path, shift)
         c.lineWidth = width / scale
+        c.stroke()
+      }
+      const chosen = rivers.find((r) => r.river.id === selectedWaterwayKey)
+      if (chosen) {
+        tracePath(c, chosen.path, shift)
+        c.strokeStyle = '#ffffff'
+        c.lineWidth = (chosen.width + 2) / scale
         c.stroke()
       }
       c.lineCap = 'butt'
@@ -390,7 +402,7 @@ export const MapView = memo(function MapView({
 
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [model, regions, pins, highlightRegionIds, structures, characters, shades, water])
+  }, [model, regions, pins, highlightRegionIds, structures, characters, shades, rivers])
 
   /** Pointer position in map pixels (x wrapped to [0, W)), or null outside the map vertically. */
   const mapPoint = (e: React.PointerEvent | React.MouseEvent): [number, number] | null => {
@@ -416,8 +428,22 @@ export const MapView = memo(function MapView({
     if (character) return { kind: 'character', id: character.character.id }
     const structure = structures.find((st) => within(st.structure, 9))
     if (structure) return { kind: 'structure', id: structure.structure.id }
+    const water = waterAt(p)
+    if (water) return { kind: 'waterway', id: water }
     const region = regions.find((r) => [-W, 0, W].some((s) => insidePolygon(p[0] + s, p[1], polygon(r.points))))
     return region && { kind: 'region', id: region.id }
+  }
+
+  /** The river (within a few pixels) or lake under a point of the map. */
+  const waterAt = (p: [number, number]): string | undefined => {
+    if (!water) return undefined
+    const v = view.current!
+    const near = (path: [number, number][]) =>
+      [-W, 0, W].some((s) => path.some((a, k) => k > 0 && distanceToSegment(p[0] - s, p[1], path[k - 1]!, a) * v.scale <= 5))
+    const river = rivers.find((r) => near(r.path))
+    if (river) return river.river.id
+    const { face, cell } = model.cellAt(...dirAt(p))
+    return lakeAt(water, face * TERRAIN_RES * TERRAIN_RES + cell)
   }
 
   const dirAt = ([x, y]: [number, number]): Vec3 => {
@@ -455,6 +481,7 @@ export const MapView = memo(function MapView({
           if (hit?.kind === 'event') return onPinClick(hit.id)
           if (hit?.kind === 'character') return onCharacterClick(hit.id)
           if (hit?.kind === 'structure') return onStructureClick(hit.id)
+          if (hit?.kind === 'waterway') return useUi.getState().selectWaterway(hit.id)
           useUi.getState().selectRegion(hit?.id ?? null)
         }
         pan.current = { x: e.clientX, y: e.clientY }
@@ -497,6 +524,23 @@ export const MapView = memo(function MapView({
     />
   )
 })
+
+/** How far a point is from a line segment. */
+function distanceToSegment(x: number, y: number, [ax, ay]: [number, number], [bx, by]: [number, number]): number {
+  const [dx, dy] = [bx - ax, by - ay]
+  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)))
+  return Math.hypot(x - (ax + t * dx), y - (ay + t * dy))
+}
+
+/** Each world's lakes by their cells, worked out once a water. */
+const lakeCells = new WeakMap<Water, Map<number, string>>()
+
+/** The lake over a planet-wide cell, if any. */
+function lakeAt(water: Water, g: number): string | undefined {
+  let byCell = lakeCells.get(water)
+  if (!byCell) lakeCells.set(water, (byCell = new Map(water.lakes.flatMap((l) => l.cells.map((c) => [c, l.id] as const)))))
+  return byCell.get(g)
+}
 
 function tracePath(c: CanvasRenderingContext2D, poly: [number, number][], shift: number): void {
   c.beginPath()

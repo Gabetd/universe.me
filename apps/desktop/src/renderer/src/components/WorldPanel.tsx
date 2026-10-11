@@ -6,6 +6,7 @@ import { RegionHistory } from './RegionHistory'
 import { BlueprintLibrary } from './BlueprintLibrary'
 import { StructurePanel } from './StructurePanel'
 import { CharacterPanel } from './CharacterPanel'
+import { WaterwayList, WaterwayPanel } from './WaterPanels'
 import { CalendarPanel, ClimatePanel } from './SkyPanels'
 import { WORLD_HINTS, WorldGenPanel } from './WorldGenPanel'
 import { RegionTheme, WorldThemes } from './ThemePanels'
@@ -23,6 +24,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
   const selectRegion = useUi((s) => s.selectRegion)
   const selectedStructure = useUi((s) => s.timeline.structures.find((x) => x.id === s.selectedStructureId))
   const selectedCharacter = useUi((s) => s.timeline.characters.find((x) => x.id === s.selectedCharacterId))
+  const selectedWaterway = useUi((s) => s.selectedWaterwayKey)
   const execute = useUi((s) => s.execute)
   if (!info) return null
   const { settings } = info
@@ -32,6 +34,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
     <>
       {selectedRegion && <RegionForm key={selectedRegion.id} region={selectedRegion} />}
       {selectedStructure && <StructurePanel key={selectedStructure.id} structure={selectedStructure} />}
+      {selectedWaterway && <WaterwayPanel key={selectedWaterway} worldId={world.id} waterKey={selectedWaterway} />}
       {selectedCharacter && <CharacterPanel key={selectedCharacter.id} character={selectedCharacter} />}
 
       <WorldGenPanel world={world} settings={settings} />
@@ -54,6 +57,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
       <BlueprintLibrary />
 
       <RegionList worldId={world.id} regions={regions} selectedId={selectedRegion?.id} onPick={selectRegion} />
+      <WaterwayList worldId={world.id} />
       {/* Saved where the user picks, on the computer. */}
       {!isPhoneApp() && <ExportBible worldId={world.id} />}
     </>

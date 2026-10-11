@@ -23,6 +23,9 @@ interface UiState extends AppState {
   /** A character on the selected world, shown in the inspector like a structure. */
   selectedCharacterId: string | null
   selectCharacter(id: string | null): void
+  /** A river or lake on the selected world, by its id in the world's hydrology (useWater). */
+  selectedWaterwayKey: string | null
+  selectWaterway(key: string | null): void
   /** Selected timeline records: several events (for grouping), or one era, group, link… */
   timelineSelection: TimelineSelection | null
   selectTimeline(selection: TimelineSelection | null): void
@@ -54,6 +57,7 @@ export const useUi = create<UiState>((set, get) => ({
   selectedRegionId: null,
   selectedStructureId: null,
   selectedCharacterId: null,
+  selectedWaterwayKey: null,
   error: null,
 
   apply(reply) {
@@ -68,6 +72,7 @@ export const useUi = create<UiState>((set, get) => ({
   selectRegion: (id) => set(id ? { ...NOTHING_ON_WORLD, selectedRegionId: id } : { selectedRegionId: null }),
   selectStructure: (id) => set(id ? { ...NOTHING_ON_WORLD, selectedStructureId: id } : { selectedStructureId: null }),
   selectCharacter: (id) => set(id ? { ...NOTHING_ON_WORLD, selectedCharacterId: id } : { selectedCharacterId: null }),
+  selectWaterway: (key) => set(key ? { ...NOTHING_ON_WORLD, selectedWaterwayKey: key } : { selectedWaterwayKey: null }),
   dismissError: () => set({ error: null }),
 
   async run(call) {
@@ -92,9 +97,9 @@ export async function applyReply(call: Promise<Result<AppState | null>>): Promis
 }
 
 /** Nothing selected on the world surface or its timeline. */
-const NOTHING_ON_WORLD = { selectedRegionId: null, selectedStructureId: null, selectedCharacterId: null, timelineSelection: null }
+const NOTHING_ON_WORLD = { selectedRegionId: null, selectedStructureId: null, selectedCharacterId: null, selectedWaterwayKey: null, timelineSelection: null }
 
-type Selection = Pick<UiState, 'selectedId' | 'selectedRegionId' | 'selectedStructureId' | 'selectedCharacterId' | 'timelineSelection'>
+type Selection = Pick<UiState, 'selectedId' | 'selectedRegionId' | 'selectedStructureId' | 'selectedCharacterId' | 'selectedWaterwayKey' | 'timelineSelection'>
 
 /**
  * Whether the last command's target wasn't there before it: something made
@@ -147,7 +152,7 @@ function nextSelection(state: AppState, current: Selection, fresh: boolean): Sel
     const kind = focus.kind
     if (state.timeline[`${kind}s`].some((r) => r.id === focus.id)) {
       const ids = current.timelineSelection?.kind === kind && current.timelineSelection.ids.includes(focus.id) ? timelineSelection!.ids : [focus.id]
-      return { ...keptNodeSelection(state, current), selectedRegionId: null, selectedStructureId: null, selectedCharacterId: null, timelineSelection: { kind, ids } }
+      return { ...keptNodeSelection(state, current), selectedRegionId: null, selectedStructureId: null, selectedCharacterId: null, selectedWaterwayKey: null, timelineSelection: { kind, ids } }
     }
   }
   const exists = (id: string | null | undefined): id is string => !!id && state.nodes.some((n) => n.id === id)
@@ -157,7 +162,7 @@ function nextSelection(state: AppState, current: Selection, fresh: boolean): Sel
   return { ...keptNodeSelection(state, current), timelineSelection }
 }
 
-function keptNodeSelection(state: AppState, current: Selection): Pick<Selection, 'selectedId' | 'selectedRegionId' | 'selectedStructureId' | 'selectedCharacterId'> {
+function keptNodeSelection(state: AppState, current: Selection): Pick<Selection, 'selectedId' | 'selectedRegionId' | 'selectedStructureId' | 'selectedCharacterId' | 'selectedWaterwayKey'> {
   const selectedId = state.nodes.some((n) => n.id === current.selectedId) ? current.selectedId : (state.project?.rootId ?? null)
   const keepRegion = state.regions.some((r) => r.id === current.selectedRegionId && r.worldId === selectedId)
   const keepStructure = state.timeline.structures.some((x) => x.id === current.selectedStructureId && x.ownerId === selectedId)
@@ -166,7 +171,9 @@ function keptNodeSelection(state: AppState, current: Selection): Pick<Selection,
     selectedId,
     selectedRegionId: keepRegion ? current.selectedRegionId : null,
     selectedStructureId: keepStructure ? current.selectedStructureId : null,
-    selectedCharacterId: keepCharacter ? current.selectedCharacterId : null
+    selectedCharacterId: keepCharacter ? current.selectedCharacterId : null,
+    // A river or lake comes from the world's terrain, not a record: it stays while its world does.
+    selectedWaterwayKey: selectedId === current.selectedId ? current.selectedWaterwayKey : null
   }
 }
 

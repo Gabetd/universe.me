@@ -1,9 +1,11 @@
-import { eventPlace, type Party } from '@universe/core'
+import { eventPlace, waterwayKind, waterwayName, type Party } from '@universe/core'
 import { create } from 'zustand'
 import { addChildCommand, addOptions, canDelete, kindLabel } from './kinds'
 import { deleteCommand, useUi } from './store'
 import { useTimelineView } from './timeline/timelineStore'
 import { useEditor } from './world/editorStore'
+import { useWaterOf } from './world/useWater'
+import { viewUpClose } from './world/waterLook'
 import { goToEvent } from './world/goToEvent'
 
 /**
@@ -15,7 +17,7 @@ import { goToEvent } from './world/goToEvent'
  */
 
 /** What can be right-clicked: a node, or a record a world or timeline holds. */
-export type ElementKind = 'node' | 'region' | 'structure' | 'character' | 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan' | 'species' | 'lane' | 'power' | 'faction' | 'relationship'
+export type ElementKind = 'node' | 'region' | 'structure' | 'character' | 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan' | 'species' | 'lane' | 'power' | 'faction' | 'relationship' | 'waterway'
 
 export interface ElementRef {
   kind: ElementKind
@@ -175,7 +177,9 @@ const KINDS: Record<ElementKind, { label: string; nameField?: string; inspector:
   lane: { label: 'Lane', inspector: false },
   power: { label: 'Power system', nameField: 'Power system name', inspector: false },
   faction: { label: 'Faction', nameField: 'Faction name', inspector: false },
-  relationship: { label: 'Relationship', inspector: false }
+  relationship: { label: 'Relationship', inspector: false },
+  // Named in the panel by what it is (River name, Lake name); never deleted, only given its generated name back.
+  waterway: { label: 'River or lake', inspector: true }
 }
 
 /** An element's name, as the menu's title shows it; undefined if it no longer exists. */
@@ -222,7 +226,19 @@ export function nameOf({ kind, id }: ElementRef): string | undefined {
       const span = find(t.themeSpans)
       return span && (t.themes.find((x) => x.id === span.themeId)?.name ?? 'Theme')
     }
+    case 'waterway':
+      return waterwayOf(id)?.name
   }
+}
+
+/** A river or lake (by its hydrology id) on the selected world, with what it's called there. */
+function waterwayOf(key: string) {
+  const { selectedId, timeline } = useUi.getState()
+  const water = selectedId ? useWaterOf.getState().byWorld[selectedId] : undefined
+  const found = water?.rivers.find((r) => r.id === key) ?? water?.lakes.find((l) => l.id === key)
+  if (!found || !selectedId) return undefined
+  const own = timeline.waterways.find((w) => w.ownerId === selectedId && w.key === key)
+  return { found, own, worldId: selectedId, name: waterwayName(found.name, own) }
 }
 
 /** Shows an element in the inspector (where `KINDS` says it has a panel), as clicking it does; a faction on the Factions page, a relationship with its first side. */
@@ -232,6 +248,7 @@ export function openElement({ kind, id }: ElementRef): void {
   else if (kind === 'region') ui.selectRegion(id)
   else if (kind === 'structure') ui.selectStructure(id)
   else if (kind === 'character') ui.selectCharacter(id)
+  else if (kind === 'waterway') ui.selectWaterway(id)
   else if (kind === 'faction') showFaction(id)
   else if (kind === 'relationship') {
     const rel = ui.timeline.relationships.find((r) => r.id === id)
@@ -302,6 +319,7 @@ export interface MenuOptions {
 
 /** The menu for an element: open it, rename it, what its kind offers, and delete it (undoable, like every change). */
 export function elementMenu(ref: ElementRef, { open, extra = [] }: MenuOptions = {}): Omit<Menu, 'x' | 'y'> | undefined {
+  if (ref.kind === 'waterway') return waterwayMenu(ref.id)
   const name = nameOf(ref)
   if (name === undefined) return undefined
   const spec = KINDS[ref.kind]
@@ -316,6 +334,21 @@ export function elementMenu(ref: ElementRef, { open, extra = [] }: MenuOptions =
   ]
   if (!node || canDelete(node)) items.push('separator', { label: `Delete ${name}`, danger: true, run: () => execute(deleteCommand(ref.kind, [ref.id])) })
   return { title: `${label} · ${name}`, items }
+}
+
+/** A river's or lake's menu: open it, rename it, go to see it, and give it its generated name back; it can't be deleted (the land makes it). */
+function waterwayMenu(key: string): Omit<Menu, 'x' | 'y'> | undefined {
+  const w = waterwayOf(key)
+  if (!w) return undefined
+  const label = waterwayKind(key) === 'lake' ? 'Lake' : 'River'
+  const open = () => useUi.getState().selectWaterway(key)
+  const items: MenuItem[] = [
+    { label: 'Open in the inspector', run: open },
+    { label: 'Rename…', run: () => rename(open, `${label} name`) },
+    { label: 'View up close', run: () => viewUpClose(w.found) }
+  ]
+  if (w.own?.name) items.push('separator', { label: `Call it ${w.found.name} again`, run: () => execute({ type: 'waterway.set', payload: { worldId: w.worldId, key, patch: { name: '' } } }) })
+  return { title: `${label} · ${w.name}`, items }
 }
 
 /** Opens an element's menu at a point on screen (from a canvas or a 3D view, which know what's under the pointer). */
