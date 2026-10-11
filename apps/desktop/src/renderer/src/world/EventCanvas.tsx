@@ -578,9 +578,10 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
 
   // Groups at the back, the biggest first; then events (the farthest back first, so nearer ones are drawn and clicked over them) and cards.
   const ordered = [...placed.values()].sort((a, b) => rank(a) - rank(b))
-  const selection = selectedItems.length ? bounds(selectedItems.map((i) => i.screen)) : null
+  // What's selected on screen, a group with its label above it (the bar over the selection mustn't cover it).
+  const selection = selectedItems.length ? bounds(selectedItems.map((i) => (i.card?.kind === 'group' ? grownBy(i.screen, GROUP_LABEL_H * i.k) : i.screen))) : null
   const edgeCurve = edge && (edge.kind === 'connection' ? drawn.find((d) => d.c.id === edge.id)?.curve : links.find((d) => d.l.id === edge.id)?.curve)
-  const barAt = edgeCurve ? curveAt(edgeCurve, 0.5) : selection && { x: selection.x + selection.w / 2, y: selection.y }
+  const barAt = edgeCurve ? barSpot({ ...curveAt(edgeCurve, 0.5), w: 0, h: 0 }) : selection && barSpot(selection)
   const actions = actionsFor(selectedCards, selectedEvents, edge)
   const marquee = drag?.kind === 'marquee' ? boxBetween(drag.start, drag.to) : null
   const draft = drag?.kind === 'connect' || drag?.kind === 'link' ? placed.get(drag.fromId) : undefined
@@ -711,7 +712,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
         {ordered.filter((i) => i.card?.kind !== 'group').map((item) => renderItem(item))}
 
         {marquee && <div className="canvas-marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />}
-        {barAt && !drag && !editing && !capturing && Object.keys(actions).length > 0 && <SelectionBar at={{ x: barAt.x, y: Math.max(8, barAt.y - 52) }} actions={actions} />}
+        {barAt && !drag && !editing && !capturing && Object.keys(actions).length > 0 && <SelectionBar at={barAt} actions={actions} />}
         {items.length === 0 && (
           <p className="canvas-empty muted">
             The world’s events show up here, beside cards of your own: double-click to write one, or add one from the toolbar. Drag to select, Space-drag to pan, scroll to zoom; drag from a card’s side onto another to connect them.
@@ -820,6 +821,17 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
     )
   }
 }
+
+/** How much a group's label takes above it at 100%. */
+const GROUP_LABEL_H = 30
+/** How far above what's selected the bar over it starts. */
+const BAR_ABOVE = 52
+
+/** A box with room `top` added above it. */
+const grownBy = (box: Box, top: number): Box => ({ ...box, y: box.y - top, h: box.h + top })
+
+/** Where the bar over a selection goes: above it, or below it when there's no room above (it'd cover what's selected). */
+const barSpot = (box: Box): Point => ({ x: box.x + box.w / 2, y: box.y - BAR_ABOVE >= 8 ? box.y - BAR_ABOVE : box.y + box.h + 8 })
 
 /** Groups first (the biggest at the back), then events (the farthest back first), then cards. */
 const rank = (i: Placed) => (i.card?.kind === 'group' ? -1e12 + 1 / Math.max(1, i.box.w * i.box.h) : i.event ? (i.depth?.depth ?? 0) * -1 : 1)
