@@ -308,14 +308,18 @@ h2 {
 }
 .crumb button {
   padding: 2px 6px;
+  border: 1px solid transparent;
   border-radius: 4px;
 }
 .crumb button:hover {
   background: var(--panel-2);
 }
+/* Where you are, at a glance: bold and outlined. */
 .crumb button[aria-current='true'] {
-  font-weight: 600;
+  font-weight: 700;
   color: #fff;
+  border-color: var(--accent);
+  background: var(--panel-2);
 }
 .crumb-sep {
   color: var(--muted);
