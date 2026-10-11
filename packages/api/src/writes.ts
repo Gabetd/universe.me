@@ -57,7 +57,7 @@ function commandTypes(commands: readonly unknown[]): string[] {
 }
 
 /** Applies (or proposes) commands as one undoable step, and says what was done. */
-function write(ctx: ApiContext, commands: Command[], summary: string, ids: Record<string, string> = {}, options?: WriteOptions) {
+export function write(ctx: ApiContext, commands: Command[], summary: string, ids: Record<string, string> = {}, options?: WriteOptions) {
   const command: Command = commands.length === 1 ? commands[0]! : { type: 'batch', payload: { commands } }
   const outcome = ctx.host.write(command, summary, options)
   // What's read next sees the change.

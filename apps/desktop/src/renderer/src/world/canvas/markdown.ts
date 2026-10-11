@@ -79,9 +79,3 @@ export function markdownToHtml(markdown: string): string {
 
 /** Undoes `escape`, for a quote's lines, which are escaped again as they're rendered. */
 const unescape = (s: string) => s.replace(/&quot;/g, '"').replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&')
-
-/** A text card's first line, without its Markdown, as a title (for turning it into an event). */
-export function firstLine(markdown: string): string {
-  const line = markdown.split('\n').find((l) => l.trim()) ?? ''
-  return line.replace(/^#{1,6}\s+/, '').replace(/[*_~=`]/g, '').trim()
-}

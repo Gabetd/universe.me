@@ -23,7 +23,7 @@ export type CanvasColor = z.infer<typeof CanvasColor>
 /** A canvas colour as CSS: a numbered one's, or the colour itself; null for none. */
 export const canvasColor = (color: CanvasColor | undefined): string | null => (color ? (CANVAS_COLORS[color as keyof typeof CANVAS_COLORS] ?? color) : null)
 
-/** What an element card can show: a place in the universe tree, a region, or one of these records. */
+/** What an element card can show: a place in the universe tree, a region, a river or lake (by its hydrology id), or one of these records. */
 export const CARD_TARGET_KINDS = ['node', 'region', 'event', 'era', 'character', 'faction', 'structure', 'lifeform', 'waterway', 'power', 'theme'] as const
 export const CardTarget = z.object({ kind: z.enum(CARD_TARGET_KINDS), id: Id })
 export type CardTarget = z.infer<typeof CardTarget>
@@ -91,6 +91,12 @@ export const Connection = z.object({
   arrows: Arrows
 })
 export type Connection = z.infer<typeof Connection>
+
+/** A text card's first line, without its Markdown, as a title: what it's called in a list, or as an event. */
+export function cardTitle(markdown: string): string {
+  const line = markdown.split('\n').find((l) => l.trim()) ?? ''
+  return line.replace(/^#{1,6}\s+/, '').replace(/[*_~=`]/g, '').trim()
+}
 
 /** The cards inside a group: those lying wholly within it (as Obsidian has it), the group itself aside. */
 export function inGroup<C extends Pick<CanvasCard, 'id' | 'x' | 'y' | 'w' | 'h'>>(group: C, cards: readonly C[]): C[] {

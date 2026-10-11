@@ -7,11 +7,11 @@ import type { Store } from './store'
 /** A connection's end: a live card or event. */
 export const endOf = (store: Store, id: string) => liveRecord(store, store.records('card').get(id) ? 'card' : 'event', id)
 
-/** Checks what an element card shows is there. */
+/** Checks what an element card shows is there (a river or lake, known by its id in the terrain's hydrology, can't be checked here). */
 export function liveTarget(store: Store, { kind, id }: CardTarget): void {
   if (kind === 'node') liveNode(store, id)
   else if (kind === 'region') liveRegion(store, id)
-  else liveRecord(store, kind, id)
+  else if (kind !== 'waterway') liveRecord(store, kind, id)
 }
 
 /** Checks a card: an element card shows something, a link card has its page, a picture card its picture. */

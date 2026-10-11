@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { firstLine, markdownToHtml } from './markdown'
+import { cardTitle } from '@universe/core'
+import { markdownToHtml } from './markdown'
 
 describe('a text card’s Markdown', () => {
   it('shows headings, marks, lists, tasks, quotes, code, rules and links', () => {
@@ -24,6 +25,6 @@ describe('a text card’s Markdown', () => {
   })
 
   it('gives its first line as a title', () => {
-    expect(firstLine('\n## The **Long** Night\nmore')).toBe('The Long Night')
+    expect(cardTitle('\n## The **Long** Night\nmore')).toBe('The Long Night')
   })
 })

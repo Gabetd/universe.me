@@ -1,3 +1,4 @@
+import { cardTitle } from '@universe/core'
 import { biomeName, describeCalendar, describeCharacter, describeEvent, describeFactionHistory, describePowerSystem, describeRelationship, describeStructure, nodePath } from './describe'
 import type { ApiContext } from './operation'
 import { htmlToText } from './text'
@@ -79,7 +80,12 @@ async function bibleData({ models: m }: ApiContext, worldId: string) {
         ...(span.regionId && { region: regions.find((r) => r.id === span.regionId)?.name }),
         mood: theme!.mood,
         style: theme!.style
-      }))
+      })),
+    // The canvas's text cards, top to bottom, each under its first line.
+    canvas: [...t.cards]
+      .filter((c) => c.kind === 'text' && c.text.trim())
+      .sort((a, b) => a.y - b.y || a.x - b.x)
+      .map((c) => ({ title: cardTitle(c.text), text: c.text.split('\n').slice(1).join('\n').trim() }))
   }
 }
 
@@ -200,5 +206,6 @@ function markdown(b: BibleData): string {
       ...(p.notes ? para(p.notes) : [])
     ])
   )
+  section('On the canvas', b.canvas.flatMap((c) => [`### ${md(c.title)}`, '', ...para(c.text)]))
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
 }

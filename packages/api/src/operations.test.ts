@@ -257,6 +257,29 @@ describe('the operations', () => {
     expect(bytes[3]).toBe(255)
   })
 
+  it('lay out a world’s canvas: text, an element, a web page and a group, connected, moved and read back', async () => {
+    const { eventId } = await p.call<{ eventId: string }>('create_event', { worldId: p.worldId, title: 'The comet', start: '1204' })
+    const note = await p.call<{ cardId: string }>('add_canvas_card', { worldId: p.worldId, kind: 'text', text: '# Omens\nIt came **red**.', x: 0, y: 0 })
+    await p.call('add_canvas_card', { worldId: p.worldId, kind: 'element', target: { kind: 'event', id: eventId } })
+    await p.call('add_canvas_card', { worldId: p.worldId, kind: 'link', url: 'https://example.com/sky', color: '5' })
+    await p.call('add_canvas_card', { worldId: p.worldId, kind: 'group', text: 'Signs', x: -40, y: -40, w: 800, h: 400 })
+    await p.call('connect_on_canvas', { fromId: note.cardId, toId: eventId, label: 'foretells', arrows: 'both' })
+    await p.call('update_canvas_card', { cardId: note.cardId, x: 20, color: '1' })
+    await expect(p.call('add_canvas_card', { worldId: p.worldId, kind: 'element', target: { kind: 'character', id: 'nobody' } })).rejects.toThrow()
+    await expect(p.call('connect_on_canvas', { fromId: note.cardId, toId: 'nothing' })).rejects.toThrow()
+
+    const canvas = await p.call<{ cards: { id: string; kind: string; x: number; color?: string; text?: string; label?: string; url?: string; shows?: { name: string } }[]; connections: { from: string; to: string; label: string; arrows: string }[] }>('get_canvas', { worldId: p.worldId })
+    expect(canvas.cards.map((c) => c.kind)).toEqual(['text', 'element', 'link', 'group'])
+    expect(canvas.cards[0]).toMatchObject({ x: 20, color: '1', text: '# Omens\nIt came **red**.' })
+    expect(canvas.cards[1]!.shows!.name).toBe('The comet')
+    // Put to the right of what was there.
+    expect(canvas.cards[1]!.x).toBeGreaterThan(200)
+    expect(canvas.cards[3]).toMatchObject({ label: 'Signs' })
+    expect(canvas.connections).toEqual([expect.objectContaining({ from: 'text', to: 'The comet', label: 'foretells', arrows: 'both' })])
+    // The bible has the text cards, under their first lines.
+    expect(await p.call<string>('export_world_bible', { worldId: p.worldId })).toMatch(/## On the canvas\n\n### Omens\n\nIt came \\\*\\\*red\\\*\\\*\./)
+  })
+
   it('report inconsistencies, once each, about what is really there, and resolve or dismiss them', async () => {
     const { eventId } = await p.call<{ eventId: string }>('create_event', { worldId: p.worldId, title: 'Mira crowned in Tarn', start: '1204' })
     const report = { worldId: p.worldId, severity: 'contradiction', title: 'Mira in two places', explanation: 'She is crowned in Tarn while at sea.', about: [{ kind: 'event', id: eventId }], suggestion: 'Move the crowning a year later.' }
