@@ -600,6 +600,15 @@ export const READS = [
     run: (ctx, { worldId, format = 'markdown' }) => exportWorldBible(ctx, worldId, format)
   }),
   operation({
+    name: 'list_universe_members',
+    title: 'Who the universe is shared with',
+    description:
+      'The people this universe is shared with (live collaboration over their tailnets), not the members of a faction: each one’s tailnet login, name and who invited them. Who’s invited or removed is decided in Universe itself, not by API clients.',
+    input: z.object({}),
+    route: { method: 'GET', path: '/members' },
+    run: ({ models: m }) => ({ members: m.data().timeline.members.map(({ login, name, invitedBy }) => ({ login, name, ...(invitedBy && { invitedBy }) })) })
+  }),
+  operation({
     name: 'describe_commands',
     title: 'Command reference',
     description: 'The commands run_commands accepts (every change the app can make: renaming, editing, deleting, moving…): their types, or the JSON Schema of one.',

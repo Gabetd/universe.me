@@ -310,6 +310,17 @@ describe('the operations', () => {
     await expect(p.call('get_world', { worldId: 'nope' })).rejects.toThrow(/no world nope/)
   })
 
+  it('list who the universe is shared with, and leave inviting and removing people to the user', async () => {
+    const ownerId = p.project.info().rootId
+    p.project.bus.execute({ type: 'member.create', payload: { ownerId, login: 'bob@example.com', name: 'Bob', invitedBy: { login: 'alice@example.com', name: 'Alice' } } })
+    expect(await p.call('list_universe_members')).toEqual({ members: expect.arrayContaining([{ login: 'alice@example.com', name: 'Alice' }, { login: 'bob@example.com', name: 'Bob', invitedBy: 'alice@example.com' }]) })
+    // Not even hidden in a batch, nor for review.
+    const invite = { type: 'member.create', payload: { ownerId, login: 'mallory@example.com' } }
+    await expect(p.call('run_commands', { commands: [{ type: 'batch', payload: { commands: [invite] } }], summary: 'Tidied up' })).rejects.toThrow(/in Universe itself/)
+    await expect(p.call('run_commands', { commands: [{ type: 'member.delete', payload: { id: 'x' } }], summary: 'Tidied up' })).rejects.toThrow(/in Universe itself/)
+    expect(p.project.snapshot().timeline.members).toHaveLength(2)
+  })
+
   it('find what’s inconsistent', async () => {
     const a = await p.call<{ eventId: string }>('create_event', { worldId: p.worldId, title: 'The cause', start: '1300' })
     const b = await p.call<{ eventId: string }>('create_event', { worldId: p.worldId, title: 'The effect', start: '1200' })

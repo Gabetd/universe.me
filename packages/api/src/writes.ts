@@ -56,8 +56,12 @@ function commandTypes(commands: readonly unknown[]): string[] {
   })
 }
 
+/** Commands an API client can't send, even for review: who the universe is shared with gives people its files, so it's the user's to decide in Universe. */
+const FOR_THE_USER = /^member\./
+
 /** Applies (or proposes) commands as one undoable step, and says what was done. */
 export function write(ctx: ApiContext, commands: Command[], summary: string, ids: Record<string, string> = {}, options?: WriteOptions) {
+  if (commandTypes(commands).some((type) => FOR_THE_USER.test(type))) throw new ApiError(403, 'Who the universe is shared with is changed in Universe itself, not by an API client')
   const command: Command = commands.length === 1 ? commands[0]! : { type: 'batch', payload: { commands } }
   const outcome = ctx.host.write(command, summary, options)
   // What's read next sees the change.
