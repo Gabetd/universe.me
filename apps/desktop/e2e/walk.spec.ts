@@ -39,22 +39,35 @@ test('on the ground, W A S D move over it at the speed picked, and S moves rathe
   expect(walked).toBeLessThan(start[1] - ahead[1])
 })
 
-test('on the ground, the planet’s map in the corner shows where you are, and a click on it goes there; the ground reaches 12 km', async ({ h }) => {
+test('on the ground, the planet’s map in the corner shows where you are and which way you face, and a click on it goes there; the ground reaches 12 km', async ({ h }) => {
   const { page } = h
   await newWorld(h, 'Far')
   await page.getByRole('button', { name: '🔍 Ground' }).click()
   await expect(page.locator('[data-chunks="25"]')).toBeVisible({ timeout: SLOW })
   const minimap = page.getByTestId('ground-minimap')
+  const at = async () => (await minimap.getAttribute('data-at'))!.split(',').map(Number)
+  const heading = async () => Number(await minimap.getAttribute('data-heading'))
   await expect(minimap).toBeVisible()
-  await expect(minimap).toHaveAttribute('data-at', '0.0000,0.0000')
+  // The camera starts a little south of where it looks, facing north.
+  await expect.poll(at).toEqual([expect.closeTo(-0.004, 2), expect.closeTo(0, 3)])
+  expect(await heading()).toBe(0)
   // Looking out across it, the ground goes on to the haze.
   await page.getByRole('radio', { name: 'Fly' }).click()
   await shot(page, '65-ground-far', { views: false })
 
-  // A quarter of the way across and halfway down the map: 90° W on the equator.
+  // Turning the view (right-drag) turns the arrow.
+  const view = (await page.locator('[data-testid="ground"] canvas').boundingBox())!
+  const [x, y] = [view.x + view.width / 2, view.y + view.height / 2]
+  await page.mouse.move(x, y)
+  await page.mouse.down({ button: 'right' })
+  await page.mouse.move(x + 150, y, { steps: 5 })
+  await page.mouse.up({ button: 'right' })
+  await expect.poll(heading).not.toBe(0)
+
+  // The map shows a fiftieth of the planet, 1/√50 of its width: a quarter of the way across is about 12.7° west of the camera.
   const box = (await minimap.boundingBox())!
+  const [, lon0] = await at()
   await page.mouse.click(box.x + box.width / 4, box.y + box.height / 2)
-  // Within a pixel of the map: about 1.6° here.
-  await expect.poll(async () => (await minimap.getAttribute('data-at'))!.split(',').map(Number), { timeout: SLOW }).toEqual([expect.closeTo(0, -0.5), expect.closeTo(-90, -0.5)])
+  await expect.poll(async () => (await at())[1]! - lon0!, { timeout: SLOW }).toBeCloseTo(-12.7, 0)
   await expect(page.getByTestId('ground-readout')).toContainText('°W')
 })

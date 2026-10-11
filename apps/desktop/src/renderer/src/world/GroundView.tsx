@@ -38,7 +38,7 @@ import { useLandTint, useThemeName } from './ThemeTint'
 import { useViewTheme } from './useThemeLook'
 import { multiply } from './viewTheme'
 import { useFarGround, useGroundChunks } from './useGroundChunks'
-import { GroundMinimap } from './GroundMinimap'
+import { GroundMinimap, useGroundPose } from './GroundMinimap'
 import { WalkKeys } from './walk'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
@@ -171,7 +171,7 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
       overlay={
         <>
           <GroundReadout ground={ground} error={failed} />
-          <GroundMinimap model={model} change={change} at={center} />
+          <GroundMinimap model={model} change={change} />
         </>
       }
     >
@@ -246,6 +246,7 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
     const floor = ground.standAt(camera.position.x, camera.position.z) + 1.7
     if (camera.position.y < floor) camera.position.y = floor
     const here = fromLocal(ground.frame, t.x, t.z)
+    useGroundPose.getState().move(fromLocal(ground.frame, camera.position.x, camera.position.z), Math.atan2(t.x - camera.position.x, camera.position.z - t.z))
     const key = chunkKey(chunkOf(here, ground.frame.radiusKm))
     if (key !== lastChunk.current) {
       lastChunk.current = key
