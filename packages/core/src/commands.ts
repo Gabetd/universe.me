@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { ALLOWED_CHILDREN, Id, KIND_LABELS, NodeKind, NodePatch, Notes, Seed, Vec3, type SpatialNode } from './schema'
 import { base64ToBytes, bytesToBase64 } from './encoding'
+import { changedFields, fieldsOf, rowOf, valueAt } from './fields'
 import type { Store } from './store'
 import { CommandError, batchOf, liveNode, liveRegion, liveWorld, newNode, patchRow, pickColor, requireRow, softDelete, type CommandContext, type HandlerResult, type Run } from './command-kit'
 import { CHARACTER_COMMANDS, characterHandlers } from './character-commands'
@@ -136,8 +137,8 @@ export const handlers: Handlers = {
   },
 
   'node.update'(store, { id, patch }, ctx) {
-    const previous = patchRow(store.nodes, liveNode(store, id), patch, ctx.now())
-    return { inverse: { type: 'node.update', payload: { id, patch: previous } }, target: { kind: 'node', id } }
+    const previous = patchRow(store.nodes, 'node', liveNode(store, id), patch, ctx)
+    return { inverse: { type: 'node.update', payload: { id, patch: previous ?? {} } }, target: { kind: 'node', id } }
   },
 
   'node.delete'(store, { id }, ctx) {
@@ -151,13 +152,21 @@ export const handlers: Handlers = {
     return { inverse: { type: 'node.restore', payload: { ids: nodes.map((n) => n.id) } }, target: { kind: 'node', id: node.parentId } }
   },
 
-  'world.update'(store, { id, patch }) {
+  // Undone by the settings it changed, as they were: like a row's patch (`patchRow`), undoing it leaves a slider moved since as it is.
+  'world.update'(store, { id, patch }, ctx) {
     liveWorld(store, id)
+    const key = `world:${id}`
     const previous = store.worlds.getSettings(id) ?? DEFAULT_WORLD_SETTINGS
-    const next = WorldSettings.safeParse(quantizeSettings(mergeWorldSettings(previous, patch)))
+    const asked = [...fieldsOf(patch)].filter(([path]) => path)
+    const kept = asked.filter(([path]) => ctx.footprint?.holds(key, previous, path) ?? true)
+    if (asked.length && !kept.length) return { inverse: { type: 'world.update', payload: { id, patch: {} } }, target: { kind: 'node', id } }
+    const next = WorldSettings.safeParse(quantizeSettings(mergeWorldSettings(previous, (rowOf(kept) ?? {}) as WorldSettingsPatch)))
     if (!next.success) throw new CommandError(`Invalid world settings: ${next.error.issues[0]?.message}`)
     store.worlds.putSettings(id, next.data)
-    return { inverse: { type: 'world.update', payload: { id, patch: previous } }, target: { kind: 'node', id }, owner: id }
+    ctx.footprint?.wrote(key, next.data, kept.map(([path]) => path))
+    // A setting the world was saved without (by an older version) has its default either way.
+    const undo = changedFields(previous, next.data).flatMap((path) => (valueAt(previous, path) === undefined ? [] : [[path, valueAt(previous, path)] as const]))
+    return { inverse: { type: 'world.update', payload: { id, patch: (rowOf(undo) ?? {}) as WorldSettingsPatch } }, target: { kind: 'node', id }, owner: id }
   },
 
   'terrain.patch'(store, { worldId, layer, patches }) {
@@ -219,8 +228,8 @@ export const handlers: Handlers = {
 
   'region.update'(store, { id, patch }, ctx) {
     const region = liveRegion(store, id)
-    const previous = patchRow(store.regions, region, patch, ctx.now())
-    return { inverse: { type: 'region.update', payload: { id, patch: previous } }, target: { kind: 'region', id }, owner: region.worldId }
+    const previous = patchRow(store.regions, 'region', region, patch, ctx)
+    return { inverse: { type: 'region.update', payload: { id, patch: previous ?? {} } }, target: { kind: 'region', id }, owner: previous && region.worldId }
   },
 
   'region.delete'(store, { id }, ctx) {

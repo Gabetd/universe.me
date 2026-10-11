@@ -9,7 +9,6 @@ import {
   liveRegion,
   liveWorld,
   patchRow,
-  previousValues,
   requireRow,
   sameOwner,
   softDelete,
@@ -150,10 +149,16 @@ export function create<K extends RecordKind>(store: Store, kind: K, ctx: Command
 
 /** Patches a live record; undone by `name.update` (`name` is the kind's, unless its commands go by another). */
 export function update<K extends RecordKind>(store: Store, kind: K, ctx: CommandContext, id: string, patch: Partial<Fields<K>>, name: string = kind): HandlerResult {
+  const { previous, ownerId } = patchRecord(store, kind, ctx, id, patch)
+  const inverse = { type: `${name}.update`, payload: { id, patch: previous ?? {} } } as unknown as Command
+  return { inverse, target: { kind, id }, owner: previous && ownerId }
+}
+
+/** Patches a live record, checked: the patch that undoes it (undefined if an undo had nothing left to change: see `patchRow`), and the record's owner. */
+function patchRecord<K extends RecordKind>(store: Store, kind: K, ctx: CommandContext, id: string, patch: Partial<Fields<K>>) {
   const record = liveRecord(store, kind, id)
-  const previous = patchRow(store.records(kind), record, patch, ctx.now(), (next) => validate(store, kind, next, { previous: record }))
-  const inverse = { type: `${name}.update`, payload: { id, patch: previous } } as unknown as Command
-  return { inverse, target: { kind, id }, owner: record.ownerId }
+  const previous = patchRow(store.records(kind), kind, record, patch, ctx, (next) => validate(store, kind, next, { previous: record }))
+  return { previous, ownerId: record.ownerId }
 }
 
 /**
@@ -171,9 +176,9 @@ export function upsert<K extends RecordKind>(
   if (!existing) return { ...create(store, kind, ctx, ownerId, id, fields), inverse: reset }
   const { deletedAt } = existing
   if (deletedAt) store.records(kind).update({ ...existing, deletedAt: null })
-  const result = update(store, kind, ctx, id, patch)
-  const restore = set(previousValues(existing as Record<string, unknown>, patch as Record<string, unknown>) as Partial<Fields<K>>)
-  return { ...result, inverse: deletedAt ? batchOf([restore, { type: 'record.remove', payload: { refs: [{ kind, id }] } }]) : restore }
+  const { previous = {} } = patchRecord(store, kind, ctx, id, patch)
+  const restore = set(previous)
+  return { inverse: deletedAt ? batchOf([restore, { type: 'record.remove', payload: { refs: [{ kind, id }] } }]) : restore, target: { kind, id }, owner: ownerId }
 }
 
 export function setDeleted(store: Store, refs: Ref[], deletedAt: string | null, now: string): string | undefined {

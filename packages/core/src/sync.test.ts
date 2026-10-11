@@ -287,6 +287,54 @@ describe('sync', () => {
     expect(b.store.nodes.children(root).map((n) => n.name)).toEqual(['Theirs'])
   })
 
+  it('undoes only what nobody has changed since: a field another device changed after stays as they left it', () => {
+    const time = { now: Date.UTC(2026, 0, 1) }
+    const { a, world, event, copies: [b] } = withEvent(time, 'B')
+    const get = (d: Device) => d.store.records('event').get(event)!
+    time.now += 10
+    run(a, 'event.update', { id: event, patch: { title: 'Mine', notes: 'My notes' } })
+    run(a, 'world.update', { id: world, patch: { terrain: { water: 0.4, roughness: 0.9 } } })
+    pull(a, b!)
+    time.now += 10
+    run(b!, 'event.update', { id: event, patch: { title: 'Theirs' } })
+    run(b!, 'world.update', { id: world, patch: { terrain: { water: 0.2 } } })
+    pull(b!, a)
+
+    a.bus.undo()
+    a.bus.undo()
+    expect(get(a)).toMatchObject({ title: 'Theirs', notes: '' })
+    expect(a.store.worlds.getSettings(world)!.terrain).toMatchObject({ water: 0.2, roughness: 0.5 })
+    a.bus.redo()
+    a.bus.redo()
+    expect(get(a)).toMatchObject({ title: 'Theirs', notes: 'My notes' })
+    expect(a.store.worlds.getSettings(world)!.terrain).toMatchObject({ water: 0.2, roughness: 0.9 })
+
+    // A step with nothing left to undo is taken off the stack, and changes nothing.
+    time.now += 10
+    run(a, 'node.update', { id: world, patch: { name: 'Mine' } })
+    pull(a, b!)
+    time.now += 10
+    run(b!, 'node.update', { id: world, patch: { name: 'Theirs' } })
+    pull(b!, a)
+    const before = sent(a, { t: 'node', id: world })
+    expect(a.bus.undo()).toBeDefined()
+    expect(a.store.nodes.get(world)!.name).toBe('Theirs')
+    expect(sent(a, { t: 'node', id: world })).toEqual(before)
+    a.bus.redo()
+    expect(a.store.nodes.get(world)!.name).toBe('Theirs')
+  })
+
+  it('undoes a step that changed a field twice back to where it began', () => {
+    const time = { now: Date.UTC(2026, 0, 1) }
+    const { a, event } = withEvent(time)
+    const title = (t: string) => ({ type: 'event.update', payload: { id: event, patch: { title: t } } })
+    a.bus.execute({ type: 'batch', payload: { commands: [title('Second'), title('Third')] } })
+    a.bus.undo()
+    expect(a.store.records('event').get(event)!.title).toBe('Founding')
+    a.bus.redo()
+    expect(a.store.records('event').get(event)!.title).toBe('Third')
+  })
+
   it('turns down rows that aren’t what they say', () => {
     const time = { now: Date.UTC(2026, 0, 1) }
     const a = device('A', time)

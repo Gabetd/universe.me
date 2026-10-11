@@ -1,5 +1,6 @@
 import { DEFAULT_CONTEXT, batchOf } from './command-kit'
 import { Command, CommandError, applyCommand, type CommandContext, type HandlerResult, type Target } from './commands'
+import { Footprint } from './footprint'
 import type { CommandSource } from './schema'
 import type { Store } from './store'
 import { SyncMerge, mergeRows, type LoggedMerge } from './sync-commands'
@@ -42,6 +43,8 @@ interface Entry {
   command: Command
   inverse: Command
   source: CommandSource
+  /** What it left in the rows it patched: undoing it leaves a field changed since (by someone else) as it is. */
+  footprint: Footprint
 }
 
 export class CommandBus {
@@ -78,7 +81,12 @@ export class CommandBus {
   group(n: number): void {
     if (n < 2 || n > this.undoStack.length) return
     const entries = this.undoStack.splice(-n)
-    this.undoStack.push({ command: batchOf(entries.map((e) => e.command)), inverse: batchOf(entries.map((e) => e.inverse).reverse()), source: entries.at(-1)!.source })
+    this.undoStack.push({
+      command: batchOf(entries.map((e) => e.command)),
+      inverse: batchOf(entries.map((e) => e.inverse).reverse()),
+      source: entries.at(-1)!.source,
+      footprint: Footprint.of(entries.map((e) => e.footprint))
+    })
   }
 
   /** Validates and applies a command. Throws `CommandError` if it is invalid. */
@@ -88,8 +96,9 @@ export class CommandBus {
       throw new CommandError(parsed.error.issues.map((i) => `${i.path.join('.') || 'command'}: ${i.message}`).join('; '))
     }
     const command = parsed.data
-    const result = this.apply('do', command, source)
-    this.undoStack.push({ command, inverse: result.inverse, source })
+    const footprint = new Footprint()
+    const result = this.apply('do', command, source, footprint)
+    this.undoStack.push({ command, inverse: result.inverse, source, footprint })
     if (this.undoStack.length > (this.options.maxHistory ?? 500)) this.undoStack.shift()
     this.redoStack = []
     return this.finish('do', command, result)
@@ -120,24 +129,24 @@ export class CommandBus {
   undo(): ExecuteResult | undefined {
     const entry = this.undoStack.pop()
     if (!entry) return undefined
-    const result = this.apply('undo', entry.inverse, entry.source)
+    const result = this.apply('undo', entry.inverse, entry.source, entry.footprint)
     // Redoing runs the inverse of the inverse, which for a create is a restore,
-    // so the entity keeps its id and history.
-    this.redoStack.push({ command: entry.inverse, inverse: result.inverse, source: entry.source })
+    // so the entity keeps its id and history. The footprint now holds what the undo left.
+    this.redoStack.push({ command: entry.inverse, inverse: result.inverse, source: entry.source, footprint: entry.footprint })
     return this.finish('undo', entry.inverse, result)
   }
 
   redo(): ExecuteResult | undefined {
     const entry = this.redoStack.pop()
     if (!entry) return undefined
-    const result = this.apply('redo', entry.inverse, entry.source)
-    this.undoStack.push({ command: entry.inverse, inverse: result.inverse, source: entry.source })
+    const result = this.apply('redo', entry.inverse, entry.source, entry.footprint)
+    this.undoStack.push({ command: entry.inverse, inverse: result.inverse, source: entry.source, footprint: entry.footprint })
     return this.finish('redo', entry.inverse, result)
   }
 
-  private apply(action: HistoryAction, command: Command, source: CommandSource): HandlerResult {
+  private apply(action: HistoryAction, command: Command, source: CommandSource, footprint: Footprint): HandlerResult {
     return this.store.transaction(() => {
-      const result = applyCommand(this.store, command, this.ctx)
+      const result = applyCommand(this.store, command, { ...this.ctx, footprint })
       if (result.owner) {
         const owner = this.store.nodes.get(result.owner)
         if (owner) this.store.nodes.update({ ...owner, updatedAt: this.ctx.now() })
