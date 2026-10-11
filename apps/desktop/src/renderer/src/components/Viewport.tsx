@@ -46,6 +46,7 @@ function OrbitViewport({ node }: { node: SpatialNode }) {
     return { children, worlds }
   }, [node, nodes])
   const world = worlds.get(node.id)
+  const worldIds = useMemo(() => new Set([...worlds.values()].map((w) => w.id)), [worlds])
   const textures = usePlanetTextures(useMemo(() => [...worlds.values()], [worlds]))
 
   const system = useSystem(node.kind === 'star_system' || node.kind === 'body' ? node.id : undefined)
@@ -92,14 +93,22 @@ function OrbitViewport({ node }: { node: SpatialNode }) {
   }
   const generated = (id: string) => unclaimed.find((g) => g.orbit.bodyId === id)
 
-  // A few pushes of the wheel change level: out to the parent, or in to what's under the cursor.
+  // A few pushes of the wheel change level: out to the parent, or in to what's under the cursor (or else nearest it).
   const edge = useRef(new EdgePush())
   const onWheel = (e: React.WheelEvent) => {
     // About one push a notch, so a trackpad's many small scrolls take as long as a wheel's few.
     if (!edge.current.push(Math.sign(e.deltaY) * Math.min(1, Math.abs(e.deltaY) / 100))) return
     if (e.deltaY > 0) return zoomOut(canvasRef.current)
-    const t = hitTest(e)
-    if (t && !generated(t.id)) zoomTo(t.id, canvasRef.current, t)
+    const rect = canvasRef.current!.getBoundingClientRect()
+    const [x, y] = [e.clientX - rect.left, e.clientY - rect.top]
+    // Nearest somewhere to land if nothing's under the cursor: a world, or a planet that would have one.
+    const landable = (id: string) => worldIds.has(id) || worlds.has(id) || generated(id)?.giant === false
+    const t = hitTest(e) ?? targetAt(targets.current.filter((x) => landable(x.id)), x, y, Infinity) ?? targetAt(targets.current, x, y, Infinity)
+    if (!t) return
+    // A planet nobody has claimed yet is claimed on the way in (with a world surface, unless it's a giant), as a click and Claim would.
+    const planet = generated(t.id)
+    if (planet) return void claimPlanetInto(node.id, planet, !planet.giant, canvasRef.current, t)
+    zoomTo(t.id, canvasRef.current, t)
   }
 
   return (

@@ -46,7 +46,8 @@ function surfacePoint(model: TerrainModel, dir: Vec3, scale: number, lift: numbe
 }
 
 const CAMERA = { position: [0, 0.6, 3] as [number, number, number], fov: 45, near: 0.01, far: 200 }
-const CONTROLS = { enablePan: false, minDistance: MIN_DISTANCE, maxDistance: MAX_DISTANCE, rotateSpeed: 0.5, zoomSpeed: 0.8 }
+// About fifteen notches of the wheel from the farthest to the closest, so going between the planet in its orbit and the ground is a few turns, not dozens.
+const CONTROLS = { enablePan: false, minDistance: MIN_DISTANCE, maxDistance: MAX_DISTANCE, rotateSpeed: 0.5, zoomSpeed: 2.5 }
 
 /** The planet from orbit. Memoized, like the other views: the world editor re-renders for things they don't show. */
 export const GlobeView = memo(function GlobeView(props: SurfaceViewProps) {

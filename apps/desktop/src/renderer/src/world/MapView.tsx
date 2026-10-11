@@ -1,7 +1,7 @@
 import type { LatLon } from '@universe/core'
 import { brushRows, latLonToDir, latLonToPixel, pixelToLatLon, renderEquirect, type TerrainModel, type Vec3 } from '@universe/procgen'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { EdgePush } from '../components/zoom'
+import { EdgePush, zoomOut } from '../components/zoom'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor } from './editorStore'
@@ -16,6 +16,7 @@ import { openElementMenu, useContextMenu, type ElementRef } from '../contextMenu
 const W = 1024
 const H = 512
 const MAX_SCALE = 12
+const MIN_SCALE = 0.3
 
 interface View {
   scale: number
@@ -143,7 +144,7 @@ export const MapView = memo(function MapView({
     const rect = canvasRef.current!.getBoundingClientRect()
     const sx = clientX - rect.left
     const sy = clientY - rect.top
-    const next = Math.max(0.3, Math.min(MAX_SCALE, v.scale * factor))
+    const next = Math.max(MIN_SCALE, Math.min(MAX_SCALE, v.scale * factor))
     v.ox = sx - ((sx - v.ox) * next) / v.scale
     v.oy = sy - ((sy - v.oy) * next) / v.scale
     v.scale = next
@@ -154,7 +155,7 @@ export const MapView = memo(function MapView({
     if (fingers.current.size < 2) pinch.current = null
     pan.current = null
   }
-  const groundEdge = useMemo(() => new EdgePush(), [])
+  const edge = useMemo(() => new EdgePush(), [])
   const dirty = useRef(true)
   /** For tests: "true" once the map has been drawn. */
   const [ready, setReady] = useState(false)
@@ -464,9 +465,13 @@ export const MapView = memo(function MapView({
       onWheel={(e) => {
         const v = view.current
         if (!v) return
-        // Scrolling in at the closest zoom goes down to the ground under the cursor.
+        // Scrolling in at the closest zoom goes down to the ground under the cursor; out at the farthest, up to the planet in its orbit.
         const p = mapPoint(e)
-        if (groundEdge.push(e.deltaY < 0 && v.scale >= MAX_SCALE ? -1 : 0) && p) return useEditor.getState().enterGround(pixelToLatLon(p[0], p[1], W, H))
+        const push = e.deltaY < 0 && v.scale >= MAX_SCALE ? -1 : e.deltaY > 0 && v.scale <= MIN_SCALE ? 1 : 0
+        if (edge.push(push)) {
+          if (push > 0) return zoomOut(canvasRef.current)
+          if (p) return useEditor.getState().enterGround(pixelToLatLon(p[0], p[1], W, H))
+        }
         zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015))
       }}
     />

@@ -58,7 +58,7 @@ const smooth = (t: number) => t * t * (3 - 2 * t)
 const latLonOf = (p: LatLon): [number, number] => [p.lat, p.lon]
 
 const CAMERA = { position: [0, 400, 600] as [number, number, number], fov: 55, near: 0.5, far: 9000 }
-const CONTROLS = { screenSpacePanning: false, minDistance: 3, maxDistance: MAX_DISTANCE, maxPolarAngle: Math.PI * 0.47, zoomSpeed: 0.9 }
+const CONTROLS = { screenSpacePanning: false, minDistance: 3, maxDistance: MAX_DISTANCE, maxPolarAngle: Math.PI * 0.47, zoomSpeed: 2.5 }
 
 /** Heights of the ground anywhere: the globe's terrain plus the seeded detail the chunks have. */
 interface Ground {

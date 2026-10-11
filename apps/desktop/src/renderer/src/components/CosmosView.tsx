@@ -150,6 +150,13 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
     setPicked(null)
     void claimInto(claimGenerated(node, hit.item, newId), canvasRef.current, hit)
   }
+  /** With nothing in view, the item nearest the point `p` looks at, wherever it is (zoomed in where nothing is drawn). */
+  const nearestOffScreen = (p: { x: number; y: number }): Hit | undefined => {
+    const at = toWorld(p)
+    let best: Item | undefined
+    for (const item of items) if (!best || Math.hypot(item.x - at.x, item.y - at.y) < Math.hypot(best.x - at.x, best.y - at.y)) best = item
+    return best && { item: best, ...p, r: 0 }
+  }
   const createHere = (at: { x: number; y: number }) => void useUi.getState().execute({ type: 'node.create', payload: { parentId: node.id, kind: child, position: { ...at, z: 0 } } })
 
   // Panning by drag; a press that doesn't move is a click.
@@ -167,8 +174,9 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
     const push = next < MIN_UPP[kind] ? -1 : next > fit ? 1 : 0
     if (edge.current.push(push)) {
       if (push > 0) return zoomOut(canvas)
-      const hit = hitAt(p) ?? hitAt({ x: canvas.clientWidth / 2, y: canvas.clientHeight / 2 })
-      if (hit) open(hit)
+      // In to what's under the cursor, or else the nearest thing to it; something not claimed yet is claimed on the way in (one undo).
+      const hit = hitAt(p) ?? targetAt(hits.current, p.x, p.y, Infinity) ?? nearestOffScreen(p)
+      if (hit) return hit.item.node ? open(hit) : claim(hit)
     }
     // Zoom around the cursor.
     const after = toWorld(p)
