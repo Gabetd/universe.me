@@ -25,7 +25,7 @@ export const ROADMAP: Milestone[] = [
   { id: 'M13', title: 'Polish & release', status: 'done', summary: 'Right-click menus, update checks, livelier space, signed updates, a sample universe, keyboard shortcuts, a performance pass' },
   { id: 'M14', title: 'Factions & relationships', status: 'done', summary: 'Factions with members and territory over time, who’s related to whom, a lane per character; spelling, shared power systems, one zoom from universe to ground, 12 km on the ground' },
   { id: 'M15', title: 'Rivers & erosion', status: 'done', summary: 'Rivers that run downhill and join, lakes in basins, each named and picked like a region, and land that wears down as time passes' },
-  { id: 'M16', title: 'Plugins', status: 'planned', summary: 'Your own generators and exporters, sandboxed and undoable' },
+  { id: 'M16', title: 'Plugins', status: 'done', summary: 'Your own generators, exporters and name generators, sandboxed, undone in one step; a manager and a template to start from; sub-factions as deep as they go' },
   { id: 'M17', title: 'Live collaboration', status: 'planned', summary: 'Several people in one universe at once, over their tailnets' },
   { id: 'M18', title: 'Signed installers', status: 'planned', summary: 'Installers signed and notarized, once there are certificates' }
 ]

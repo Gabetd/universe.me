@@ -5,8 +5,8 @@ worlds, give them histories on a timeline, and let Claude Code help through
 a local API and MCP server. See [PLAN.md](PLAN.md) for the full design and roadmap.
 
 **Status:** M0 to M13 are done (v1: up to phone access, sync between your
-devices, and polish), and so are M14 (factions and relationships) and M15
-(rivers and erosion). M16 (plugins) is next. New here? On the start screen,
+devices, and polish), and so are M14 (factions and relationships), M15
+(rivers and erosion) and M16 (plugins). M17 (live collaboration) is next. New here? On the start screen,
 **Explore a sample universe** opens Calder, a world with fifteen centuries of
 history to look around in. Press `?` for the keyboard shortcuts.
 
@@ -80,6 +80,15 @@ can use it…). Answer them once for every age, then again for any era where
 things are different, and say how strong it is in each; the age under the
 playhead is marked. Everything can be undone, and everything stays on your
 computer.
+
+## Plugins
+
+Add your own generators, exporters and name generators (**Tools → Plugins…**):
+- **Generators** add villages, histories or anything else the app can make. Everything one run makes is a single step to undo.
+- **Exporters** take a world out to a wiki, a map image or a game engine.
+- **Name generators** offer names in the right-click menus of the things they name.
+
+A plugin is a folder holding `plugin.json` and `main.js`. **New plugin from the template** starts you with a working example, and its README explains how to write one ([apps/desktop/plugin-template](apps/desktop/plugin-template/README.md)). Plugins run sandboxed: no network, and no files except the ones you pick.
 
 ## Connect Claude Code
 
