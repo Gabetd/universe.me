@@ -202,11 +202,22 @@
     riverGround: ['151-river-ground', 'Down on the ground by a river: its water as wide as it runs'],
     eroded: ['152-eroded-map', 'Thousands of years on: rivers have cut their valleys and steep slopes have slumped'],
     plugins: ['160-plugins', 'Tools → Plugins…: a plugin from the template, its generators, exporters and name generators, each with its options'],
-    subFactions: ['75-sub-factions', 'Sub-factions as deep as they go: a kingdom, its house, the house’s branch and its own part']
+    subFactions: ['75-sub-factions', 'Sub-factions as deep as they go: a kingdom, its house, the house’s branch and its own part'],
+    canvasCards: ['33-canvas-cards', 'The canvas as Obsidian’s: a text card, an element, a picture and a web page beside the events, two of them in a group, connected with a label']
   }
 
   // One entry per published build, newest first.
   const LOG = [
+    {
+      ver: '0.1.79 (Dev)', date: '11 Oct 2026', tag: 'M17',
+      title: 'The canvas, as Obsidian has it',
+      points: [
+        'A world’s canvas holds cards of your own beside its events: text written in Markdown, any element of the project (a place, a character, a faction, a river…) that opens with a click, pictures from a file, dropped or pasted, and web pages that open in your browser. Groups carry what’s in them when moved.',
+        'Drag from any side of a card onto another to connect them, with a label, a colour and arrows at either end, both or neither; drop it on empty board and a new card is there to write in. Select with a click, Shift-click or a box dragged round, then move, resize, colour, align, group, duplicate, copy and paste, or turn a text card into an event at the playhead.',
+        'The board’s tools: zoom in and out, to 100%, to fit and to the selection, snapping to the grid or to other cards’ edges, read-only, and export as a picture. Everything is one step to undo, and Claude can read and lay out the canvas through the API.'
+      ],
+      shots: ['canvasCards']
+    },
     {
       ver: '0.1.75', date: '11 Oct 2026', tag: 'M16',
       title: 'Rivers and erosion, plugins, and worlds by the Earth’s measure',
@@ -437,7 +448,7 @@
     { title: 'AI and the API', shots: ['connectAi', 'aiChange', 'aiSuggestions', 'warnings', 'phoneSignIn', 'phoneConnected'] },
     { title: 'Your phone and other devices', shots: ['phoneApp', 'sync'] },
     { title: 'Themes', shots: ['themeCrossfade', 'themeEditor', 'themeGlobe', 'themeRegion'] },
-    { title: 'Timeline and canvas', shots: ['mainFlow', 'timeline', 'worldAtTime', 'globeAtTime', 'canvas1', 'canvas2', 'canvas3'] },
+    { title: 'Timeline and canvas', shots: ['mainFlow', 'timeline', 'worldAtTime', 'globeAtTime', 'canvasCards', 'canvas1', 'canvas2', 'canvas3'] },
     { title: 'Structures', shots: ['structGlobe', 'structPanel', 'weathering', 'effects', 'pins', 'builder', 'builderRuin', 'model', 'blueprints'] },
     { title: 'On the ground', shots: ['ground', 'groundClose', 'groundWalk', 'groundFar', 'charGround'] },
     { title: 'Characters', shots: ['charMap', 'charGround'] },
