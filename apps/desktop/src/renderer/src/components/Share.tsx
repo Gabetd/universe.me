@@ -27,9 +27,9 @@ const close = () => useShareDialog.getState().set(false)
 
 /** The top bar's button that opens the Share dialog. */
 export function ShareButton() {
-  const others = useUi((s) => s.timeline.members.length)
+  const shared = useUi((s) => s.timeline.members.length > 0)
   return (
-    <button onClick={() => useShareDialog.getState().set(true)} title={others ? 'Who this universe is shared with' : 'Share this universe with people on your tailnet'}>
+    <button onClick={() => useShareDialog.getState().set(true)} title={shared ? 'Who this universe is shared with' : 'Share this universe with people on your tailnet'}>
       👥 Share
     </button>
   )

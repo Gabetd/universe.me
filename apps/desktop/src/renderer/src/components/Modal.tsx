@@ -12,12 +12,13 @@ export const dialogStore = () => create<DialogState>((set) => ({ open: false, se
 /**
  * A dialog over the app, closed by its ✕, a click outside it, or Escape
  * (`alsoKey` too), heard before anything else's Escape (which would deselect,
- * or go up a level).
+ * or go up a level), unless a right-click menu over it has the focus: that
+ * Escape closes the menu.
  */
 export function Modal({ title, closeLabel, className, onClose, alsoKey, children }: { title: string; closeLabel: string; className: string; onClose(): void; alsoKey?: string; children: ReactNode }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' && e.key !== alsoKey) return
+      if ((e.key !== 'Escape' && e.key !== alsoKey) || (e.target as Element).closest?.('[role="menu"]')) return
       e.preventDefault()
       e.stopPropagation()
       onClose()
