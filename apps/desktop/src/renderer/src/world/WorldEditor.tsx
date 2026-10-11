@@ -19,6 +19,7 @@ import { useTerrain, type SurfaceViewProps } from './useTerrain'
 import { firstLook } from './firstLook'
 import { useShortcuts, withKey } from '../shortcuts'
 import { GROUND_SPEEDS } from './walk'
+import { MiddleSize } from './MiddleSize'
 import { showFaction } from '../contextMenu'
 import { useStructuresAt } from './useStructures'
 import { useCharactersAt } from './useCharacters'
@@ -157,6 +158,7 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
 
       <div className="world-canvas">
         <ToolOptions view={activeView} />
+        {onSurface && <MiddleSize worldId={world.id} />}
         {territory && onSurface && activeView !== 'ground' && <TerritoryLegend holders={holders} />}
         {activeView === 'species' ? (
           <EcosystemView worldId={world.id} model={model} change={change} error={error} />

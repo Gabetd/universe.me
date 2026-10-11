@@ -1601,6 +1601,19 @@ kbd {
   gap: 8px;
   margin-top: auto;
 }
+.middle-size {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  padding: 6px 14px;
+  border-radius: 12px;
+  background: rgba(10, 14, 24, 0.75);
+  color: #e8eefc;
+  font-weight: 600;
+  pointer-events: none;
+}
 .tool-options {
   position: absolute;
   top: 10px;
