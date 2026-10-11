@@ -19,6 +19,8 @@ import { Timeline } from '../timeline/Timeline'
 import { useTimelineView } from '../timeline/timelineStore'
 import { isPhoneApp } from '../webBridge'
 import { WorldEditor } from '../world/WorldEditor'
+import { useTellWhere } from '../collaboration'
+import { PeopleIn, ShareButton, ShareDialog } from './Share'
 
 /** On a phone-sized screen one panel shows at a time; these pick which. */
 const PHONE_TABS = [
@@ -36,6 +38,7 @@ export function Workspace() {
   const canRedo = useUi((s) => s.canRedo)
   const project = useUi((s) => s.project)!
   const shell = useRef<HTMLDivElement>(null)
+  useTellWhere()
 
   // The timeline's height goes straight onto the element, so resizing it doesn't re-render the app.
   useLayoutEffect(() => {
@@ -84,6 +87,7 @@ export function Workspace() {
       <header className="topbar">
         <Breadcrumb />
         <div className="topbar-actions">
+          <PeopleIn />
           <UndoAiButton />
           <button onClick={() => void undo()} disabled={!canUndo} title="Undo (Ctrl/Cmd+Z)">
             ↶ Undo
@@ -91,11 +95,13 @@ export function Workspace() {
           <button onClick={() => void redo()} disabled={!canRedo} title="Redo (Ctrl+Y / Cmd+Shift+Z)">
             ↷ Redo
           </button>
-          {/* Connecting AI clients and phones is done at the computer. */}
+          {/* Sharing, and connecting AI clients and phones, are done at the computer. */}
+          {!isPhoneApp() && <ShareButton />}
           {!isPhoneApp() && <ConnectAiButton />}
         </div>
       </header>
       <ErrorBanner />
+      {!isPhoneApp() && <ShareDialog />}
       <ContextMenuHost />
       <aside className="panel outline-panel">
         <div className="panel-title">Universe</div>

@@ -68,7 +68,7 @@ const VIEWS: { view: EditorView; icon: string; label: string; title: string; web
 const OPEN_VIEWS = VIEWS.filter((v) => !v.webgl || hasWebGL)
 
 /** Shows one of a world's views; the globe and the map are also where the canvas and the rest come back to. */
-function openView(view: EditorView, worldId: string): void {
+export function openView(view: EditorView, worldId: string): void {
   const { set, enterGround } = useEditor.getState()
   if (view === 'ground') enterGround(...groundTarget(worldId))
   else set(view === 'globe' || view === 'map' ? { view, surfaceView: view } : { view })

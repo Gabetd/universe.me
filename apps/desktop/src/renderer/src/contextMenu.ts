@@ -19,7 +19,7 @@ import { goToEvent } from './world/goToEvent'
  */
 
 /** What can be right-clicked: a node, or a record a world or timeline holds. */
-export type ElementKind = 'node' | 'region' | 'structure' | 'character' | 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan' | 'species' | 'lane' | 'power' | 'faction' | 'relationship' | 'waterway'
+export type ElementKind = 'node' | 'region' | 'structure' | 'character' | 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan' | 'species' | 'lane' | 'power' | 'faction' | 'relationship' | 'waterway' | 'member'
 
 export interface ElementRef {
   kind: ElementKind
@@ -165,10 +165,10 @@ type ByKind = string | ((id: string) => string)
 
 /**
  * For each kind (each deleted by its own `<kind>.delete`, unless it can't
- * be): what it's called, the field that renames it, and whether the
- * inspector shows it (`openElement`).
+ * be): what it's called, the field that renames it, whether the inspector
+ * shows it (`openElement`), and what deleting one is called if not that.
  */
-const KINDS: Record<ElementKind, { label: ByKind; nameField?: ByKind; inspector: boolean; deletable?: false }> = {
+const KINDS: Record<ElementKind, { label: ByKind; nameField?: ByKind; inspector: boolean; deletable?: false; deleteVerb?: string }> = {
   node: { label: 'Node', nameField: 'Name', inspector: true },
   region: { label: 'Region', nameField: 'Region name', inspector: true },
   structure: { label: 'Structure', nameField: 'Structure name', inspector: true },
@@ -185,7 +185,9 @@ const KINDS: Record<ElementKind, { label: ByKind; nameField?: ByKind; inspector:
   faction: { label: 'Faction', nameField: 'Faction name', inspector: false },
   relationship: { label: 'Relationship', inspector: false },
   // Made by the land, so never deleted, only given its generated name back.
-  waterway: { label: waterwayLabel, nameField: (id) => `${waterwayLabel(id)} name`, inspector: true, deletable: false }
+  waterway: { label: waterwayLabel, nameField: (id) => `${waterwayLabel(id)} name`, inspector: true, deletable: false },
+  // Someone the universe is shared with (in the Share dialog): removing them stops sharing it with them.
+  member: { label: 'Member', inspector: false, deleteVerb: 'Remove' }
 }
 
 const byKind = (value: ByKind, id: string) => (typeof value === 'string' ? value : value(id))
@@ -239,6 +241,8 @@ export function nameOf({ kind, id }: ElementRef): string | undefined {
     }
     case 'waterway':
       return waterwayOf(id)?.name
+    case 'member':
+      return find(t.members)?.name
   }
 }
 
@@ -267,7 +271,7 @@ export function openElement({ kind, id }: ElementRef): void {
   else if (kind === 'relationship') {
     const rel = ui.timeline.relationships.find((r) => r.id === id)
     if (rel) openElement(rel.from)
-  } else if (kind !== 'species' && kind !== 'lane' && kind !== 'power') ui.selectTimeline({ kind, ids: [id] })
+  } else if (kind !== 'species' && kind !== 'lane' && kind !== 'power' && kind !== 'member') ui.selectTimeline({ kind, ids: [id] })
 }
 
 /** Opens a faction on its world's Factions page. */
@@ -373,7 +377,9 @@ export function elementMenu(ref: ElementRef, { open, extra = [] }: MenuOptions =
     ...nameItems(ref)
   ]
   const { kind } = ref
-  if (deletable(kind) && (!node || canDelete(node))) items.push('separator', { label: `Delete ${name}`, danger: true, run: () => execute(deleteCommand(kind, [ref.id])) })
+  if (deletable(kind) && (!node || canDelete(node))) {
+    items.push(...(items.length ? ['separator' as const] : []), { label: `${spec.deleteVerb ?? 'Delete'} ${name}`, danger: true, run: () => execute(deleteCommand(kind, [ref.id])) })
+  }
   return { title: `${label} · ${name}`, items }
 }
 

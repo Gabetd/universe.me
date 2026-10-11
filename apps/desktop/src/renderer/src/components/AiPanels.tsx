@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AiChange, ApiSettingsPatch, ApiStatus, DeviceStatus } from '../../../shared/api'
+import type { AiChange, ApiSettingsPatch, ApiStatus, DeviceStatus, SharedDevice } from '../../../shared/api'
+import { useCollaboration } from '../collaboration'
 import { applyReply, useUi } from '../store'
 import { useSteadyScroll } from '../useSteadyScroll'
 import { CopyButton } from './fields'
@@ -13,7 +14,7 @@ import { CopyButton } from './fields'
 const undoAi = () => applyReply(window.universe.undoAi())
 
 /** The API's status, kept up to date, a way to change it that shows the change at once, and one to look again (Tailscale too). */
-function useApiStatus(): [ApiStatus | undefined, (patch: ApiSettingsPatch) => void, () => void] {
+export function useApiStatus(): [ApiStatus | undefined, (patch: ApiSettingsPatch) => void, () => void] {
   const [status, setStatus] = useState<ApiStatus>()
   // Changes on their way to the main process: until the last one answers, a status that comes meanwhile was made before it, and would undo what's shown.
   const changing = useRef(0)
@@ -140,10 +141,10 @@ function ConnectPanel({ status, set, onClose }: { status: ApiStatus; set(patch: 
 }
 
 /** Tailscale is there but not running or signed in: what to do. */
-const stoppedLine = (ts: { detail: string }) => `${ts.detail}. Start it and sign in, then open this panel again.`
+export const stoppedLine = (ts: { detail: string }) => `${ts.detail}. Start it and sign in, then open this panel again.`
 
 /** What's in the way of a section's switch, if anything. */
-function SectionError({ error }: { error: string | undefined }) {
+export function SectionError({ error }: { error: string | undefined }) {
   if (!error) return null
   return (
     <p className="small phone-error" role="alert">
@@ -372,7 +373,7 @@ function DevicesSection({ status, set }: { status: ApiStatus; set(patch: ApiSett
       <h3>Your other devices</h3>
       <p className="small muted">
         The same universe on your other computers, kept in step directly over your tailnet (nothing in the cloud). Turn this on on each, open the same universe on both (or copy it from one to the other), and a change on one shows on the
-        others within seconds.
+        others within seconds. Universes other people share with you show here too, to copy the same way.
       </p>
       <label className="checkbox">
         <input type="checkbox" checked={sync.on} disabled={tailscale.kind !== 'ready' && !sync.on} onChange={(e) => set({ sync: e.target.checked })} /> Sync with my other devices
@@ -388,16 +389,50 @@ function DevicesSection({ status, set }: { status: ApiStatus; set(patch: ApiSett
               <span>
                 {d.name} <span className="muted">· {deviceLine(d)}</span>
               </span>
-              {d.state === 'other' && (
-                <button className="link small" onClick={() => void applyReply(window.universe.copyFromDevice(d.host))}>
-                  Copy “{d.project!.name}” here
-                </button>
-              )}
+              {d.state === 'other' && <CopyHere device={d} />}
             </li>
           ))}
         </ul>
       )}
+      {sync.on && <SharedWithYou />}
     </section>
+  )
+}
+
+/** Copies the universe a device has open here (one of the user's, or another person's shared with them). */
+function CopyHere({ device }: { device: { host: string; project?: { name: string } } }) {
+  return (
+    <button className="link small" onClick={() => void applyReply(window.universe.copyFromDevice(device.host))}>
+      Copy “{device.project!.name}” here
+    </button>
+  )
+}
+
+/** Another person's device with a universe shared with the user, as one of their own would be. */
+const asDevice = (d: SharedDevice): DeviceStatus => ({ host: d.host, name: d.name, state: d.same ? 'same' : 'other', project: d.project, ...(d.lastSync && { lastSync: d.lastSync }), ...(d.error && { error: d.error }) })
+
+/**
+ * Universes other people share with the user (PLAN.md §6.7, with other
+ * people), open on their devices now: each with its owner, and copied here
+ * as from one of the user's own devices.
+ */
+function SharedWithYou() {
+  const shared = useCollaboration((s) => s.shared)
+  if (!shared.length) return null
+  return (
+    <>
+      <h4>Shared with you</h4>
+      <ul className="connections" aria-label="Shared with you">
+        {shared.map((d) => (
+          <li key={d.host}>
+            <span>
+              {d.owner.name}’s {d.name} <span className="muted">· {deviceLine(asDevice(d))}</span>
+            </span>
+            {!d.same && <CopyHere device={d} />}
+          </li>
+        ))}
+      </ul>
+    </>
   )
 }
 

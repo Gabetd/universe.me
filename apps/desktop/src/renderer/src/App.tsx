@@ -11,6 +11,7 @@ import { routeHistory } from './input'
 import { onShortcutKey, useShortcutSheet, useShortcuts } from './shortcuts'
 import { isPhoneApp } from './webBridge'
 import { useUi } from './store'
+import { listenToCollaboration } from './collaboration'
 
 const showShortcuts = () => useShortcutSheet.getState().set(true)
 
@@ -30,12 +31,15 @@ export function App() {
       else if (action === 'plugins') usePluginsDialog.getState().set(true)
       else routeHistory(action)
     })
+    // Who's in and universes shared with this user, for the top bar, the tree, the Share dialog and the device list (a phone hears none).
+    const offCollaboration = listenToCollaboration()
     window.addEventListener('keydown', onShortcutKey)
     // The plugins installed, for the world's inspector and right-click menus (a phone has none: they run on the computer).
     if (!isPhoneApp()) void usePlugins.getState().refresh()
     return () => {
       offState()
       offMenu()
+      offCollaboration()
       window.removeEventListener('keydown', onShortcutKey)
     }
   }, [])

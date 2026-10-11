@@ -2564,7 +2564,8 @@ kbd {
 /* The app-wide right-click menu: above everything, where the pointer was. */
 .context-menu.floating {
   position: fixed;
-  z-index: 100;
+  /* Over dialogs too: a right-click in one (the Share dialog's people, a field's spelling) opens on top of it. */
+  z-index: 101;
   max-width: 320px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
@@ -2759,6 +2760,80 @@ kbd {
   justify-content: space-between;
   gap: 8px;
   font-size: 12px;
+}
+/* Sharing a universe (Share.tsx): the dialog, and each person's round mark in their own colour. */
+.share-dialog {
+  width: min(560px, 94vw);
+  max-height: 86vh;
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  padding: 18px 22px;
+}
+.share-dialog h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+.share-invite,
+.share-people,
+.share-off {
+  display: grid;
+  gap: 8px;
+}
+.share-invite-row {
+  display: flex;
+  gap: 6px;
+}
+.share-members li {
+  align-items: center;
+  padding: 4px 0;
+}
+.share-member {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.share-member-where {
+  display: block;
+}
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: hsl(var(--hue, 220) 55% 45%);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+.avatar.small {
+  width: 14px;
+  height: 14px;
+  font-size: 7px;
+}
+.people-in {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 4px;
+}
+.avatar-button {
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: none;
+}
+.avatar-button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.tree-people {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
 }
 .sign-in-codes {
   display: grid;

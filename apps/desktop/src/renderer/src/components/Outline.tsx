@@ -4,6 +4,7 @@ import { KIND_ICONS } from '../kinds'
 import { useUi } from '../store'
 import { flagClass, useFlagged } from '../flags'
 import { menuRef } from '../contextMenu'
+import { PeopleOn } from './Share'
 
 export function Outline() {
   const nodes = useUi((s) => s.nodes)
@@ -71,6 +72,7 @@ const Row = memo(function Row({ node, parentKind, depth, collapsed, path, toggle
         </button>
         <span className="tree-icon">{KIND_ICONS[node.kind]}</span>
         <span className="tree-name">{node.name}</span>
+        <PeopleOn nodeId={node.id} />
       </div>
       {open && (
         <ul role="group">
