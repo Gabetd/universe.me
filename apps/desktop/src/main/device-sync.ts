@@ -98,9 +98,8 @@ export interface SyncAnswer {
 type Found = DeviceStatus & { owner?: Person }
 
 export class DeviceSync {
-  /** The user's own devices, and other people's, as last found. */
-  private readonly devices = new Map<string, Found>()
-  private readonly theirs = new Map<string, Found>()
+  /** The user's own devices, and other people's (with their owner), as last found, by host. */
+  private readonly found = new Map<string, Found>()
   private readonly presences = new Presences()
   private where: Where | null = null
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -121,8 +120,7 @@ export class DeviceSync {
     clearTimeout(this.timer)
     clearTimeout(this.nudging)
     this.timer = undefined
-    this.devices.clear()
-    this.theirs.clear()
+    this.found.clear()
     this.presences.clear()
     this.o.changed()
     this.tell()
@@ -130,12 +128,12 @@ export class DeviceSync {
 
   /** The user's own devices. */
   status(): DeviceStatus[] {
-    return [...this.devices.values()]
+    return [...this.found.values()].filter((d) => !d.owner)
   }
 
   /** What a device has open, as last asked, and what to call it (another person's by its owner too). */
   openOn(host: string): { device: string; project: { syncId: string; name: string } } | undefined {
-    const found = this.devices.get(host) ?? this.theirs.get(host)
+    const found = this.found.get(host)
     return found?.project && { device: found.owner ? `${found.owner.name}’s ${found.name}` : found.name, project: found.project }
   }
 
@@ -147,7 +145,7 @@ export class DeviceSync {
       on: this.o.on() && !!me,
       me,
       here: open ? this.presences.in(open.syncId, me?.login) : [],
-      shared: [...this.theirs.values()].flatMap((d) => (d.project && d.owner ? [sharedDevice(d, d.owner, d.project)] : [])),
+      shared: [...this.found.values()].filter((d): d is SharedDevice => !!d.owner && !!d.project),
       people: peopleOf(tailnet?.others ?? [])
     }
   }
@@ -231,8 +229,7 @@ export class DeviceSync {
     if (!this.o.on()) return
     const tailnet = this.o.tailnet()
     const [peers, others] = [tailnet?.peers ?? [], tailnet?.others ?? []]
-    forgetGone(this.devices, peers)
-    forgetGone(this.theirs, others)
+    forgetGone(this.found, [...peers, ...others])
     const own = Promise.all(peers.map((p) => this.visit(p, true))).then(() => this.o.changed())
     await Promise.all([own, ...others.map((p) => this.visit(p, false))])
     this.tell()
@@ -255,9 +252,9 @@ export class DeviceSync {
     if (!this.o.on()) return
     clearTimeout(this.nudging)
     this.nudging = setTimeout(() => {
-      for (const d of this.devices.values()) if (d.state === 'same') this.nudge(d.host)
+      for (const d of this.found.values()) if (d.state === 'same' && !d.owner) this.nudge(d.host)
       const others = this.o.tailnet()?.others ?? []
-      for (const p of others) if (this.theirs.get(p.host)?.state === 'same') void this.visit(p, false)
+      for (const p of others) if (this.found.get(p.host)?.state === 'same') void this.visit(p, false)
     }, NUDGE_MS)
   }
 
@@ -276,10 +273,9 @@ export class DeviceSync {
    * last gave it some.
    */
   private async exchange(peer: TailnetPeer, mine: boolean): Promise<void> {
-    const found = mine ? this.devices : this.theirs
-    const before = found.get(peer.host)
+    const before = this.found.get(peer.host)
     const owner = mine ? undefined : person(peer)
-    const set = (status: Omit<DeviceStatus, 'host' | 'name'>) => void found.set(peer.host, { host: peer.host, name: peer.name, ...status, ...(owner && { owner }) })
+    const set = (status: Omit<DeviceStatus, 'host' | 'name'>) => void this.found.set(peer.host, { host: peer.host, name: peer.name, ...status, ...(owner && { owner }) })
     const trusted = mine || (!!owner && this.o.session.isMember(owner.login))
     let hello: Hello
     try {
@@ -400,16 +396,6 @@ const notOpen: SyncAnswer = { status: 409, body: { error: 'That universe isn’t
 
 /** A device's owner, by their login. */
 const person = (peer: TailnetPeer): Person | undefined => (peer.login ? personOf(peer.login, peer.ownerName) : undefined)
-
-const sharedDevice = (d: Found, owner: Person, project: { syncId: string; name: string }): SharedDevice => ({
-  host: d.host,
-  name: d.name,
-  owner,
-  project,
-  same: d.state === 'same',
-  ...(d.lastSync && { lastSync: d.lastSync }),
-  ...(d.error && { error: d.error })
-})
 
 /** The owners of these devices, each once. */
 function peopleOf(devices: readonly TailnetPeer[]): Person[] {

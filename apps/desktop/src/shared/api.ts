@@ -174,17 +174,8 @@ export interface PersonIn extends Person {
   where: Where | null
 }
 
-/** Another person's device with a universe shared with you open. */
-export interface SharedDevice {
-  host: string
-  name: string
-  owner: Person
-  project: { syncId: string; name: string }
-  /** You have it open too: the two keep each other up to date. */
-  same: boolean
-  lastSync?: number
-  error?: string
-}
+/** Another person's device with a universe shared with you open, as sync found it (`state` 'same': you have it open too, and the two keep each other up to date). */
+export type SharedDevice = DeviceStatus & { owner: Person }
 
 /** A device on the user's tailnet (or shared into it): its tailnet name, its own name, and whose it is. */
 export interface TailnetPeer {

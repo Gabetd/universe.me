@@ -124,7 +124,7 @@ async function aliceAndBob() {
 async function bobCopies(alice: Computer, bob: Computer, at = bob) {
   invite(alice, at.login)
   await at.sync.round()
-  expect(at.sync.collaboration().shared).toEqual([expect.objectContaining({ host: alice.host, owner: { login: alice.login, name: 'Alice' }, project: expect.objectContaining({ name: 'Aerth' }), same: false })])
+  expect(at.sync.collaboration().shared).toEqual([expect.objectContaining({ host: alice.host, owner: { login: alice.login, name: 'Alice' }, project: expect.objectContaining({ name: 'Aerth' }), state: 'other' })])
   await at.sync.copyFrom(alice.host, join(at.dir, 'Aerth copy.universe'))
   await at.sync.round()
 }
@@ -138,7 +138,7 @@ describe('several people in one universe', () => {
     await bobCopies(alice, bob)
     expect(rootName(bob)).toBe('Aerth')
     expect(bob.session.members().map((m) => m.login).sort()).toEqual(['alice@example.com', 'bob@example.com'])
-    expect(bob.sync.collaboration().shared[0]).toMatchObject({ same: true, lastSync: expect.any(Number) })
+    expect(bob.sync.collaboration().shared[0]).toMatchObject({ state: 'same', lastSync: expect.any(Number) })
 
     // Bob's change goes to Alice's studio with his next visit (it can't come to him), and hers comes back.
     rename(bob, 'Aerth, by Bob')
@@ -199,6 +199,6 @@ describe('several people in one universe', () => {
     // Asked only what it has open, saying nothing of who's in here or where.
     expect(asked).toEqual(['/sync/hello {}'])
     expect(bob.sync.collaboration().here.map((p) => p.login)).not.toContain('mallory@example.com')
-    expect(bob.sync.collaboration().shared.find((d) => d.host.startsWith('mallory'))).toMatchObject({ same: false, error: expect.stringMatching(/isn’t a member/) })
+    expect(bob.sync.collaboration().shared.find((d) => d.host.startsWith('mallory'))).toMatchObject({ state: 'other', error: expect.stringMatching(/isn’t a member/) })
   })
 })

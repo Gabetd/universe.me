@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AiChange, ApiSettingsPatch, ApiStatus, DeviceStatus, SharedDevice } from '../../../shared/api'
+import type { AiChange, ApiSettingsPatch, ApiStatus, DeviceStatus } from '../../../shared/api'
 import { useCollaboration } from '../collaboration'
 import { applyReply, useUi } from '../store'
 import { useSteadyScroll } from '../useSteadyScroll'
@@ -400,16 +400,13 @@ function DevicesSection({ status, set }: { status: ApiStatus; set(patch: ApiSett
 }
 
 /** Copies the universe a device has open here (one of the user's, or another person's shared with them). */
-function CopyHere({ device }: { device: { host: string; project?: { name: string } } }) {
+function CopyHere({ device }: { device: DeviceStatus }) {
   return (
     <button className="link small" onClick={() => void applyReply(window.universe.copyFromDevice(device.host))}>
       Copy “{device.project!.name}” here
     </button>
   )
 }
-
-/** Another person's device with a universe shared with the user, as one of their own would be. */
-const asDevice = (d: SharedDevice): DeviceStatus => ({ host: d.host, name: d.name, state: d.same ? 'same' : 'other', project: d.project, ...(d.lastSync && { lastSync: d.lastSync }), ...(d.error && { error: d.error }) })
 
 /**
  * Universes other people share with the user (PLAN.md §6.7, with other
@@ -426,9 +423,9 @@ function SharedWithYou() {
         {shared.map((d) => (
           <li key={d.host}>
             <span>
-              {d.owner.name}’s {d.name} <span className="muted">· {deviceLine(asDevice(d))}</span>
+              {d.owner.name}’s {d.name} <span className="muted">· {deviceLine(d)}</span>
             </span>
-            {!d.same && <CopyHere device={d} />}
+            {d.state !== 'same' && <CopyHere device={d} />}
           </li>
         ))}
       </ul>
