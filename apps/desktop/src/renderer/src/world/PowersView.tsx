@@ -18,7 +18,7 @@ import { useMemo, useRef, useState } from 'react'
 import { ColorField, CommitSlider, DeleteButton, NotesField, SelectField, Swatch, TextAreaField, TextField } from '../components/fields'
 import { openElementMenu } from '../contextMenu'
 import { execute } from '../components/FactionParts'
-import { PinsField } from '../components/PowerPins'
+import { PinsField, pinPower } from '../components/PowerPins'
 import { useOwnRecords, usePowersOn, useUi } from '../store'
 import { usePlayhead } from '../timeline/timelineStore'
 import { useSteadyScroll } from '../useSteadyScroll'
@@ -84,7 +84,7 @@ export function PowersView({ worldId }: { worldId: string }) {
             value=""
             onChange={(e) => {
               const s = elsewhere.find((x) => x.id === e.target.value)
-              if (s) void execute({ type: 'power.update', payload: { id: s.id, patch: { pins: [...s.pins, worldId] } } }).then(() => setSelectedId(s.id))
+              if (s) void pinPower(s, worldId).then(() => setSelectedId(s.id))
             }}
           >
             <option value="">+ From the universe…</option>

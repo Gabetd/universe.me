@@ -150,12 +150,12 @@ Validation warns (but doesn't block) when an effect starts before its cause.
 
 ### 4.6 Power systems
 
-How the world's powers work, age by age: magic, divine gifts, technology and energy, political power, or anything else. A world holds any number of systems.
+How powers work, age by age: magic, divine gifts, technology and energy, political power, or anything else. Systems are the universe's, a library every world shares: each holds where it's pinned, on a node (a planet, a star system, a galaxy, the universe) and everything in it, or on an era of any timeline (its entry for that age). Any number hold on a world.
 
 | Entity | Key fields |
 |---|---|
-| `PowerSystem` | `ownerId` (the world), name, `template` (magic, divine, psionic, technology, political, other), color, summary, `aspects` (the questions it answers, from its template and editable: Source, Rules, Costs & limits, Who can use it…), `values` (what's true in every age, per aspect), notes |
-| `PowerAge` | `systemId`, `eraId` (an age is one of the world's eras), `values` (what's different in that age, per aspect; an aspect left empty keeps the always-true answer), `strength` (0–1 or unset: how strong or widespread it is then), summary |
+| `PowerSystem` | `ownerId` (the universe), `pins` (the nodes it holds on), name, `template` (magic, divine, psionic, technology, political, other), color, summary, `aspects` (the questions it answers, from its template and editable: Source, Rules, Costs & limits, Who can use it…), `values` (what's true in every age, per aspect), notes |
+| `PowerAge` | `ownerId` (its era's timeline), `systemId`, `eraId` (an age is an era), `values` (what's different in that age, per aspect; an aspect left empty keeps the always-true answer), `strength` (0–1 or unset: how strong or widespread it is then), summary |
 
 - The Powers page lists the systems; one shows its aspects for **Always** and for each era in time order, with the era under the playhead marked, and how its strength rises and falls across the ages.
 - Deleting an era takes its age entries with it (undo brings both back). Era changes don't move anything else: an entry follows its era.
@@ -527,6 +527,10 @@ Each milestone ends with something you can launch and demo.
 - [x] *Added during M14:* **Universe (dev)** and **Universe (staging)**, builds of those branches as apps of their own, and **Change version** in place of Check for updates (see M13's items). The globe and the ground fill their box when they open during the zoom between levels.
 - [x] *Added during M14:* **spelling**. Misspelled words are underlined as they're typed, in every text field and the notes editor, by the app's own dictionary (English, Hunspell's, through nspell, bundled: the same everywhere, nothing downloaded; `main/dictionary.ts`). Right-clicking text gives the word's corrections (closest first, a swap of two letters counting as one change), **Add to the dictionary**, and cut, copy, paste and select all. The user's own words are kept in their profile (Edit → Dictionary… lists them, to add to or take out); the names of everything in the open universe count as words already.
 - [x] *Added during M14:* **walking the ground**. On the ground, W A S D (or the arrow keys) move over it the way the camera faces, at the speed picked in the toolbar (Walk, Run, Ride, Fly), Shift for three times as fast.
+- [x] *Added during M14:* **universal power systems** (§4.6): the universe's, pinned to planets, star systems, galaxies or eras, listed on any place's inspector; older projects' systems move into the universe pinned to their world (schema 7); `pin_power_system` in the API.
+- [x] *Added during M14:* **one zoom, universe to ground**: the wheel alone goes down through every level (into what's under the cursor, or the nearest thing, claiming on the way in what the seed made) to the globe and the ground, and back up; the map scrolls out to the planet too, and the globe and ground zoom in about fifteen notches.
+- [x] *Added during M14:* **the ground reaches 12 km**, the chunks' 5 km and a coarse sheet beyond (built in a worker); the planet's map in the corner shows where you are, and a click on it goes there.
+- [x] *Added during M14:* **middle-drag to resize**: on the globe, map or ground, the terrain brush while a terrain tool is out, else the selected structure. Every planet setting says what it does on hover.
 
 ### M15 — Rivers & erosion (3 weeks) — *planned*
 - Rivers that run downhill from the terrain to the sea or a lake (flow accumulation on the cube-sphere heightmap, in a worker), redrawn as land is sculpted; lakes in basins; named and selectable like regions; on the globe, map and ground.

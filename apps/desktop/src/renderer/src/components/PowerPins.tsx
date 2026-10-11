@@ -11,7 +11,9 @@ import { Swatch } from './fields'
  * a galaxy, the universe) and everything in it, or an era on a timeline.
  */
 
-const pin = (system: PowerSystem, nodeId: string) => void execute({ type: 'power.update', payload: { id: system.id, patch: { pins: [...system.pins, nodeId] } } })
+/** Pins a system to a node too. */
+export const pinPower = (system: PowerSystem, nodeId: string) => execute({ type: 'power.update', payload: { id: system.id, patch: { pins: [...system.pins, nodeId] } } })
+const pin = (system: PowerSystem, nodeId: string) => void pinPower(system, nodeId)
 const unpin = (system: PowerSystem, nodeId: string) => void execute({ type: 'power.update', payload: { id: system.id, patch: { pins: system.pins.filter((id) => id !== nodeId) } } })
 
 /** Every node, the universe first and each one's insides after it, indented. */
