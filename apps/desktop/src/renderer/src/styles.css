@@ -1620,18 +1620,25 @@ input[type='color'] {
   white-space: nowrap;
 }
 /* Handles: on each side to connect, in the corner to resize; shown on hover and when selected. */
+/* A card's handles are there only on the card under the pointer or selected: hidden, they'd cover the next card's corner or edge. */
 .side-handle,
 .resize-handle {
   position: absolute;
   z-index: 2;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.1s;
+}
+/* What's selected is in front of what isn't (groups stay behind what's in them), so its handles can be reached. */
+.canvas-card.selected:not(.card-group) {
+  z-index: 1;
 }
 .canvas-item:hover > .side-handle,
 .canvas-item:hover > .resize-handle,
 .canvas-item.selected > .side-handle,
 .canvas-item.selected > .resize-handle {
   opacity: 1;
+  pointer-events: auto;
 }
 .side-handle {
   width: 12px;
