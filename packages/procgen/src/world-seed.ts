@@ -135,13 +135,19 @@ export function randomSeedName(random: () => number = Math.random): string {
 }
 
 /** Starting points for custom worlds. */
+/** A preset: its own options, and colours for its vegetation, sand and water (Earth's unless it has its own), so choosing one after another recolours the world too. */
+const preset = (name: string, terrain: Partial<TerrainParams>) => ({
+  name,
+  terrain: { vegetationColor: DEFAULT_TERRAIN.vegetationColor, sandColor: DEFAULT_TERRAIN.sandColor, waterColor: DEFAULT_TERRAIN.waterColor, ...terrain }
+})
+
 export const WORLD_PRESETS: { name: string; terrain: Partial<TerrainParams> }[] = [
-  { name: 'Earth-like', terrain: DEFAULT_TERRAIN },
-  { name: 'Ocean world', terrain: { landform: 'archipelago', water: 0.9, islands: 0.8, aridity: 0.3, beaches: 0.4 } },
-  { name: 'Desert world', terrain: { water: 0.2, aridity: 1, temperature: 12, sandColor: '#d8a86a', beaches: 0 } },
-  { name: 'Ice world', terrain: { water: 0.6, temperature: -30, aridity: 0.5 } },
-  { name: 'Jungle world', terrain: { water: 0.5, temperature: 12, aridity: 0.05, vegetationColor: '#2f7a2a' } },
-  { name: 'Supercontinent', terrain: { landform: 'supercontinent', water: 0.6, islands: 0.15 } },
-  { name: 'Archipelago', terrain: { landform: 'archipelago', water: 0.78, islands: 0.9, beaches: 0.5 } },
-  { name: 'Alien', terrain: { vegetationColor: '#7a3fa0', waterColor: '#3fa08a', sandColor: '#c7b1d9', temperature: 4 } }
+  preset('Earth-like', DEFAULT_TERRAIN),
+  preset('Ocean world', { landform: 'archipelago', water: 0.9, islands: 0.8, aridity: 0.3, beaches: 0.4, waterColor: '#2f7fb8' }),
+  preset('Desert world', { water: 0.2, aridity: 1, temperature: 12, sandColor: '#d8a86a', vegetationColor: '#7d8a46', beaches: 0 }),
+  preset('Ice world', { water: 0.6, temperature: -30, aridity: 0.5, vegetationColor: '#5f7d62', sandColor: '#c8c3b4', waterColor: '#5a8fb0' }),
+  preset('Jungle world', { water: 0.5, temperature: 12, aridity: 0.05, vegetationColor: '#2f7a2a', waterColor: '#3d8a96' }),
+  preset('Supercontinent', { landform: 'supercontinent', water: 0.6, islands: 0.15 }),
+  preset('Archipelago', { landform: 'archipelago', water: 0.78, islands: 0.9, beaches: 0.5, waterColor: '#3aa3c2' }),
+  preset('Alien', { vegetationColor: '#7a3fa0', waterColor: '#3fa08a', sandColor: '#c7b1d9', temperature: 4 })
 ]

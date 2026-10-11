@@ -1,6 +1,6 @@
 import { CUBE_FACES, DEFAULT_TERRAIN, TERRAIN_RES, WORLD_RANGES, type TerrainParams } from '@universe/core'
 import { describe, expect, it } from 'vitest'
-import { BIOME_RGB, decodeWorldCode, deriveWorld, encodeWorldCode, generateBase, readSeed, seedNumber, worldPalette } from './index'
+import { BIOME_RGB, WORLD_PRESETS, decodeWorldCode, deriveWorld, encodeWorldCode, generateBase, readSeed, seedNumber, worldPalette } from './index'
 
 const extremes = (pick: 'min' | 'max'): TerrainParams => ({
   ...DEFAULT_TERRAIN,
@@ -74,5 +74,14 @@ describe('generation options', () => {
     expect(worldPalette(DEFAULT_TERRAIN).biomes).toEqual(BIOME_RGB.map((c) => [...c]))
     const purple = worldPalette({ ...DEFAULT_TERRAIN, vegetationColor: '#7a3fa0' }).biomes[4]!
     expect(purple[2]).toBeGreaterThan(purple[1]) // the forest is now more blue than green
+  })
+})
+
+describe('presets', () => {
+  it('each colour the vegetation, sand and water, so one after another leaves none of the last one’s colours', () => {
+    for (const { terrain } of WORLD_PRESETS) for (const key of ['vegetationColor', 'sandColor', 'waterColor'] as const) expect(terrain[key]).toMatch(/^#[0-9a-f]{6}$/)
+    const earth = WORLD_PRESETS.find((p) => p.name === 'Earth-like')!.terrain
+    const alien = WORLD_PRESETS.find((p) => p.name === 'Alien')!.terrain
+    expect({ ...DEFAULT_TERRAIN, ...alien, ...earth }).toEqual(DEFAULT_TERRAIN)
   })
 })

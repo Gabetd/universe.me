@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test'
+import { DEFAULT_TERRAIN } from '@universe/core'
 import { addChild, expect, fill, inspector, newWorld, row, shot, SLOW, test } from './helpers'
 
 /** A world's node seed and generation settings, by world name. */
@@ -55,6 +56,15 @@ test('a seed decides the whole world and locks its options; a world code recreat
   // Presets and colors are custom options too.
   await inspector(page).getByLabel('Start from preset').selectOption('Ice world')
   await expect.poll(async () => (await world(page, 'Second Surface')).settings.terrain.temperature).toBe(-30)
+  // Each recolours the world, so going from Alien back to Earth-like leaves no purple.
+  const colors = async () => {
+    const { vegetationColor, sandColor, waterColor } = (await world(page, 'Second Surface')).settings.terrain
+    return { vegetationColor, sandColor, waterColor }
+  }
+  await inspector(page).getByLabel('Start from preset').selectOption('Alien')
+  await expect.poll(async () => (await colors()).vegetationColor).toBe('#7a3fa0')
+  await inspector(page).getByLabel('Start from preset').selectOption('Earth-like')
+  await expect.poll(colors).toEqual({ vegetationColor: DEFAULT_TERRAIN.vegetationColor, sandColor: DEFAULT_TERRAIN.sandColor, waterColor: DEFAULT_TERRAIN.waterColor })
   await inspector(page).getByLabel('Vegetation').fill('#7a3fa0')
   await expect.poll(async () => (await world(page, 'Second Surface')).settings.terrain.vegetationColor).toBe('#7a3fa0')
   await shot(page, '31-custom-world', { wait: 800 })
