@@ -25,7 +25,7 @@ const buildInfo = JSON.stringify({ version: pkg.version, commit: commit(), built
 const dictionaryFiles = dirname(createRequire(import.meta.url).resolve('dictionary-en'))
 
 // Workspace packages are TypeScript sources, so they must be bundled, not externalized.
-const workspace = ['@universe/api', '@universe/core', '@universe/db', '@universe/procgen', '@universe/sim']
+const workspace = ['@universe/api', '@universe/core', '@universe/db', '@universe/plugins', '@universe/procgen', '@universe/sim']
 
 export default defineConfig({
   main: {

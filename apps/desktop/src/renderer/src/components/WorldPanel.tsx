@@ -7,6 +7,7 @@ import { BlueprintLibrary } from './BlueprintLibrary'
 import { StructurePanel } from './StructurePanel'
 import { CharacterPanel } from './CharacterPanel'
 import { WaterwayList, WaterwayPanel } from './WaterPanels'
+import { WorldPlugins } from './Plugins'
 import { CalendarPanel, ClimatePanel } from './SkyPanels'
 import { WORLD_HINTS, WorldGenPanel } from './WorldGenPanel'
 import { RegionTheme, WorldThemes } from './ThemePanels'
@@ -58,6 +59,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
 
       <RegionList worldId={world.id} regions={regions} selectedId={selectedRegion?.id} onPick={selectRegion} />
       <WaterwayList worldId={world.id} />
+      <WorldPlugins worldId={world.id} />
       {/* Saved where the user picks, on the computer. */}
       {!isPhoneApp() && <ExportBible worldId={world.id} />}
     </>

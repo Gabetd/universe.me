@@ -1,6 +1,6 @@
 export * from './host'
 export type { ApiContext, Operation } from './operation'
-export { OPERATIONS, apiContext } from './catalog'
+export { OPERATIONS, apiContext, operationNamed, runOperation } from './catalog'
 export { ProjectModels, type When } from './model'
 export { htmlToText, textToHtml } from './text'
 export { exportWorldBible, worldBible } from './bible'

@@ -9,6 +9,7 @@ import { Outline } from './Outline'
 import { Viewport } from './Viewport'
 import { ZoomStage } from './ZoomOverlay'
 import { AiNotes, AiSuggestions, ConnectAiButton, UndoAiButton } from './AiPanels'
+import { PluginNote } from './Plugins'
 import { ThemedWorkspace } from './ThemedWorkspace'
 import { ContextMenuHost } from './ContextMenu'
 import { ChangeVersion } from './ChangeVersion'
@@ -103,6 +104,7 @@ export function Workspace() {
         <ZoomStage>{selected?.kind === 'world' ? <WorldEditor key={selected.id} world={selected} /> : <Viewport />}</ZoomStage>
         <AiSuggestions />
         <AiNotes />
+        <PluginNote />
       </main>
       <aside className="panel inspector-panel">
         <Inspector />

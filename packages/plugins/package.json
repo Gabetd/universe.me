@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Plugins (PLAN.md §9, M16): their manifests, and running their code sandboxed in QuickJS, with only what the host gives them.",
+  "description": "Plugins (PLAN.md \u00a79, M16): their manifests, and running their code sandboxed in QuickJS, with only what the host gives them.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./manifest": "./src/manifest.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

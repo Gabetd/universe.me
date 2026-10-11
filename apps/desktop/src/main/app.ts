@@ -41,6 +41,7 @@ let win: BrowserWindow | null = null
 let session: Session
 /** The local API for AI clients (PLAN.md §6); set up with the session. */
 let api: ApiController
+let plugins: Promise<import('./plugins').Plugins> | undefined
 let markLoaded!: () => void
 const loaded = new Promise<void>((resolve) => (markLoaded = resolve))
 /** The spelling dictionary, loaded the first time it's asked (it takes a moment to read). */
@@ -236,6 +237,39 @@ function changed(state: AppState, summary: string): AppState {
   return state
 }
 
+/** The plugin manager (PLAN.md §9, M16), made the first time it's asked for. */
+function pluginManager(): Promise<import('./plugins').Plugins> {
+  plugins ??= import('./plugins').then(
+    ({ Plugins }) =>
+      new Plugins(app.getPath('userData'), {
+        session,
+        context: (write) => api.pluginContext(write),
+        changed: (state, summary) => {
+          win?.webContents.send(EVENTS.state, state)
+          api.toPhones('state', state)
+          api.changedHere(summary)
+        },
+        dialogs: {
+          folder: async (title, buttonLabel) => {
+            const { canceled, filePaths } = await dialog.showOpenDialog(win!, { title, buttonLabel, properties: ['openDirectory', 'createDirectory'] })
+            return canceled ? null : (filePaths[0] ?? null)
+          },
+          openFile: async (title, extensions) => {
+            const { canceled, filePaths } = await dialog.showOpenDialog(win!, { title, properties: ['openFile'], filters: extensions.length ? [{ name: 'Files', extensions }] : [] })
+            return canceled ? null : (filePaths[0] ?? null)
+          },
+          saveFile: async (title, name) => {
+            const { canceled, filePath } = await dialog.showSaveDialog(win!, { title, buttonLabel: 'Save', defaultPath: join(app.getPath('documents'), name) })
+            return canceled ? null : (filePath ?? null)
+          }
+        },
+        show: async (path) => void (await shell.openPath(path)),
+        trash: (path) => shell.trashItem(path)
+      })
+  )
+  return plugins
+}
+
 /** Asks where to save a world's bible and writes it there. */
 async function exportBible(worldId: string): Promise<string | null> {
   const world = session.state().nodes.find((n) => n.id === worldId)
@@ -317,6 +351,10 @@ function buildMenu(): void {
         { type: 'separator' },
         { role: 'togglefullscreen' }
       ]
+    },
+    {
+      label: 'Tools',
+      submenu: [{ label: 'Plugins…', click: sendMenu('plugins') }]
     },
     {
       label: 'Help',
@@ -423,6 +461,13 @@ function registerIpc(): void {
   handle('removeWord', async (word) => (await dictionary()).remove(String(word)))
   handle('setSpellingNames', async (names) => (await dictionary()).setNames(names.filter((n) => typeof n === 'string')))
   handle('paste', () => win?.webContents.paste())
+  handle('plugins', async () => (await pluginManager()).list())
+  handle('addPlugin', () => wrap(async () => (await pluginManager()).add()))
+  handle('newPlugin', () => wrap(async () => (await pluginManager()).create()))
+  handle('removePlugin', (id) => wrap(async () => (await pluginManager()).remove(String(id))))
+  handle('setPluginEnabled', async (id, enabled) => (await pluginManager()).setEnabled(String(id), !!enabled))
+  handle('showPlugin', async (id) => (await pluginManager()).show(String(id)))
+  handle('runPlugin', (request) => wrap(async () => (await pluginManager()).run(request)))
 }
 
 // macOS delivers double-clicked files through this event, possibly before `ready`.

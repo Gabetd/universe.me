@@ -1,5 +1,6 @@
 import type { Channel, ChannelVersion, UpdateStatus } from './update'
 import type { Region, SpatialNode, Target, TerrainLayers, TimelineData, WorldInfo } from '@universe/core'
+import type { ContributionKind, Nameable, PluginManifest } from '@universe/plugins/manifest'
 
 /** Shared between the main process, the preload bridge and the renderer. Types only. */
 
@@ -34,6 +35,44 @@ export interface AppState {
   proposals: ProposalSummary[]
   /** Node or region the last command created or touched, so the UI can select it. */
   focus?: Target
+}
+
+/** A plugin as the plugin manager shows it (PLAN.md §9, M16). */
+export interface PluginInfo {
+  /** Its id from plugin.json; its folder's name if that can't be read. */
+  id: string
+  /** Its folder. */
+  path: string
+  /** A folder of the user's the app only points to (removing forgets it), or one in the app's own plugins folder (removing puts it in the bin). */
+  linked: boolean
+  enabled: boolean
+  manifest?: PluginManifest
+  /** Why it can't be used, if it can't. */
+  error?: string
+  /** What it logged in its last run. */
+  log: string[]
+}
+
+/** Running one of a plugin's contributions: on a world (or the universe), with its options. */
+export interface PluginRunRequest {
+  pluginId: string
+  kind: ContributionKind
+  id: string
+  worldId?: string
+  options: Record<string, unknown>
+  /** For a name generator: what's being named, and how many names to make. */
+  naming?: { for: Nameable; count: number }
+}
+
+/** How a run went: what it changed (one undoable step), saved or named, and its log. */
+export interface PluginRunResult {
+  summary: string
+  /** Changes made to the universe (undone together). */
+  changes: number
+  /** Where an exporter's files were saved; empty if the user cancelled. */
+  saved?: string[]
+  names?: string[]
+  log: string[]
 }
 
 /** A change waiting for the user to accept it. */
@@ -137,7 +176,7 @@ export interface ImportedModel {
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
 
 /** What a menu item asks of the window: undo or redo (whatever has focus takes it), or the shortcuts sheet. */
-export type MenuAction = 'undo' | 'redo' | 'shortcuts' | 'versions' | 'dictionary'
+export type MenuAction = 'undo' | 'redo' | 'shortcuts' | 'versions' | 'dictionary' | 'plugins'
 
 export interface UniverseApi {
   /** The phone app's bridge (PLAN.md §6.6), rather than the window's: what's only for the computer isn't there. */
@@ -196,6 +235,17 @@ export interface UniverseApi {
   removeWord(word: string): Promise<string[]>
   /** The names in the open universe, which count as spelled right. */
   setSpellingNames(names: string[]): Promise<void>
+  /** The plugins installed (PLAN.md §9, M16). */
+  plugins(): Promise<PluginInfo[]>
+  /** Points the app to a plugin folder the user picks; null if they cancel. */
+  addPlugin(): Promise<Result<PluginInfo[] | null>>
+  /** A new plugin made from the template (a working example) in the app's plugins folder, opened in the file manager. */
+  newPlugin(): Promise<Result<PluginInfo[]>>
+  removePlugin(id: string): Promise<Result<PluginInfo[]>>
+  setPluginEnabled(id: string, enabled: boolean): Promise<PluginInfo[]>
+  /** Opens a plugin's folder in the file manager. */
+  showPlugin(id: string): Promise<void>
+  runPlugin(request: PluginRunRequest): Promise<Result<PluginRunResult>>
   /** Pastes the clipboard into the focused field (pages may write to the clipboard, but not read it). */
   paste(): Promise<void>
   onUpdate(listener: (status: UpdateStatus) => void): () => void
@@ -239,7 +289,14 @@ export const INVOKE: Record<InvokeMethod, string> = {
   addWord: 'spell:add',
   removeWord: 'spell:remove',
   setSpellingNames: 'spell:names',
-  paste: 'edit:paste'
+  paste: 'edit:paste',
+  plugins: 'plugin:list',
+  addPlugin: 'plugin:add',
+  newPlugin: 'plugin:new',
+  removePlugin: 'plugin:remove',
+  setPluginEnabled: 'plugin:enable',
+  showPlugin: 'plugin:show',
+  runPlugin: 'plugin:run'
 }
 
 /**

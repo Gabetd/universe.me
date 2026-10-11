@@ -5,3 +5,9 @@ declare module 'dictionary-en-files/*?raw' {
   const text: string
   export default text
 }
+
+/** The plugin template's files (plugin-template/), as text. */
+declare module '*?raw' {
+  const text: string
+  export default text
+}

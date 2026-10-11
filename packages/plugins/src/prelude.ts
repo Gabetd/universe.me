@@ -45,6 +45,9 @@ export const PRELUDE = String.raw`
       if (!bytes || bytes.length !== width * height * 4) throw new Error('png(width, height, rgba) takes width × height × 4 bytes')
       return host.png(width, height, toBase64(bytes)).then((json) => fromBase64(JSON.parse(json)))
     },
+    /** Bytes from base64 (as get_world_map gives its pixels), and back. */
+    fromBase64: (text) => fromBase64(String(text)),
+    toBase64: (bytes) => toBase64(bytesOf(bytes) ?? new Uint8Array()),
     /** A line in the plugin's log, in the app's plugin manager. */
     log: (...parts) => host.log(parts.map(show).join(' ')),
     /** Random numbers (0 to 1) from a seed: the same seed, the same numbers. */

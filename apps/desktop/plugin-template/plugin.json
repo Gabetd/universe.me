@@ -1,0 +1,45 @@
+{
+  "id": "my-plugin",
+  "name": "My plugin",
+  "version": "1.0.0",
+  "description": "An example to start from: villages on the land, names for people and places, and a world out to a wiki or a map image.",
+  "author": "",
+  "main": "main.js",
+  "generators": [
+    {
+      "id": "villages",
+      "title": "Scatter villages",
+      "description": "Founds villages on dry land, each named and noted with the land it stands on.",
+      "on": "world",
+      "options": [
+        { "id": "count", "label": "How many", "type": "number", "default": 6, "min": 1, "max": 40 },
+        { "id": "founded", "label": "Founded in", "type": "text", "default": "1000" },
+        { "id": "highest", "label": "No higher than (m)", "type": "number", "default": 1500, "min": 0, "step": 100 },
+        { "id": "style", "label": "Names", "type": "choice", "choices": ["Northern", "Southern", "Elvish"] }
+      ]
+    }
+  ],
+  "exporters": [
+    {
+      "id": "wiki",
+      "title": "Wiki pages",
+      "description": "A Markdown page for the world and each of its regions, places, characters and factions, linked to each other.",
+      "on": "world"
+    },
+    {
+      "id": "map",
+      "title": "Map image",
+      "description": "The world's map as a PNG.",
+      "on": "world",
+      "options": [{ "id": "width", "label": "Width (pixels)", "type": "choice", "choices": ["1024", "2048", "512"] }]
+    }
+  ],
+  "names": [
+    {
+      "id": "people",
+      "title": "Names from the example plugin",
+      "for": ["character", "faction", "region", "structure", "node"],
+      "options": [{ "id": "style", "label": "Names", "type": "choice", "choices": ["Northern", "Southern", "Elvish"] }]
+    }
+  ]
+}

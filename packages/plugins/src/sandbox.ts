@@ -1,5 +1,5 @@
 import variant from '@jitl/quickjs-wasmfile-release-sync'
-import { newQuickJSWASMModuleFromVariant, type QuickJSContext, type QuickJSHandle, type QuickJSRuntime, type QuickJSWASMModule } from 'quickjs-emscripten-core'
+import { newQuickJSWASMModuleFromVariant, newVariant, type QuickJSContext, type QuickJSHandle, type QuickJSRuntime, type QuickJSWASMModule } from 'quickjs-emscripten-core'
 import type { ContributionKind } from './manifest'
 import { PRELUDE } from './prelude'
 
@@ -59,8 +59,14 @@ export class PluginError extends Error {
 }
 
 let engine: Promise<QuickJSWASMModule> | undefined
-/** QuickJS, loaded once. */
-const quickjs = () => (engine ??= newQuickJSWASMModuleFromVariant(variant))
+let wasmBinary: ArrayBuffer | undefined
+/** QuickJS, loaded once (from `wasm` if given: where the app is bundled, its file isn't where the package would look). */
+const quickjs = () => (engine ??= newQuickJSWASMModuleFromVariant(wasmBinary ? newVariant(variant, { wasmBinary }) : variant))
+
+/** Where QuickJS's WebAssembly comes from, if not its package's own file: before the first run. */
+export function useWasm(bytes: ArrayBuffer): void {
+  wasmBinary ??= bytes
+}
 
 export async function runPlugin(run: PluginRun): Promise<PluginOutput> {
   const limits = { ...DEFAULT_LIMITS, ...run.limits }

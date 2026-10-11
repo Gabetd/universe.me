@@ -77,6 +77,9 @@ importers:
       '@universe/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@universe/plugins':
+        specifier: workspace:*
+        version: link:../../packages/plugins
       '@universe/procgen':
         specifier: workspace:*
         version: link:../../packages/procgen

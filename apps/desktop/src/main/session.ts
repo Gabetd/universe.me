@@ -125,16 +125,17 @@ export class Session {
     return source === 'user' ? this.applied(result) : this.state()
   }
 
-  /** The latest `n` changes made one step, undone and redone together: what a plugin did in one run. */
+  /** A plugin's latest `n` changes made one step, undone and redone together: what it did in one run (only its own, should anything else have come between). */
   groupLatest(n: number): AppState {
-    this.require().bus.group(n)
+    const { bus } = this.require()
+    bus.group(Math.min(n, bus.latestFrom('plugin')))
     return this.state()
   }
 
-  /** The latest `n` changes taken back, and not to be redone: a plugin run that failed part way leaves nothing behind. */
+  /** A plugin's latest `n` changes taken back, and not to be redone: a run that failed part way leaves nothing behind. */
   undoLatest(n: number): AppState {
     const { bus } = this.require()
-    for (let k = 0; k < n; k++) bus.undo()
+    for (let k = Math.min(n, bus.latestFrom('plugin')); k > 0; k--) bus.undo()
     bus.clearRedo()
     return this.state()
   }
