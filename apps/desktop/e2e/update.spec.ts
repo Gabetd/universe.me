@@ -60,10 +60,17 @@ test.beforeAll(async () => {
 })
 test.afterAll(() => new Promise((resolve) => (server ? server.close(resolve) : resolve(undefined))))
 
+/** Every channel's manifest asked of the test's server, which hasn't them: Change version asks the other channels too, and nothing waits on GitHub. */
+const othersHere = () => {
+  const none = manifestUrl.replace('update.json', 'none.json')
+  return JSON.stringify({ main: none, staging: none, dev: none })
+}
+
 test('offers a newer build, can be dismissed, and upgrades itself with one click', async () => {
   const { kind, file, env } = platform!
   const { app, page, dir } = await launch((dir) => ({
     UNIVERSE_UPDATE_URL: manifestUrl,
+    UNIVERSE_UPDATE_URLS: othersHere(),
     UNIVERSE_UPDATE_PUBLIC_KEY: PUBLIC_KEY,
     UNIVERSE_UPDATE_KIND: kind,
     [env]: join(dir, file),
@@ -105,10 +112,9 @@ test('offers a newer build, can be dismissed, and upgrades itself with one click
 })
 
 test('Change version says when this copy has nothing to update to, and why', async () => {
-  /** A copy started with `env` (and the test's key), asked to check; the other channels are asked of the test's server too, which hasn't them, so nothing waits on GitHub. */
+  /** A copy started with `env` (and the test's key), asked to check. */
   const check = async (env: Record<string, string>) => {
-    const others = manifestUrl.replace('update.json', 'none.json')
-    const launched = await launch(() => ({ UNIVERSE_UPDATE_PUBLIC_KEY: PUBLIC_KEY, UNIVERSE_UPDATE_URLS: JSON.stringify({ main: others, staging: others, dev: others }), ...env }))
+    const launched = await launch(() => ({ UNIVERSE_UPDATE_PUBLIC_KEY: PUBLIC_KEY, UNIVERSE_UPDATE_URLS: othersHere(), ...env }))
     await launched.page.getByRole('button', { name: 'Change version' }).click()
     return launched
   }

@@ -31,10 +31,10 @@ test('on the ground, W A S D move over it at the speed picked, S moves rather th
   expect((await at())[1] - before[1]).toBeGreaterThan(20)
   await expect(page.getByRole('button', { name: 'Navigate', exact: true })).toHaveAttribute('aria-pressed', 'true')
 
-  // Slower when asked: walking covers less ground in the same time.
+  // Slower when asked: walking (a third of running's speed) covers less ground in half the time, with room for a frame or two the run lost.
   await page.getByRole('radio', { name: 'Walk' }).click()
   const slow = await at()
-  await hold('w', 600)
+  await hold('w', 300)
   const walked = slow[1] - (await at())[1]
   expect(walked).toBeGreaterThan(0)
   expect(walked).toBeLessThan(start[1] - ahead[1])
