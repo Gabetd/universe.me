@@ -50,9 +50,10 @@ export const factionHandlers: HandlerMap<FactionCommand> = {
     }),
   'faction.update': factions.update,
   'faction.delete': (store, { id }, ctx, run) =>
-    deleteWith(store, ctx, run, { kind: 'faction', id }, ({ ownerId }) => ({
+    deleteWith(store, ctx, run, { kind: 'faction', id }, ({ ownerId, parentId }) => ({
+      // Its parts move up to what it was part of (a house of a fallen duchy stays in the kingdom).
       detach: [
-        ...live(store, 'faction').filter((f) => f.parentId === id).map((f): Command => ({ type: 'faction.update', payload: { id: f.id, patch: { parentId: null } } })),
+        ...live(store, 'faction').filter((f) => f.parentId === id).map((f): Command => ({ type: 'faction.update', payload: { id: f.id, patch: { parentId } } })),
         ...dropParticipant(store, ownerId, { kind: 'faction', id })
       ],
       remove: [

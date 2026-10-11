@@ -37,15 +37,20 @@ describe('factions', () => {
     expect(all('faction')).toHaveLength(0)
   })
 
-  it('can be part of another, but never of themselves', () => {
+  it('can be part of another, as deep as it goes, but never of themselves', () => {
     const kingdom = faction('Varn')
     const house = faction('House Aldric', { parentId: kingdom })
-    expect(() => run('faction.update', { id: kingdom, patch: { parentId: house } })).toThrow(/already part/)
+    const branch = faction('The Aldrics of Tarn', { parentId: house })
+    expect(() => run('faction.update', { id: kingdom, patch: { parentId: branch } })).toThrow(/already part/)
     expect(() => run('faction.update', { id: kingdom, patch: { parentId: kingdom } })).toThrow(/part of itself/)
+    // Its parts move up to what it was part of.
+    run('faction.delete', { id: house })
+    expect(store.records('faction').get(branch)!.parentId).toBe(kingdom)
     run('faction.delete', { id: kingdom })
-    expect(store.records('faction').get(house)!.parentId).toBeNull()
+    expect(store.records('faction').get(branch)!.parentId).toBeNull()
     bus.undo()
-    expect(store.records('faction').get(house)!.parentId).toBe(kingdom)
+    bus.undo()
+    expect(store.records('faction').get(branch)!.parentId).toBe(house)
   })
 
   it('have members over time, and a character the factions they belong to', () => {
