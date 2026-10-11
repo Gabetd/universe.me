@@ -1,14 +1,19 @@
 import { z } from 'zod'
 import { Id, Name, Notes, RecordMeta } from './schema'
 import type { Era } from './timeline'
+import { ancestors } from './util'
 import { HexColor } from './world'
 
 /**
- * Power systems (PLAN.md §4.6): how a world's powers work, age by age.
- * Magic, divine gifts, technology, politics or anything else: each system
- * answers a few questions (its aspects: Source, Rules, Costs & limits…) for
- * every age at once, and again for any of the world's eras where the answer
- * is different. An era is an age.
+ * Power systems (PLAN.md §4.6): how powers work, age by age. Magic, divine
+ * gifts, technology, politics or anything else: each system answers a few
+ * questions (its aspects: Source, Rules, Costs & limits…) for every age at
+ * once, and again for any era where the answer is different. An era is an age.
+ *
+ * Systems belong to the universe, a library every world shares, and hold
+ * where they're pinned: to a node (a planet, a star system, a galaxy, the
+ * universe), and so everything in it, or to an era on a timeline (an entry
+ * for that age), and so that timeline's node.
  */
 
 export const POWER_TEMPLATES = ['magic', 'divine', 'psionic', 'technology', 'political', 'other'] as const
@@ -35,11 +40,13 @@ export const PowerSystem = z.object({
   aspects: z.array(PowerAspect).max(30),
   /** What's true in every age. */
   values: AspectValues,
-  notes: Notes
+  notes: Notes,
+  /** The nodes it holds on, each with everything in it. */
+  pins: z.array(Id).max(200)
 })
 export type PowerSystem = z.infer<typeof PowerSystem>
 
-/** A system in one of its world's eras: what's different then, and how strong it is (0–1, or unsaid). */
+/** A system in an era (its `ownerId` is the era's): what's different then, and how strong it is (0–1, or unsaid). */
 export const PowerAge = z.object({
   ...RecordMeta,
   systemId: Id,
@@ -146,3 +153,18 @@ export function powerIn(system: PowerSystem, ages: readonly PowerAge[], era: Era
 
 /** `system` at a moment: in the era in force then. */
 export const powerAt = (system: PowerSystem, ages: readonly PowerAge[], eras: readonly Era[], t: number) => powerIn(system, ages, eraAt(eras, t))
+
+type Tree = ReadonlyMap<string, { parentId: string | null }>
+
+/** Whether `system` holds on node `nodeId`: it's pinned there or to something it's in, or to an era on its timeline. */
+export function holdsOn(system: Pick<PowerSystem, 'id' | 'pins'>, ages: readonly Pick<PowerAge, 'systemId' | 'ownerId'>[], nodes: Tree, nodeId: string): boolean {
+  const node = nodes.get(nodeId)
+  if (!node) return false
+  const pins = new Set(system.pins)
+  if (pins.has(nodeId) || [...ancestors(node, nodes)].some((id) => pins.has(id))) return true
+  return ages.some((a) => a.systemId === system.id && a.ownerId === nodeId)
+}
+
+/** The systems that hold on a node (see `holdsOn`). */
+export const powersOn = <S extends Pick<PowerSystem, 'id' | 'pins'>>(systems: readonly S[], ages: readonly Pick<PowerAge, 'systemId' | 'ownerId'>[], nodes: Tree, nodeId: string): S[] =>
+  systems.filter((s) => holdsOn(s, ages, nodes, nodeId))

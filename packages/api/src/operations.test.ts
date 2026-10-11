@@ -138,7 +138,7 @@ describe('the operations', () => {
     // The age by name, a question it didn't ask yet, and what's left unsaid stays.
     await p.call('describe_power_age', { systemId, era: 'age of silence', strength: 0.1, changes: { Rules: 'Only the dying can weave', Omens: 'Silver rain' } })
     await p.call('describe_power_age', { systemId, era: 'Age of Silence', summary: 'Almost forgotten' })
-    await expect(p.call('describe_power_age', { systemId, era: 'Age of Iron' })).rejects.toThrow(/its eras: Age of Wonders, Age of Silence/)
+    await expect(p.call('describe_power_age', { systemId, era: 'Age of Iron' })).rejects.toThrow(/their eras: Age of Wonders, Age of Silence/)
 
     const { systems } = await p.call<{ systems: { name: string; questions: string[]; always: object; ages: object[]; atThatMoment: object }[] }>('list_power_systems', { worldId: p.worldId, at: '700' })
     const weave = systems[0]!
@@ -153,6 +153,17 @@ describe('the operations', () => {
     const md = await p.call<string>('export_world_bible', { worldId: p.worldId })
     expect(md).toContain('## Power systems\n\n### The Weave\n\n*Song made into force*\n\n**Source:** Moonlight')
     expect(md).toContain('#### In Age of Silence (500 – 1000), 10% strength\n\n*Almost forgotten*\n\n**Rules:** Only the dying can weave')
+
+    // The universe's, shared: pinned to the star system, it holds on its other worlds too, with their own ages.
+    const starSystem = p.project.store.nodes.get(p.project.store.nodes.get(p.worldId)!.parentId!)!.parentId!
+    const { worldId: neighbour } = await p.call<{ worldId: string }>('create_world', { systemId: starSystem, name: 'Neighbour' })
+    const listed = async (worldId: string) => (await p.call<{ systems: { name: string; pinnedTo: string[]; ages: object[] }[] }>('list_power_systems', { worldId })).systems
+    expect(await listed(neighbour)).toEqual([])
+    await p.call('pin_power_system', { systemId, nodeId: starSystem })
+    expect(await listed(neighbour)).toEqual([expect.objectContaining({ name: 'The Weave', ages: [] })])
+    expect((await listed(p.worldId))[0]!.pinnedTo).toHaveLength(2)
+    await p.call('pin_power_system', { systemId, nodeId: starSystem, unpin: true })
+    expect(await listed(neighbour)).toEqual([])
   })
 
   it('found factions, give them members and land, relate people and factions, and read it all at a moment and in the bible', async () => {

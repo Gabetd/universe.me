@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { CommandBus, MemoryStore, POWER_TEMPLATE_INFO, aspectId, createRootUniverse, eraAt, erasInOrder, fromParts, powerAgeId, powerAt, type Command } from './index'
+import { CommandBus, MemoryStore, POWER_TEMPLATE_INFO, aspectId, byId, createRootUniverse, eraAt, erasInOrder, fromParts, powerAgeId, powerAt, powersOn, type Command } from './index'
 
 let store: MemoryStore
 let bus: CommandBus
@@ -16,7 +16,7 @@ beforeEach(() => {
 
 const run = (type: string, payload: object) => bus.execute({ type, payload } as Command)
 const era = (name: string, start: number, end: number, ownerId = worldId) => run('era.create', { ownerId, name, start: year(start), end: year(end) }).targetId!
-const system = (extra: object = {}) => run('power.create', { ownerId: worldId, template: 'magic', ...extra }).targetId!
+const system = (extra: object = {}) => run('power.create', { pins: [worldId], template: 'magic', ...extra }).targetId!
 const ages = () => store.records('powerAge').all()
 
 describe('power systems', () => {
@@ -27,14 +27,37 @@ describe('power systems', () => {
     expect(store.records('power').get(id)).toMatchObject({ name: 'The Weave', values: { source: 'Starlight' } })
     bus.undo()
     expect(store.records('power').get(id)!.name).toBe('Magic')
-    const plain = run('power.create', { ownerId: worldId }).targetId!
+    const plain = run('power.create', {}).targetId!
     expect(store.records('power').get(plain)).toMatchObject({ template: 'other', name: 'Power system' })
   })
 
-  it('live on a world, with aspects of their own', () => {
-    expect(() => run('power.create', { ownerId: store.nodes.get(worldId)!.parentId })).toThrow(/not a world/)
+  it('belong to the universe, with aspects of their own, and hold where they are pinned', () => {
     const id = system()
+    expect(store.records('power').get(id)!.ownerId).toBe(store.nodes.root()!.id)
     expect(() => run('power.update', { id, patch: { aspects: [{ id: 'a', label: 'A' }, { id: 'a', label: 'B' }] } })).toThrow(/same id/)
+    expect(() => run('power.update', { id, patch: { pins: ['missing'] } })).toThrow()
+    expect(() => run('power.update', { id, patch: { pins: [worldId, worldId] } })).toThrow(/twice/)
+
+    const world = store.nodes.get(worldId)!
+    const body = store.nodes.get(world.parentId!)!
+    const starSystem = body.parentId!
+    const nearby = bus.execute({ type: 'node.create', payload: { parentId: starSystem, kind: 'body' } }).targetId!
+    const there = () => powersOn(store.records('power').all(), ages(), byId(store.nodes.all()), nearby).map((s) => s.id)
+    expect(there()).toEqual([])
+    // Pinned to the star system: it holds on everything in it.
+    run('power.update', { id, patch: { pins: [starSystem] } })
+    expect(there()).toEqual([id])
+    run('power.update', { id, patch: { pins: [] } })
+    // Pinned to an era on a timeline: it holds there too.
+    run('powerAge.set', { systemId: id, eraId: era('Their age', 0, 10, nearby), patch: {} })
+    expect(there()).toEqual([id])
+  })
+
+  it('keep a pin to a place since deleted, which an undo brings back', () => {
+    const id = system()
+    run('node.delete', { id: worldId })
+    run('power.update', { id, patch: { name: 'Still here' } })
+    expect(store.records('power').get(id)!.pins).toEqual([worldId])
   })
 
   it('describe each age, one entry per era, merged as it changes and undone a step at a time', () => {
@@ -51,11 +74,12 @@ describe('power systems', () => {
     expect(ages()).toHaveLength(1)
   })
 
-  it('only describe eras of their own world', () => {
+  it('describe eras on any timeline, each entry kept with its era', () => {
     const id = system()
     const otherWorld = bus.execute({ type: 'node.create', payload: { parentId: store.nodes.get(worldId)!.parentId!, kind: 'body' } }).targetId!
     const elsewhere = era('Elsewhere', 0, 10, otherWorld)
-    expect(() => run('powerAge.set', { systemId: id, eraId: elsewhere, patch: {} })).toThrow(/another world/)
+    run('powerAge.set', { systemId: id, eraId: elsewhere, patch: { strength: 0.5 } })
+    expect(ages()).toEqual([expect.objectContaining({ ownerId: otherWorld, eraId: elsewhere })])
     expect(() => run('powerAge.set', { systemId: id, eraId: 'missing', patch: {} })).toThrow()
   })
 

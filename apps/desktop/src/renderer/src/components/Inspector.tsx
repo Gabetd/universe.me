@@ -7,6 +7,7 @@ import { TimelineInspector } from './TimelinePanels'
 import { WorldPanel } from './WorldPanel'
 import { OrbitPanel, StarPanel } from './SkyPanels'
 import { PlanetsToClaim } from './ClaimPlanets'
+import { PowersHere } from './PowerPins'
 import { useSteadyScroll } from '../useSteadyScroll'
 
 export function Inspector() {
@@ -80,6 +81,7 @@ function NodeForm({ node }: { node: SpatialNode }) {
         </div>
       )}
       {node.kind === 'star_system' && <PlanetsToClaim node={node} />}
+      <PowersHere node={node} />
 
       {canDelete(node) && (
         <DeleteButton kind="node" ids={[node.id]}>

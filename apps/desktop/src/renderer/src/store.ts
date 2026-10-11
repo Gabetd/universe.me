@@ -1,4 +1,4 @@
-import { EMPTY_TIMELINE, timelineOwner, type Command, type SpatialNode, type TimelineData, type TimelineEvent } from '@universe/core'
+import { EMPTY_TIMELINE, powersOn, timelineOwner, type Command, type PowerSystem, type SpatialNode, type TimelineData, type TimelineEvent } from '@universe/core'
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import type { AppState, Result } from '../../shared/api'
@@ -224,6 +224,14 @@ export const deleteCommand = (kind: DeleteKind, ids: string[]): Command | undefi
 export function useOwnRecords<K extends keyof TimelineData>(key: K, ownerId: string): TimelineData[K] {
   const list = useUi((s) => s.timeline[key]) as { ownerId: string }[]
   return useMemo(() => list.filter((r) => r.ownerId === ownerId), [list, ownerId]) as TimelineData[K]
+}
+
+/** The power systems that hold on a node: the universe's, pinned there, to something it's in, or to one of its eras. */
+export function usePowersOn(nodeId: string): PowerSystem[] {
+  const powers = useUi((s) => s.timeline.powers)
+  const ages = useUi((s) => s.timeline.powerAges)
+  const nodes = useUi((s) => s.nodes)
+  return useMemo(() => powersOn(powers, ages, byId(nodes), nodeId), [powers, ages, nodes, nodeId])
 }
 
 const indexes = new WeakMap<object, Map<string, unknown>>()

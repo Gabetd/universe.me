@@ -261,6 +261,7 @@ export function describePowerSystem(m: ProjectModels, view: WorldView, system: P
     name: system.name,
     kind: system.template,
     ...(system.summary && { summary: system.summary }),
+    pinnedTo: system.pins.flatMap((id) => m.data().nodes.find((n) => n.id === id)?.name ?? []),
     questions: system.aspects.map((a) => a.label),
     always: answers(system, system.values),
     ages: erasInOrder(view.timeline.eras).flatMap((e) => {

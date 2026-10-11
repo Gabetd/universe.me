@@ -93,6 +93,12 @@ export const MIGRATIONS: readonly string[] = [
     seq   INTEGER NOT NULL
   );
   CREATE INDEX row_stamps_seq ON row_stamps(seq);
+  `,
+  /* 7: power systems belong to the universe and are pinned where they hold (each was its world's) */ `
+  UPDATE records
+  SET data = json_set(data, '$.ownerId', (SELECT id FROM nodes WHERE parent_id IS NULL), '$.pins', json_array(owner_id)),
+      owner_id = (SELECT id FROM nodes WHERE parent_id IS NULL)
+  WHERE kind = 'power' AND EXISTS (SELECT 1 FROM nodes WHERE parent_id IS NULL);
   `
 ]
 

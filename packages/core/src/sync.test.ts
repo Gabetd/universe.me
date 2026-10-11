@@ -97,7 +97,7 @@ describe('sync', () => {
     time.now += 1000
     run(a, 'era.create', { ownerId: world, name: 'Dawn', start: 0, end: fromParts({ year: 100 }) })
     run(b, 'region.create', { worldId: world, name: 'North', points: [{ lat: 50, lon: 0 }, { lat: 50, lon: 10 }, { lat: 60, lon: 5 }] })
-    run(b, 'power.create', { ownerId: world, template: 'magic' })
+    run(b, 'power.create', { pins: [world], template: 'magic' })
     pull(a, b)
     pull(b, a)
     expect(contents(b.store)).toEqual(contents(a.store))

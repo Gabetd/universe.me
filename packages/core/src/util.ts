@@ -34,3 +34,12 @@ export function groupBy<T, K>(items: Iterable<T>, key: (item: T) => K): Map<K, T
   }
   return out
 }
+
+/** The ids above something in a tree of `parentId`s (a faction's, a node's), its parent first; stops at a loop rather than going round it. */
+export function* ancestors(item: { parentId: string | null }, all: ReadonlyMap<string, { parentId: string | null }>): Generator<string> {
+  const seen = new Set<string>()
+  for (let p = item.parentId; p && !seen.has(p); p = all.get(p)?.parentId ?? null) {
+    seen.add(p)
+    yield p
+  }
+}

@@ -1,8 +1,8 @@
 import type { Character } from './characters'
-import { RELATION_INFO, ancestors, otherParty, relationLabel, spansOverlap, type Faction, type Holding, type Membership, type Party, type Relationship, type Span } from './factions'
+import { RELATION_INFO, otherParty, relationLabel, spansOverlap, type Faction, type Holding, type Membership, type Party, type Relationship, type Span } from './factions'
 import type { TimelineEvent } from './timeline'
 import { eventSpan, type Warning } from './timeline-queries'
-import { byId, groupBy } from './util'
+import { ancestors, byId, groupBy } from './util'
 import type { Region } from './world'
 
 export interface FactionData {

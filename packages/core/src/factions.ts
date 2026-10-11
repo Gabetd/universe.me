@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { Id, Name, Notes, RecordMeta } from './schema'
 import { Time } from './time'
-import { byId } from './util'
+import { ancestors, byId } from './util'
 import { HexColor } from './world'
 
 /**
@@ -133,15 +133,6 @@ export const sameParty = (a: Party, b: Party) => a.kind === b.kind && a.id === b
 
 /** Whether `party` is one side of `rel`. */
 export const involves = (rel: Pick<Relationship, 'from' | 'to'>, party: Party) => sameParty(rel.from, party) || sameParty(rel.to, party)
-
-/** A faction's ancestors' ids, its parent first; stops at a loop (which validation keeps out) rather than going round it. */
-export function* ancestors(f: Pick<Faction, 'parentId'>, factions: ReadonlyMap<string, Pick<Faction, 'parentId'>>): Generator<string> {
-  const seen = new Set<string>()
-  for (let p = f.parentId; p && !seen.has(p); p = factions.get(p)?.parentId ?? null) {
-    seen.add(p)
-    yield p
-  }
-}
 
 /** What `rel` makes the other side, seen from `side` ("Child" from the parent's side reads the child as their child). */
 export function relationLabel(rel: Pick<Relationship, 'type' | 'label' | 'from'>, side: Party): string {

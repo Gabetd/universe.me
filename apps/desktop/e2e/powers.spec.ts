@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { expect, fill, newWorld, setPlayhead, shot, state, test, wheel } from './helpers'
+import { expect, fill, inspector, newWorld, row, setPlayhead, shot, state, test, wheel } from './helpers'
 
 const powers = (page: Page) => page.getByRole('region', { name: 'Power system' })
 
@@ -72,4 +72,34 @@ test('power systems: one from a template, what holds in every age, what changes 
   await page.getByRole('button', { name: '↶ Undo' }).click()
   await expect(powers(page).getByLabel('Power system name')).toHaveValue('The Weave')
   await expect.poll(async () => (await state(page, 'timeline')).powerAges.length).toBe(1)
+})
+
+test('power systems are the universe’s: pinned to a star system, one holds on everything in it, and any place lists those that hold there', async ({ h }) => {
+  const { page } = h
+  await newWorld(h, 'Shared')
+  await page.getByRole('button', { name: '✨ Powers' }).click()
+  await page.getByRole('region', { name: 'Start a power system' }).getByRole('button', { name: /^Divine/ }).click()
+  const pinned = powers(page).getByRole('list', { name: 'Pinned to' })
+  await expect(pinned).toContainText('Terra Surface')
+
+  // Pinned to the star system as well, from the system itself.
+  const pinTo = powers(page).getByLabel('Pin to')
+  await pinTo.selectOption((await pinTo.locator('option', { hasText: 'Sol' }).getAttribute('value'))!)
+  await expect(pinned).toContainText('Sol')
+  const sol = (await state(page, 'nodes')).find((n) => n.name === 'Sol')!.id
+  await expect.poll(async () => (await state(page, 'timeline')).powers[0]?.pins).toContain(sol)
+
+  // The planet, in the star system, has it; and the star system says it's pinned there.
+  await row(page, 'Terra').click()
+  const here = inspector(page).getByRole('region', { name: 'Power systems here' })
+  await expect(here).toContainText('Divine powers')
+  await row(page, 'Sol').click()
+  await expect(here).toContainText('pinned here')
+  await shot(page, '151-powers-shared')
+  await here.getByRole('button', { name: 'Unpin Divine powers from Sol' }).click()
+  await expect.poll(async () => (await state(page, 'timeline')).powers[0]?.pins).not.toContain(sol)
+  await expect(here).toContainText('None hold here yet')
+  // Pinned here again from the universe's library.
+  await here.getByLabel('Pin a power system here').selectOption({ label: 'Divine powers' })
+  await expect(here).toContainText('pinned here')
 })

@@ -8,6 +8,8 @@ import {
   formatTime,
   parseTime,
   timelineOf,
+  byId,
+  powersOn,
   type Calendar,
   type ConditionCurve,
   type Exposure,
@@ -120,7 +122,9 @@ export class ProjectModels {
     const node = data.nodes.find((n) => n.id === worldId && n.kind === 'world')
     const info = data.worlds.find((w) => w.id === worldId)
     if (!node || !info) throw new ApiError(404, `There is no world ${worldId}`)
-    let timeline: TimelineData = { ...timelineOf(data.timeline, worldId), blueprints: data.timeline.blueprints, themes: data.timeline.themes }
+    // Blueprints and themes are the project's; power systems the universe's, those that hold here.
+    const powers = powersOn(data.timeline.powers, data.timeline.powerAges, byId(data.nodes), worldId)
+    let timeline: TimelineData = { ...timelineOf(data.timeline, worldId), blueprints: data.timeline.blueprints, themes: data.timeline.themes, powers }
     let regions = data.regions.filter((r) => r.worldId === worldId)
     // A change elsewhere in the project leaves this world's view as it was, so what's worked out from it (condition curves) is kept.
     const last = this.lastViews.get(worldId)

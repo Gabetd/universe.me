@@ -16,6 +16,8 @@ import {
   POWER_TEMPLATES,
   POWER_TEMPLATE_INFO,
   aspectId,
+  byId,
+  holdsOn,
   PRECISIONS,
   SPECIES_KINDS,
   THEME_PRESETS,
@@ -25,7 +27,9 @@ import {
   type Command,
   type AspectValues,
   type LatLon,
-  type PowerAspect
+  type Era,
+  type PowerAspect,
+  type PowerSystem
 } from '@universe/core'
 import { readSeed } from '@universe/procgen'
 import { EARTH_ORBIT, luminosityOf } from '@universe/sim'
@@ -121,6 +125,21 @@ function spanOf(ctx: ApiContext, worldId: string, p: { from?: string | number; u
   const start = p.from !== undefined ? m.when(worldId, p.from) : begin ? begin.start : null
   const end = p.until !== undefined ? m.when(worldId, p.until) : finish ? (finish.end ?? finish.start) : null
   return { start, end, startEventId: begin ? begin.id : null, endEventId: finish ? finish.id : null }
+}
+
+/** An era to describe a power system in: by id anywhere, or by name on `worldId` or on a world the system holds on. */
+function eraFor(ctx: ApiContext, system: PowerSystem, nameOrId: string, worldId: string | undefined): Era {
+  const { timeline, nodes } = ctx.models.data()
+  const exact = timeline.eras.find((e) => e.id === nameOrId)
+  if (exact) return exact
+  const tree = byId(nodes)
+  const where = worldId ? [ctx.models.world(worldId).node.id] : nodes.filter((n) => n.kind === 'world' && holdsOn(system, timeline.powerAges, tree, n.id)).map((n) => n.id)
+  const eras = timeline.eras.filter((e) => where.includes(e.ownerId))
+  const named = eras.filter((e) => e.name.toLowerCase() === nameOrId.trim().toLowerCase())
+  if (named.length > 1) throw new ApiError(400, `More than one world ${system.name} holds on has an era ${nameOrId}: say which with worldId`)
+  if (named[0]) return named[0]
+  const place = worldId ? 'that world' : `the worlds ${system.name} holds on`
+  throw new ApiError(404, `There is no era ${nameOrId} on ${place}${eras.length ? ` (their eras: ${eras.map((e) => e.name).join(', ')})` : ': add one with create_era, or pin it to a world with pin_power_system'}`)
 }
 
 const Who = z.array(z.string()).describe('Characters’ and factions’ ids: who took part')
@@ -626,7 +645,7 @@ export const WRITES = [
   operation({
     name: 'create_power_system',
     title: 'Create a power system',
-    description: `Adds a power system to a world: how its magic, divine gifts, psionics, technology, politics or anything else works. A kind (${POWER_TEMPLATES.join(', ')}) starts it with questions to answer (magic: ${POWER_TEMPLATE_INFO.magic.aspects.map((a) => a.label).join(', ')}); answer them for every age in \`always\`, and use describe_power_age for what's different in an era.`,
+    description: `Adds a power system to the universe, pinned to a world: how its magic, divine gifts, psionics, technology, politics or anything else works. Systems are shared: pin one to more places (pin_power_system) rather than making it again. A kind (${POWER_TEMPLATES.join(', ')}) starts it with questions to answer (magic: ${POWER_TEMPLATE_INFO.magic.aspects.map((a) => a.label).join(', ')}); answer them for every age in \`always\`, and use describe_power_age for what's different in an era.`,
     input: z.object({
       worldId: z.string(),
       kind: z.enum(POWER_TEMPLATES),
@@ -642,7 +661,7 @@ export const WRITES = [
       const { aspects, values } = answered(POWER_TEMPLATE_INFO[p.kind].aspects, {}, p.always ?? {})
       const id = newId()
       const name = p.name ?? POWER_TEMPLATE_INFO[p.kind].name
-      const payload = { id, ownerId: view.node.id, template: p.kind, name, aspects, values, ...(p.summary && { summary: p.summary }), ...notesAndTags(p) }
+      const payload = { id, pins: [view.node.id], template: p.kind, name, aspects, values, ...(p.summary && { summary: p.summary }), ...notesAndTags(p) }
       return write(ctx, [{ type: 'power.create', payload }], `Added the power system ${name}`, { systemId: id })
     }
   }),
@@ -666,12 +685,29 @@ export const WRITES = [
     }
   }),
   operation({
+    name: 'pin_power_system',
+    title: 'Pin a power system',
+    description:
+      'Says where a power system holds. Power systems are the universe’s, shared by every place they’re pinned to: pinned to a node (a world, a star system, a galaxy, the universe), one holds there and on everything in it. With `unpin`, it no longer holds there (what it says about that place’s eras stays).',
+    input: z.object({ systemId: z.string(), nodeId: z.string().describe('A world’s, star system’s, galaxy’s or the universe’s id'), unpin: z.boolean().optional() }),
+    route: { method: 'POST', path: '/powers/:systemId/pins' },
+    write: true,
+    run: (ctx, p) => {
+      const system = findOr404(ctx.models.data().timeline.powers, p.systemId, 'power system')
+      const node = ctx.models.node(p.nodeId)
+      const pins = p.unpin ? system.pins.filter((id) => id !== node.id) : [...new Set([...system.pins, node.id])]
+      return write(ctx, [{ type: 'power.update', payload: { id: system.id, patch: { pins } } }], p.unpin ? `Unpinned ${system.name} from ${node.name}` : `Pinned ${system.name} to ${node.name}`)
+    }
+  }),
+  operation({
     name: 'describe_power_age',
     title: 'Describe a power system in an age',
-    description: 'Says how a power system is different in one of its world’s eras (by name or id): a line on how things stand then, how strong or widespread it is (0–1, or null to unsay it), and answers that differ from what always holds (by question). What isn’t said stays as it was.',
+    description:
+      'Says how a power system is different in an era (by id, or by name on `worldId` or a world it holds on): a line on how things stand then, how strong or widespread it is (0–1, or null to unsay it), and answers that differ from what always holds (by question). What isn’t said stays as it was. Describing it in an era pins it there, if it wasn’t already.',
     input: z.object({
       systemId: z.string(),
       era: z.string().describe('The era’s name or id'),
+      worldId: z.string().optional().describe('The world whose era it is, if it’s named'),
       summary: z.string().max(2000).optional(),
       strength: z.number().min(0).max(1).nullable().optional(),
       changes: Answers.optional()
@@ -679,11 +715,10 @@ export const WRITES = [
     route: { method: 'POST', path: '/powers/:systemId/ages' },
     write: true,
     run: (ctx, p) => {
-      const system = findOr404(ctx.models.data().timeline.powers, p.systemId, 'power system')
-      const { eras, powerAges } = ctx.models.world(system.ownerId).timeline
-      const era = eras.find((e) => e.id === p.era) ?? eras.find((e) => e.name.toLowerCase() === p.era.trim().toLowerCase())
-      if (!era) throw new ApiError(404, `There is no era ${p.era} on that world${eras.length ? ` (its eras: ${eras.map((e) => e.name).join(', ')})` : ': add one with create_era'}`)
-      const age = powerAges.find((a) => a.systemId === system.id && a.eraId === era.id)
+      const { timeline } = ctx.models.data()
+      const system = findOr404(timeline.powers, p.systemId, 'power system')
+      const era = eraFor(ctx, system, p.era, p.worldId)
+      const age = timeline.powerAges.find((a) => a.systemId === system.id && a.eraId === era.id)
       const commands: Command[] = []
       let values: AspectValues | undefined
       if (p.changes) {

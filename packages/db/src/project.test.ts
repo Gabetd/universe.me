@@ -233,6 +233,21 @@ describe('Project', () => {
     expect(p.store.records('event').all()).toEqual([])
   })
 
+  it('moves power systems saved by older versions into the universe, pinned to their world', () => {
+    const path = join(dir, 'old-powers.universe')
+    const db = new DatabaseSync(path)
+    for (const m of MIGRATIONS.slice(0, 6)) db.exec(m)
+    db.exec('PRAGMA user_version = 6')
+    db.exec("INSERT INTO meta VALUES ('format', 'universe.me'), ('name', 'Old')")
+    db.exec(`INSERT INTO nodes (id, parent_id, kind, name, seed, created_at, updated_at) VALUES ('root', NULL, 'universe', 'Old', 1, 'x', 'x'), ('w', 'root', 'world', 'W', 1, 'x', 'x')`)
+    const old = { id: 'p', ownerId: 'w', name: 'Magic', template: 'magic', color: '#9b7bff', summary: '', aspects: [], values: {}, notes: '', createdAt: 'x', updatedAt: 'x', deletedAt: null }
+    db.prepare("INSERT INTO records (kind, id, owner_id, data) VALUES ('power', 'p', 'w', ?)").run(JSON.stringify(old))
+    db.close()
+    const p = track(Project.open(path))
+    expect(p.store.records('power').all()).toEqual([{ ...old, ownerId: 'root', pins: ['w'] }])
+    expect(p.store.records('power').byOwner('root')).toHaveLength(1)
+  })
+
   it('fills in world options that settings saved by older versions lack', () => {
     const path = join(dir, 'old-world.universe')
     const p = Project.create(path, 'Old')

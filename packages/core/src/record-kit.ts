@@ -202,8 +202,8 @@ export function deleteWith<K extends RecordKind>(store: Store, ctx: CommandConte
 export const live = <K extends RecordKind>(store: Store, kind: K) => store.records(kind).all()
 
 /** Refs to an owner's live records of one kind that pass `keep`. */
-export const refsWhere = <K extends RecordKind>(store: Store, kind: K, ownerId: string, keep: (record: RecordOf<K>) => boolean): Ref[] =>
-  store.records(kind).byOwner(ownerId).flatMap((r) => (keep(r) ? [{ kind, id: r.id }] : []))
+export const refsWhere = <K extends RecordKind>(store: Store, kind: K, ownerId: string | null, keep: (record: RecordOf<K>) => boolean): Ref[] =>
+  (ownerId === null ? store.records(kind).all() : store.records(kind).byOwner(ownerId)).flatMap((r) => (keep(r) ? [{ kind, id: r.id }] : []))
 
 /** Updates that set `field` to null on an owner's records where it is `id` (a lane, a group or a cause that's going). */
 export function clearRefs<K extends RecordKind>(store: Store, kind: K, ownerId: string, field: keyof Fields<K> & string, id: string): Command[] {

@@ -246,7 +246,7 @@ export const READS = [
     name: 'list_power_systems',
     title: 'Power systems',
     description:
-      'How a world’s powers work (magic, divine gifts, psionics, technology, politics…): for each system, the questions it answers, what holds in every age, and each age (era) where it’s different, with how strong it is then. With `at`, also how each stands at that moment. Keep what you write true to them.',
+      'How the powers that hold on a world work (magic, divine gifts, psionics, technology, politics…; power systems are the universe’s, shared by every place they’re pinned to): for each system, where it’s pinned, the questions it answers, what holds in every age, and each age (era) where it’s different, with how strong it is then. With `at`, also how each stands at that moment. Keep what you write true to them.',
     input: z.object({ worldId: WorldId, at: When.optional() }),
     route: { method: 'GET', path: '/worlds/:worldId/powers' },
     run: ({ models: m }, { worldId, at }) => {

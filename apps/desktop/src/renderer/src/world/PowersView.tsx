@@ -17,24 +17,27 @@ import {
 import { useMemo, useRef, useState } from 'react'
 import { ColorField, CommitSlider, DeleteButton, NotesField, SelectField, Swatch, TextAreaField, TextField } from '../components/fields'
 import { openElementMenu } from '../contextMenu'
-import { useOwnRecords, useUi } from '../store'
+import { execute } from '../components/FactionParts'
+import { PinsField } from '../components/PowerPins'
+import { useOwnRecords, usePowersOn, useUi } from '../store'
 import { usePlayhead } from '../timeline/timelineStore'
 import { useSteadyScroll } from '../useSteadyScroll'
 import { flagClass, useFlaggedIds } from '../flags'
 import { useCalendar } from './useSky'
 
 /**
- * A world's power systems (PLAN.md §4.6): how its magic, faith, technology
- * or politics work, age by age. The list on the left; on the right one
- * system, with what's true in every age ("Always") and, for each of the
- * world's eras, what's different then and how strong it is.
+ * The power systems that hold on a world (PLAN.md §4.6): how its magic,
+ * faith, technology or politics work, age by age. They're the universe's,
+ * shared by every place they're pinned to (PowerPins.tsx). The list on the
+ * left; on the right one system, where it holds, what's true in every age
+ * ("Always") and, for each of the world's eras, what's different then and
+ * how strong it is.
  */
 
 const TEMPLATE_LABELS = Object.fromEntries(POWER_TEMPLATES.map((t) => [t, POWER_TEMPLATE_INFO[t].label])) as Record<PowerTemplate, string>
 /** The "Always" tab: what holds in every age. */
 const ALWAYS = 'always'
 
-const execute = (command: Parameters<ReturnType<typeof useUi.getState>['execute']>[0]) => useUi.getState().execute(command)
 
 /** Answers with one changed: an empty answer is dropped rather than kept as "". */
 function withValue(values: AspectValues, id: string, value: string): AspectValues {
@@ -43,7 +46,9 @@ function withValue(values: AspectValues, id: string, value: string): AspectValue
 }
 
 export function PowersView({ worldId }: { worldId: string }) {
-  const systems = useOwnRecords('powers', worldId)
+  const systems = usePowersOn(worldId)
+  const library = useUi((s) => s.timeline.powers)
+  const elsewhere = library.filter((s) => !systems.includes(s))
   const ages = useOwnRecords('powerAges', worldId)
   const ownEras = useOwnRecords('eras', worldId)
   const eras = useMemo(() => erasInOrder(ownEras), [ownEras])
@@ -54,7 +59,7 @@ export function PowersView({ worldId }: { worldId: string }) {
   const flagged = useFlaggedIds()
 
   const add = async (template: PowerTemplate) => {
-    const state = await execute({ type: 'power.create', payload: { ownerId: worldId, template } })
+    const state = await execute({ type: 'power.create', payload: { pins: [worldId], template } })
     if (state?.focus?.id) setSelectedId(state.focus.id)
   }
   const menu = (e: React.MouseEvent, id: string) => {
@@ -73,6 +78,23 @@ export function PowersView({ worldId }: { worldId: string }) {
             </option>
           ))}
         </select>
+        {elsewhere.length > 0 && (
+          <select
+            aria-label="Pin a power system here"
+            value=""
+            onChange={(e) => {
+              const s = elsewhere.find((x) => x.id === e.target.value)
+              if (s) void execute({ type: 'power.update', payload: { id: s.id, patch: { pins: [...s.pins, worldId] } } }).then(() => setSelectedId(s.id))
+            }}
+          >
+            <option value="">+ From the universe…</option>
+            {elsewhere.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        )}
         <ul className="region-list" aria-label="Power systems">
           {systems.map((s) => (
             <li key={s.id}>
@@ -90,7 +112,9 @@ export function PowersView({ worldId }: { worldId: string }) {
       ) : (
         <section className="powers-start" aria-label="Start a power system">
           <h3>How do powers work on this world?</h3>
-          <p className="muted">Pick a kind to start from. Each asks a few questions (you can change them), answered for every age and again for any age where things are different.</p>
+          <p className="muted">
+            Pick a kind to start from. Each asks a few questions (you can change them), answered for every age and again for any age where things are different. Power systems are the universe’s: pin one to other worlds, a star system or a galaxy to share it.
+          </p>
           <div className="powers-templates">
             {POWER_TEMPLATES.map((t) => (
               <button key={t} onClick={() => void add(t)}>
@@ -124,6 +148,7 @@ function SystemEditor({ worldId, system, ages, eras, nowEra }: { worldId: string
           <ColorField label="Power system color" value={system.color} onCommit={(color) => update({ color })} />
         </div>
         <TextField label="What it is" value={system.summary} placeholder="In a line: what this power is" onCommit={(summary) => update({ summary })} />
+        <PinsField system={system} />
         <AgeTabs worldId={worldId} eras={eras} ages={own} nowEra={nowEra} tab={era ? era.id : ALWAYS} onTab={setTab} />
         {era ? <AgePanel key={era.id} system={system} era={era} age={own.find((a) => a.eraId === era.id)} /> : <AlwaysPanel system={system} update={update} />}
       </section>
