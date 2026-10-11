@@ -91,15 +91,16 @@ function createWindow(): void {
   // The title names the open project, so the page's own <title> mustn't replace it on a reload.
   win.on('page-title-updated', (event) => event.preventDefault())
   win.on('closed', () => (win = null))
+  // A web page (a link in a note, a canvas's link card) opens in the browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://')) void shell.openExternal(url)
+    if (isWebPage(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
   // Nothing (a link in a note, a file dropped on the window, a frame) turns the window into another page, which would get the app's bridge.
   const stay = (event: { preventDefault(): void }, url: string) => {
     if (isAppPage(url)) return
     event.preventDefault()
-    if (url.startsWith('https://')) void shell.openExternal(url)
+    if (isWebPage(url)) void shell.openExternal(url)
   }
   win.webContents.on('will-navigate', stay)
   win.webContents.on('will-frame-navigate', (event) => stay(event, event.url))
@@ -268,6 +269,23 @@ async function exportBible(worldId: string): Promise<string | null> {
   return filePath
 }
 
+/** An address the browser is given to open: a web page, nothing else (no files, no other apps' links). */
+const isWebPage = (url: string) => /^https?:\/\/[^\s]+$/i.test(url)
+
+/** Saves a part of the window (in CSS px) as a PNG where the user says. */
+async function exportImage(rect: { x: number; y: number; width: number; height: number }, name: string): Promise<string | null> {
+  const image = await win!.webContents.capturePage({ x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) })
+  const filePath = await pickToSave({
+    title: 'Export as an image',
+    buttonLabel: 'Export',
+    defaultPath: join(app.getPath('documents'), `${name.replace(/[\\/:*?"<>|]/g, '-')}.png`),
+    filters: [{ name: 'PNG image', extensions: ['png'] }]
+  })
+  if (!filePath) return null
+  await writeFile(filePath, image.toPNG())
+  return filePath
+}
+
 /** Menu-triggered actions that can fail show their error in a dialog, since there is no caller to return it to. */
 function fromMenu(fn: () => Promise<unknown>): () => void {
   return () =>
@@ -422,6 +440,7 @@ function registerIpc(): void {
   handle('acceptProposal', (id) => wrap(() => changed(session.accept(id), 'An AI suggestion accepted in the app')))
   handle('rejectProposal', (id) => wrap(() => session.reject(id)))
   handle('exportBible', (worldId) => wrap(() => exportBible(worldId)))
+  handle('exportImage', (rect, name) => wrap(() => exportImage(rect, name)))
   // Tailscale is looked at again each time Connect AI opens; what it finds comes as a status event.
   handle('apiStatus', () => {
     void api.syncPhone()

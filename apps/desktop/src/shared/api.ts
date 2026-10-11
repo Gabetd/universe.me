@@ -201,6 +201,8 @@ export interface UniverseApi {
   rejectProposal(id: string): Promise<Result<AppState>>
   /** Asks where to save a world's bible (Markdown) and writes it there; the path, or null if cancelled. */
   exportBible(worldId: string): Promise<Result<string | null>>
+  /** Saves a part of the window (a canvas, in CSS px) as a PNG where the user says; the path, or null if cancelled. */
+  exportImage(rect: { x: number; y: number; width: number; height: number }, name: string): Promise<Result<string | null>>
   apiStatus(): Promise<ApiStatus>
   setApi(patch: ApiSettingsPatch): Promise<ApiStatus>
   /** A new token: clients with the old one stop working. */
@@ -268,6 +270,7 @@ export const INVOKE: Record<InvokeMethod, string> = {
   acceptProposal: 'proposal:accept',
   rejectProposal: 'proposal:reject',
   exportBible: 'world:export-bible',
+  exportImage: 'window:export-image',
   apiStatus: 'api:status',
   setApi: 'api:set',
   newApiToken: 'api:new-token',
