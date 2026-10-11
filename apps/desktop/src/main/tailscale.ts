@@ -63,22 +63,55 @@ function run(file: string, args: string[], env: Record<string, string> = {}): Pr
   })
 }
 
-type Node = { DNSName?: string; HostName?: string; UserID?: number; Online?: boolean }
+type Node = { DNSName?: string; HostName?: string; UserID?: number; Online?: boolean; ShareeNode?: boolean; Tags?: string[] }
+type User = { LoginName?: string; DisplayName?: string }
+
+/** What `tailscale status --json` says, as Universe needs it. */
+export interface TailnetStatus {
+  running: boolean
+  backend: string
+  /** This computer's tailnet name. */
+  host?: string
+  /** Who's signed in here: their login, and what they're called. */
+  login?: string
+  name?: string
+  /** The user's other devices that are online. */
+  peers: TailnetPeer[]
+  /** Other people's devices that are online and this computer can reach. */
+  others: TailnetPeer[]
+}
 
 /**
  * From `tailscale status --json`: whether it's running, this computer's name
- * (without the root dot), who's signed in, and the user's other devices
- * that are online (theirs only: a tailnet can hold other people's too).
+ * (without the root dot), who's signed in, the user's other devices that are
+ * online, and other people's that this one can reach: on the same tailnet,
+ * or shared into it (PLAN.md §6.7). Not a tagged server's (no one's), nor
+ * one only listed because this computer is shared with its owner: that one
+ * may reach this computer, but not this computer it.
  */
-export function readStatus(json: string): { running: boolean; backend: string; host?: string; login?: string; peers: TailnetPeer[] } {
-  const s = JSON.parse(json) as { BackendState?: string; Self?: Node; User?: Record<string, { LoginName?: string }>; Peer?: Record<string, Node> }
+export function readStatus(json: string): TailnetStatus {
+  const s = JSON.parse(json) as { BackendState?: string; Self?: Node; User?: Record<string, User>; Peer?: Record<string, Node> }
   const name = (n: Node | undefined) => n?.DNSName?.replace(/\.$/, '')
+  const user = (id: number | undefined) => (id === undefined ? undefined : s.User?.[String(id)])
+  const self = s.Self?.UserID
   const host = name(s.Self)
-  const login = s.Self?.UserID === undefined ? undefined : s.User?.[String(s.Self.UserID)]?.LoginName
-  const peers = Object.values(s.Peer ?? {})
-    .filter((p) => p.Online && s.Self?.UserID !== undefined && p.UserID === s.Self.UserID && name(p))
-    .map((p) => ({ host: name(p)!, name: p.HostName || name(p)!.split('.')[0]! }))
-  return { running: s.BackendState === 'Running', backend: s.BackendState ?? 'unknown', ...(host && { host }), ...(login && { login }), peers }
+  const me = user(self)
+  const peer = (p: Node): TailnetPeer => {
+    const owner = user(p.UserID)
+    return { host: name(p)!, name: p.HostName || name(p)!.split('.')[0]!, ...(owner?.LoginName && { login: owner.LoginName }), ...(owner?.DisplayName && { ownerName: owner.DisplayName }) }
+  }
+  const online = self === undefined ? [] : Object.values(s.Peer ?? {}).filter((p) => p.Online && name(p))
+  const peers = online.filter((p) => p.UserID === self).map(peer)
+  const others = online.filter((p) => p.UserID !== self && !p.ShareeNode && !p.Tags?.length && user(p.UserID)?.LoginName).map(peer)
+  return {
+    running: s.BackendState === 'Running',
+    backend: s.BackendState ?? 'unknown',
+    ...(host && { host }),
+    ...(me?.LoginName && { login: me.LoginName }),
+    ...(me?.DisplayName && { name: me.DisplayName }),
+    peers,
+    others
+  }
 }
 
 type ServeConfig = { AllowFunnel?: Record<string, boolean>; Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }> }
@@ -106,9 +139,9 @@ export async function tailscaleState(): Promise<TailscaleState> {
   try {
     // Both at once; Serve's (and Funnel's) answer only counts once Tailscale says it's running.
     const [statusJson, funnelJson] = await Promise.all([tailscale(['status', '--json']), tailscale(['serve', 'status', '--json']).catch(() => '')])
-    const status = readStatus(statusJson)
-    if (!status.running || !status.host) return { kind: 'stopped', detail: status.backend === 'NeedsLogin' ? 'Tailscale isn’t signed in' : 'Tailscale isn’t running' }
-    return { kind: 'ready', host: status.host, ...(status.login && { login: status.login }), funnelPort: funnelPort(funnelJson, status.host), appPort: appPort(funnelJson, status.host), peers: status.peers }
+    const { running, backend, host, login, name, peers, others } = readStatus(statusJson)
+    if (!running || !host) return { kind: 'stopped', detail: backend === 'NeedsLogin' ? 'Tailscale isn’t signed in' : 'Tailscale isn’t running' }
+    return { kind: 'ready', host, ...(login && { login }), ...(name && { name }), funnelPort: funnelPort(funnelJson, host), appPort: appPort(funnelJson, host), peers, others }
   } catch (err) {
     if (err instanceof TailscaleError && err.missing) return { kind: 'missing' }
     return { kind: 'stopped', detail: (err as Error).message }

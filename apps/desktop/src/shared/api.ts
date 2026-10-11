@@ -113,17 +113,25 @@ export interface DeviceStatus {
   error?: string
 }
 
-/** One of the user's other devices on their tailnet. */
+/** A device on the user's tailnet (or shared into it): its tailnet name, its own name, and whose it is. */
 export interface TailnetPeer {
   host: string
   name: string
+  /** Its owner's tailnet login, and what they're called. */
+  login?: string
+  ownerName?: string
 }
 
-/** Tailscale on this computer, as phone access needs it: not there, there but not running or signed in, or ready (with where Funnel forwards, if anywhere). */
+/**
+ * Tailscale on this computer, as phone access and sync need it: not there,
+ * there but not running or signed in, or ready (with where Funnel forwards,
+ * if anywhere, who's signed in, the user's other devices online, and other
+ * people's this computer can reach).
+ */
 export type TailscaleState =
   | { kind: 'missing' }
   | { kind: 'stopped'; detail: string }
-  | { kind: 'ready'; host: string; login?: string; funnelPort: number | null; appPort: number | null; peers: TailnetPeer[] }
+  | { kind: 'ready'; host: string; login?: string; name?: string; funnelPort: number | null; appPort: number | null; peers: TailnetPeer[]; others: TailnetPeer[] }
 
 /** Phone access (PLAN.md §6.4): Claude on a phone, through a claude.ai custom connector, Tailscale Funnel and OAuth. */
 export interface PhoneStatus {
