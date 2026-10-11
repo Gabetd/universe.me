@@ -251,10 +251,10 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
     // Where the view looks, in metres from the frame's origin (east, south), for tests to read.
     const at = `${Math.round(t.x)},${Math.round(t.z)}`
     if (gl.domElement.dataset.at !== at) gl.domElement.dataset.at = at
-    const floor = ground.standAt(camera.position.x, camera.position.z) + 1.7
-    if (camera.position.y < floor) camera.position.y = floor
+    const below = ground.standAt(camera.position.x, camera.position.z)
+    if (camera.position.y < below + 1.7) camera.position.y = below + 1.7
     // And how high the camera is over the ground beneath it, in metres.
-    const height = String(Math.round(camera.position.y - floor + 1.7))
+    const height = String(Math.round(camera.position.y - below))
     if (gl.domElement.dataset.height !== height) gl.domElement.dataset.height = height
     const here = fromLocal(ground.frame, t.x, t.z)
     useGroundPose.getState().move(fromLocal(ground.frame, camera.position.x, camera.position.z), Math.atan2(t.x - camera.position.x, camera.position.z - t.z))
