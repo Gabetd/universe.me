@@ -135,9 +135,15 @@ export class TerrainModel {
   private climateFor: { settings: WorldSettings; sky: SkyClimate | undefined; climate: Climate; terms: ClimateTerms } | undefined
   /** Each face's colours once asked for, and what they were made from. */
   private faceColorCache: (FaceColors | undefined)[] = []
-  private colorsFor: { settings: WorldSettings; base: BaseTerrain; sky: SkyClimate | undefined; heights: Int16Array[]; biomes: Uint8Array[] } | undefined
+  private colorsFor:
+    | { settings: WorldSettings; base: BaseTerrain; sky: SkyClimate | undefined; heights: Int16Array[]; biomes: Uint8Array[]; worn: TerrainModel['worn']; lakes: Float32Array[] | undefined }
+    | undefined
   /** What `locate` fills in. */
   private located: FacePoint = { face: 0, s: 0, t: 0 }
+  /** How far each cell has worn down at the playhead (per face), if at all: the erosion field times how much of it has happened. */
+  private worn: { field: Float32Array[]; amount: number; depth: Float32Array[] } | undefined
+  /** The surface of the lake over each cell (metres above sea level), per face; NaN where there's none. */
+  private lakes: Float32Array[] | undefined
 
   constructor(
     public settings: WorldSettings,
@@ -168,9 +174,46 @@ export class TerrainModel {
     return this.stroke !== undefined
   }
 
+  /** A cell's height in metres: generated, sculpted, and worn down by erosion as of the playhead. */
   height(face: number, cell: number): number {
-    return this.base.height[face]![cell]! + this.heightEdits[face]![cell]!
+    return this.base.height[face]![cell]! + this.heightEdits[face]![cell]! - (this.worn?.depth[face]![cell] ?? 0)
   }
+
+  /** Every cell's height above sea level, generated and sculpted but not worn: what rivers and erosion are worked out from. */
+  heightsAboveSea(): Float32Array[] {
+    const sea = this.settings.seaLevel
+    return this.base.height.map((base, f) => {
+      const edits = this.heightEdits[f]!
+      const out = new Float32Array(CELLS)
+      for (let c = 0; c < CELLS; c++) out[c] = base[c]! + edits[c]! - sea
+      return out
+    })
+  }
+
+  /** Whether a cell has been sculpted (its edits win over erosion). */
+  sculpted(face: number, cell: number): boolean {
+    return this.heightEdits[face]![cell] !== 0
+  }
+
+  /**
+   * Wears the land down by `amount` (0–1) of `field` (see erosionField):
+   * true if that changes anything, and then every face needs redrawing.
+   */
+  setErosion(field: Float32Array[] | undefined, amount: number): boolean {
+    const now = field && amount > 0 ? { field, amount } : undefined
+    if (now?.field === this.worn?.field && now?.amount === this.worn?.amount) return false
+    this.worn = now && { ...now, depth: field!.map((f) => f.map((d) => d * amount)) }
+    return true
+  }
+
+  /** Sets where the lakes are (each cell's lake surface, planet-wide, NaN where there's none); true if that changes anything. */
+  setLakes(level: Float32Array | undefined): boolean {
+    if (level === this.lakesFrom) return false
+    this.lakesFrom = level
+    this.lakes = level && Array.from({ length: CUBE_FACES }, (_, f) => level.subarray(f * CELLS, (f + 1) * CELLS))
+    return true
+  }
+  private lakesFrom: Float32Array | undefined
 
   /** Effective biome: painted, or derived from climate. */
   biome(face: number, cell: number): number {
@@ -230,9 +273,7 @@ export class TerrainModel {
     const i1 = Math.min(i0 + 1, TERRAIN_RES - 1)
     const r0 = j0 * TERRAIN_RES
     const r1 = Math.min(j0 + 1, TERRAIN_RES - 1) * TERRAIN_RES
-    const base = this.base.height[face]!
-    const edits = this.heightEdits[face]!
-    return bilerp(base[r0 + i0]! + edits[r0 + i0]!, base[r0 + i1]! + edits[r0 + i1]!, base[r1 + i0]! + edits[r1 + i0]!, base[r1 + i1]! + edits[r1 + i1]!, gx - i0, gy - j0)
+    return bilerp(this.height(face, r0 + i0), this.height(face, r0 + i1), this.height(face, r1 + i0), this.height(face, r1 + i1), gx - i0, gy - j0)
   }
 
   /** Nearest cell to a direction. */
@@ -297,8 +338,8 @@ export class TerrainModel {
   /** Marks every face's colours out of date if the settings, base, sky or edit layers they were made from have been replaced. */
   private checkColors(): void {
     const made = this.colorsFor
-    if (made?.settings === this.settings && made.base === this.base && made.sky === this.sky && made.heights === this.heightEdits && made.biomes === this.biomeEdits) return
-    this.colorsFor = { settings: this.settings, base: this.base, sky: this.sky, heights: this.heightEdits, biomes: this.biomeEdits }
+    if (made?.settings === this.settings && made.base === this.base && made.sky === this.sky && made.heights === this.heightEdits && made.biomes === this.biomeEdits && made.worn === this.worn && made.lakes === this.lakes) return
+    this.colorsFor = { settings: this.settings, base: this.base, sky: this.sky, heights: this.heightEdits, biomes: this.biomeEdits, worn: this.worn, lakes: this.lakes }
     for (const colors of this.faceColorCache) {
       if (!colors) continue
       colors.colored.fill(0)
@@ -319,13 +360,22 @@ export class TerrainModel {
     const moisture = this.base.moisture[face]!
     const edits = this.heightEdits[face]!
     const painted = this.biomeEdits[face]!
+    const worn = this.worn?.depth[face]
+    const lake = this.lakes?.[face]
     const { polar, band } = latitudeTerms()[face]!
     for (let k = 0; k < cells.length; k++) {
       const c = cells[k]!
       if (colored[c] && !again) continue
-      const elevation = height[c]! + edits[c]! - sea
+      const elevation = height[c]! + edits[c]! - (worn?.[c] ?? 0) - sea
       let r: number, g: number, b: number
-      if (elevation < 0) {
+      const lakeDepth = lake ? lake[c]! - elevation : NaN
+      if (lakeDepth > 0) {
+        // A lake: shallow water, darker where it's deep.
+        const t = 0.15 + 0.35 * Math.min(1, lakeDepth / 300)
+        r = shallow[0] + (deep[0] - shallow[0]) * t
+        g = shallow[1] + (deep[1] - shallow[1]) * t
+        b = shallow[2] + (deep[2] - shallow[2]) * t
+      } else if (elevation < 0) {
         const t = Math.sqrt(Math.min(1, -elevation / 4500))
         r = shallow[0] + (deep[0] - shallow[0]) * t
         g = shallow[1] + (deep[1] - shallow[1]) * t

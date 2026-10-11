@@ -66,12 +66,10 @@ export function renderEquirect(model: TerrainModel, out: Uint8ClampedArray, widt
   const top = Math.max(0, y0 - 1)
   const bottom = Math.min(height, y1 + 1)
   const heights = new Float32Array((bottom - top) * width)
-  const { base, heightEdits } = model
   for (let k = 0, p = top * width; k < heights.length; k++, p++) {
     const fc = lut[p]!
     const face = (fc / CELLS) | 0
-    const cell = fc - face * CELLS
-    heights[k] = base.height[face]![cell]! + heightEdits[face]![cell]!
+    heights[k] = model.height(face, fc - face * CELLS)
   }
 
   const sea = model.settings.seaLevel

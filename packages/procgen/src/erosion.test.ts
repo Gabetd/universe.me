@@ -2,7 +2,8 @@ import { CUBE_FACES, DEFAULT_WORLD_SETTINGS, TERRAIN_RES } from '@universe/core'
 import { describe, expect, it } from 'vitest'
 import { erosionAt, erosionField, erosionStep } from './erosion'
 import { generateBase } from './generate'
-import { hydrology } from './hydrology'
+import { PLANET_CELLS, hydrology } from './hydrology'
+import { TerrainModel } from './terrain-model'
 
 const CELLS = TERRAIN_RES * TERRAIN_RES
 
@@ -37,5 +38,36 @@ describe('erosion', () => {
     expect(erosionAt(1000, 2)).toBeCloseTo(erosionAt(2000, 1))
     expect(erosionAt(1e9, 1)).toBeCloseTo(1)
     expect(erosionStep(0.51)).toBe(0.5)
+  })
+})
+
+describe('the terrain model, worn and with lakes', () => {
+  const base = generateBase(42, DEFAULT_WORLD_SETTINGS.terrain)
+  it('wears its land down by as much of the erosion as has happened, and colours lakes as water', () => {
+    const model = new TerrainModel(DEFAULT_WORLD_SETTINGS, base)
+    const heights = model.heightsAboveSea()
+    const water = hydrology({ heights, moisture: base.moisture, seed: 42, radiusKm: 6371 })
+    const field = erosionField({ heights, water, radiusKm: 6371 })
+    let worst = 0
+    for (let c = 1; c < CELLS; c++) if (field[0]![c]! > field[0]![worst]!) worst = c
+    const before = model.height(0, worst)
+    expect(model.setErosion(field, 0.5)).toBe(true)
+    expect(model.setErosion(field, 0.5)).toBe(false)
+    expect(model.height(0, worst)).toBeCloseTo(before - field[0]![worst]! * 0.5, 3)
+    // What rivers are worked out from isn't worn.
+    expect(model.heightsAboveSea()[0]![worst]).toBeCloseTo(heights[0]![worst]!, 3)
+    model.setErosion(field, 0)
+    expect(model.height(0, worst)).toBeCloseTo(before, 3)
+
+    const lake = water.lakes[0]!.cells[0]!
+    const [face, cell] = [Math.floor(lake / CELLS), lake % CELLS]
+    const land = new Uint8Array(4)
+    model.color(face, cell, land, 0)
+    expect(model.setLakes(water.lakeLevel)).toBe(true)
+    const wet = new Uint8Array(4)
+    model.color(face, cell, wet, 0)
+    // Bluer than the land it covers.
+    expect(wet[2]! - wet[0]!).toBeGreaterThan(land[2]! - land[0]!)
+    expect(water.lakeLevel).toHaveLength(PLANET_CELLS)
   })
 })
