@@ -23,7 +23,7 @@ export const ROADMAP: Milestone[] = [
   { id: 'M11', title: 'Phone app', status: 'done', summary: 'The whole app on your phone, from your computer, through Tailscale' },
   { id: 'M12', title: 'Sync', status: 'done', summary: 'The same universe on several devices, synced directly over Tailscale' },
   { id: 'M13', title: 'Polish & release', status: 'done', summary: 'Right-click menus, update checks, livelier space, signed updates, a sample universe, keyboard shortcuts, a performance pass' },
-  { id: 'M14', title: 'Factions & relationships', status: 'active', summary: 'Factions with members and territory over time, relationships between characters, a lane per character' },
+  { id: 'M14', title: 'Factions & relationships', status: 'done', summary: 'Factions with members and territory over time, who’s related to whom, a lane per character; spelling' },
   { id: 'M15', title: 'Rivers & erosion', status: 'planned', summary: 'Rivers that run downhill, lakes, and land that wears down as time passes' },
   { id: 'M16', title: 'Plugins', status: 'planned', summary: 'Your own generators and exporters, sandboxed and undoable' },
   { id: 'M17', title: 'Live collaboration', status: 'planned', summary: 'Several people in one universe at once, over their tailnets' },

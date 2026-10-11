@@ -5,7 +5,8 @@ worlds, give them histories on a timeline, and let Claude Code help through
 a local API and MCP server. See [PLAN.md](PLAN.md) for the full design and roadmap.
 
 **Status:** M0 to M13 are done (v1: up to phone access, sync between your
-devices, and polish); M14 (Factions & relationships) is under way. New here? On the start screen,
+devices, and polish), and so is M14 (factions and relationships). M15 (rivers
+and erosion) is next. New here? On the start screen,
 **Explore a sample universe** opens Calder, a world with fifteen centuries of
 history to look around in. Press `?` for the keyboard shortcuts.
 
