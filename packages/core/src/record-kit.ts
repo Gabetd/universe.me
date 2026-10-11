@@ -119,6 +119,7 @@ const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>, check
   ...worldSimValidators,
   ...themeValidators,
   ...powerValidators,
+  waterway: (store, w) => void liveWorld(store, w.ownerId),
   ...factionValidators,
   finding: (store, f) => void liveWorld(store, f.ownerId)
 }

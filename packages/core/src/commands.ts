@@ -7,6 +7,7 @@ import { CHARACTER_COMMANDS, characterHandlers } from './character-commands'
 import { FACTION_COMMANDS, factionHandlers } from './faction-commands'
 import { FINDING_COMMANDS, findingHandlers } from './finding-commands'
 import { POWER_COMMANDS, powerHandlers } from './power-commands'
+import { WATERWAY_COMMANDS, waterwayHandlers } from './waterway-commands'
 import { THEME_COMMANDS, themeHandlers } from './theme-commands'
 import { WORLD_SIM_COMMANDS, worldSimHandlers } from './world-sim-commands'
 import { STRUCTURE_COMMANDS, structureHandlers } from './structure-commands'
@@ -77,6 +78,7 @@ export const Command = z.discriminatedUnion('type', [
   ...WORLD_SIM_COMMANDS,
   ...THEME_COMMANDS,
   ...POWER_COMMANDS,
+  ...WATERWAY_COMMANDS,
   ...FINDING_COMMANDS,
   ...FACTION_COMMANDS,
   /** Several commands applied together; each is validated when it runs. The batch focuses `focusId`, or what its last command did. */
@@ -98,6 +100,7 @@ export const handlers: Handlers = {
   ...worldSimHandlers,
   ...themeHandlers,
   ...powerHandlers,
+  ...waterwayHandlers,
   ...findingHandlers,
   ...factionHandlers,
 
