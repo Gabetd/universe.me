@@ -48,7 +48,8 @@ beforeEach(async () => {
     sync: {
       on: () => syncOn,
       mayVisit: member,
-      hello: (v, body) => (heard.push({ what: 'hello', login: v.login, owner: v.owner, body }), { device: 'here', project: member(v) ? { syncId: 's1', name: 'Aerth' } : null }),
+      // Without a visitor: someone `mayVisit` didn't let in.
+      hello: (v, body) => (heard.push({ what: 'hello', login: v?.login ?? 'nobody', owner: !!v?.owner, body }), { device: 'here', project: v ? { syncId: 's1', name: 'Aerth' } : null }),
       changes: (body, v) => (heard.push({ what: 'changes', login: v.login, owner: v.owner }), v.device === 'there' ? { status: 200, body: { rows: [], upTo: (body as { since: number }).since + 1, more: false } } : { status: 400, body: { error: 'Who?' } }),
       push: (body, v) => (heard.push({ what: 'push', login: v.login, owner: v.owner, body }), { status: 200, body: {} }),
       nudged: (body, v) => void (heard.push({ what: 'nudge', login: v.login, owner: v.owner }), nudges.push(body))
@@ -203,18 +204,19 @@ describe('the phone app’s server', () => {
     expect((await as(MEMBER, '/sync/nudge', 'POST', '{"host":"bobs-studio"}')).status).toBe(202)
     expect(heard.slice(-3).map((h) => [h.what, h.login, h.owner])).toEqual([['changes', MEMBER, false], ['push', MEMBER, false], ['nudge', MEMBER, false]])
 
-    // Nothing else: not the phone app, its bridge or signing in, nor another sync path.
+    // Nothing else: not the phone app, its bridge or signing in; a sync path there isn't is one there isn't.
     for (const path of ['/', '/assets/app.js', '/manifest.webmanifest', '/oauth/authorize', '/signed-in', '/bridge/getState', '/bridge/events', '/sync/other']) {
       expect((await call(path, { headers: { 'tailscale-user-login': MEMBER } })).status, path).toBe(403)
-      expect((await as(MEMBER, path)).status, path).toBe(403)
+      if (path !== '/sync/other') expect((await as(MEMBER, path)).status, path).toBe(403)
     }
+    expect((await as(MEMBER, '/sync/other')).status).toBe(404)
 
     // Someone who isn't a member: nothing is open, and the rest is turned away without being asked.
     heard.length = 0
     expect((await hello(STRANGER, 'GET')).project).toBeNull()
     expect((await hello(STRANGER, 'POST')).project).toBeNull()
-    for (const path of ['/sync/changes', '/sync/push', '/sync/nudge']) expect((await as(STRANGER, path)).status, path).toBe(403)
-    expect(heard.map((h) => h.what)).toEqual(['hello', 'hello'])
+    for (const path of ['/sync/changes', '/sync/push', '/sync/nudge', '/sync/other']) expect((await as(STRANGER, path)).status, path).toBe(403)
+    expect(heard.map((h) => [h.what, h.login])).toEqual([['hello', 'nobody'], ['hello', 'nobody']])
 
     // Not without a login (a tagged server's), from Funnel, from a page, or without the sync header.
     expect((await call('/sync/hello', { headers: { ...sync, 'tailscale-user-login': '' } })).status).toBe(403)

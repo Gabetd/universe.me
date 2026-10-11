@@ -239,14 +239,7 @@ export class ApiController {
         files: this.bridge?.files ?? '',
         place: () => this.tailnetPlace(),
         answer: (method, args) => (this.bridge ? this.bridge.answer(method, args) : Promise.reject(new Error('No phone app here'))),
-        sync: {
-          on: () => this.settings.sync,
-          mayVisit: (visitor) => this.devices.mayVisit(visitor),
-          hello: (visitor, body) => this.devices.hello(visitor, body),
-          changes: (body, visitor) => this.devices.changes(body, visitor),
-          push: (body, visitor) => this.devices.push(body, visitor),
-          nudged: (body, visitor) => this.devices.nudged(body, visitor)
-        },
+        sync: this.devices,
         sessionsFile: join(this.userData, 'phone-sessions.json')
       })
       this.tailnetPort = await server.listen()

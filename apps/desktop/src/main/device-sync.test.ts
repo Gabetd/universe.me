@@ -27,7 +27,7 @@ interface Computer {
   /** Other people's devices this one can reach. */
   reaches: Computer[]
   told: Collaboration[]
-  /** Paths this computer was asked, by whom. */
+  /** Paths this computer was asked ('hello', 'changes'…), by whom. */
   asked: { path: string; by: string }[]
 }
 
@@ -54,6 +54,7 @@ function asker(from: () => Computer): Ask {
     if (fake) return fake(path, body)
     const to = computers.find((c) => c.host === host)
     if (!to || !from().reaches.includes(to)) throw new AskError('It didn’t answer')
+    to.asked.push({ path: path.slice('/sync/'.length), by: from().login })
     const text = body ? JSON.stringify(body) : undefined
     const headers = { host: `${host}:8443`, 'tailscale-user-login': from().login, 'x-universe-sync': '1', 'x-universe-device': device, ...(text && { 'content-type': 'application/json' }) }
     const { status, json } = await new Promise<{ status: number; json: { error?: string } }>((resolve, reject) => {
@@ -84,18 +85,10 @@ async function computer(host: string, login: string, name: string): Promise<Comp
     collaboration: (collaboration) => void c.told.push(collaboration),
     ask: asker(() => c)
   })
-  const { sync } = c
   c.server = new PhoneAppServer({
     oauth: new OAuth(memoryStore()),
     appOn: () => false,
-    sync: {
-      on: () => true,
-      mayVisit: (v) => sync.mayVisit(v),
-      hello: (v, body) => (c.asked.push({ path: 'hello', by: v.login }), sync.hello(v, body)),
-      changes: (body, v) => (c.asked.push({ path: 'changes', by: v.login }), sync.changes(body, v)),
-      push: (body, v) => (c.asked.push({ path: 'push', by: v.login }), sync.push(body, v)),
-      nudged: (body, v) => sync.nudged(body, v)
-    },
+    sync: c.sync,
     files: join(dir, 'app'),
     place: () => ({ host: `${host}:8443`, login }),
     answer: () => Promise.reject(new Error('No phone app here')),

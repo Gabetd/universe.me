@@ -40,9 +40,6 @@ const MAX_SYNC_BODY = 64 * 1024
 /** Rows a device gives at once, at most: a page of about 2 MB, and the one row past it, which can be a whole model. */
 const MAX_PUSH_BODY = 4 * 1024 * 1024 + MAX_ASSET_BASE64
 
-/** All that another person may ask, and only about a universe they're a member of: what's open, its changes, giving theirs, and a nudge. */
-const SHARED_SYNC = new Set(['/sync/hello', '/sync/changes', '/sync/push', '/sync/nudge'])
-
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -83,13 +80,15 @@ export interface PhoneAppPlace {
 /**
  * What the user's other devices, and other people's, ask (PLAN.md §6.7;
  * device-sync.ts): what's open, its changes, theirs given, and a nudge to
- * ask for theirs. Each is told who asks; another person's are answered only
- * while `mayVisit` says they're a member of the universe open here.
+ * ask for theirs. Only a visitor `mayVisit` lets in (the owner, or a member
+ * of the universe open here) is asked about, and each is told who it is;
+ * anyone else's hello is answered without one (nothing is open), and the
+ * rest of what they ask is turned away.
  */
 export interface SyncRoutes {
   on(): boolean
   mayVisit(visitor: SyncVisitor): boolean
-  hello(visitor: SyncVisitor, body?: unknown): object
+  hello(visitor?: SyncVisitor, body?: unknown): object
   changes(body: unknown, visitor: SyncVisitor): SyncAnswer
   push(body: unknown, visitor: SyncVisitor): SyncAnswer
   nudged(body: unknown, visitor: SyncVisitor): void
@@ -194,8 +193,8 @@ export class PhoneAppServer {
     try {
       const at = this.reached(req)
       const url = at && new URL(req.url ?? '/', at.base)
-      // Anyone but the owner reaches sync's questions alone.
-      if (!at || !url || (!at.owner && !SHARED_SYNC.has(url.pathname))) return send(res, 403, { error: 'Universe on your phone is only for the devices on your own tailnet' })
+      // Anyone but the owner reaches sync's questions alone (and those only for a universe they're a member of: `syncRoute`).
+      if (!at || !url || (!at.owner && !url.pathname.startsWith('/sync/'))) return send(res, 403, { error: 'Universe on your phone is only for the devices on your own tailnet' })
       // From the page itself only (the sign-in form and the bridge send their Origin).
       if (req.headers.origin !== undefined && req.headers.origin !== at.base) return send(res, 403, { error: 'Requests from other pages are not allowed' })
       // Another device (the owner's, or a member's), not a page: never with an Origin.
@@ -222,24 +221,26 @@ export class PhoneAppServer {
   }
 
   /**
-   * A sync question. To someone who isn't a member of the universe open
-   * here, hello says nothing is open, and the rest is turned away before
-   * its body is read.
+   * A sync question: a POST, or hello as older versions ask it (a GET, with
+   * nothing to say). Who may ask is checked once, here, before the body is
+   * read: to someone who isn't a member of the universe open here, hello
+   * says nothing is open, and the rest is turned away.
    */
   private async syncRoute(req: IncomingMessage, res: ServerResponse, path: string, at: Reached): Promise<void> {
     const { sync } = this.options
     if (req.headers['x-universe-sync'] !== '1' || req.headers.origin !== undefined) return send(res, 403, { error: 'For Universe on your other devices' })
     if (!sync.on()) return send(res, 403, { error: 'Sync is off on this computer' })
+    const hello = path === '/sync/hello'
+    if (req.method !== 'POST' && !(hello && req.method === 'GET')) return send(res, 405, { error: 'Not here' })
     const device = req.headers['x-universe-device']
     const visitor: SyncVisitor = { login: at.login, owner: at.owner, device: typeof device === 'string' ? device : undefined }
-    if (req.method === 'GET' && path === '/sync/hello') return send(res, 200, sync.hello(visitor))
-    if (req.method !== 'POST') return send(res, 405, { error: 'Not here' })
-    if (path !== '/sync/hello' && !sync.mayVisit(visitor)) return send(res, 403, { error: 'That universe isn’t shared with you' })
-    const body = await readJson(req, path === '/sync/push' ? MAX_PUSH_BODY : MAX_SYNC_BODY)
+    if (!sync.mayVisit(visitor)) return hello ? send(res, 200, sync.hello()) : send(res, 403, { error: 'That universe isn’t shared with you' })
+    const body = req.method === 'POST' ? await readJson(req, path === '/sync/push' ? MAX_PUSH_BODY : MAX_SYNC_BODY) : undefined
     const answer = this.syncAnswer(path, body, visitor)
     send(res, answer.status, answer.body)
   }
 
+  /** A sync question from someone who may ask it. */
   private syncAnswer(path: string, body: unknown, visitor: SyncVisitor): SyncAnswer {
     const { sync } = this.options
     switch (path) {

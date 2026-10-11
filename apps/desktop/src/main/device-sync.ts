@@ -2,6 +2,7 @@ import { DEVICE_ID, MAX_MERGE_ROWS, SyncPage, SyncRow, personOf } from '@univers
 import { z } from 'zod'
 import type { AppState, Collaboration, DeviceStatus, Person, SharedDevice, TailnetPeer } from '../shared/api'
 import { MAX_PEOPLE, PresenceWire, Presences, Where } from './presence'
+import type { SyncRoutes } from './phone-app'
 import type { Session } from './session'
 
 /**
@@ -97,7 +98,7 @@ export interface SyncAnswer {
 /** A device as sync last found it, with whose it is for another person's. */
 type Found = DeviceStatus & { owner?: Person }
 
-export class DeviceSync {
+export class DeviceSync implements SyncRoutes {
   /** The user's own devices, and other people's (with their owner), as last found, by host. */
   private readonly found = new Map<string, Found>()
   private readonly presences = new Presences()
@@ -158,22 +159,31 @@ export class DeviceSync {
     this.announce()
   }
 
-  // Answering the other devices.
+  // Answering the other devices (phone-app.ts asks only about a visitor `mayVisit` lets in).
 
-  /** Whether a visitor may sync the universe open here: always on one of the owner's own devices, otherwise while they're a member of it. */
-  mayVisit(visitor: SyncVisitor): boolean {
+  /** Whether sync is on here, to answer. */
+  on(): boolean {
+    return this.o.on()
+  }
+
+  /**
+   * Whether someone may sync the universe open here (as a visitor here, or
+   * a device's owner when visiting it): always from one of the owner's own
+   * devices, otherwise while they're a member of it.
+   */
+  mayVisit(visitor: Pick<SyncVisitor, 'login' | 'owner'>): boolean {
     return visitor.owner || this.o.session.isMember(visitor.login)
   }
 
   /**
-   * What's open here, to someone who may have it (nothing to anyone else);
+   * What's open here, to a visitor who may have it (without one, nothing);
    * if they have it open too (`body`, from newer versions), who's in it here
    * and where, them aside, and they're counted in.
    */
-  hello(visitor: SyncVisitor, body?: unknown): Hello {
+  hello(visitor?: SyncVisitor, body?: unknown): Hello {
     const open = this.o.session.syncInfo()
     const device = this.o.session.device
-    if (!open || !this.mayVisit(visitor)) return { device, project: null }
+    if (!open || !visitor) return { device, project: null }
     const visit = Visit.safeParse(body)
     if (!visit.success || visit.data.syncId !== open.syncId) return { device, project: open }
     this.presences.hear(open.syncId, [{ ...personOf(visitor.login, visit.data.name), where: visit.data.where ?? null, age: 0 }], this.o.tailnet()?.me?.login)
@@ -183,16 +193,14 @@ export class DeviceSync {
 
   changes(body: unknown, visitor: SyncVisitor): SyncAnswer {
     const ask = z.object({ syncId: z.string(), since: z.number().int().min(0) }).safeParse(body)
-    if (!this.mayVisit(visitor)) return notShared
     if (!ask.success || !visitor.device) return { status: 400, body: { error: 'Ask with a sync id and where from' } }
     if (this.o.session.syncInfo()?.syncId !== ask.data.syncId) return notOpen
     return { status: 200, body: this.o.session.changesSince(ask.data.since, visitor.device, PAGE) }
   }
 
   /** Rows a visitor brings (a device that can reach this one, but not this one it), merged as pulled ones are; the other devices with this universe open then hear of them. */
-  push(body: unknown, visitor: SyncVisitor): SyncAnswer {
+  push(body: unknown, _visitor: SyncVisitor): SyncAnswer {
     const given = Push.safeParse(body)
-    if (!this.mayVisit(visitor)) return notShared
     if (!given.success) return { status: 400, body: { error: 'Give a sync id and rows' } }
     const { session } = this.o
     if (session.syncInfo()?.syncId !== given.data.syncId) return notOpen
@@ -207,7 +215,7 @@ export class DeviceSync {
   nudged(body: unknown, visitor: SyncVisitor): void {
     const host = z.object({ host: z.string() }).safeParse(body)
     const tailnet = this.o.tailnet()
-    if (!host.success || !tailnet || !this.o.on() || !this.mayVisit(visitor)) return
+    if (!host.success || !tailnet || !this.o.on()) return
     const theirs = visitor.owner ? tailnet.peers : tailnet.others.filter((p) => p.login === visitor.login)
     const peer = theirs.find((p) => p.host === host.data.host)
     if (peer) void this.visit(peer, visitor.owner).then(() => this.o.changed())
@@ -276,7 +284,7 @@ export class DeviceSync {
     const before = this.found.get(peer.host)
     const owner = mine ? undefined : person(peer)
     const set = (status: Omit<DeviceStatus, 'host' | 'name'>) => void this.found.set(peer.host, { host: peer.host, name: peer.name, ...status, ...(owner && { owner }) })
-    const trusted = mine || (!!owner && this.o.session.isMember(owner.login))
+    const trusted = this.mayVisit({ owner: mine, login: peer.login ?? '' })
     let hello: Hello
     try {
       hello = await this.hi(peer.host, trusted)
@@ -391,7 +399,6 @@ export class DeviceSync {
   }
 }
 
-const notShared: SyncAnswer = { status: 403, body: { error: 'That universe isn’t shared with you' } }
 const notOpen: SyncAnswer = { status: 409, body: { error: 'That universe isn’t open here' } }
 
 /** A device's owner, by their login. */

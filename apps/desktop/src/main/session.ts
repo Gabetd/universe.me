@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { buildSample, writePrivate } from '@universe/api'
-import { Command as CommandSchema, CommandError, DEVICE_ID, EMPTY_TIMELINE, checkSource, memberWithLogin, type Command, type Member, type CommandSource, type ExecuteResult, type SyncPage, type SyncRow, type Target } from '@universe/core'
+import { Command as CommandSchema, CommandError, DEVICE_ID, EMPTY_TIMELINE, checkSource, memoize, type Command, type Member, type CommandSource, type ExecuteResult, type SyncPage, type SyncRow, type Target } from '@universe/core'
 import { Project } from '@universe/db'
 import type { AppState, ProposalSummary, WorldTerrain } from '../shared/api'
 
@@ -11,6 +11,9 @@ const MAX_RECENT = 10
 const MAX_PROPOSALS = 200
 /** And at most this many characters of them, all together (a suggestion can carry a model, or a thousand commands). */
 const MAX_PROPOSAL_CHARS = 50 * 1024 * 1024
+
+/** The logins of a universe's members, worked out once for each list of them. */
+const loginsOf = memoize((members: Member[]) => new Set(members.map((m) => m.login)))
 
 /** Owns the currently open project (one per app instance for now) and the recent-files list. */
 export class Session {
@@ -124,14 +127,14 @@ export class Session {
     this.require().setMeta(key, String(upTo))
   }
 
-  /** The people the open universe is shared with (none with nothing open). */
+  /** The people the open universe is shared with (none with nothing open), as its snapshot has them: the same list until one of them changes. */
   members(): Member[] {
-    return this.project?.store.records('member').all() ?? []
+    return this.project?.snapshot().timeline.members ?? []
   }
 
-  /** Whether `login` is one of them. */
+  /** Whether `login` (as members keep it) is one of them: asked for every sync question, so their logins are gathered once each time they change. */
   isMember(login: string): boolean {
-    return !!memberWithLogin(this.members(), login)
+    return loginsOf(this.members()).has(login)
   }
 
   async saveCopy(path: string): Promise<void> {
