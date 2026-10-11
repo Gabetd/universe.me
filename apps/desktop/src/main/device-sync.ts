@@ -83,7 +83,7 @@ export interface DeviceSyncOptions {
   merged(state: AppState): void
   /** What the user's own devices are doing changed. */
   changed(): void
-  /** Who's in, the members or other people's devices changed (told only when they did). */
+  /** Who's in or other people's devices changed (told only when they did). */
   collaboration(collaboration: Collaboration): void
   ask: Ask
 }
@@ -143,11 +143,9 @@ export class DeviceSync {
     const tailnet = this.o.tailnet()
     const me = tailnet?.me ?? null
     const open = this.o.session.syncInfo()
-    const members = this.o.session.members().map(({ id, login, name, invitedBy }) => ({ id, login, name, invitedBy, you: login === me?.login }))
     return {
       on: this.o.on() && !!me,
       me,
-      members,
       here: open ? this.presences.in(open.syncId, me?.login) : [],
       shared: [...this.theirs.values()].flatMap((d) => (d.project && d.owner ? [sharedDevice(d, d.owner, d.project)] : [])),
       people: peopleOf(tailnet?.others ?? [])
@@ -202,7 +200,6 @@ export class DeviceSync {
     if (session.syncInfo()?.syncId !== given.data.syncId) return notOpen
     if (session.merge(given.data.rows)) {
       this.o.merged(session.state())
-      this.tell()
       this.announce()
     }
     return { status: 200, body: {} }
@@ -220,9 +217,8 @@ export class DeviceSync {
 
   // Asking them.
 
-  /** Something changed here: the devices with this universe open hear of it soon. */
+  /** Something changed here: the devices with this universe open hear of it soon. (Who it's shared with is the window's to read, in the universe itself.) */
   localChange(): void {
-    this.tell()
     this.announce()
   }
 
@@ -320,10 +316,7 @@ export class DeviceSync {
         if (!page.more) return
       }
     } finally {
-      if (merged) {
-        this.o.merged(session.state())
-        this.tell()
-      }
+      if (merged) this.o.merged(session.state())
     }
   }
 
@@ -392,7 +385,7 @@ export class DeviceSync {
     return this.o.ask(host, path, this.o.session.device, body)
   }
 
-  /** Tells the window what changed in who's in, the members or other people's devices, if anything did. */
+  /** Tells the window what changed in who's in or other people's devices, if anything did. */
   private tell(): void {
     const collaboration = this.collaboration()
     const json = JSON.stringify(collaboration)

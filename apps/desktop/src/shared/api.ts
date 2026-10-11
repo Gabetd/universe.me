@@ -118,7 +118,7 @@ export interface DeviceStatus {
  * the window builds the sharing panel and who's-in marks on.
  *
  * - `collaboration()` reads it all, and `onCollaboration` hears each change
- *   (who's in or where, the members, other people's devices), as `onApi`
+ *   (who's in or where, other people's devices), as `onApi`
  *   hears sync's devices. It needs sync on (`ApiStatus.phone.sync.on`);
  *   `on` says whether it is, and Tailscale signed in.
  * - **Inviting** someone is a command, undoable like any:
@@ -142,8 +142,6 @@ export interface Collaboration {
   on: boolean
   /** Who's signed in to Tailscale here. */
   me: Person | null
-  /** Who the open universe is shared with (none with nothing open); `you` marks your own entry. */
-  members: MemberInfo[]
   /** Who's in the open universe now (heard from in the last half minute), but you, and where. */
   here: PersonIn[]
   /** Other people's devices with a universe shared with you open; `copyFromDevice(host)` copies one here. */
@@ -152,19 +150,13 @@ export interface Collaboration {
   people: Person[]
 }
 
+/** Nothing to tell: sync off, or not the computer (a phone). */
+export const NO_COLLABORATION: Collaboration = { on: false, me: null, here: [], shared: [], people: [] }
+
 /** Someone, by their tailnet login and what they're called. */
 export interface Person {
   login: string
   name: string
-}
-
-/** A member of the open universe (its `member` record). */
-export interface MemberInfo extends Person {
-  id: string
-  /** Who invited them, by login. */
-  invitedBy: string | null
-  /** Whether it's you. */
-  you: boolean
 }
 
 /** Where someone is in a universe, as the window tells it: what's selected, the view, and both in words. */

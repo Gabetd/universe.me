@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
-import type { Collaboration, PersonIn, Where } from '../../shared/api'
+import { NO_COLLABORATION, type Collaboration, type PersonIn, type Where } from '../../shared/api'
 import { peopleByNode, whereOn } from './people'
 import { useUi } from './store'
 import { useEditor } from './world/editorStore'
@@ -13,9 +13,7 @@ import { useEditor } from './world/editorStore'
  * redraws only when what it shows changes, never the views.
  */
 
-const NOBODY: Collaboration = { on: false, me: null, members: [], here: [], shared: [], people: [] }
-
-export const useCollaboration = create<Collaboration>(() => NOBODY)
+export const useCollaboration = create<Collaboration>(() => NO_COLLABORATION)
 
 /** A new word from main: only the parts that changed are replaced. */
 function take(next: Collaboration): void {

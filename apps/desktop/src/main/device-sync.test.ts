@@ -137,7 +137,7 @@ describe('several people in one universe', () => {
     expect(bob.sync.collaboration().shared).toEqual([])
     await bobCopies(alice, bob)
     expect(rootName(bob)).toBe('Aerth')
-    expect(bob.sync.collaboration().members.map((m) => [m.login, m.you])).toEqual(expect.arrayContaining([['alice@example.com', false], ['bob@example.com', true]]))
+    expect(bob.session.members().map((m) => m.login).sort()).toEqual(['alice@example.com', 'bob@example.com'])
     expect(bob.sync.collaboration().shared[0]).toMatchObject({ same: true, lastSync: expect.any(Number) })
 
     // Bob's change goes to Alice's studio with his next visit (it can't come to him), and hers comes back.

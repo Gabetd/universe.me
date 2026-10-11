@@ -1,4 +1,4 @@
-import { INVOKE, isRemoteMethod, type AiChange, type AppState, type Collaboration, type InvokeMethod, type UniverseApi } from '../../shared/api'
+import { INVOKE, NO_COLLABORATION, isRemoteMethod, type AiChange, type AppState, type InvokeMethod, type UniverseApi } from '../../shared/api'
 import { fromWire, toWire } from '../../shared/wire'
 
 /**
@@ -14,7 +14,7 @@ import { fromWire, toWire } from '../../shared/wire'
 const ON_THE_PHONE: Partial<Record<InvokeMethod, () => unknown>> = {
   recentProjects: () => [],
   // Who's in, and the universe's sharing, are the computer's: the phone is its owner's, already in.
-  collaboration: (): Collaboration => ({ on: false, me: null, members: [], here: [], shared: [], people: [] }),
+  collaboration: () => NO_COLLABORATION,
   setWhere: () => undefined,
   updateStatus: () => ({ state: 'none' }),
   checkForUpdates: () => 'Updates are installed on the computer.'
