@@ -1,6 +1,6 @@
-import { AU_KM, WORLD_RANGES, daysPerYear, planetSize, radiusOfMass, radiusOfSize, type OrbitFields, type SpatialNode, type WorldSettings } from '@universe/core'
+import { AU_KM, daysPerYear, planetSize, radiusOfSize, type OrbitFields, type SpatialNode, type WorldSettings } from '@universe/core'
 import { surfaceTemperature, withSky } from '@universe/procgen'
-import { deriveCalendar, formatPeriod, orbitFields, worldOrbit, luminosityOf, moonsOf, planetOf, worldClimate, type BodyOrbit, type SystemModel } from '@universe/sim'
+import { deriveCalendar, formatPeriod, massCommand, orbitFields, worldOrbit, luminosityOf, moonsOf, planetOf, worldClimate, type BodyOrbit, type SystemModel } from '@universe/sim'
 import { useUi } from '../store'
 import { useSystem, useWorldClimate } from '../world/useSky'
 import { NumberInput, Swatch, TextField } from './fields'
@@ -74,7 +74,7 @@ export function OrbitPanel({ body }: { body: SpatialNode }) {
         <Num label="Axial tilt (°)" value={round(orbit.axialTiltDeg, 2)} min={0} max={180} onCommit={(axialTiltDeg) => set({ axialTiltDeg })} />
         <Num label="Inclination (°)" value={round(orbit.inclinationDeg, 2)} min={0} max={180} onCommit={(inclinationDeg) => set({ inclinationDeg })} />
         <Num label="Start angle (°)" value={round(((orbit.phaseDeg % 360) + 360) % 360, 1)} min={0} max={360} onCommit={(phaseDeg) => set({ phaseDeg })} />
-        <Num label="Mass (Earths)" value={round(orbit.massEarth, 4)} min={0.0001} max={1e5} onCommit={(massEarth) => setMass(body.id, orbit, world?.id, massEarth)} />
+        <Num label="Mass (Earths)" value={round(orbit.massEarth, 4)} min={0.0001} max={1e5} onCommit={(massEarth) => void execute(massCommand(body.id, orbit, world?.id, massEarth))} />
         {!world && (
           <>
             <Num label="Size (Earth = 10)" value={planetSize(orbit.radiusKm)} min={0.01} max={1600} onCommit={(size) => set({ radiusKm: radiusOfSize(size) })} />
@@ -96,18 +96,6 @@ export function OrbitPanel({ body }: { body: SpatialNode }) {
 /** Sets a body's orbit, from what it is now with `patch`. */
 const setOrbit = (bodyId: string, orbit: BodyOrbit, patch: Partial<OrbitFields>) =>
   void useUi.getState().execute({ type: 'orbit.set', payload: { bodyId, orbit: { ...orbitFields(orbit), ...patch } } })
-
-/**
- * A body's mass, given: while it follows the body's size, the size follows
- * it instead (the world's radius, or the body's); unlinked, it's its own.
- */
-function setMass(bodyId: string, orbit: BodyOrbit, worldId: string | undefined, massEarth: number) {
-  if (orbit.massFollowsSize === false) return setOrbit(bodyId, orbit, { massEarth })
-  const radiusKm = Math.round(radiusOfMass(massEarth))
-  if (!worldId) return setOrbit(bodyId, orbit, { radiusKm })
-  const { min, max } = WORLD_RANGES.radiusKm
-  void useUi.getState().execute({ type: 'world.update', payload: { id: worldId, patch: { radiusKm: Math.min(max, Math.max(min, radiusKm)) } } })
-}
 
 /** Whether a body's mass follows its size (as it does unless unlinked), and switching that; its mass as it is. */
 export function MassLink({ bodyId }: { bodyId: string }) {
@@ -184,14 +172,13 @@ function Num(props: { label: string; value: number; min: number; max: number; on
  */
 export function CalendarPanel({ world }: { world: SpatialNode }) {
   const system = useSystem(world.id)
-  const execute = useUi((s) => s.execute)
   const nodes = useUi((s) => s.nodes)
   const orbit = worldOrbit(nodes, system, world.id)
   const derived = orbit && deriveCalendar(system!, orbit.bodyId)
   const months = derived?.calendar.months
   const rename = (k: number, name: string) => {
     const names = months!.map((m, j) => (j === k ? name : m.name))
-    void execute({ type: 'orbit.set', payload: { bodyId: orbit!.bodyId, orbit: { ...orbitFields(orbit!), monthNames: names } } })
+    setOrbit(orbit!.bodyId, orbit!, { monthNames: names })
   }
   return (
     <section className="inspector-section" aria-label="Calendar">

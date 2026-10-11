@@ -1,6 +1,6 @@
-import { ancestry, buildTree, type NodeKind, type TreeNode } from '@universe/core'
+import { ancestry, buildTree, levelLabel, type NodeKind, type TreeNode } from '@universe/core'
 import { memo, useCallback, useMemo, useState } from 'react'
-import { KIND_ICONS, levelLabel } from '../kinds'
+import { KIND_ICONS } from '../kinds'
 import { useUi } from '../store'
 import { flagClass, useFlagged } from '../flags'
 import { menuRef } from '../contextMenu'

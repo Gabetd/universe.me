@@ -354,6 +354,8 @@ export class TerrainModel {
   private paint({ truncated, rounded, colored }: FaceColors, face: number, cells: Int32Array, again: boolean): void {
     // Everything that's the same for every cell, looked up once.
     const { shallow, deep, biomes } = this.colors
+    const ice = biomes[BIOME.ice]!
+    const iceDeep = [ice[0] * 0.88, ice[1] * 0.94, ice[2]] as const
     const terms = this.climateState.terms
     const sea = this.settings.seaLevel
     const height = this.base.height[face]!
@@ -372,16 +374,13 @@ export class TerrainModel {
       const lakeDepth = lake ? lake[c]! - elevation : NaN
       // Water, from shallow (0) to deep (1): a lake shallow-ish, darker where it's deep; the sea by its depth.
       const t = lakeDepth > 0 ? 0.15 + 0.35 * Math.min(1, lakeDepth / 300) : elevation < 0 ? Math.sqrt(Math.min(1, -elevation / 4500)) : -1
-      if (t >= 0 && frozenWater(polar[c]!, lakeDepth > 0 ? lake![c]! : 0, terms, moisture[c]!)) {
-        // Sea ice, or a frozen lake: ice, a little bluer where the water under it is deep.
-        const ice = biomes[BIOME.ice]!
-        r = ice[0] * (1 - 0.12 * t)
-        g = ice[1] * (1 - 0.06 * t)
-        b = ice[2]
-      } else if (t >= 0) {
-        r = shallow[0] + (deep[0] - shallow[0]) * t
-        g = shallow[1] + (deep[1] - shallow[1]) * t
-        b = shallow[2] + (deep[2] - shallow[2]) * t
+      if (t >= 0) {
+        // Sea ice, or a frozen lake (at its surface's height): ice, a little bluer where the water under it is deep.
+        const frozen = frozenWater(polar[c]!, lakeDepth > 0 ? lake![c]! : 0, terms, moisture[c]!)
+        const [from, to] = frozen ? [ice, iceDeep] : [shallow, deep]
+        r = from[0] + (to[0] - from[0]) * t
+        g = from[1] + (to[1] - from[1]) * t
+        b = from[2] + (to[2] - from[2]) * t
       } else {
         const rgb = biomes[painted[c] || biomeAt(polar[c]!, band[c]!, elevation, moisture[c]!, terms)]!
         const lift = 0.94 + 0.12 * Math.min(1, elevation / 5000)

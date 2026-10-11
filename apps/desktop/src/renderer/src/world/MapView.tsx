@@ -2,6 +2,7 @@ import type { LatLon } from '@universe/core'
 import { brushRows, latLonToDir, latLonToPixel, pixelToLatLon, planetCell, renderEquirect, type River, type TerrainModel, type Vec3 } from '@universe/procgen'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { EdgePush, zoomOut } from '../components/zoom'
+import { distanceToSegment } from '../components/canvasDraw'
 import { useUi } from '../store'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor } from './editorStore'
@@ -523,13 +524,6 @@ export const MapView = memo(function MapView({
     />
   )
 })
-
-/** How far a point is from a line segment. */
-function distanceToSegment(x: number, y: number, [ax, ay]: [number, number], [bx, by]: [number, number]): number {
-  const [dx, dy] = [bx - ax, by - ay]
-  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)))
-  return Math.hypot(x - (ax + t * dx), y - (ay + t * dy))
-}
 
 /** Rivers' paths on the map (smoothed), and all of them as one path per width (to a quarter pixel), thinnest first: a few strokes a frame rather than one a river. */
 function riverPaths(rivers: River[]) {

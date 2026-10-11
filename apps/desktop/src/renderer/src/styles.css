@@ -1678,11 +1678,10 @@ kbd {
   font-weight: 600;
   pointer-events: none;
 }
-/* What's laid over a view is its controls, not text to copy: selected (by Select All, say), a slider in it would be dragged off as the selection instead of moving. */
+/* What's laid over a view (.view-control, .viewport-overlay) is its controls, not text to copy: selected, a slider in it would be dragged off as the selection instead of moving. */
 .viewport,
-.tool-options,
-.territory-legend,
-.world-editor .viewport-overlay {
+.view-control,
+.viewport-overlay {
   user-select: none;
 }
 .tool-options {
@@ -2190,6 +2189,8 @@ kbd {
 
 .cosmos-card {
   position: absolute;
+  /* Beside the point it's placed at. */
+  translate: 14px 10px;
   display: grid;
   gap: 4px;
   max-width: 260px;
@@ -2208,6 +2209,9 @@ kbd {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--accent);
+}
+.cosmos-card.passive {
+  pointer-events: none;
 }
 .claim-list {
   display: grid;

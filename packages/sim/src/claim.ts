@@ -1,5 +1,5 @@
-import { ALLOWED_CHILDREN, WORLD_RANGES, type Command, type NodeKind } from '@universe/core'
-import { clamp, subSeed, type Procedural } from '@universe/procgen'
+import { ALLOWED_CHILDREN, worldRadius, type Command, type NodeKind } from '@universe/core'
+import { subSeed, type Procedural } from '@universe/procgen'
 import { orbitFields, type GeneratedPlanet } from './orbits'
 
 /**
@@ -32,10 +32,9 @@ export function claimPlanet(systemId: string, planet: GeneratedPlanet, withWorld
   ]
   if (withWorld) {
     const worldId = newId()
-    const { min, max } = WORLD_RANGES.radiusKm
     commands.push(
       { type: 'node.create', payload: { id: worldId, parentId: id, kind: 'world', name: `${planet.name} Surface`, seed: subSeed(planet.seed, 1) } },
-      { type: 'world.update', payload: { id: worldId, patch: { radiusKm: clamp(Math.round(planet.orbit.radiusKm), min, max) } } }
+      { type: 'world.update', payload: { id: worldId, patch: { radiusKm: worldRadius(planet.orbit.radiusKm) } } }
     )
   }
   return { id, command: { type: 'batch', payload: { commands, focusId: id } } }

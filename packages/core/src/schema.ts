@@ -26,6 +26,12 @@ export const KIND_LABELS: Record<NodeKind, string> = {
   world: 'World'
 }
 
+/** What a body is: a moon if it goes round another body, else a planet. */
+export const bodyLabel = (aroundBody: boolean) => (aroundBody ? 'Moon' : 'Planet')
+
+/** What level something is: a galaxy, a star system, a planet (a body round a star) or a moon (one round a body). */
+export const levelLabel = (kind: NodeKind, parentKind: NodeKind | undefined): string => (kind === 'body' ? bodyLabel(parentKind === 'body') : KIND_LABELS[kind])
+
 export const Id = z.string().min(1)
 export type Id = z.infer<typeof Id>
 

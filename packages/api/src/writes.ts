@@ -901,8 +901,9 @@ export const WRITES = [
         { type: 'node.create', payload: { id: bodyId, parentId: p.systemId, kind: 'body', name: p.name } },
         { type: 'node.create', payload: { id: worldId, parentId: bodyId, kind: 'world', name: `${p.name} Surface`, ...(seeded && { seed: seeded.seed }) } }
       ]
-      if (seeded) commands.push({ type: 'world.update', payload: { id: worldId, patch: { seedText: p.seed!.trim(), radiusKm: seeded.radiusKm, terrain: seeded.terrain } } })
-      if (p.size) commands.push({ type: 'world.update', payload: { id: worldId, patch: { radiusKm: radiusOfSize(p.size) } } })
+      // The size asked for over the seed's.
+      const radiusKm = p.size ? radiusOfSize(p.size) : seeded?.radiusKm
+      if (seeded || radiusKm) commands.push({ type: 'world.update', payload: { id: worldId, patch: { ...(seeded && { seedText: p.seed!.trim(), terrain: seeded.terrain }), ...(radiusKm && { radiusKm }) } } })
       if (p.distanceAu) commands.push({ type: 'orbit.set', payload: { bodyId, orbit: { ...EARTH_ORBIT, semiMajorAxisKm: p.distanceAu * AU_KM } } })
       return write(ctx, commands, `Added the world ${p.name}`, { bodyId, worldId })
     }

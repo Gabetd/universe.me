@@ -53,8 +53,17 @@ export const planetSize = (radiusKm: number) => Math.round((radiusKm / EARTH_RAD
 /** The radius (km) of a planet of a size on the Earth scale. */
 export const radiusOfSize = (size: number) => Math.round((size / 10) * EARTH_RADIUS_KM)
 
+/** A radius (km) as a world can have it: whole, and in its range. */
+export const worldRadius = (radiusKm: number) => Math.min(WORLD_RANGES.radiusKm.max, Math.max(WORLD_RANGES.radiusKm.min, Math.round(radiusKm)))
+
 /** The sizes a world can be on the Earth scale: those of the radii it can have. */
-export const PLANET_SIZE = { min: 0.1, max: planetSize(WORLD_RANGES.radiusKm.max), step: 0.1 } as const
+export const PLANET_SIZE = {
+  min: 0.1,
+  max: planetSize(WORLD_RANGES.radiusKm.max),
+  step: 0.1,
+  /** The sizes a slider covers: from about the Moon's to a mini-Neptune's; others are typed. */
+  slider: { min: 1, max: 50 }
+} as const
 
 /** How fast structures weather on a world, as a multiple of the material defaults. Not part of generation. */
 export const EROSION_SPEED = { min: 0, max: 10, step: 0.1 } as const
@@ -117,7 +126,7 @@ export const DEFAULT_TERRAIN: TerrainParams = {
 }
 
 export const DEFAULT_WORLD_SETTINGS: WorldSettings = {
-  radiusKm: 6371,
+  radiusKm: EARTH_RADIUS_KM,
   seaLevel: 0,
   terrain: DEFAULT_TERRAIN,
   seedText: null,

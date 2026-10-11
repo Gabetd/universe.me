@@ -1,4 +1,4 @@
-import { conditionCurves, effectHits, findBlueprint, stateAt, timelineOf, type Blueprint, type ConditionCurve, type Exposure, type Region, type Structure, type StructureState, type StructureWorld, type TimelineData, type WorldInfo } from '@universe/core'
+import { EARTH_RADIUS_KM, conditionCurves, effectHits, findBlueprint, stateAt, timelineOf, type Blueprint, type ConditionCurve, type Exposure, type Region, type Structure, type StructureState, type StructureWorld, type TimelineData, type WorldInfo } from '@universe/core'
 import { skyKey, type TerrainModel } from '@universe/procgen'
 import { exposureAt, type WorldClimate } from '@universe/sim'
 import { useLoadedTerrain } from './loadedTerrain'
@@ -53,7 +53,7 @@ function engineFor(worldId: string, inputs: Inputs, climate: WorldClimate | unde
   const world: StructureWorld = {
     data,
     regions: inputs.regions.filter((r) => r.worldId === worldId),
-    radiusKm: info?.settings.radiusKm ?? 6371,
+    radiusKm: info?.settings.radiusKm ?? EARTH_RADIUS_KM,
     erosionSpeed: info?.settings.erosionSpeed ?? 1,
     blueprint: (id: string) => findBlueprint(timeline.blueprints, id),
     exposure

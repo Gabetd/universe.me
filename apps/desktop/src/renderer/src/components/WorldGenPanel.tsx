@@ -42,6 +42,9 @@ export function WorldGenPanel({ world, settings }: { world: SpatialNode; setting
   const code = encodeWorldCode({ seed: world.seed, radiusKm: settings.radiusKm, terrain: t })
   const update = updater('world', world.id)
   const setTerrain = (terrain: Partial<TerrainParams>) => update({ terrain })
+  // Its size on the Earth scale, set from the slider or typed.
+  const size = planetSize(settings.radiusKm)
+  const setSize = (v: number) => update({ radiusKm: radiusOfSize(v) })
 
   const applySeed = (text: string) => {
     const w = readSeed(text)
@@ -149,11 +152,11 @@ export function WorldGenPanel({ world, settings }: { world: SpatialNode; setting
           <ColorField label="Sand" hint={WORLD_HINTS.sand} value={t.sandColor} onCommit={(sandColor) => setTerrain({ sandColor })} />
           <ColorField label="Water color" hint={WORLD_HINTS.waterColor} value={t.waterColor} onCommit={(waterColor) => setTerrain({ waterColor })} />
         </div>
-        <CommitSlider label="Planet size" hint={WORLD_HINTS.radius} unit=" (Earth is 10)" min={1} max={50} step={PLANET_SIZE.step} value={planetSize(settings.radiusKm)} onCommit={(v) => update({ radiusKm: radiusOfSize(v) })} />
+        <CommitSlider label="Planet size" hint={WORLD_HINTS.radius} unit=" (Earth is 10)" {...PLANET_SIZE.slider} step={PLANET_SIZE.step} value={size} onCommit={setSize} />
         <div className="field-pair">
           <label className="field" title={WORLD_HINTS.radius}>
             <span>Size (Earth = 10)</span>
-            <NumberInput value={planetSize(settings.radiusKm)} min={PLANET_SIZE.min} max={PLANET_SIZE.max} onCommit={(v) => update({ radiusKm: radiusOfSize(v) })} />
+            <NumberInput value={size} min={PLANET_SIZE.min} max={PLANET_SIZE.max} onCommit={setSize} />
           </label>
           <label className="field" title={WORLD_HINTS.radius}>
             <span>Planet radius (km)</span>

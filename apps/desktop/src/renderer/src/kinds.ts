@@ -1,4 +1,4 @@
-import { ALLOWED_CHILDREN, KIND_LABELS, type Command, type NodeKind, type SpatialNode } from '@universe/core'
+import { ALLOWED_CHILDREN, levelLabel, type Command, type NodeKind, type SpatialNode } from '@universe/core'
 
 export const KIND_ICONS: Record<NodeKind, string> = {
   universe: '✦',
@@ -16,14 +16,7 @@ export function addOptions(node: SpatialNode, nodes: SpatialNode[]): { kind: Nod
     .map((kind) => ({ kind, label: childLabel(node.kind, kind) }))
 }
 
-function childLabel(parent: NodeKind, kind: NodeKind): string {
-  if (kind === 'body') return parent === 'body' ? 'Moon' : 'Planet'
-  if (kind === 'world') return 'World surface'
-  return KIND_LABELS[kind]
-}
-
-/** What level something is: a galaxy, a star system, a planet (a body round a star) or a moon (one round a body). */
-export const levelLabel = (kind: NodeKind, parentKind: NodeKind | undefined): string => (kind !== 'body' ? KIND_LABELS[kind] : parentKind === 'body' ? 'Moon' : 'Planet')
+const childLabel = (parent: NodeKind, kind: NodeKind): string => (kind === 'world' ? 'World surface' : levelLabel(kind, parent))
 
 export const kindLabel = (node: SpatialNode, nodes: SpatialNode[]): string => levelLabel(node.kind, nodes.find((n) => n.id === node.parentId)?.kind)
 

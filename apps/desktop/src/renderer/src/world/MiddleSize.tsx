@@ -71,7 +71,7 @@ export function MiddleSize({ worldId }: { worldId: string }) {
     }
   }, [worldId])
   return (
-    <div ref={hud} className="middle-size" role="status" aria-label="Resizing" hidden={label === null}>
+    <div ref={hud} className="middle-size view-control" role="status" aria-label="Resizing" hidden={label === null}>
       {label}
     </div>
   )

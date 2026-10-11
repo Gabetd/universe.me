@@ -224,7 +224,7 @@ function SpeedPicker() {
 function TerritoryLegend({ holders }: { holders: Map<string, Faction> }) {
   const factions = [...new Set(holders.values())]
   return (
-    <aside className="territory-legend" aria-label="Territory">
+    <aside className="territory-legend view-control" aria-label="Territory">
       {factions.length ? (
         factions.map((f) => (
           <button key={f.id} className="link" onClick={() => showFaction(f.id)}>
@@ -246,7 +246,7 @@ function ToolOptions({ view }: { view: EditorView }) {
   const onSurface = showsSurface(view)
   if (!((onSurface && (tool === 'place' || isBrushTool(tool))) || view === 'globe')) return null
   return (
-    <aside className="tool-options" aria-label="Tool options">
+    <aside className="tool-options view-control" aria-label="Tool options">
       {onSurface && tool === 'place' && (
         <select aria-label="Blueprint to place" value={placeBlueprintId} onChange={(e) => set({ placeBlueprintId: e.target.value })}>
           <BlueprintOptions />

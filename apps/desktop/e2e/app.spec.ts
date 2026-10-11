@@ -40,7 +40,6 @@ test('create a universe, build a hierarchy, undo/redo, and reopen it', async ({ 
 
   // Everything was written to disk: close and reopen from the recent list.
   await closeProject(app)
-  await expect(page.getByText('Recent')).toBeVisible()
   await page.getByRole('button', { name: /Aerth Saga/ }).click()
   await expect(row(page, 'Luna')).toHaveCount(1)
   await expect(row(page, 'Marrs')).toHaveCount(0)

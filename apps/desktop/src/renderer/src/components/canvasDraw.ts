@@ -21,6 +21,13 @@ export function targetAt<T extends { x: number; y: number; r: number }>(targets:
   return best
 }
 
+/** How far a point is from a line segment. */
+export function distanceToSegment(x: number, y: number, [ax, ay]: readonly [number, number], [bx, by]: readonly [number, number]): number {
+  const [dx, dy] = [bx - ax, by - ay]
+  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)))
+  return Math.hypot(x - (ax + t * dx), y - (ay + t * dy))
+}
+
 /**
  * Draws a canvas every frame: its pixels sized to its box at the screen's
  * density, the context in CSS px. `draw` is told when the canvas was resized

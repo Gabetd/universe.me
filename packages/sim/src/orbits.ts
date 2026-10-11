@@ -1,4 +1,4 @@
-import { AU_KM, massOfRadius, orbitId, radiusOfMass, starId, type Orbit, type OrbitFields, type SpatialNode, type Star } from '@universe/core'
+import { AU_KM, EARTH_RADIUS_KM, massOfRadius, orbitId, radiusOfMass, starId, worldRadius, type Command, type Orbit, type OrbitFields, type SpatialNode, type Star } from '@universe/core'
 import { RAD, TAU, rng, subSeed, wrapTau } from '@universe/procgen'
 import { GM_EARTH, GM_SUN, starInfo, type StarInfo } from './star'
 
@@ -40,7 +40,7 @@ export const EARTH_ORBIT: OrbitFields = {
   rotationHours: 23.9345,
   axialTiltDeg: 23.44,
   massEarth: 1,
-  radiusKm: 6371,
+  radiusKm: EARTH_RADIUS_KM,
   monthNames: null
 }
 
@@ -196,6 +196,17 @@ export function unclaimedPlanets(system: SystemModel, systemNode: SpatialNode, n
 export function orbitFields(o: OrbitFields): OrbitFields {
   const { semiMajorAxisKm, eccentricity, inclinationDeg, phaseDeg, rotationHours, axialTiltDeg, massEarth, radiusKm, monthNames, massFollowsSize } = o
   return { semiMajorAxisKm, eccentricity, inclinationDeg, phaseDeg, rotationHours, axialTiltDeg, massEarth, radiusKm, monthNames, ...(massFollowsSize === false && { massFollowsSize }) }
+}
+
+/**
+ * Sets a body's mass: while it follows the body's size, the size follows it
+ * instead (its world's radius, which the simulation weighs it by, if it has
+ * one; else the body's own); unlinked, the mass is its own.
+ */
+export function massCommand(bodyId: string, orbit: OrbitFields, worldId: string | undefined, massEarth: number): Command {
+  if (orbit.massFollowsSize !== false && worldId) return { type: 'world.update', payload: { id: worldId, patch: { radiusKm: worldRadius(radiusOfMass(massEarth)) } } }
+  const patch = orbit.massFollowsSize === false ? { massEarth } : { radiusKm: Math.round(radiusOfMass(massEarth)) }
+  return { type: 'orbit.set', payload: { bodyId, orbit: { ...orbitFields(orbit), ...patch } } }
 }
 
 /** Solves Kepler's equation M = E − e·sin E for the eccentric anomaly. */

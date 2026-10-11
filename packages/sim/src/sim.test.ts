@@ -1,6 +1,6 @@
 import { AU_KM, DEFAULT_CALENDAR, massOfRadius, orbitId, type Orbit, type SpatialNode } from '@universe/core'
 import { describe, expect, it } from 'vitest'
-import { DAY_S, EARTH_ORBIT, MOON_ORBIT, claimGenerated, claimPlanet, deriveCalendar, generatedPlanets, luminosityOf, moonPhase, orbitPosition, skyEvents, starInfo, systemModel, unclaimedPlanets, worldCalendar, worldClimate } from './index'
+import { DAY_S, EARTH_ORBIT, MOON_ORBIT, claimGenerated, claimPlanet, deriveCalendar, generatedPlanets, luminosityOf, massCommand, moonPhase, orbitPosition, skyEvents, starInfo, systemModel, unclaimedPlanets, worldCalendar, worldClimate } from './index'
 
 const node = (id: string, parentId: string | null, kind: SpatialNode['kind']): SpatialNode => ({
   id, parentId, kind, name: id, seed: 7, position: { x: 0, y: 0, z: 0 }, notes: '', tags: [], createdAt: '', updatedAt: '', deletedAt: null
@@ -39,6 +39,14 @@ describe('orbits', () => {
     expect(big.bodies.get('earth')!.massEarth).toBeGreaterThan(3)
     const unlinked = systemModel(nodes, { stars: [], orbits: [orbit('earth', { massEarth: 0.5, massFollowsSize: false })] }, 'sys', new Map([['w', 12_742]]))
     expect(unlinked.bodies.get('earth')!.massEarth).toBe(0.5)
+  })
+
+  it('take a mass given as a size while linked (their world’s, else their own), and as their own unlinked', () => {
+    const earth = { ...EARTH_ORBIT, massEarth: 1 }
+    const command = massCommand('b', earth, 'w', massOfRadius(12_742))
+    expect(command).toMatchObject({ type: 'world.update', payload: { id: 'w', patch: { radiusKm: 12_742 } } })
+    expect(massCommand('b', earth, undefined, 0.5)).toMatchObject({ type: 'orbit.set', payload: { bodyId: 'b', orbit: { massEarth: 1, radiusKm: Math.round(6371 * 0.5 ** 0.279) } } })
+    expect(massCommand('b', { ...earth, massFollowsSize: false }, 'w', 0.5)).toMatchObject({ type: 'orbit.set', payload: { orbit: { massEarth: 0.5, massFollowsSize: false } } })
   })
 
   it('follow Kepler: perihelion is closest, aphelion farthest', () => {

@@ -1,12 +1,12 @@
-import type { SpatialNode } from '@universe/core'
-import { useMemo, useRef, useState } from 'react'
+import { bodyLabel, type SpatialNode } from '@universe/core'
+import { useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react'
 import { hueOf } from '@universe/procgen'
 import { kindLabel } from '../kinds'
 import { selectNode, useTimelineOwner, useUi } from '../store'
 import { playheadOf } from '../timeline/timelineStore'
 import { useSystem } from '../world/useSky'
 import type { GeneratedPlanet } from '@universe/sim'
-import { drawOrbits, orbitAt, type OrbitTarget } from './orbitView'
+import { drawOrbits, orbitAt, targetSummary, type OrbitTarget } from './orbitView'
 import { label, targetAt, useCanvasLoop } from './canvasDraw'
 import { spaceBackdrop } from './spaceArt'
 import { CosmosView, isCosmos } from './CosmosView'
@@ -28,9 +28,6 @@ export function Viewport() {
   // A new view per node, so each level starts from its own camera.
   return isCosmos(node) ? <CosmosView key={node.id} node={node} /> : <OrbitViewport key={node.id} node={node} />
 }
-
-/** A body's card goes beside it, clear of it however big it's drawn. */
-const cardX = (t: OrbitTarget) => t.x + t.r
 
 /** A star system or a planet with its moons: bodies where their orbits put them. */
 function OrbitViewport({ node }: { node: SpatialNode }) {
@@ -60,10 +57,9 @@ function OrbitViewport({ node }: { node: SpatialNode }) {
   const unclaimed = useUnclaimedPlanets(node)
   const [picked, setPicked] = useState<{ planet: GeneratedPlanet; x: number; y: number; withWorld: boolean } | null>(null)
 
+  // What's pointed at, and its card, which follows it round each frame.
   const hover = useRef<string | null>(null)
-  // What's pointed at, for its card; the card follows it round each frame.
-  const [hovered, setHovered] = useState<OrbitTarget | null>(null)
-  const card = useRef<HTMLDivElement>(null)
+  const card = useRef<HoverCardHandle>(null)
   const targets = useRef<OrbitTarget[]>([])
 
   useCanvasLoop(canvasRef, (ctx, w, h) => {
@@ -85,8 +81,8 @@ function OrbitViewport({ node }: { node: SpatialNode }) {
       : []
     const middle = !isSystem && world && targets.current.find((x) => x.id === world.id)
     if (middle) label(ctx, `World: ${world.name}`, middle.x, middle.y + middle.r + 14, middle.id === hover.current)
-    const shown = hover.current && card.current && targets.current.find((x) => x.id === hover.current)
-    if (shown) Object.assign(card.current!.style, { left: `${cardX(shown) + 14}px`, top: `${shown.y + 10}px` })
+    const shown = hover.current && targets.current.find((x) => x.id === hover.current)
+    if (shown) card.current?.place(shown)
     if (children.length === 0 && !unclaimed.length) {
       ctx.fillStyle = 'rgba(200,210,240,0.55)'
       ctx.font = '14px system-ui, sans-serif'
@@ -102,8 +98,9 @@ function OrbitViewport({ node }: { node: SpatialNode }) {
     return targetAt(targets.current, x, y) ?? orbitAt(targets.current, x, y)
   }
   const point = (t: OrbitTarget | null) => {
+    if ((t?.id ?? null) === hover.current) return
     hover.current = t?.id ?? null
-    if (t?.id !== hovered?.id) setHovered(t)
+    card.current?.show(t && system ? { target: t, summary: targetSummary(system, t, owner ? playheadOf(owner.id) : 0) } : null)
   }
   const generated = (id: string) => unclaimed.find((g) => g.orbit.bodyId === id)
 
@@ -148,9 +145,7 @@ function OrbitViewport({ node }: { node: SpatialNode }) {
         <div className="viewport-title">{node.name}</div>
         <div className="muted small">{kindLabel(node, nodes)} view</div>
       </div>
-      {hovered && hovered.id !== picked?.planet.orbit.bodyId && (
-        <ClaimCard ref={card} x={cardX(hovered)} y={hovered.y} level={hovered.level} name={hovered.name} description={hovered.summary} />
-      )}
+      <HoverCard ref={card} hiddenFor={picked?.planet.orbit.bodyId} />
       {picked && (
         <ClaimCard
           x={picked.x}
@@ -171,4 +166,36 @@ function OrbitViewport({ node }: { node: SpatialNode }) {
       </div>
     </div>
   )
+}
+
+/** Where a body's card goes: beside it, clear of it however big it's drawn. */
+const beside = (t: OrbitTarget) => [t.x + t.r, t.y] as const
+
+interface HoverCardHandle {
+  show(card: { target: OrbitTarget; summary: string } | null): void
+  /** Keeps it beside its body as the body moves. */
+  place(target: OrbitTarget): void
+}
+
+/**
+ * The card of the body pointed at (or whose orbit is): its level, its name and
+ * how it goes round. On its own, so pointing at things re-renders only it;
+ * not shown for the planet whose claim card is open (`hiddenFor`).
+ */
+function HoverCard({ ref, hiddenFor }: { ref: Ref<HoverCardHandle>; hiddenFor?: string }) {
+  const [card, setCard] = useState<{ target: OrbitTarget; summary: string } | null>(null)
+  const el = useRef<HTMLDivElement>(null)
+  useImperativeHandle(ref, () => ({
+    show: setCard,
+    place: (t) => {
+      const style = el.current?.style
+      const [x, y] = beside(t)
+      const [left, top] = [`${x}px`, `${y}px`]
+      if (style && (style.left !== left || style.top !== top)) Object.assign(style, { left, top })
+    }
+  }))
+  if (!card || card.target.id === hiddenFor) return null
+  const { target, summary } = card
+  const [x, y] = beside(target)
+  return <ClaimCard ref={el} x={x} y={y} level={bodyLabel(!!target.orbit.parentBodyId)} name={target.name} description={summary} />
 }

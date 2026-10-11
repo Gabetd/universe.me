@@ -234,7 +234,11 @@ export async function menu(app: ElectronApplication, top: string, item: string):
   }, [top, item])
 }
 
-export const closeProject = (app: ElectronApplication) => menu(app, 'File', 'Close Project')
+/** Closes the project, back to the start screen and its recent list (reopening from it before it's there races it). */
+export async function closeProject(app: ElectronApplication): Promise<void> {
+  await menu(app, 'File', 'Close Project')
+  await expect((await app.firstWindow()).getByText('Recent')).toBeVisible()
+}
 
 /** Waits for `count` frames of the page. */
 export const frames = (page: Page, count = 2) =>

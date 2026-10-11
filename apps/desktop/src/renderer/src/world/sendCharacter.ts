@@ -1,4 +1,4 @@
-import { characterAt, walkingTime, type LatLon } from '@universe/core'
+import { EARTH_RADIUS_KM, characterAt, walkingTime, type LatLon } from '@universe/core'
 import { useUi } from '../store'
 
 /**
@@ -10,7 +10,7 @@ export function sendCharacter(characterId: string, to: LatLon, at: number, event
   const { timeline, worlds, execute } = useUi.getState()
   const character = timeline.characters.find((c) => c.id === characterId)
   if (!character) return
-  const radiusKm = worlds.find((w) => w.id === character.ownerId)?.settings.radiusKm ?? 6371
+  const radiusKm = worlds.find((w) => w.id === character.ownerId)?.settings.radiusKm ?? EARTH_RADIUS_KM
   const earlier = character.stops.filter((s) => s.at < at)
   const from = earlier.length ? characterAt({ ...character, stops: earlier }, at) : undefined
   const lastArrival = earlier.at(-1)?.at ?? at

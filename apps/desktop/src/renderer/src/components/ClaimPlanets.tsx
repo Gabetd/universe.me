@@ -31,14 +31,16 @@ export function useUnclaimedPlanets(node: SpatialNode | undefined): GeneratedPla
 }
 
 /**
- * A card next to something on a map, (x, y) px from the view's corner: its
- * level (a galaxy, a planet…), what it is, and a button to claim it if it's
- * only generated. `ref` lets a view move it along with what it's about.
+ * A card next to something on a map, at (x, y) px from the view's corner
+ * (offset beside it by its style): its level (a galaxy, a planet…), what it
+ * is, and a button to claim it if it's only generated. With nothing to press
+ * it's only a label, which lets the pointer through so it never takes the
+ * hover from what it's about. `ref` lets a view move it along with that.
  */
 export function ClaimCard({ x, y, level, name, description, onClaim, children, ref }: { x: number; y: number; level?: string; name: string; description: string; onClaim?: () => void; children?: ReactNode; ref?: Ref<HTMLDivElement> }) {
+  const passive = !onClaim && !children
   return (
-    // One with nothing to press lets the pointer through, so it never takes the hover from what it's about.
-    <div ref={ref} className="cosmos-card" style={{ left: x + 14, top: y + 10, pointerEvents: onClaim || children ? undefined : 'none' }} role="dialog" aria-label={name}>
+    <div ref={ref} className={`cosmos-card${passive ? ' passive' : ''}`} style={{ left: x, top: y }} role={passive ? 'tooltip' : 'dialog'} aria-label={name}>
       {level && <span className="card-level">{level}</span>}
       <b>{name}</b>
       <span className="muted small">{description}</span>
