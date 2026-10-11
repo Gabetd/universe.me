@@ -344,7 +344,7 @@ function RiverLines({ worldId, model, change, scale }: { worldId: string; model:
   )
 }
 
-/** Directions along a river with their corners cut (as on the map), back on the sphere. */
+/** Directions along a river, curved through its cells (as on the map), back on the sphere. */
 const smoothDirs = (dirs: Vec3[]): Vec3[] =>
   smoothPath(dirs).map(([x, y, z]) => {
     const len = Math.hypot(x, y, z)
