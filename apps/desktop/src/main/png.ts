@@ -1,24 +1,11 @@
-import { deflateSync } from 'node:zlib'
-
-/** CRC-32 of each byte value, for PNG's chunk checksums. */
-const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
-  let c = n
-  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
-  return c >>> 0
-})
-
-function crc32(bytes: Uint8Array): number {
-  let c = 0xffffffff
-  for (const b of bytes) c = CRC_TABLE[(c ^ b) & 0xff]! ^ (c >>> 8)
-  return (c ^ 0xffffffff) >>> 0
-}
+import { crc32, deflateSync } from 'node:zlib'
 
 function chunk(type: string, data: Uint8Array): Buffer {
   const head = Buffer.alloc(8)
   head.writeUInt32BE(data.length, 0)
   head.write(type, 4, 'ascii')
   const crc = Buffer.alloc(4)
-  crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])), 0)
+  crc.writeUInt32BE(crc32(data, crc32(head.subarray(4))), 0)
   return Buffer.concat([head, data, crc])
 }
 

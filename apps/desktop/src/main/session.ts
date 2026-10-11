@@ -119,6 +119,11 @@ export class Session {
     this.proposals = []
   }
 
+  /** Applies a command and gives back nothing: for a plugin's many changes, the state is worked out once they're done. */
+  apply(command: unknown, source: CommandSource): void {
+    this.require().bus.execute(command, source)
+  }
+
   /** Applies a command. An AI client's doesn't move the selection: the user may be in the middle of something. */
   execute(command: unknown, source: CommandSource = 'user'): AppState {
     const result = this.require().bus.execute(command, source)
@@ -134,18 +139,22 @@ export class Session {
 
   /** A plugin's latest `n` changes taken back, and not to be redone: a run that failed part way leaves nothing behind. */
   undoLatest(n: number): AppState {
-    const { bus } = this.require()
-    for (let k = Math.min(n, bus.latestFrom('plugin')); k > 0; k--) bus.undo()
-    bus.clearRedo()
+    this.undoFrom('plugin', n)
+    this.require().bus.clearRedo()
     return this.state()
   }
 
   /** Every one of the latest changes an AI client made, one after another, taken back. */
   undoAi(): AppState {
-    const { bus } = this.require()
-    for (let n = bus.latestFrom('ai'); n > 0; n--) bus.undo()
+    this.undoFrom('ai')
     this.focus = undefined
     return this.state()
+  }
+
+  /** The latest changes from `source`, one after another (at most `most` of them), taken back. */
+  private undoFrom(source: CommandSource, most = Infinity): void {
+    const { bus } = this.require()
+    for (let n = Math.min(most, bus.latestFrom(source)); n > 0; n--) bus.undo()
   }
 
   /** Holds an AI client's change for the user to accept or reject; returns its id. It must be a valid command, and only so many wait at once. */

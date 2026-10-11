@@ -557,8 +557,9 @@ export const READS = [
       const sea = model.settings.seaLevel
       return {
         places: places.map((p) => {
-          const { face, cell } = model.cellAt(...latLonToDir(p.lat, p.lon))
-          const elevation = model.sampleHeight(...latLonToDir(p.lat, p.lon)) - sea
+          const dir = latLonToDir(p.lat, p.lon)
+          const { face, cell } = model.cellAt(...dir)
+          const elevation = model.sampleHeight(...dir) - sea
           const lake = water.lakes[water.lakeOf[planetCell(face, cell)]!]
           const where = regionsHere(p, regions).map((r) => r.name)
           return {
@@ -578,8 +579,8 @@ export const READS = [
     name: 'get_world_map',
     title: 'The world’s map',
     description:
-      'A world’s map as an image: every pixel’s colour as the app’s map shows it (land by its biome and height, the sea and lakes by their depth), in the equirectangular projection (x is longitude from −180° at the left, y latitude from 90° at the top), as RGBA bytes in base64. Width 64 to 2048 (512 if left out); the height is half of it.',
-    input: z.object({ worldId: WorldId, width: QueryNumber.int().min(64).max(2048).optional() }),
+      'A world’s map as an image: every pixel’s colour as the app’s map shows it (land by its biome and height, the sea and lakes by their depth), in the equirectangular projection (x is longitude from −180° at the left, y latitude from 90° at the top), as RGBA bytes in base64. Width 256, 512 (if left out), 1024 or 2048; the height is half of it.',
+    input: z.object({ worldId: WorldId, width: QueryNumber.pipe(z.union([z.literal(256), z.literal(512), z.literal(1024), z.literal(2048)])).optional() }),
     route: { method: 'GET', path: '/worlds/:worldId/map' },
     run: async ({ models: m }, { worldId, width = 512 }) => {
       const model = await m.terrainModel(worldId)

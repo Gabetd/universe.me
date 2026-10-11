@@ -1,4 +1,4 @@
-import { DEFAULT_CONTEXT } from './command-kit'
+import { DEFAULT_CONTEXT, batchOf } from './command-kit'
 import { Command, CommandError, applyCommand, type CommandContext, type HandlerResult, type Target } from './commands'
 import type { CommandSource } from './schema'
 import type { Store } from './store'
@@ -78,8 +78,7 @@ export class CommandBus {
   group(n: number): void {
     if (n < 2 || n > this.undoStack.length) return
     const entries = this.undoStack.splice(-n)
-    const batch = (commands: Command[]): Command => ({ type: 'batch', payload: { commands } })
-    this.undoStack.push({ command: batch(entries.map((e) => e.command)), inverse: batch(entries.map((e) => e.inverse).reverse()), source: entries.at(-1)!.source })
+    this.undoStack.push({ command: batchOf(entries.map((e) => e.command)), inverse: batchOf(entries.map((e) => e.inverse).reverse()), source: entries.at(-1)!.source })
   }
 
   /** Validates and applies a command. Throws `CommandError` if it is invalid. */

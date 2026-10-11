@@ -30,9 +30,11 @@ export interface PluginLimits {
   timeMs: number
   /** How many calls into the app a run can make. */
   calls: number
+  /** How many changes to the universe a run can make (the host counts them). */
+  changes: number
 }
 
-export const DEFAULT_LIMITS: PluginLimits = { memory: 256 * 1024 * 1024, timeMs: 120_000, calls: 20_000 }
+export const DEFAULT_LIMITS: PluginLimits = { memory: 256 * 1024 * 1024, timeMs: 120_000, calls: 20_000, changes: 10_000 }
 
 export interface PluginRun {
   /** The plugin's modules by path in its folder (`main.js`, `lib/names.js`…). */
@@ -59,13 +61,15 @@ export class PluginError extends Error {
 }
 
 let engine: Promise<QuickJSWASMModule> | undefined
-let wasmBinary: ArrayBuffer | undefined
-/** QuickJS, loaded once (from `wasm` if given: where the app is bundled, its file isn't where the package would look). */
-const quickjs = () => (engine ??= newQuickJSWASMModuleFromVariant(wasmBinary ? newVariant(variant, { wasmBinary }) : variant))
+/** A compiled WebAssembly.Module (typed loosely: this package's code needs no DOM types). */
+type WasmModule = NonNullable<Parameters<typeof newVariant>[1]['wasmModule']>
+let wasmModule: WasmModule | undefined
+/** QuickJS, loaded once (from `useWasm`'s module if given: where the app is bundled, its file isn't where the package would look). */
+const quickjs = () => (engine ??= newQuickJSWASMModuleFromVariant(wasmModule ? newVariant(variant, { wasmModule }) : variant))
 
-/** Where QuickJS's WebAssembly comes from, if not its package's own file: before the first run. */
-export function useWasm(bytes: ArrayBuffer): void {
-  wasmBinary ??= bytes
+/** QuickJS's WebAssembly, compiled once by the host (and shared by its workers), if not from its package's own file: before the first run. */
+export function useWasm(module: WasmModule): void {
+  wasmModule ??= module
 }
 
 export async function runPlugin(run: PluginRun): Promise<PluginOutput> {
@@ -137,15 +141,29 @@ async function execute(vm: QuickJSContext, runtime: QuickJSRuntime, run: PluginR
     })
 
   const host = vm.newObject()
-  const fns: QuickJSHandle[] = [
-    later('call', (op, json) => run.host.call(String(op), JSON.parse(String(json)))),
-    later('pickFile', (json) => run.host.pickFile(JSON.parse(String(json)))),
-    later('png', (w, h, rgba) => run.host.png(Number(w), Number(h), String(rgba))),
-    vm.newFunction('log', (line) => void run.host.log(String(vm.dump(line)).slice(0, 2000)))
-  ]
-  for (const [i, name] of ['call', 'pickFile', 'png', 'log'].entries()) vm.setProp(host, name, fns[i]!)
+  const fns = {
+    call: later('call', (op, json) => run.host.call(String(op), JSON.parse(String(json)))),
+    pickFile: later('pickFile', (json) => run.host.pickFile(JSON.parse(String(json)))),
+    png: later('png', (w, h, rgba) => run.host.png(Number(w), Number(h), String(rgba))),
+    log: vm.newFunction('log', (line) => void run.host.log(String(vm.dump(line)).slice(0, 2000))),
+    toBase64: vm.newFunction('toBase64', (buffer) => {
+      const bytes = vm.getArrayBuffer(buffer)
+      try {
+        return vm.newString(Buffer.from(bytes.value).toString('base64'))
+      } finally {
+        bytes.dispose()
+      }
+    }),
+    fromBase64: vm.newFunction('fromBase64', (text) => {
+      const bytes = Buffer.from(vm.getString(text), 'base64')
+      return vm.newArrayBuffer(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))
+    })
+  }
+  for (const [name, fn] of Object.entries(fns)) {
+    vm.setProp(host, name, fn)
+    fn.dispose()
+  }
   vm.setProp(vm.global, '__host', host)
-  fns.forEach((f) => f.dispose())
   host.dispose()
   vm.unwrapResult(vm.evalCode(PRELUDE, 'universe.js')).dispose()
 

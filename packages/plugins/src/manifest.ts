@@ -28,9 +28,7 @@ export const PluginOption = z.discriminatedUnion('type', [
 export type PluginOption = z.infer<typeof PluginOption>
 
 /** What a generator or exporter works on: a world surface, or the whole universe. */
-export const PLUGIN_TARGETS = ['world', 'universe'] as const
-export const PluginTarget = z.enum(PLUGIN_TARGETS)
-export type PluginTarget = z.infer<typeof PluginTarget>
+const PluginTarget = z.enum(['world', 'universe'])
 
 /** The things a name generator can name (in their right-click menus). */
 export const NAMEABLE = ['character', 'faction', 'region', 'structure', 'node', 'species', 'event'] as const
@@ -38,6 +36,8 @@ export const Nameable = z.enum(NAMEABLE)
 export type Nameable = z.infer<typeof Nameable>
 
 const Contribution = { id: Id, title: Label, description: Description, options: z.array(PluginOption).max(40).default([]) }
+/** Generators and exporters: each on a world or the universe. */
+const Targeted = z.array(z.object({ ...Contribution, on: PluginTarget.default('world') })).max(100).default([])
 
 export const PluginManifest = z.object({
   id: z
@@ -53,8 +53,8 @@ export const PluginManifest = z.object({
     .string()
     .regex(/^(?!.*\.\.)[\w-][\w./-]*\.m?js$/, 'main is a .js file in the plugin’s folder')
     .default('main.js'),
-  generators: z.array(z.object({ ...Contribution, on: PluginTarget.default('world') })).max(100).default([]),
-  exporters: z.array(z.object({ ...Contribution, on: PluginTarget.default('world') })).max(100).default([]),
+  generators: Targeted,
+  exporters: Targeted,
   names: z.array(z.object({ ...Contribution, for: z.array(Nameable).min(1) })).max(100).default([])
 })
 export type PluginManifest = z.infer<typeof PluginManifest>
@@ -85,3 +85,16 @@ export function readManifest(text: string): { manifest: PluginManifest } | { err
 /** A contribution's options as they start: each one's default. */
 export const defaultOptions = (options: readonly PluginOption[]): Record<string, unknown> =>
   Object.fromEntries(options.map((o) => [o.id, o.type === 'choice' ? (o.default ?? o.choices[0]) : o.default]))
+
+/** A run's options: each one the contribution asks for, the value given if it fits (a number clamped to its range, a choice it offers), else its default. */
+export function optionsFor(options: readonly PluginOption[], given: Record<string, unknown>): Record<string, unknown> {
+  const out = defaultOptions(options)
+  for (const o of options) {
+    const v = given[o.id]
+    if (o.type === 'number' && typeof v === 'number' && Number.isFinite(v)) out[o.id] = Math.min(o.max ?? Infinity, Math.max(o.min ?? -Infinity, v))
+    else if (o.type === 'text' && typeof v === 'string') out[o.id] = v.slice(0, 10_000)
+    else if (o.type === 'flag' && typeof v === 'boolean') out[o.id] = v
+    else if (o.type === 'choice' && typeof v === 'string' && o.choices.includes(v)) out[o.id] = v
+  }
+  return out
+}

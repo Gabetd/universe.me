@@ -1,12 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
-import { operationNamed, runOperation, type ApiContext, type ApiHost } from '@universe/api'
-import { defaultOptions, readManifest, type ContributionKind, type PluginManifest, type PluginOption } from '@universe/plugins/manifest'
-import type { PluginOutput, PluginRun } from '@universe/plugins'
+import { operationNamed, writePrivate, type ApiContext, type ApiHost } from '@universe/api'
+import { optionsFor, readManifest, type ContributionKind, type PluginManifest } from '@universe/plugins/manifest'
+import { DEFAULT_LIMITS, type PluginOutput } from '@universe/plugins'
 import type { AppState, PluginInfo, PluginRunRequest, PluginRunResult } from '../shared/api'
-import { encodePng } from './png'
-import type { FromWorker, ToWorker } from './plugin.worker'
+import type { FromWorker, ToWorker, WorkerRun } from './plugin.worker'
 import createPluginWorker from './plugin.worker?nodeWorker'
 import quickjsWasm from '@jitl/quickjs-wasmfile-release-sync/wasm?asset'
 import type { Session } from './session'
@@ -45,26 +44,19 @@ export interface PluginApp {
   trash(path: string): Promise<void>
 }
 
-/** A run's limits: what a plugin may change, and how big a file it may read or make. */
-const MAX_CHANGES = 10_000
-const MAX_CODE_BYTES = 10 * 1024 * 1024
-const MAX_CODE_FILES = 500
+/** How big a file a plugin may read. */
 const MAX_PICKED_BYTES = 20 * 1024 * 1024
 const MAX_LOG = 500
-/** How long a run may take (the sandbox stops it first; this is for a worker that doesn't answer). */
-const RUN_MS = 130_000
+/** How many of an exporter's files are written at once. */
+const SAVING_AT_ONCE = 16
+/** How long a run may take: the sandbox stops it first; this is for a worker that doesn't answer. */
+const RUN_MS = DEFAULT_LIMITS.timeMs + 10_000
 
 interface Settings {
   /** Folders of the user's the app points to. */
   folders: string[]
   /** Plugins turned off, by id. */
   disabled: string[]
-}
-
-interface Found {
-  info: PluginInfo
-  /** Its modules by path, read when it runs. */
-  folder: string
 }
 
 export class Plugins {
@@ -85,7 +77,13 @@ export class Plugins {
   }
 
   list(): PluginInfo[] {
-    return this.found().map((f) => f.info)
+    const seen = new Set<string>()
+    return this.folders().map(({ folder, linked }) => {
+      const info = this.read(folder, linked)
+      if (seen.has(info.id)) return { ...info, error: `Another plugin has the id ${info.id}` }
+      seen.add(info.id)
+      return info
+    })
   }
 
   async add(): Promise<PluginInfo[] | null> {
@@ -114,9 +112,9 @@ export class Plugins {
   }
 
   async remove(id: string): Promise<PluginInfo[]> {
-    const found = this.find(id)
-    if (found.info.linked) this.save({ ...this.settings, folders: this.settings.folders.filter((f) => f !== found.folder) })
-    else await this.app.trash(found.folder)
+    const plugin = this.find(id)
+    if (plugin.linked) this.save({ ...this.settings, folders: this.settings.folders.filter((f) => f !== plugin.path) })
+    else await this.app.trash(plugin.path)
     return this.list()
   }
 
@@ -127,13 +125,13 @@ export class Plugins {
   }
 
   show(id: string): Promise<void> {
-    return this.app.show(this.find(id).folder)
+    return this.app.show(this.find(id).path)
   }
 
   /** Runs one contribution of a plugin: its changes made one undoable step, its files saved where the user says, or its names given back. */
   async run(request: PluginRunRequest): Promise<PluginRunResult> {
     if (this.running) throw new Error('A plugin is running already: wait for it to finish')
-    const { info, folder } = this.find(request.pluginId)
+    const info = this.find(request.pluginId)
     if (info.error || !info.manifest) throw new Error(`${info.id} can’t run: ${info.error ?? 'it has no plugin.json'}`)
     if (!info.enabled) throw new Error(`${info.manifest.name} is turned off`)
     const contribution = info.manifest[request.kind].find((c) => c.id === request.id)
@@ -156,13 +154,13 @@ export class Plugins {
     const summaries: string[] = []
     const ctx = this.app.context((command, summary) => {
       if (request.kind !== 'generators') throw new Error('Only a generator can change the universe')
-      if (++changes > MAX_CHANGES) throw new Error(`A plugin can make at most ${MAX_CHANGES} changes in one run`)
-      this.app.session.execute(command, 'plugin')
+      if (++changes > DEFAULT_LIMITS.changes) throw new Error(`A plugin can make at most ${DEFAULT_LIMITS.changes} changes in one run`)
+      this.app.session.apply(command, 'plugin')
       summaries.push(summary)
       return { status: 'applied' }
     })
     try {
-      const output = await this.work({ files: readCode(folder), main: info.manifest.main, kind: request.kind, id: request.id, input }, request.kind, ctx, log)
+      const output = await this.work({ folder: info.path, main: info.manifest.main, kind: request.kind, id: request.id, input }, ctx, log)
       const summary = (output.kind === 'generators' && output.summary) || summaryOf(summaries, contribution.title)
       if (changes) this.app.changed(this.app.session.groupLatest(changes), `${info.manifest.name}: ${summary}`)
       return { summary, changes, log, ...(output.kind === 'exporters' && { saved: await this.saveFiles(output.files, contribution.title) }), ...(output.kind === 'names' && { names: output.names }) }
@@ -176,7 +174,8 @@ export class Plugins {
   }
 
   /** The run in a worker of its own, answering what the plugin asks. */
-  private work(run: Omit<PluginRun, 'host'>, kind: ContributionKind, ctx: ApiContext, log: string[]): Promise<PluginOutput> {
+  private async work(run: WorkerRun, ctx: ApiContext, log: string[]): Promise<PluginOutput> {
+    const wasm = await quickjsModule()
     const worker = createPluginWorker({})
     const send = (message: ToWorker) => worker.postMessage(message)
     return new Promise<PluginOutput>((resolve, reject) => {
@@ -195,7 +194,7 @@ export class Plugins {
           finish()
           reject(new Error(message.error))
         } else
-          this.answer(message, kind, ctx).then(
+          this.answer(message, run.kind, ctx).then(
             (value) => send({ type: 'answer', ask: message.ask, ok: true, value }),
             (err: Error) => send({ type: 'answer', ask: message.ask, ok: false, error: err.message })
           )
@@ -205,7 +204,7 @@ export class Plugins {
         reject(err)
       })
       worker.on('exit', () => reject(new Error('It stopped')))
-      send({ type: 'run', run, wasm: wasm() })
+      send({ type: 'run', run, wasm })
     })
   }
 
@@ -216,18 +215,14 @@ export class Plugins {
       const op = operationNamed(name)
       if (!op) throw new Error(`There is no operation ${name}`)
       if (op.write && kind !== 'generators') throw new Error(`${name} changes the universe, and only a generator can`)
-      return runOperation(ctx, name, input)
-    }
-    if (what === 'png') {
-      const [width, height, rgba] = args as [number, number, string]
-      return encodePng(width, height, Buffer.from(rgba, 'base64')).toString('base64')
+      return op.run(ctx, op.input.parse(input))
     }
     const [options] = args as [{ title?: string; extensions?: string[] }]
     const extensions = (options?.extensions ?? []).filter((e) => typeof e === 'string' && /^\w{1,10}$/.test(e))
     const path = await this.app.dialogs.openFile(String(options?.title ?? 'A plugin asks for a file'), extensions)
     if (!path) return null
-    if (statSync(path).size > MAX_PICKED_BYTES) throw new Error('That file is too big for a plugin to read (20 MB at most)')
-    return { name: basename(path), text: readFileSync(path, 'utf8') }
+    if ((await stat(path)).size > MAX_PICKED_BYTES) throw new Error('That file is too big for a plugin to read (20 MB at most)')
+    return { name: basename(path), text: await readFile(path, 'utf8') }
   }
 
   /** An exporter's files, written where the user says: one file where they save it, several in a folder they pick. */
@@ -242,29 +237,21 @@ export class Plugins {
     }
     const dir = await this.app.dialogs.folder(`${title}: pick a folder for its ${files.length} files`, 'Save here')
     if (!dir) return []
-    const saved: string[] = []
-    for (const f of files) {
-      const path = join(dir, safePath(f.name))
-      await mkdir(dirname(path), { recursive: true })
-      await writeFile(path, bytes(f))
-      saved.push(path)
-    }
-    return saved
+    const paths = files.map((f) => join(dir, safePath(f.name)))
+    await Promise.all([...new Set(paths.map((p) => dirname(p)))].map((d) => mkdir(d, { recursive: true })))
+    // A few at a time: a wiki can be thousands of pages.
+    for (let i = 0; i < files.length; i += SAVING_AT_ONCE) await Promise.all(files.slice(i, i + SAVING_AT_ONCE).map((f, k) => writeFile(paths[i + k]!, bytes(f))))
+    return paths
   }
 
-  private found(): Found[] {
+  /** Every plugin folder: the app's own plugins folder's, then the user's it points to. */
+  private folders(): { folder: string; linked: boolean }[] {
     const own = existsSync(this.folder)
       ? readdirSync(this.folder, { withFileTypes: true })
           .filter((d) => d.isDirectory())
           .map((d) => ({ folder: join(this.folder, d.name), linked: false }))
       : []
-    const seen = new Set<string>()
-    return [...own, ...this.settings.folders.map((folder) => ({ folder, linked: true }))].map(({ folder, linked }) => {
-      const info = this.read(folder, linked)
-      if (seen.has(info.id)) return { folder, info: { ...info, error: `Another plugin has the id ${info.id}` } }
-      seen.add(info.id)
-      return { folder, info }
-    })
+    return [...own, ...this.settings.folders.map((folder) => ({ folder, linked: true }))]
   }
 
   private read(folder: string, linked: boolean): PluginInfo {
@@ -282,8 +269,8 @@ export class Plugins {
     return { ...base, id: manifest.id, manifest, enabled: !this.settings.disabled.includes(manifest.id), log: this.logs.get(manifest.id) ?? [], ...(error && { error }) }
   }
 
-  private find(id: string): Found {
-    const found = this.found().find((f) => f.info.id === id)
+  private find(id: string): PluginInfo {
+    const found = this.list().find((p) => p.id === id)
     if (!found) throw new Error(`There is no plugin ${id}`)
     return found
   }
@@ -307,28 +294,16 @@ export class Plugins {
     }
   }
 
+  /** Kept the user's alone: it says which folders' code runs. */
   private save(settings: Settings): void {
     this.settings = settings
-    writeFileSync(this.file, JSON.stringify(settings, null, 2))
+    writePrivate(this.file, JSON.stringify(settings, null, 2))
   }
 }
 
-/** QuickJS's WebAssembly, read once here (where the app's packaged files can be read) for each run's worker. */
-let wasmBytes: ArrayBuffer | undefined
-const wasm = () => (wasmBytes ??= new Uint8Array(readFileSync(quickjsWasm)).buffer)
-
-/** A run's options: each one the contribution asks for, the user's value if it fits, else its default. */
-function optionsFor(options: readonly PluginOption[], given: Record<string, unknown>): Record<string, unknown> {
-  const out = defaultOptions(options)
-  for (const o of options) {
-    const v = given[o.id]
-    if (o.type === 'number' && typeof v === 'number' && Number.isFinite(v)) out[o.id] = Math.min(o.max ?? Infinity, Math.max(o.min ?? -Infinity, v))
-    else if (o.type === 'text' && typeof v === 'string') out[o.id] = v.slice(0, 10_000)
-    else if (o.type === 'flag' && typeof v === 'boolean') out[o.id] = v
-    else if (o.type === 'choice' && typeof v === 'string' && o.choices.includes(v)) out[o.id] = v
-  }
-  return out
-}
+/** QuickJS's WebAssembly, read (here, where the app's packaged files can be read) and compiled once, and shared with each run's worker. */
+let compiled: Promise<WebAssembly.Module> | undefined
+const quickjsModule = () => (compiled ??= readFile(quickjsWasm).then((bytes) => WebAssembly.compile(bytes)))
 
 /** What a generator did, in words, if it didn't say: its changes' own summaries, the first few. */
 function summaryOf(summaries: string[], title: string): string {
@@ -338,7 +313,7 @@ function summaryOf(summaries: string[], title: string): string {
 }
 
 /** A file name from a plugin, as a path inside the folder it's saved in: never above it, nor absolute. */
-export function safePath(name: string): string {
+function safePath(name: string): string {
   const parts = name
     .replace(/\\/g, '/')
     .split('/')
@@ -347,26 +322,4 @@ export function safePath(name: string): string {
     .filter((p) => p && p !== '.' && p !== '..')
   if (!parts.length) throw new Error(`“${name}” isn’t a file name`)
   return parts.join(sep)
-}
-
-/** A plugin's code: its .js and .mjs files, by path in its folder. */
-function readCode(folder: string): Record<string, string> {
-  const files: Record<string, string> = {}
-  let bytes = 0
-  const walk = (dir: string, depth: number) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue
-      const path = join(dir, entry.name)
-      if (entry.isDirectory()) {
-        if (depth < 8) walk(path, depth + 1)
-      } else if (/\.m?js$/.test(entry.name)) {
-        const text = readFileSync(path, 'utf8')
-        bytes += text.length
-        if (Object.keys(files).length >= MAX_CODE_FILES || bytes > MAX_CODE_BYTES) throw new Error('Its code is too big: 500 files and 10 MB at most')
-        files[relative(folder, path).split(sep).join('/')] = text
-      }
-    }
-  }
-  walk(folder, 0)
-  return files
 }

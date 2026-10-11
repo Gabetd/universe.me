@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultOptions, readManifest } from './manifest'
+import { defaultOptions, optionsFor, readManifest } from './manifest'
 import { resolvePath, runPlugin, type PluginHost, type PluginRun } from './sandbox'
 
 /** A host that answers every operation with what it was asked, and keeps a log. */
@@ -110,7 +110,12 @@ describe('plugin manifests', () => {
       })
     )
     expect('manifest' in read && read.manifest).toMatchObject({ main: 'main.js', exporters: [], generators: [{ on: 'world' }] })
-    if ('manifest' in read) expect(defaultOptions(read.manifest.generators[0]!.options)).toEqual({ count: 5, style: 'Hamlets' })
+    if (!('manifest' in read)) return
+    const options = read.manifest.generators[0]!.options
+    expect(defaultOptions(options)).toEqual({ count: 5, style: 'Hamlets' })
+    // What a run is given: values that fit, else the defaults.
+    expect(optionsFor(options, { count: 0, style: 'Towns' })).toEqual({ count: 1, style: 'Towns' })
+    expect(optionsFor(options, { count: 'many', style: 'Cities', other: 1 })).toEqual({ count: 5, style: 'Hamlets' })
   })
 
   it('say what is wrong with one that is not right', () => {

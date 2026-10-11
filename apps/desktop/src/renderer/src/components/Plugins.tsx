@@ -1,8 +1,8 @@
 import { defaultOptions, type ContributionKind, type PluginOption } from '@universe/plugins/manifest'
 import { useEffect, useState } from 'react'
-import type { PluginInfo } from '../../../shared/api'
-import { contributions, usePlugins, type Naming } from '../pluginStore'
-import { undo, useUi } from '../store'
+import type { PluginInfo, Result } from '../../../shared/api'
+import { contributions, usePlugins } from '../pluginStore'
+import { selectNode, undo, updater, useUi } from '../store'
 import { Modal, dialogStore } from './Modal'
 
 /**
@@ -28,7 +28,7 @@ function Manager() {
   const list = usePlugins((s) => s.list)
   const [error, setError] = useState<string>()
   useEffect(() => void usePlugins.getState().refresh(), [])
-  const act = async (reply: Promise<{ ok: true; value: PluginInfo[] | null } | { ok: false; error: string }>) => {
+  const act = async (reply: Promise<Result<PluginInfo[] | null>>) => {
     const r = await reply
     if (!r.ok) setError(r.error)
     else {
@@ -61,7 +61,7 @@ function Manager() {
   )
 }
 
-function PluginEntry({ plugin, onReply }: { plugin: PluginInfo; onReply(reply: Promise<{ ok: true; value: PluginInfo[] | null } | { ok: false; error: string }>): Promise<void> }) {
+function PluginEntry({ plugin, onReply }: { plugin: PluginInfo; onReply(reply: Promise<Result<PluginInfo[] | null>>): Promise<void> }) {
   const m = plugin.manifest
   const name = m?.name ?? plugin.id
   const worldId = useSelectedWorld()
@@ -105,13 +105,13 @@ function PluginEntry({ plugin, onReply }: { plugin: PluginInfo; onReply(reply: P
 /** The selected world surface, if one is: what a world's generators and exporters run on. */
 function useSelectedWorld(): string | undefined {
   return useUi((s) => {
-    const node = s.nodes.find((n) => n.id === s.selectedId)
+    const node = selectNode(s)
     return node?.kind === 'world' ? node.id : undefined
   })
 }
 
 /** One generator or exporter: what it does, the options it asks for, and running it. */
-export function PluginRunner({ plugin, kind, contribution: c, worldId }: { plugin: PluginInfo; kind: Exclude<ContributionKind, 'names'>; contribution: Contribution; worldId: string | undefined }) {
+function PluginRunner({ plugin, kind, contribution: c, worldId }: { plugin: PluginInfo; kind: Exclude<ContributionKind, 'names'>; contribution: Contribution; worldId: string | undefined }) {
   const [values, setValues] = useState(() => defaultOptions(c.options))
   const running = usePlugins((s) => s.running)
   const needsWorld = c.on === 'world' && !worldId
@@ -172,7 +172,7 @@ function OptionFields({ options, values, onChange }: { options: readonly PluginO
 /** A world's generators and exporters from the plugins turned on, in its inspector. */
 export function WorldPlugins({ worldId }: { worldId: string }) {
   const list = usePlugins((s) => s.list)
-  const found = [...contributions(list, 'generators').map((x) => ({ ...x, kind: 'generators' as const })), ...contributions(list, 'exporters').map((x) => ({ ...x, kind: 'exporters' as const }))].filter((x) => x.contribution.on === 'world')
+  const found = (['generators', 'exporters'] as const).flatMap((kind) => contributions(list, kind).map((x) => ({ ...x, kind }))).filter((x) => x.contribution.on === 'world')
   if (!found.length) return null
   return (
     <section className="inspector-section" aria-label="Plugins">
@@ -197,28 +197,30 @@ export function PluginNote() {
 /** What's running, and how the last run went: what it changed (with undo), saved or said, or why it failed. */
 function RunNote() {
   const running = usePlugins((s) => s.running)
-  const note = usePlugins((s) => s.note)
-  if (!running && !note) return null
+  const outcome = usePlugins((s) => s.outcome)
+  if (!running && !outcome) return null
+  const dismiss = () => usePlugins.getState().dismiss()
+  const result = outcome && 'result' in outcome ? outcome.result : undefined
   return (
     <div role="status" aria-label="Plugin run">
       <div className="ai-note">
         {running ? (
           <span>🧩 {running}: running…</span>
-        ) : note?.error ? (
-          <span className="error">🧩 {note.error}</span>
-        ) : (
+        ) : result ? (
           <span>
-            🧩 {note!.result!.summary}
-            {note!.result!.saved && (note!.result!.saved.length ? ` · saved ${note!.result!.saved.length === 1 ? note!.result!.saved[0] : `${note!.result!.saved.length} files`}` : ' · not saved')}
+            🧩 {result.summary}
+            {result.saved && ` · ${savedText(result.saved)}`}
           </span>
+        ) : (
+          <span className="error">🧩 {outcome && 'error' in outcome && outcome.error}</span>
         )}
-        {!running && note?.result && note.result.changes > 0 && (
-          <button className="link small" onClick={() => void undo().then(() => usePlugins.getState().dismiss())}>
+        {!running && result && result.changes > 0 && (
+          <button className="link small" onClick={() => void undo().then(dismiss)}>
             Undo
           </button>
         )}
         {!running && (
-          <button className="link small" aria-label="Dismiss" onClick={() => usePlugins.getState().dismiss()}>
+          <button className="link small" aria-label="Dismiss" onClick={dismiss}>
             ✕
           </button>
         )}
@@ -227,16 +229,8 @@ function RunNote() {
   )
 }
 
-/** The rename each kind of thing takes: its update command, and its name's field. */
-const RENAME: Partial<Record<Naming['ref']['kind'], [type: string, field: string]>> = {
-  node: ['node.update', 'name'],
-  region: ['region.update', 'name'],
-  structure: ['structure.update', 'name'],
-  character: ['character.update', 'name'],
-  faction: ['faction.update', 'name'],
-  species: ['species.update', 'name'],
-  event: ['event.update', 'title']
-}
+/** Where an exporter's files went. */
+const savedText = (saved: string[]) => (!saved.length ? 'not saved' : saved.length === 1 ? `saved ${saved[0]}` : `saved ${saved.length} files`)
 
 /** The names a name generator made for one thing: pick one to give it (undoable like any rename). */
 export function NamePicker() {
@@ -244,8 +238,9 @@ export function NamePicker() {
   if (!naming) return null
   const done = () => usePlugins.getState().name(null)
   const give = (name: string) => {
-    const [type, field] = RENAME[naming.ref.kind]!
-    void useUi.getState().execute({ type, payload: { id: naming.ref.id, patch: { [field]: name } } } as Parameters<ReturnType<typeof useUi.getState>['execute']>[0])
+    const { kind, id } = naming.ref
+    // An event's name is its title.
+    updater(kind, id)({ [kind === 'event' ? 'title' : 'name']: name } as never)
     done()
   }
   return (
@@ -261,17 +256,4 @@ export function NamePicker() {
       </ul>
     </Modal>
   )
-}
-
-/** Runs a name generator for one thing and offers its names. */
-export async function nameFrom(ref: Naming['ref'], plugin: PluginInfo, id: string, title: string, forKind: NonNullable<Parameters<typeof window.universe.runPlugin>[0]['naming']>['for']) {
-  const contribution = plugin.manifest?.names.find((n) => n.id === id)
-  const worldId = useUi.getState().nodes.find((n) => n.id === useUi.getState().selectedId && n.kind === 'world')?.id
-  const result = await usePlugins
-    .getState()
-    .run({ pluginId: plugin.id, kind: 'names', id, worldId, options: contribution ? defaultOptions(contribution.options) : {}, naming: { for: forKind, count: 8 } }, title)
-  if (result?.names?.length) {
-    usePlugins.getState().dismiss()
-    usePlugins.getState().name({ ref, title, names: result.names })
-  }
 }

@@ -250,10 +250,10 @@ describe('the operations', () => {
     expect(places[1]).toMatchObject({ surface: 'lake', lake: { name: expect.stringMatching(/^Lake /) } })
     await expect(p.call('get_terrain_at', { worldId: p.worldId, places: [] })).rejects.toThrow(/1 to 1,000/)
 
-    const map = await p.call<{ width: number; height: number; rgba: string }>('get_world_map', { worldId: p.worldId, width: 128 })
-    expect([map.width, map.height]).toEqual([128, 64])
+    const map = await p.call<{ width: number; height: number; rgba: string }>('get_world_map', { worldId: p.worldId, width: 256 })
+    expect([map.width, map.height]).toEqual([256, 128])
     const bytes = Buffer.from(map.rgba, 'base64')
-    expect(bytes).toHaveLength(128 * 64 * 4)
+    expect(bytes).toHaveLength(256 * 128 * 4)
     expect(bytes[3]).toBe(255)
   })
 

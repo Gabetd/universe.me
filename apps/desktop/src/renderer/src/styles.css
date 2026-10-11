@@ -915,7 +915,8 @@ input.invalid {
 .change-version:hover {
   text-decoration: underline;
 }
-.versions-dialog {
+.versions-dialog,
+.plugins-dialog {
   width: min(640px, 94vw);
   max-height: 86vh;
   overflow: auto;
@@ -923,9 +924,6 @@ input.invalid {
 }
 .plugins-dialog {
   width: min(720px, 94vw);
-  max-height: 86vh;
-  overflow: auto;
-  padding: 18px 22px;
 }
 /* Plugins (PLAN.md §9, M16): each one, its generators and exporters with their options. */
 .plugin-list {
@@ -962,7 +960,7 @@ input.invalid {
   margin-top: 8px;
   padding: 8px 10px;
   border-radius: 6px;
-  background: var(--panel-2, rgba(127, 127, 127, 0.08));
+  background: var(--panel-2);
 }
 .plugin-runner .plugin-head > button {
   margin-left: auto;

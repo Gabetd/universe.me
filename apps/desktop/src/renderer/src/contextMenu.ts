@@ -3,8 +3,7 @@ import { waterwayIndex } from '@universe/procgen'
 import { create } from 'zustand'
 import { addChildCommand, addOptions, canDelete, kindLabel } from './kinds'
 import { deleteCommand, useUi, type DeleteKind } from './store'
-import { nameFrom } from './components/Plugins'
-import { NAMEABLE_KINDS, contributions, usePlugins } from './pluginStore'
+import { contributions, isNameable, usePlugins } from './pluginStore'
 import { useTimelineView } from './timeline/timelineStore'
 import { useEditor } from './world/editorStore'
 import { useWaterOf } from './world/useWater'
@@ -346,11 +345,10 @@ function kindItems({ kind, id }: ElementRef): MenuItem[] {
 }
 
 /** Names for it from the name generators that name its kind (PLAN.md §9, M16). */
-function nameItems(ref: ElementRef): MenuItem[] {
-  const nameable = NAMEABLE_KINDS[ref.kind]
-  if (!nameable) return []
-  const namers = contributions(usePlugins.getState().list, 'names').filter(({ contribution }) => contribution.for.includes(nameable))
-  return namers.length ? ['separator', ...namers.map(({ plugin, contribution }) => ({ label: `Name it: ${contribution.title}…`, run: () => void nameFrom(ref, plugin, contribution.id, contribution.title, nameable) }))] : []
+function nameItems({ kind, id }: ElementRef): MenuItem[] {
+  if (!isNameable(kind)) return []
+  const namers = contributions(usePlugins.getState().list, 'names').filter(({ contribution }) => contribution.for.includes(kind))
+  return namers.length ? ['separator', ...namers.map(({ plugin, contribution }) => ({ label: `Name it: ${contribution.title}…`, run: () => void usePlugins.getState().nameWith({ kind, id }, plugin, contribution) }))] : []
 }
 
 /** What only the view an element is shown in can do with it: open it there (a species in the food web), or more (renaming a lane in place). */

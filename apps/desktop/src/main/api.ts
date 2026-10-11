@@ -306,7 +306,8 @@ export class ApiController {
 
   /** The API's operations for a plugin run (PLAN.md §9, M16): as AI clients have them, but `write` makes its changes (at once: the user ran it, so nothing waits for review). */
   pluginContext(write: ApiHost['write']): ApiContext {
-    return apiContext({ ...this.host(), write })
+    // What's worked out from the project (terrain, rivers) is shared with the API's own.
+    return { host: { ...this.ctx.host, write }, models: this.ctx.models }
   }
 
   /** A world's bible as Markdown. */

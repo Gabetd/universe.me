@@ -2,7 +2,7 @@ import { readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { rng } from '@universe/procgen'
-import { BrowserWindow, Menu, app, dialog, ipcMain, session as electronSession, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type WebFrameMain } from 'electron'
+import { BrowserWindow, Menu, app, dialog, ipcMain, session as electronSession, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type OpenDialogOptions, type SaveDialogOptions, type WebFrameMain } from 'electron'
 import { appFolder, isAllowedRequest } from '../shared/offline'
 import { EVENTS, INVOKE, type AppState, type BuildInfo, type ImportedModel, type InvokeMethod, type MenuAction, type RemoteMethod, type Result, type UniverseApi } from '../shared/api'
 import type { ApiController } from './api'
@@ -150,10 +150,22 @@ async function wrap<T>(fn: () => T | Promise<T>): Promise<Result<T>> {
   }
 }
 
+/** A file (or folder) the user picks to open, or null if they cancel. */
+async function pickToOpen(options: OpenDialogOptions): Promise<string | null> {
+  const { canceled, filePaths } = await dialog.showOpenDialog(win!, options)
+  return canceled ? null : (filePaths[0] ?? null)
+}
+
+/** Where the user saves a file, or null if they cancel. */
+async function pickToSave(options: SaveDialogOptions): Promise<string | null> {
+  const { canceled, filePath } = await dialog.showSaveDialog(win!, options)
+  return canceled || !filePath ? null : filePath
+}
+
 /** Where the user saves a new universe file (with the extension added if they left it off), or null if they cancel. */
 async function savePath(title: string, buttonLabel: string, name: string): Promise<string | null> {
-  const { canceled, filePath } = await dialog.showSaveDialog(win!, { title, buttonLabel, defaultPath: join(app.getPath('documents'), `${name}.universe`), filters: FILE_FILTERS })
-  if (canceled || !filePath) return null
+  const filePath = await pickToSave({ title, buttonLabel, defaultPath: join(app.getPath('documents'), `${name}.universe`), filters: FILE_FILTERS })
+  if (!filePath) return null
   return filePath.endsWith('.universe') ? filePath : `${filePath}.universe`
 }
 
@@ -179,15 +191,8 @@ async function copyFromDevice(host: string): Promise<AppState | null> {
 }
 
 async function openProject(path?: string): Promise<AppState | null> {
-  if (!path) {
-    const { canceled, filePaths } = await dialog.showOpenDialog(win!, {
-      title: 'Open a universe',
-      properties: ['openFile'],
-      filters: FILE_FILTERS
-    })
-    if (canceled || !filePaths[0]) return null
-    path = filePaths[0]
-  }
+  path ??= (await pickToOpen({ title: 'Open a universe', properties: ['openFile'], filters: FILE_FILTERS })) ?? undefined
+  if (!path) return null
   // An AI client's MCP server may have the file open for a moment: it's told the app is opening it, and let go of.
   const { waitForUnlock } = await import('@universe/api')
   api.opening(path)
@@ -201,13 +206,8 @@ async function openProject(path?: string): Promise<AppState | null> {
 }
 
 async function saveCopy(): Promise<void> {
-  const { canceled, filePath } = await dialog.showSaveDialog(win!, {
-    title: 'Save a copy',
-    buttonLabel: 'Save Copy',
-    defaultPath: session.path?.replace(/\.universe$/, ' copy.universe'),
-    filters: FILE_FILTERS
-  })
-  if (canceled || !filePath) return
+  const filePath = await pickToSave({ title: 'Save a copy', buttonLabel: 'Save Copy', defaultPath: session.path?.replace(/\.universe$/, ' copy.universe'), filters: FILE_FILTERS })
+  if (!filePath) return
   await session.saveCopy(filePath)
   // The copy is now a recent file.
   buildMenu()
@@ -217,13 +217,8 @@ const MAX_MODEL_BYTES = 64 * 1024 * 1024
 
 /** Asks for a glTF model (.glb, or .gltf with everything embedded: external files aren't followed) and keeps it in the project. */
 async function importModel(): Promise<ImportedModel | null> {
-  const { canceled, filePaths } = await dialog.showOpenDialog(win!, {
-    title: 'Import a 3D model',
-    properties: ['openFile'],
-    filters: [{ name: 'glTF model', extensions: ['glb', 'gltf'] }]
-  })
-  if (canceled || !filePaths[0]) return null
-  const path = filePaths[0]
+  const path = await pickToOpen({ title: 'Import a 3D model', properties: ['openFile'], filters: [{ name: 'glTF model', extensions: ['glb', 'gltf'] }] })
+  if (!path) return null
   if ((await stat(path)).size > MAX_MODEL_BYTES) throw new Error('That model is over 64 MB')
   const bytes = await readFile(path)
   const mime = path.toLowerCase().endsWith('.glb') ? 'model/gltf-binary' : 'model/gltf+json'
@@ -244,24 +239,11 @@ function pluginManager(): Promise<import('./plugins').Plugins> {
       new Plugins(app.getPath('userData'), {
         session,
         context: (write) => api.pluginContext(write),
-        changed: (state, summary) => {
-          win?.webContents.send(EVENTS.state, state)
-          api.toPhones('state', state)
-          api.changedHere(summary)
-        },
+        changed: (state, summary) => push(changed(state, summary)),
         dialogs: {
-          folder: async (title, buttonLabel) => {
-            const { canceled, filePaths } = await dialog.showOpenDialog(win!, { title, buttonLabel, properties: ['openDirectory', 'createDirectory'] })
-            return canceled ? null : (filePaths[0] ?? null)
-          },
-          openFile: async (title, extensions) => {
-            const { canceled, filePaths } = await dialog.showOpenDialog(win!, { title, properties: ['openFile'], filters: extensions.length ? [{ name: 'Files', extensions }] : [] })
-            return canceled ? null : (filePaths[0] ?? null)
-          },
-          saveFile: async (title, name) => {
-            const { canceled, filePath } = await dialog.showSaveDialog(win!, { title, buttonLabel: 'Save', defaultPath: join(app.getPath('documents'), name) })
-            return canceled ? null : (filePath ?? null)
-          }
+          folder: (title, buttonLabel) => pickToOpen({ title, buttonLabel, properties: ['openDirectory', 'createDirectory'] }),
+          openFile: (title, extensions) => pickToOpen({ title, properties: ['openFile'], filters: extensions.length ? [{ name: 'Files', extensions }] : [] }),
+          saveFile: (title, name) => pickToSave({ title, buttonLabel: 'Save', defaultPath: join(app.getPath('documents'), name) })
         },
         show: async (path) => void (await shell.openPath(path)),
         trash: (path) => shell.trashItem(path)
@@ -273,13 +255,13 @@ function pluginManager(): Promise<import('./plugins').Plugins> {
 /** Asks where to save a world's bible and writes it there. */
 async function exportBible(worldId: string): Promise<string | null> {
   const world = session.state().nodes.find((n) => n.id === worldId)
-  const { canceled, filePath } = await dialog.showSaveDialog(win!, {
+  const filePath = await pickToSave({
     title: 'Export the world bible',
     buttonLabel: 'Export',
     defaultPath: join(app.getPath('documents'), `${(world?.name ?? 'World').replace(/[\\/:*?"<>|]/g, '-')}.md`),
     filters: [{ name: 'Markdown', extensions: ['md'] }]
   })
-  if (canceled || !filePath) return null
+  if (!filePath) return null
   await writeFile(filePath, await api.bible(worldId))
   return filePath
 }

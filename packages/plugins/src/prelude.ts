@@ -8,29 +8,9 @@ export const PRELUDE = String.raw`
 (() => {
   const host = globalThis.__host
   delete globalThis.__host
-  const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-  const toBase64 = (bytes) => {
-    let out = ''
-    for (let i = 0; i < bytes.length; i += 3) {
-      const n = (bytes[i] << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0)
-      out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63] + (i + 1 < bytes.length ? B64[(n >> 6) & 63] : '=') + (i + 2 < bytes.length ? B64[n & 63] : '=')
-    }
-    return out
-  }
-  const fromBase64 = (text) => {
-    const clean = text.replace(/=+$/, '')
-    const out = new Uint8Array(Math.floor((clean.length * 3) / 4))
-    let bits = 0, value = 0, o = 0
-    for (let i = 0; i < clean.length; i++) {
-      value = (value << 6) | B64.indexOf(clean[i])
-      bits += 6
-      if (bits >= 8) {
-        bits -= 8
-        out[o++] = (value >> bits) & 255
-      }
-    }
-    return out
-  }
+  // Base64 is done by the host (natively: it's much faster than here); bytes cross as ArrayBuffers.
+  const toBase64 = (bytes) => host.toBase64(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))
+  const fromBase64 = (text) => new Uint8Array(host.fromBase64(text))
   const bytesOf = (b) => (b instanceof Uint8Array ? b : b instanceof ArrayBuffer ? new Uint8Array(b) : Array.isArray(b) ? Uint8Array.from(b) : null)
   const show = (v) => (typeof v === 'string' ? v : (() => { try { return JSON.stringify(v) } catch { return String(v) } })())
 

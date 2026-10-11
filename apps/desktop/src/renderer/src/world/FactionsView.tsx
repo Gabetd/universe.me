@@ -59,14 +59,7 @@ export function FactionsView({ worldId }: { worldId: string }) {
             ⚭ Who’s related
           </button>
         </div>
-        <select aria-label="New faction" value="" onChange={(e) => e.target.value && void add(e.target.value as FactionKind)}>
-          <option value="">+ Faction…</option>
-          {FACTION_KINDS.map((k) => (
-            <option key={k} value={k}>
-              {FACTION_KIND_LABELS[k]}
-            </option>
-          ))}
-        </select>
+        <FactionKindSelect label="New faction" prompt="+ Faction…" onPick={(kind) => void add(kind)} />
         <FactionTree factions={factions} selectedId={tab === 'factions' ? selected?.id : undefined} playhead={playhead} onPick={pick} />
       </aside>
       {tab === 'graph' ? (
@@ -128,8 +121,7 @@ function FactionTree({ factions, selectedId, playhead, onPick }: { factions: Fac
               onClick={() => onPick(f.id)}
               onContextMenu={(e) => menu(e, f.id)}
             >
-              <Swatch color={f.color} />
-              {f.emblem && <span aria-hidden>{f.emblem}</span>} {f.name} <span className="muted small">· {FACTION_KIND_LABELS[f.kind]}</span>
+              <FactionLabel faction={f} />
             </button>
           </li>
         )
@@ -221,7 +213,30 @@ function FactionEditor({ worldId, faction, factions }: { worldId: string; factio
   )
 }
 
-/** A faction's members, as what and when; and a row to add one (from the playhead). */
+/** A faction as lists show it: its colour, emblem, name and kind. */
+function FactionLabel({ faction: f }: { faction: Faction }) {
+  return (
+    <>
+      <Swatch color={f.color} />
+      {f.emblem && <span aria-hidden>{f.emblem}</span>} {f.name} <span className="muted small">· {FACTION_KIND_LABELS[f.kind]}</span>
+    </>
+  )
+}
+
+/** A choice of kind to start a faction of (a top one, or a part of another). */
+function FactionKindSelect({ label, prompt, onPick }: { label: string; prompt: string; onPick(kind: FactionKind): void }) {
+  return (
+    <select aria-label={label} value="" onChange={(e) => e.target.value && onPick(e.target.value as FactionKind)}>
+      <option value="">{prompt}</option>
+      {FACTION_KINDS.map((k) => (
+        <option key={k} value={k}>
+          {FACTION_KIND_LABELS[k]}
+        </option>
+      ))}
+    </select>
+  )
+}
+
 /** The factions that are part of this one (each can have parts of its own), to open, and a new one to start. */
 function SubFactions({ worldId, faction, factions }: { worldId: string; faction: Faction; factions: Faction[] }) {
   const parts = factions.filter((f) => f.parentId === faction.id)
@@ -233,7 +248,7 @@ function SubFactions({ worldId, faction, factions }: { worldId: string; faction:
           {parts.map((f) => (
             <li key={f.id}>
               <button className="link" data-menu={menuRef('faction', f.id)} onClick={() => useEditor.getState().set({ factionId: f.id })}>
-                <Swatch color={f.color} /> {f.emblem && <span aria-hidden>{f.emblem}</span>} {f.name} <span className="muted small">· {FACTION_KIND_LABELS[f.kind]}</span>
+                <FactionLabel faction={f} />
               </button>
             </li>
           ))}
@@ -241,18 +256,12 @@ function SubFactions({ worldId, faction, factions }: { worldId: string; faction:
       ) : (
         <p className="muted small">None yet: a kingdom's houses, a house's branches, a guild's chapters.</p>
       )}
-      <select aria-label="New sub-faction" value="" onChange={(e) => e.target.value && void addFaction(worldId, e.target.value as FactionKind, faction.id)}>
-        <option value="">+ Sub-faction…</option>
-        {FACTION_KINDS.map((k) => (
-          <option key={k} value={k}>
-            {FACTION_KIND_LABELS[k]}
-          </option>
-        ))}
-      </select>
+      <FactionKindSelect label="New sub-faction" prompt="+ Sub-faction…" onPick={(kind) => void addFaction(worldId, kind, faction.id)} />
     </div>
   )
 }
 
+/** A faction's members, as what and when; and a row to add one (from the playhead). */
 function MemberRows({ worldId, factionId }: { worldId: string; factionId: string }) {
   const all = useOwnRecords('memberships', worldId)
   const memberships = useMemo(() => all.filter((m) => m.factionId === factionId), [all, factionId])
