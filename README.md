@@ -5,8 +5,8 @@ worlds, give them histories on a timeline, and let Claude Code help through
 a local API and MCP server. See [PLAN.md](PLAN.md) for the full design and roadmap.
 
 **Status:** M0 to M13 are done (v1: up to phone access, sync between your
-devices, and polish), and so is M14 (factions and relationships). M15 (rivers
-and erosion) is next. New here? On the start screen,
+devices, and polish), and so are M14 (factions and relationships) and M15
+(rivers and erosion). M16 (plugins) is next. New here? On the start screen,
 **Explore a sample universe** opens Calder, a world with fifteen centuries of
 history to look around in. Press `?` for the keyboard shortcuts.
 
@@ -18,6 +18,15 @@ time. Or customize every option yourself; either way a world code recreates
 that exact planet anywhere. View it as a 3D globe or a flat map, sculpt the
 terrain, paint biomes, change the sea level, draw named regions, and write
 rich-text notes.
+
+Water finds its own way: rain runs downhill to the sea, gathering into rivers
+that join on the way and filling basins as lakes, worked out again whenever
+the land is sculpted or the sea moves. Rivers and lakes show on the globe,
+the map and the ground, each with a name from the seed; pick one in the
+world's list or on the map to give it a name of your own and notes, or go
+down to see it. As time passes the land wears down: rivers cut valleys and
+steep slopes slump, at the world's erosion speed, the same every time, and
+never where you've sculpted.
 
 Every world (and every other node) has a timeline: past on the left, future
 on the right. Add events and eras, drag them around, link causes to effects,
@@ -90,7 +99,8 @@ claude mcp add universe -- "<path to the Universe executable>" --mcp --project "
 Claude can then read your worlds (a world at any moment, its history and
 causes, structures' condition and why, the theme and prose style of an age, the
 sky, the food web, how its powers work in each age), add to them (events,
-links, structures, characters, species, themes, power systems, regions, notes)
+links, structures, characters, species, themes, power systems, regions, notes,
+names for rivers and lakes)
 and check them for mistakes. Every change it
 makes is tagged as the AI's: a note shows what it did, **Undo AI** takes its
 latest changes back in one click, and with **Review AI changes** on they wait

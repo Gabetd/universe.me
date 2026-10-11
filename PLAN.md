@@ -532,9 +532,13 @@ Each milestone ends with something you can launch and demo.
 - [x] *Added during M14:* **the ground reaches 12 km**, the chunks' 5 km and a coarse sheet beyond (built in a worker); the planet's map in the corner, a fiftieth of it centred on the camera, shows where you are and an arrow the way you face, and a click on it goes there.
 - [x] *Added during M14:* **middle-drag to resize**: on the globe, map or ground, the terrain brush while a terrain tool is out, else the selected structure. Every planet setting says what it does on hover.
 
-### M15 — Rivers & erosion (3 weeks) — *planned*
-- Rivers that run downhill from the terrain to the sea or a lake (flow accumulation on the cube-sphere heightmap, in a worker), redrawn as land is sculpted; lakes in basins; named and selectable like regions; on the globe, map and ground.
-- Erosion over time: a world's land wearing down and rivers cutting valleys as the playhead moves (hydraulic and thermal erosion, deterministic from the seed and the world's erosion speed), shown blended like weathering; terrain edits still win.
+### M15 — Rivers & erosion (3 weeks) — *done*
+- [x] **Rivers and lakes** from the terrain (`packages/procgen/src/hydrology.ts`): every cell drains to the sea, the basins it can't leave filled from the sea up (priority flood); water gathers downhill from the rain on each cell, more where it's wet, and where enough has gathered it's a river, traced from source to mouth with its tributaries, each named from the seed and known by where it ends (`r<cell>`), so its id stays while the land upstream changes. A deep basin holds a lake (`l<deepest cell>`) as big as the water reaching it keeps up: full and spilling over if there's plenty, else smaller, with no outlet. About half a second for a whole planet, in a worker; worked out again once a stroke is saved, an edit undone or the sea moved.
+- [x] **On every view**: rivers on the map and the globe, wider as more water runs in them and curving through the cells they cross (so tributaries meet them), lakes coloured as water; on the ground, each river a ribbon over the land as wide as its water, each lake a sheet at its surface, out to as far as the ground goes.
+- [x] **Named and selectable like regions**: the world's inspector lists its rivers and lakes, the biggest first; a click there, on the map or in a right-click menu opens one, to give it a name of its own (or back the one it was made with) and notes, kept in a waterway record by its id (`packages/core/src/waterways.ts`, `waterway.set` through the bus, undoable), with its length and where it runs or its area and surface, what feeds it, and **View up close** down to the ground there.
+- [x] **Erosion over time** (`packages/procgen/src/erosion.ts`): how deep each cell wears down in the long run, rivers cutting valleys by their water and slope (their valley sides with them) and steep slopes slumping, never at sea, under a lake or where the user has sculpted (terrain edits win), land staying land; how much of it has happened depends only on the years since the timeline began and the world's erosion speed (two-thirds in about 4,000 years at 1×), so it's the same every time, shown as the playhead moves in thirty-two steps. Rivers are worked out from the land before wear, so they stay put.
+- [x] **The API and MCP**: `list_waterways`, `get_waterway` (with a river's course) and `name_waterway`, worked out as the app does (in the app's terrain worker), so with the same ids and names; the world bible tells of the greatest rivers and lakes and every named one. Sync carries waterway records like every record.
+- [x] Tests: hydrology (neighbours across the cube's edges, water reaching the sea, a lake in a bowl, rivers into lakes and rivers, the same every time), erosion (valleys along a river, nothing at sea, under lakes or where sculpted, the pace) and the terrain model worn and back; waterway records, commands and undo; the operations and the bible; `e2e/water.spec.ts`: listed, opened, renamed, undone, named from the menu, picked on the map, seen up close, named by an AI, worked out again when the sea rises and worn down thousands of years on.
 - Plate tectonics later, if ever: continents drifting over millions of years.
 
 ### M16 — Plugins (3 weeks) — *planned*
@@ -579,7 +583,7 @@ Each milestone ends with something you can launch and demo.
 ---
 
 ## 12. Post-v1 ideas
-- Factions and relationships (M14), rivers and erosion (M15), plugins (M16) and live collaboration (M17) are milestones now.
+- Factions and relationships (M14), rivers and erosion (M15), plugins (M16) and live collaboration (M17) are milestones now (M14 and M15 done).
 - Image generation for structures/themes via AI; ambient soundscapes per theme. (Image generation would need a remote service, against keeping everything local.)
 
 ---
