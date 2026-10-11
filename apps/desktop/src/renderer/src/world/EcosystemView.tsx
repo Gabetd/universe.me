@@ -118,6 +118,9 @@ export function EcosystemView({ worldId, model, change, error }: { worldId: stri
   )
 }
 
+/** The food web's "Link to" choice that makes the species linked to. */
+const NEW_SPECIES = 'new'
+
 function SpeciesEditor({ species, all, links, biomes, onClose }: { species: Species; all: Species[]; links: EcoLink[]; biomes: number[]; onClose(): void }) {
   const execute = useUi((s) => s.execute)
   const update = (patch: SpeciesPatch) => void execute({ type: 'species.update', payload: { id: species.id, patch } })
@@ -125,6 +128,20 @@ function SpeciesEditor({ species, all, links, biomes, onClose }: { species: Spec
   const eatenBy = links.filter((l) => l.toId === species.id && l.type === 'eats')
   const name = (id: string) => all.find((s) => s.id === id)?.name ?? '?'
   const [linkType, setLinkType] = useState<EcoLink['type']>('eats')
+  // To another species, or to a new one (in the same places) made for it: the only choice in a world's first species.
+  const linkTo = (toId: string) => {
+    if (toId !== NEW_SPECIES) return void execute({ type: 'ecolink.create', payload: { fromId: species.id, toId, type: linkType } })
+    const id = crypto.randomUUID()
+    void execute({
+      type: 'batch',
+      payload: {
+        commands: [
+          { type: 'species.create', payload: { id, ownerId: species.ownerId, name: 'New species', biomes: species.biomes } },
+          { type: 'ecolink.create', payload: { fromId: species.id, toId: id, type: linkType } }
+        ]
+      }
+    })
+  }
   const choices = [...new Set([...biomes, ...species.biomes])].sort((a, b) => a - b)
 
   return (
@@ -193,11 +210,7 @@ function SpeciesEditor({ species, all, links, biomes, onClose }: { species: Spec
               </option>
             ))}
           </select>
-          <select
-            aria-label="Link to"
-            value=""
-            onChange={(e) => e.target.value && void execute({ type: 'ecolink.create', payload: { fromId: species.id, toId: e.target.value, type: linkType } })}
-          >
+          <select aria-label="Link to" value="" onChange={(e) => e.target.value && linkTo(e.target.value)}>
             <option value="">…which species?</option>
             {all
               .filter((s) => s.id !== species.id)
@@ -206,6 +219,7 @@ function SpeciesEditor({ species, all, links, biomes, onClose }: { species: Spec
                   {s.name}
                 </option>
               ))}
+            <option value={NEW_SPECIES}>＋ A new species</option>
           </select>
         </div>
       </div>

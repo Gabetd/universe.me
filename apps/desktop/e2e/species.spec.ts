@@ -25,11 +25,15 @@ test('species: suggested from the world’s biomes, a food web, links and warnin
   await page.getByLabel('Link to').selectOption({ label: prey.name })
   await expect(page.getByText('Dragon eats nothing')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Dragon' })).toBeVisible()
+  // Or to a new species made for it (all there is to choose in a world's first species).
+  await page.getByLabel('Link to').selectOption({ label: '＋ A new species' })
+  await expect.poll(async () => (await state(page, 'timeline')).lifeforms.length).toBe(lifeforms.length + 2)
+  await expect(page.getByRole('region', { name: 'Species' })).toContainText(/Eats New species/i)
   await shot(page, '91-species-editor')
 
   // Deleting it takes its links; undo brings both back.
   await page.getByRole('button', { name: 'Delete species' }).click()
   await expect.poll(async () => (await state(page, 'timeline')).lifeforms.some((s) => s.name === 'Dragon')).toBe(false)
   await page.getByRole('button', { name: /Undo/ }).click()
-  await expect.poll(async () => (await state(page, 'timeline')).ecolinks.length).toBe(ecolinks.length + 1)
+  await expect.poll(async () => (await state(page, 'timeline')).ecolinks.length).toBe(ecolinks.length + 2)
 })
