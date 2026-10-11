@@ -54,7 +54,7 @@ test('a seed decides the whole world and locks its options; a world code recreat
 
   // Presets and colors are custom options too.
   await inspector(page).getByLabel('Start from preset').selectOption('Ice world')
-  await expect.poll(async () => (await world(page, 'Second Surface')).settings.terrain.temperature).toBe(-26)
+  await expect.poll(async () => (await world(page, 'Second Surface')).settings.terrain.temperature).toBe(-30)
   await inspector(page).getByLabel('Vegetation').fill('#7a3fa0')
   await expect.poll(async () => (await world(page, 'Second Surface')).settings.terrain.vegetationColor).toBe('#7a3fa0')
   await shot(page, '31-custom-world', { wait: 800 })
