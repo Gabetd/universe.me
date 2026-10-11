@@ -1674,6 +1674,13 @@ kbd {
   font-weight: 600;
   pointer-events: none;
 }
+/* What's laid over a view is its controls, not text to copy: selected (by Select All, say), a slider in it would be dragged off as the selection instead of moving. */
+.viewport,
+.tool-options,
+.territory-legend,
+.world-editor .viewport-overlay {
+  user-select: none;
+}
 .tool-options {
   position: absolute;
   top: 10px;
