@@ -22,11 +22,10 @@ function childLabel(parent: NodeKind, kind: NodeKind): string {
   return KIND_LABELS[kind]
 }
 
-export function kindLabel(node: SpatialNode, nodes: SpatialNode[]): string {
-  if (node.kind !== 'body') return KIND_LABELS[node.kind]
-  const parent = nodes.find((n) => n.id === node.parentId)
-  return parent?.kind === 'body' ? 'Moon' : 'Planet'
-}
+/** What level something is: a galaxy, a star system, a planet (a body round a star) or a moon (one round a body). */
+export const levelLabel = (kind: NodeKind, parentKind: NodeKind | undefined): string => (kind !== 'body' ? KIND_LABELS[kind] : parentKind === 'body' ? 'Moon' : 'Planet')
+
+export const kindLabel = (node: SpatialNode, nodes: SpatialNode[]): string => levelLabel(node.kind, nodes.find((n) => n.id === node.parentId)?.kind)
 
 /** Adds a new child to a node, named after what it is ("New Planet"): what the inspector's + buttons and the right-click menu's Add items do. */
 export const addChildCommand = (node: SpatialNode, kind: NodeKind, label: string): Command => ({ type: 'node.create', payload: { parentId: node.id, kind, name: `New ${label}` } })

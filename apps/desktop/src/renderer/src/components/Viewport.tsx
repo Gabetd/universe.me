@@ -6,8 +6,8 @@ import { selectNode, useTimelineOwner, useUi } from '../store'
 import { playheadOf } from '../timeline/timelineStore'
 import { useSystem } from '../world/useSky'
 import type { GeneratedPlanet } from '@universe/sim'
-import { drawOrbits } from './orbitView'
-import { label, targetAt, useCanvasLoop, type CanvasTarget } from './canvasDraw'
+import { drawOrbits, orbitAt, type OrbitTarget } from './orbitView'
+import { label, targetAt, useCanvasLoop } from './canvasDraw'
 import { spaceBackdrop } from './spaceArt'
 import { CosmosView, isCosmos } from './CosmosView'
 import { EdgePush, zoomOut, zoomTo } from './zoom'
@@ -28,6 +28,9 @@ export function Viewport() {
   // A new view per node, so each level starts from its own camera.
   return isCosmos(node) ? <CosmosView key={node.id} node={node} /> : <OrbitViewport key={node.id} node={node} />
 }
+
+/** A body's card goes beside it, clear of it however big it's drawn. */
+const cardX = (t: OrbitTarget) => t.x + t.r
 
 /** A star system or a planet with its moons: bodies where their orbits put them. */
 function OrbitViewport({ node }: { node: SpatialNode }) {
@@ -58,7 +61,10 @@ function OrbitViewport({ node }: { node: SpatialNode }) {
   const [picked, setPicked] = useState<{ planet: GeneratedPlanet; x: number; y: number; withWorld: boolean } | null>(null)
 
   const hover = useRef<string | null>(null)
-  const targets = useRef<CanvasTarget[]>([])
+  // What's pointed at, for its card; the card follows it round each frame.
+  const [hovered, setHovered] = useState<OrbitTarget | null>(null)
+  const card = useRef<HTMLDivElement>(null)
+  const targets = useRef<OrbitTarget[]>([])
 
   useCanvasLoop(canvasRef, (ctx, w, h) => {
     spaceBackdrop(ctx, w, h, node.seed, { stars: 380, nebula: isSystem ? 0.45 : 0.3 })
@@ -79,6 +85,8 @@ function OrbitViewport({ node }: { node: SpatialNode }) {
       : []
     const middle = !isSystem && world && targets.current.find((x) => x.id === world.id)
     if (middle) label(ctx, `World: ${world.name}`, middle.x, middle.y + middle.r + 14, middle.id === hover.current)
+    const shown = hover.current && card.current && targets.current.find((x) => x.id === hover.current)
+    if (shown) Object.assign(card.current!.style, { left: `${cardX(shown) + 14}px`, top: `${shown.y + 10}px` })
     if (children.length === 0 && !unclaimed.length) {
       ctx.fillStyle = 'rgba(200,210,240,0.55)'
       ctx.font = '14px system-ui, sans-serif'
@@ -87,9 +95,15 @@ function OrbitViewport({ node }: { node: SpatialNode }) {
     }
   })
 
+  /** What's under the pointer: a body, or else the line of its orbit. */
   const hitTest = (e: React.MouseEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect()
-    return targetAt(targets.current, e.clientX - rect.left, e.clientY - rect.top)
+    const [x, y] = [e.clientX - rect.left, e.clientY - rect.top]
+    return targetAt(targets.current, x, y) ?? orbitAt(targets.current, x, y)
+  }
+  const point = (t: OrbitTarget | null) => {
+    hover.current = t?.id ?? null
+    if (t?.id !== hovered?.id) setHovered(t)
   }
   const generated = (id: string) => unclaimed.find((g) => g.orbit.bodyId === id)
 
@@ -118,10 +132,10 @@ function OrbitViewport({ node }: { node: SpatialNode }) {
         className="viewport-canvas"
         data-testid="viewport"
         onMouseMove={(e) => {
-          hover.current = hitTest(e)?.id ?? null
+          point(hitTest(e) ?? null)
           canvasRef.current!.style.cursor = hover.current ? 'pointer' : 'default'
         }}
-        onMouseLeave={() => (hover.current = null)}
+        onMouseLeave={() => point(null)}
         onClick={(e) => {
           const t = hitTest(e)
           const planet = t && generated(t.id)
@@ -134,6 +148,9 @@ function OrbitViewport({ node }: { node: SpatialNode }) {
         <div className="viewport-title">{node.name}</div>
         <div className="muted small">{kindLabel(node, nodes)} view</div>
       </div>
+      {hovered && hovered.id !== picked?.planet.orbit.bodyId && (
+        <ClaimCard ref={card} x={cardX(hovered)} y={hovered.y} level={hovered.level} name={hovered.name} description={hovered.summary} />
+      )}
       {picked && (
         <ClaimCard
           x={picked.x}

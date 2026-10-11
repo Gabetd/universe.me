@@ -1,6 +1,6 @@
 import { AU_KM, type SpatialNode } from '@universe/core'
 import { claimPlanet, unclaimedPlanets, type GeneratedPlanet } from '@universe/sim'
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, type ReactNode, type Ref } from 'react'
 import { useUi } from '../store'
 import { useSystem } from '../world/useSky'
 import { claimInto } from './zoom'
@@ -30,10 +30,16 @@ export function useUnclaimedPlanets(node: SpatialNode | undefined): GeneratedPla
   return useMemo(() => (node && system ? unclaimedPlanets(system, node, nodes) : []), [node, system, nodes])
 }
 
-/** A card next to something on a map, (x, y) px from the view's corner: what it is, and a button to claim it if it's only generated. */
-export function ClaimCard({ x, y, name, description, onClaim, children }: { x: number; y: number; name: string; description: string; onClaim?: () => void; children?: ReactNode }) {
+/**
+ * A card next to something on a map, (x, y) px from the view's corner: its
+ * level (a galaxy, a planet…), what it is, and a button to claim it if it's
+ * only generated. `ref` lets a view move it along with what it's about.
+ */
+export function ClaimCard({ x, y, level, name, description, onClaim, children, ref }: { x: number; y: number; level?: string; name: string; description: string; onClaim?: () => void; children?: ReactNode; ref?: Ref<HTMLDivElement> }) {
   return (
-    <div className="cosmos-card" style={{ left: x + 14, top: y + 10 }} role="dialog" aria-label={name}>
+    // One with nothing to press lets the pointer through, so it never takes the hover from what it's about.
+    <div ref={ref} className="cosmos-card" style={{ left: x + 14, top: y + 10, pointerEvents: onClaim || children ? undefined : 'none' }} role="dialog" aria-label={name}>
+      {level && <span className="card-level">{level}</span>}
       <b>{name}</b>
       <span className="muted small">{description}</span>
       {children}

@@ -2201,6 +2201,14 @@ kbd {
   pointer-events: auto;
   z-index: 3;
 }
+/* What level it is (a galaxy, a planet…), over its name. */
+.card-level {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
 .claim-list {
   display: grid;
   gap: 6px;

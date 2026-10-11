@@ -28,7 +28,19 @@ export interface OrbitDrawing {
   centerTargetId?: string
   /** Planets the system's seed generates that nobody has claimed, drawn faintly (system view only). */
   unclaimed?: GeneratedPlanet[]
+  /** What's pointed at: outlined, and left to the view's card rather than labelled. */
   hoverId: string | null
+}
+
+/** A body to point at (or the line of its orbit), with what its card says. */
+export interface OrbitTarget extends CanvasTarget {
+  /** Its orbit, as drawn: pointing at the line points at the body. */
+  path?: [number, number][]
+  /** Its level: a planet or a moon. */
+  level: string
+  name: string
+  /** How it goes round. */
+  summary: string
 }
 
 const SLANT = 0.45
@@ -53,12 +65,12 @@ function projector(cx: number, cy: number, maxPx: number, maxKm: number) {
 
 const bodyPx = (radiusKm: number, size: number, scale: number) => Math.max(3, Math.min(size * 0.06, size * scale * (radiusKm / 6371) ** 0.35))
 
-export function drawOrbits(ctx: CanvasRenderingContext2D, w: number, h: number, d: OrbitDrawing): CanvasTarget[] {
+export function drawOrbits(ctx: CanvasRenderingContext2D, w: number, h: number, d: OrbitDrawing): OrbitTarget[] {
   const { system, centerId, t } = d
   const cx = w / 2
   const cy = h / 2 + 10
   const size = Math.min(w, h)
-  const targets: CanvasTarget[] = []
+  const targets: OrbitTarget[] = []
   const orbiting = centerId ? moonsOf(system, centerId) : [...system.bodies.values()].filter((o) => !o.parentBodyId)
   const unclaimed = centerId ? [] : (d.unclaimed ?? [])
   // Room for every orbit, and at least for where planets would be warm (closer in round dimmer stars).
@@ -88,53 +100,50 @@ export function drawOrbits(ctx: CanvasRenderingContext2D, w: number, h: number, 
     const angle = Math.atan2(starDir[1] - cy, starDir[0] - cx)
     const edge = Math.min(w, h) * 0.47
     starGlow(ctx, cx + Math.cos(angle) * edge, cy + Math.sin(angle) * edge * 0.8, 6, system.star.color)
-    drawBody(ctx, d, center, cx, cy, bodyPx(center.radiusKm, size, 0.12), lightAt(cx, cy), targets, false)
+    drawBody(ctx, d, center, cx, cy, bodyPx(center.radiusKm, size, 0.12), lightAt(cx, cy), targets)
     if (d.centerTargetId) targets.at(-1)!.id = d.centerTargetId
   }
 
   for (const o of orbiting) {
-    strokeOrbit(ctx, project, o, o.bodyId === d.hoverId ? 'rgba(170,190,255,0.55)' : 'rgba(140,160,220,0.2)')
+    const path = strokeOrbit(ctx, project, o, o.bodyId === d.hoverId ? 'rgba(170,190,255,0.55)' : 'rgba(140,160,220,0.2)')
     const [x, y] = project(orbitPosition(o, t))
     const r = bodyPx(o.radiusKm, size, centerId ? 0.035 : 0.02)
-    drawBody(ctx, d, o, x, y, r, lightAt(x, y), targets, true)
+    drawBody(ctx, d, o, x, y, r, lightAt(x, y), targets, path)
   }
 
   // Generated planets: dashed orbits and faint bodies, named when pointed at.
   for (const { orbit: o, seed, name } of unclaimed) {
     const hover = o.bodyId === d.hoverId
     ctx.setLineDash([3, 5])
-    strokeOrbit(ctx, project, o, hover ? 'rgba(170,190,255,0.45)' : 'rgba(140,160,220,0.13)')
+    const path = strokeOrbit(ctx, project, o, hover ? 'rgba(170,190,255,0.45)' : 'rgba(140,160,220,0.13)')
     ctx.setLineDash([])
     const [x, y] = project(orbitPosition(o, t))
     const r = bodyPx(o.radiusKm, size, 0.02)
     ctx.globalAlpha = hover ? 0.9 : 0.45
     plainBody(ctx, x, y, r, hueOf(seed), lightAt(x, y))
     ctx.globalAlpha = 1
-    targets.push({ id: o.bodyId, x, y, r: r + 4 })
-    if (hover) bodyLabel(ctx, name, `${orbitSummary(system, o, t)} · not claimed yet`, x, y + r, true)
+    if (hover) outline(ctx, x, y, r)
+    targets.push({ id: o.bodyId, x, y, r: r + 4, path, level: 'Planet', name, summary: `${orbitSummary(system, o, t)} · not claimed yet` })
   }
   return targets
 }
 
-function strokeOrbit(ctx: CanvasRenderingContext2D, project: (p: Vec3) => [number, number], o: BodyOrbit, color: string) {
+/** Draws an orbit's line, and gives it as drawn. */
+function strokeOrbit(ctx: CanvasRenderingContext2D, project: (p: Vec3) => [number, number], o: BodyOrbit, color: string): [number, number][] {
+  const path = pathOf(o).map(project)
   ctx.beginPath()
-  pathOf(o).forEach((p, i) => {
-    const [x, y] = project(p)
-    if (i) ctx.lineTo(x, y)
-    else ctx.moveTo(x, y)
-  })
+  path.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)))
   ctx.strokeStyle = color
   ctx.lineWidth = 1
   ctx.stroke()
+  return path
 }
 
-/** A body's name and how it goes round, under it (`bottom` is its lowest point on screen). */
-function bodyLabel(ctx: CanvasRenderingContext2D, name: string, summary: string, x: number, bottom: number, hover: boolean) {
-  label(ctx, name, x, bottom + 15, hover)
-  sublabel(ctx, summary, x, bottom + 28)
-}
+/** The ring round what's pointed at. */
+const outline = (ctx: CanvasRenderingContext2D, x: number, y: number, r: number) => ring(ctx, x, y, r + 5, '#ffffff', 1.5)
 
-function drawBody(ctx: CanvasRenderingContext2D, d: OrbitDrawing, o: BodyOrbit, x: number, y: number, r: number, light: number, targets: CanvasTarget[], labelled: boolean) {
+/** A body, named under it unless it's the one in the middle (`path` is its orbit, if it goes round on screen) or pointed at (its card names it). */
+function drawBody(ctx: CanvasRenderingContext2D, d: OrbitDrawing, o: BodyOrbit, x: number, y: number, r: number, light: number, targets: OrbitTarget[], path?: [number, number][]) {
   const world = d.worlds.get(o.bodyId)
   const surface = world && d.textures.get(world.id)
   const hue = d.bodies.get(o.bodyId)?.hue ?? 0
@@ -143,8 +152,36 @@ function drawBody(ctx: CanvasRenderingContext2D, d: OrbitDrawing, o: BodyOrbit, 
   // A world has air (blue, as from space); a bare body a faint haze of its own colour.
   drawAtmosphere(ctx, x, y, r, world ? [120, 185, 255] : hslRgb(hue, 0.5, 0.65), light)
   if (world) ring(ctx, x, y, r + 2, 'rgba(140,200,255,0.5)', 2)
-  targets.push({ id: o.bodyId, x, y, r: r + 4 })
-  if (labelled) bodyLabel(ctx, d.bodies.get(o.bodyId)?.name ?? '', orbitSummary(d.system, o, d.t), x, y + r, o.bodyId === d.hoverId)
+  const name = d.bodies.get(o.bodyId)?.name ?? ''
+  const summary = orbitSummary(d.system, o, d.t)
+  const hovered = o.bodyId === d.hoverId
+  if (hovered) outline(ctx, x, y, r)
+  else if (path) {
+    label(ctx, name, x, y + r + 15, false)
+    sublabel(ctx, summary, x, y + r + 28)
+  }
+  targets.push({ id: o.bodyId, x, y, r: r + 4, path, level: o.parentBodyId ? 'Moon' : 'Planet', name, summary })
+}
+
+/** The body whose orbit's line passes within `slack` px of (x, y), the nearest if several do. */
+export function orbitAt(targets: readonly OrbitTarget[], x: number, y: number, slack = 5): OrbitTarget | undefined {
+  let best: OrbitTarget | undefined
+  let bestD = slack
+  for (const t of targets) {
+    const path = t.path
+    if (!path) continue
+    for (let i = 1; i < path.length; i++) {
+      const d = segmentDistance(x, y, path[i - 1]!, path[i]!)
+      if (d <= bestD) [best, bestD] = [t, d]
+    }
+  }
+  return best
+}
+
+function segmentDistance(x: number, y: number, [ax, ay]: [number, number], [bx, by]: [number, number]): number {
+  const [dx, dy] = [bx - ax, by - ay]
+  const k = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)))
+  return Math.hypot(x - ax - k * dx, y - ay - k * dy)
 }
 
 /** "1.00 AU · 365 d", or for a moon "384,400 km · 27.3 d · waxing gibbous". */

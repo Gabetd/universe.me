@@ -1,6 +1,6 @@
-import { ancestry, buildTree, type TreeNode } from '@universe/core'
+import { ancestry, buildTree, type NodeKind, type TreeNode } from '@universe/core'
 import { memo, useCallback, useMemo, useState } from 'react'
-import { KIND_ICONS } from '../kinds'
+import { KIND_ICONS, levelLabel } from '../kinds'
 import { useUi } from '../store'
 import { flagClass, useFlagged } from '../flags'
 import { menuRef } from '../contextMenu'
@@ -38,6 +38,8 @@ const pathFor = (path: Set<string> | undefined, id: string) => (path?.has(id) ? 
 
 interface RowProps {
   node: TreeNode
+  /** What it's in, to say what level it is (a planet or a moon). */
+  parentKind?: NodeKind
   depth: number
   collapsed: Set<string>
   /** The ids from the root to the selection, given only to the rows on it (which are kept open). */
@@ -46,7 +48,7 @@ interface RowProps {
 }
 
 /** Memoized: selecting something re-renders only the rows on the old and new paths to the selection. */
-const Row = memo(function Row({ node, depth, collapsed, path, toggle }: RowProps) {
+const Row = memo(function Row({ node, parentKind, depth, collapsed, path, toggle }: RowProps) {
   const selected = useUi((s) => s.selectedId === node.id)
   const flagged = useFlagged(node.id)
   const select = useUi((s) => s.select)
@@ -55,7 +57,7 @@ const Row = memo(function Row({ node, depth, collapsed, path, toggle }: RowProps
 
   return (
     <li role="treeitem" aria-selected={selected} aria-expanded={hasChildren ? open : undefined}>
-      <div className={`tree-row${selected ? ' selected' : ''}${flagClass(flagged)}`} style={{ paddingLeft: 8 + depth * 14 }} data-menu={menuRef('node', node.id)} onClick={() => select(node.id)}>
+      <div className={`tree-row${selected ? ' selected' : ''}${flagClass(flagged)}`} style={{ paddingLeft: 8 + depth * 14 }} title={levelLabel(node.kind, parentKind)} data-menu={menuRef('node', node.id)} onClick={() => select(node.id)}>
         <button
           className="tree-caret link"
           style={{ visibility: hasChildren ? 'visible' : 'hidden' }}
@@ -73,7 +75,7 @@ const Row = memo(function Row({ node, depth, collapsed, path, toggle }: RowProps
       {open && (
         <ul role="group">
           {node.children.map((c) => (
-            <Row key={c.id} node={c} depth={depth + 1} collapsed={collapsed} path={pathFor(path, c.id)} toggle={toggle} />
+            <Row key={c.id} node={c} parentKind={node.kind} depth={depth + 1} collapsed={collapsed} path={pathFor(path, c.id)} toggle={toggle} />
           ))}
         </ul>
       )}

@@ -1,4 +1,29 @@
+import type { Page } from '@playwright/test'
 import { addChild, expect, fill, inspector, newWorld, playhead, row, setPlayhead, shot, test, wheel } from './helpers'
+
+/**
+ * Where the system view points at something along the line through its star (a pointer cursor):
+ * the middle of each stretch of it, left and right of the star, in px from the view's corner.
+ */
+const orbitCrossings = (page: Page) =>
+  page.getByTestId('viewport').evaluate((canvas) => {
+    const rect = canvas.getBoundingClientRect()
+    // The star is drawn 10 px below the middle.
+    const [cx, y] = [rect.width / 2, rect.height / 2 + 10]
+    const runs: number[][] = []
+    let run: number[] | null = null
+    for (let x = 0; x < rect.width; x += 1) {
+      canvas.dispatchEvent(new MouseEvent('mousemove', { clientX: rect.left + x, clientY: rect.top + y, bubbles: true }))
+      if (canvas.style.cursor === 'pointer') (run ??= []).push(x)
+      else if (run) {
+        runs.push(run)
+        run = null
+      }
+    }
+    canvas.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }))
+    const middles = runs.map((r) => r[r.length >> 1]!)
+    return { y, left: middles.filter((x) => x < cx), right: middles.filter((x) => x > cx) }
+  })
 
 test('star systems: real orbits at the playhead, an editable star and orbits, derived calendars', async ({ h }) => {
   test.slow()
@@ -18,6 +43,24 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await page.getByRole('button', { name: '▶ 1 month/s' }).click()
   await shot(page, '80-star-system', { wait: 1500 })
   await page.getByRole('button', { name: 'Pause' }).click()
+
+  // Pointing at a planet, or anywhere on its orbit's line, outlines it and shows its card: its level, its name and how it goes round.
+  const crossings = await orbitCrossings(page)
+  const card = page.locator('.cosmos-card')
+  const box = (await page.getByTestId('viewport').boundingBox())!
+  const named = async (xs: number[]) => {
+    const texts: string[] = []
+    for (const x of xs) {
+      await page.mouse.move(box.x + x, box.y + crossings.y)
+      await expect(card).toBeVisible()
+      texts.push(await card.innerText())
+    }
+    return texts
+  }
+  // Each orbit crosses the line through the star on both sides, and the planet is on one at most.
+  for (const side of [crossings.left, crossings.right]) expect(await named(side)).toContainEqual(expect.stringMatching(/^Planet\nTerra\n[\d.]+ AU/i))
+  await page.mouse.move(box.x + 2, box.y + 2)
+  await expect(card).toHaveCount(0)
 
   // Terra's orbit: made up until changed; a 30-hour day changes its calendar.
   await row(page, 'Terra').click()

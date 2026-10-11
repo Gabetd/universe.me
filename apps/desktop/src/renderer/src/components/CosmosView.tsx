@@ -247,7 +247,7 @@ export function CosmosView({ node }: { node: SpatialNode & { kind: CosmosKind } 
           {KIND_LABELS[kind]} view{shape ? ` · ${galaxySummary(shape).toLowerCase()}` : ''}
         </div>
       </div>
-      {card && <ClaimCard x={card.x} y={card.y} name={card.item.name} description={describe(card.item)} onClaim={picked && !picked.item.node ? () => claim(picked) : undefined} />}
+      {card && <ClaimCard x={card.x} y={card.y} level={levelOf(card.item)} name={card.item.name} description={describe(card.item)} onClaim={picked && !picked.item.node ? () => claim(picked) : undefined} />}
       <div className="scale-bar small" aria-label="Scale" ref={scaleRef}>
         <span className="scale-line" />
         <span />
@@ -278,6 +278,9 @@ const sameFrame = (a: Frame, b: Frame) => (Object.keys(a) as (keyof Frame)[]).ev
 
 /** "Barred galaxy · 104,000 ly across". */
 const galaxySummary = (shape: GalaxyShape) => `${shape.type[0]!.toUpperCase()}${shape.type.slice(1)} galaxy · ${Math.round((shape.radiusLy * 2) / 1000)},000 ly across`
+
+/** What level of the universe something on the map is: a galaxy cluster, a galaxy or a star system. */
+const levelOf = (item: Item) => KIND_LABELS[item.node?.kind ?? (item.cluster ? 'galaxy_cluster' : item.galaxy ? 'galaxy' : 'star_system')]
 
 function describe(item: Item): string {
   if (item.node) return `${KIND_LABELS[item.node.kind]} in your project`
