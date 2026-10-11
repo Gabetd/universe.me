@@ -1,6 +1,6 @@
 import { expect, newWorld, shot, SLOW, test } from './helpers'
 
-test('on the ground, W A S D move over it at the speed picked, and S moves rather than picking Smooth', async ({ h }) => {
+test('on the ground, W A S D move over it at the speed picked, S moves rather than picking Smooth, and Space and Ctrl go up and down', async ({ h }) => {
   const { page } = h
   await newWorld(h, 'Walking')
   await page.getByRole('button', { name: '🔍 Ground' }).click()
@@ -38,6 +38,16 @@ test('on the ground, W A S D move over it at the speed picked, and S moves rathe
   const walked = slow[1] - (await at())[1]
   expect(walked).toBeGreaterThan(0)
   expect(walked).toBeLessThan(start[1] - ahead[1])
+
+  // Space rises; Ctrl comes down, as far as standing on the ground (as near as the view comes to what it looks at).
+  const height = async () => Number(await canvas.getAttribute('data-height'))
+  const low = await height()
+  await hold('Space', 600)
+  expect(await height()).toBeGreaterThan(low + 20)
+  await page.getByRole('radio', { name: 'Fly' }).click()
+  await page.keyboard.down('Control')
+  await expect.poll(height).toBeLessThanOrEqual(3)
+  await page.keyboard.up('Control')
 })
 
 test('on the ground, the planet’s map in the corner shows where you are and which way you face, and a click on it goes there; the ground reaches 12 km', async ({ h }) => {

@@ -253,6 +253,9 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
     if (gl.domElement.dataset.at !== at) gl.domElement.dataset.at = at
     const floor = ground.standAt(camera.position.x, camera.position.z) + 1.7
     if (camera.position.y < floor) camera.position.y = floor
+    // And how high the camera is over the ground beneath it, in metres.
+    const height = String(Math.round(camera.position.y - floor + 1.7))
+    if (gl.domElement.dataset.height !== height) gl.domElement.dataset.height = height
     const here = fromLocal(ground.frame, t.x, t.z)
     useGroundPose.getState().move(fromLocal(ground.frame, camera.position.x, camera.position.z), Math.atan2(t.x - camera.position.x, camera.position.z - t.z))
     const key = chunkKey(chunkOf(here, ground.frame.radiusKm))

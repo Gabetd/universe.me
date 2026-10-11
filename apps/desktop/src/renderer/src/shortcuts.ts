@@ -51,6 +51,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'tool-place', keys: 'P', key: 'p', label: 'Place structure', group: 'World tools' },
 
   { id: 'walk', keys: 'W A S D', label: 'Move forward, left, back and right (or the arrow keys)', group: 'On the ground' },
+  { id: 'climb', keys: 'Space / Ctrl', label: 'Rise, or come down to the ground', group: 'On the ground' },
   { id: 'walk-fast', keys: 'Shift', label: 'Hold to move three times as fast', group: 'On the ground' },
 
   { id: 'new-event', keys: 'N', key: 'n', label: 'New event at the playhead', group: 'Timeline' },
