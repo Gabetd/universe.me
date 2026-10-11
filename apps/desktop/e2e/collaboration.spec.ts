@@ -1,29 +1,10 @@
-import type { Server } from 'node:http'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
-import { expect, fill, inspector, launch, newWorld, row, servedTo, shot, SLOW, state, stubSaveDialog, tailnetProxy, test, type AppHandle } from './helpers'
+import { expect, fill, inspector, newWorld, row, shot, SLOW, state, stubSaveDialog, test, twoComputers } from './helpers'
 
 /** Two people on the stand-in tailnet (e2e/fake-tailscale.mjs), each on a computer of their own: Ana's studio makes the universe, and she shares it with Bea. */
 const ANA = { login: 'ana@example.com', host: 'studio.tail1234.ts.net' }
 const BEA = { login: 'bea@example.com', host: 'bea-laptop.tail1234.ts.net' }
-type Someone = typeof ANA
-
-/** The stand-in `tailscale serve` of `someone`'s computer: to wherever its app pointed it, saying the one asking is `visitor`. */
-function serve(someone: Someone, visitor: Someone): { url: Promise<string>; server: Promise<Server>; app: { dir?: string } } {
-  const app: { dir?: string } = {}
-  const proxy = tailnetProxy(`${someone.host}:8443`, () => app.dir && servedTo(app.dir), visitor.login)
-  return { url: proxy.then(({ port }) => `http://127.0.0.1:${port}`), server: proxy.then(({ server }) => server), app }
-}
-
-/** Someone's computer: signed in to Tailscale as them, seeing the other person's computer on the tailnet. */
-function computer(someone: Someone, other: Someone, otherUrl: string): Promise<AppHandle> {
-  return launch(() => ({
-    FAKE_TAILSCALE_HOST: someone.host,
-    FAKE_TAILSCALE_LOGIN: someone.login,
-    FAKE_TAILSCALE_OTHERS: `${other.host}=${other.login}`,
-    UNIVERSE_TAILNET_URLS: JSON.stringify({ [other.host]: otherUrl })
-  }))
-}
 
 const shareDialog = (page: Page) => page.getByRole('dialog', { name: 'Share this universe' })
 const openShare = (page: Page) => page.getByRole('button', { name: '👥 Share', exact: true }).click()
@@ -33,13 +14,7 @@ const firstEvent = async (page: Page) => (await state(page, 'timeline')).events[
 
 test('collaboration: a universe shared with someone else, both in it at once, editing one event, then not shared with them any more', async () => {
   test.slow()
-  const toAna = serve(ANA, BEA)
-  const toBea = serve(BEA, ANA)
-  const ana = await computer(ANA, BEA, await toBea.url)
-  const bea = await computer(BEA, ANA, await toAna.url)
-  toAna.app.dir = ana.dir
-  toBea.app.dir = bea.dir
-  try {
+  await twoComputers(ANA, BEA, async (ana, bea) => {
     // Ana makes a universe and opens Share: sync is off, so it offers to turn it on.
     await newWorld(ana, 'Aerth', { surface: false })
     await openShare(ana.page)
@@ -110,8 +85,5 @@ test('collaboration: a universe shared with someone else, both in it at once, ed
     // Longer than a round and a nudge take while someone else is in (3 s, and under 1 s).
     await ana.page.waitForTimeout(5000)
     await expect(row(ana.page, 'Sol')).toBeVisible()
-  } finally {
-    await Promise.all([ana.close(), bea.close()])
-    for (const proxy of [toAna, toBea]) (await proxy.server).close()
-  }
+  })
 })

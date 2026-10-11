@@ -1,32 +1,13 @@
-import type { Server } from 'node:http'
 import { join } from 'node:path'
-import { expect, inspector, launch, newWorld, row, servedTo, shot, SLOW, stubSaveDialog, tailnetProxy, test, type AppHandle } from './helpers'
+import { expect, inspector, newWorld, row, shot, SLOW, stubSaveDialog, test, twoComputers } from './helpers'
 
 /** The two computers on the stand-in tailnet (e2e/fake-tailscale.mjs), both the same owner's. */
-const STUDIO = 'studio.tail1234.ts.net'
-const LAPTOP = 'laptop.tail1234.ts.net'
-
-/** The stand-in `tailscale serve` of one of the computers: to wherever its app pointed it. */
-function serve(host: string): { url: Promise<string>; server: Promise<Server>; app: { dir?: string } } {
-  const app: { dir?: string } = {}
-  const proxy = tailnetProxy(`${host}:8443`, () => app.dir && servedTo(app.dir))
-  return { url: proxy.then(({ port }) => `http://127.0.0.1:${port}`), server: proxy.then(({ server }) => server), app }
-}
-
-/** A computer on the tailnet: its own Tailscale, which sees the other as its owner's device. */
-async function computer(host: string, other: string, otherUrl: string): Promise<AppHandle> {
-  return launch(() => ({ FAKE_TAILSCALE_HOST: host, FAKE_TAILSCALE_PEERS: other, UNIVERSE_TAILNET_URLS: JSON.stringify({ [other]: otherUrl }) }))
-}
+const STUDIO = { host: 'studio.tail1234.ts.net', login: 'owner@example.com' }
+const LAPTOP = { host: 'laptop.tail1234.ts.net', login: 'owner@example.com' }
 
 test('sync: a universe copied from one computer to another, then kept in step both ways over the tailnet', async () => {
   test.slow()
-  const toStudio = serve(STUDIO)
-  const toLaptop = serve(LAPTOP)
-  const studio = await computer(STUDIO, LAPTOP, await toLaptop.url)
-  const laptop = await computer(LAPTOP, STUDIO, await toStudio.url)
-  toStudio.app.dir = studio.dir
-  toLaptop.app.dir = laptop.dir
-  try {
+  await twoComputers(STUDIO, LAPTOP, async (studio, laptop) => {
     // The studio has a universe open, and sync on.
     await newWorld(studio, 'Aerth')
     await studio.page.getByRole('button', { name: 'Connect AI' }).click()
@@ -58,8 +39,5 @@ test('sync: a universe copied from one computer to another, then kept in step bo
     await expect(laptop.page.getByRole('list', { name: 'Devices' })).toContainText(/studio · in step, synced/)
     await laptop.page.getByRole('region', { name: 'Your other devices' }).scrollIntoViewIfNeeded()
     await shot(laptop.page, '180-sync')
-  } finally {
-    await Promise.all([studio.app.close(), laptop.app.close()])
-    for (const proxy of [toStudio, toLaptop]) (await proxy.server).close()
-  }
+  })
 })

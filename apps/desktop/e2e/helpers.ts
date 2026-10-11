@@ -415,3 +415,40 @@ export function tailnetProxy(host: string, target: () => string | undefined, log
   })
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ port: (server.address() as AddressInfo).port, server })))
 }
+
+/** Someone's computer on the stand-in tailnet: its tailnet name, and who's signed in to Tailscale there. */
+export interface TailnetComputer {
+  host: string
+  login: string
+}
+
+/**
+ * Two computers on the stand-in tailnet (e2e/fake-tailscale.mjs), each with
+ * a Tailscale of its own and a stand-in `tailscale serve` that forwards the
+ * other's requests to wherever its app pointed it, saying who asks. Each
+ * sees the other: as one of its owner's devices when both are signed in as
+ * the same person, otherwise as another person's, shared into its tailnet.
+ * `run` is given both apps, and both are closed after, with their servers.
+ */
+export async function twoComputers(a: TailnetComputer, b: TailnetComputer, run: (a: AppHandle, b: AppHandle) => Promise<void>): Promise<void> {
+  const serve = (someone: TailnetComputer, visitor: TailnetComputer) => {
+    const app: { dir?: string } = {}
+    return { app, proxy: tailnetProxy(`${someone.host}:8443`, () => app.dir && servedTo(app.dir), visitor.login) }
+  }
+  const toA = serve(a, b)
+  const toB = serve(b, a)
+  const apps: AppHandle[] = []
+  try {
+    for (const [someone, other, to] of [[a, b, toB], [b, a, toA]] as const) {
+      const otherUrl = `http://127.0.0.1:${(await to.proxy).port}`
+      const seen: Record<string, string> = someone.login === other.login ? { FAKE_TAILSCALE_PEERS: other.host } : { FAKE_TAILSCALE_OTHERS: `${other.host}=${other.login}` }
+      apps.push(await launch(() => ({ FAKE_TAILSCALE_HOST: someone.host, FAKE_TAILSCALE_LOGIN: someone.login, ...seen, UNIVERSE_TAILNET_URLS: JSON.stringify({ [other.host]: otherUrl }) })))
+    }
+    toA.app.dir = apps[0]!.dir
+    toB.app.dir = apps[1]!.dir
+    await run(apps[0]!, apps[1]!)
+  } finally {
+    await Promise.all(apps.map((h) => h.close()))
+    for (const { proxy } of [toA, toB]) (await proxy).server.close()
+  }
+}
