@@ -21,7 +21,7 @@ function useDraft(value: string): [string, (text: string) => void] {
   return [text, setText]
 }
 
-export function TextField(props: { label: string; value: string; placeholder?: string; required?: boolean; onCommit(v: string): void }) {
+export function TextField(props: { label: string; value: string; placeholder?: string; required?: boolean; hint?: string; onCommit(v: string): void }) {
   const [text, setText] = useDraft(props.value)
   // "Rename…" in a right-click menu asks for this field once its panel is shown.
   const input = useRef<HTMLInputElement>(null)
@@ -37,7 +37,7 @@ export function TextField(props: { label: string; value: string; placeholder?: s
     else if (v !== props.value) props.onCommit(v)
   }
   return (
-    <label className="field">
+    <label className="field" title={props.hint}>
       <span>{props.label}</span>
       <input ref={input} value={text} placeholder={props.placeholder} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={blurOnEnter} />
     </label>
@@ -64,7 +64,7 @@ export function TextAreaField(props: { label: string; value: string; placeholder
  * A color picker that saves once, when the picker closes, rather than for
  * every color passed over while dragging (each save is an undo step).
  */
-export function ColorField(props: { label: string; value: string; onCommit(color: string): void }) {
+export function ColorField(props: { label: string; value: string; hint?: string; onCommit(color: string): void }) {
   const ref = useRef<HTMLInputElement>(null)
   const { value, onCommit } = props
   useEffect(() => {
@@ -74,7 +74,7 @@ export function ColorField(props: { label: string; value: string; onCommit(color
     return () => el.removeEventListener('change', onChange)
   }, [value, onCommit])
   return (
-    <label className="field">
+    <label className="field" title={props.hint}>
       <span>{props.label}</span>
       {/* Uncontrolled, re-created when the stored color changes (e.g. undo). */}
       <input key={value} ref={ref} type="color" aria-label={props.label} defaultValue={value} />
@@ -203,7 +203,8 @@ export function SelectField<T extends string>({ label, value, options, onCommit 
 }
 
 /** A range slider that saves once on release, not on every pixel of a drag (each save is an undo step). */
-export function CommitSlider(props: { label: string; unit?: string; min: number; max: number; step: number; value: number; onCommit(v: number): void }) {
+/** `hint`, if given, says what it does when the pointer rests on it. */
+export function CommitSlider(props: { label: string; unit?: string; min: number; max: number; step: number; value: number; hint?: string; onCommit(v: number): void }) {
   const [draft, setDraft] = useState<number | null>(null)
   const shown = draft ?? props.value
   const commit = () => {
@@ -211,7 +212,7 @@ export function CommitSlider(props: { label: string; unit?: string; min: number;
     setDraft(null)
   }
   return (
-    <label className="field">
+    <label className="field" title={props.hint}>
       <span className="field-label-row">
         {props.label}
         <span className="muted">

@@ -7,7 +7,7 @@ import { BlueprintLibrary } from './BlueprintLibrary'
 import { StructurePanel } from './StructurePanel'
 import { CharacterPanel } from './CharacterPanel'
 import { CalendarPanel, ClimatePanel } from './SkyPanels'
-import { WorldGenPanel } from './WorldGenPanel'
+import { WORLD_HINTS, WorldGenPanel } from './WorldGenPanel'
 import { RegionTheme, WorldThemes } from './ThemePanels'
 import { EROSION_SPEED, isAlive, stateAt } from '@universe/core'
 import { STAGE_COLORS } from '../world/structureLook'
@@ -42,7 +42,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
       <section className="inspector-section" aria-label="Edits">
         <h3>Edits</h3>
         <p className="muted small">Sculpting, painting and sea level changes sit on top of the generated world and are kept when its seed or options change.</p>
-        <CommitSlider label="Sea level change" unit=" m" min={-4000} max={4000} step={50} value={settings.seaLevel} onCommit={(v) => update({ seaLevel: v })} />
+        <CommitSlider label="Sea level change" hint={WORLD_HINTS.seaLevel} unit=" m" min={-4000} max={4000} step={50} value={settings.seaLevel} onCommit={(v) => update({ seaLevel: v })} />
         <div className="add-buttons">
           <button onClick={() => void execute({ type: 'terrain.reset', payload: { worldId: world.id, layer: 'height' } })}>Reset sculpting</button>
           <button onClick={() => void execute({ type: 'terrain.reset', payload: { worldId: world.id, layer: 'biome' } })}>Reset painting</button>
@@ -172,7 +172,7 @@ function StructureList({ worldId, erosionSpeed, onErosionSpeed }: { worldId: str
           menu="structure"
         />
       )}
-      <CommitSlider label="Erosion speed" unit="×" min={EROSION_SPEED.min} max={EROSION_SPEED.max} step={EROSION_SPEED.step} value={erosionSpeed} onCommit={onErosionSpeed} />
+      <CommitSlider label="Erosion speed" hint={WORLD_HINTS.erosionSpeed} unit="×" min={EROSION_SPEED.min} max={EROSION_SPEED.max} step={EROSION_SPEED.step} value={erosionSpeed} onCommit={onErosionSpeed} />
     </section>
   )
 }

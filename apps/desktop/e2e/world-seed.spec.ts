@@ -19,6 +19,9 @@ test('a seed decides the whole world and locks its options; a world code recreat
   // A custom world: options are editable.
   const water = inspector(page).getByLabel('Water', { exact: true })
   await expect(water).toBeEnabled()
+  // Each option says what it does when the pointer rests on it.
+  for (const [label, says] of [['Water', /sea/], ['Mountain height', /peaks/], ['Vegetation', /plants/], ['Sea level change', /sea/]] as const)
+    await expect(inspector(page).locator('label', { has: page.getByLabel(label, { exact: true }) })).toHaveAttribute('title', says)
 
   // Typing a seed generates the world from it and locks the options.
   await fill(page, 'Seed', 'Avalon')
