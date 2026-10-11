@@ -5,6 +5,7 @@ import { NewId, Ref, clearRefs, create, deleteWith, live, recordCrud, refsWhere,
 import { Id, Name } from './schema'
 import { Time } from './time'
 import { forgetCause } from './faction-commands'
+import { connectionsOf } from './canvas-commands'
 import { EntityChange, Era, EventGroup, EventLink, Lane, LinkType, TimelineEvent } from './timeline'
 
 /** Fields of a record kind that commands may set. */
@@ -89,7 +90,7 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
           .map((c): Command => ({ type: 'character.update', payload: { id: c.id, patch: { stops: c.stops.map((s) => (s.eventId === id ? { ...s, eventId: null } : s)) } } })),
         ...forgetCause(store, ownerId, id)
       ],
-      remove: [...refsWhere(store, 'link', ownerId, (l) => l.fromId === id || l.toId === id), ...refsWhere(store, 'effect', ownerId, (e) => e.eventId === id)]
+      remove: [...refsWhere(store, 'link', ownerId, (l) => l.fromId === id || l.toId === id), ...refsWhere(store, 'effect', ownerId, (e) => e.eventId === id), ...connectionsOf(store, ownerId, id)]
     })),
 
   'link.create': (store, { id, fromId, ...p }, ctx) =>

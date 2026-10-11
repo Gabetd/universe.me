@@ -30,8 +30,8 @@ export const TimelineEvent = z.object({
   tags: z.array(z.string()),
   /** Where it happens: points or regions on the owning world. */
   locations: z.array(EventLocation),
-  /** Where its card sits on the world's canvas; unset or null lays it out automatically. */
-  canvas: z.object({ x: z.number(), y: z.number() }).nullable().optional(),
+  /** Where its card sits on the world's canvas, and its size if it's been resized; unset or null lays it out automatically. */
+  canvas: z.object({ x: z.number(), y: z.number(), w: z.number().min(40).max(20_000).optional(), h: z.number().min(40).max(20_000).optional() }).nullable().optional(),
   /** Every event gets a card on the canvas unless hidden. Older events don't have these fields. */
   canvasHidden: z.boolean().nullable().optional(),
   /** Who took part: characters and factions on the world. Older events don't have it. */

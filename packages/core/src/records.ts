@@ -9,10 +9,11 @@ import { PowerAge, PowerSystem } from './powers'
 import { Theme, ThemeSpan } from './themes'
 import { EntityChange, Era, EventGroup, EventLink, Lane, TimelineEvent, TimelineSettings } from './timeline'
 import { Waterway } from './waterways'
+import { CanvasCard, Connection } from './canvas'
 
 /**
  * Every kind of record kept in the generic `records` table: the timeline
- * (timeline.ts), structures (structures.ts), characters (characters.ts), stars and orbits (astro.ts), species (ecosystem.ts), themes (themes.ts), power systems (powers.ts), findings (findings.ts) and factions and relationships (factions.ts) and what's been given rivers and lakes (waterways.ts). Each record belongs to a node
+ * (timeline.ts), structures (structures.ts), characters (characters.ts), stars and orbits (astro.ts), species (ecosystem.ts), themes (themes.ts), power systems (powers.ts), findings (findings.ts) and factions and relationships (factions.ts) what's been given rivers and lakes (waterways.ts) and the canvas's cards and connections (canvas.ts). Each record belongs to a node
  * through `ownerId`, mostly a world.
  */
 export const RECORD_SCHEMAS = {
@@ -41,7 +42,9 @@ export const RECORD_SCHEMAS = {
   membership: Membership,
   holding: Holding,
   relationship: Relationship,
-  waterway: Waterway
+  waterway: Waterway,
+  card: CanvasCard,
+  connection: Connection
 } as const
 export type RecordKind = keyof typeof RECORD_SCHEMAS
 export const RECORD_KINDS = Object.keys(RECORD_SCHEMAS) as RecordKind[]
