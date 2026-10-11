@@ -164,9 +164,7 @@ export const handlers: Handlers = {
     if (!next.success) throw new CommandError(`Invalid world settings: ${next.error.issues[0]?.message}`)
     store.worlds.putSettings(id, next.data)
     ctx.footprint?.wrote(key, next.data, kept.map(([path]) => path))
-    // A setting the world was saved without (by an older version) has its default either way.
-    const undo = changedFields(previous, next.data).flatMap((path) => (valueAt(previous, path) === undefined ? [] : [[path, valueAt(previous, path)] as const]))
-    return { inverse: { type: 'world.update', payload: { id, patch: (rowOf(undo) ?? {}) as WorldSettingsPatch } }, target: { kind: 'node', id }, owner: id }
+    return { inverse: { type: 'world.update', payload: { id, patch: settingsUndo(previous, next.data) } }, target: { kind: 'node', id }, owner: id }
   },
 
   'terrain.patch'(store, { worldId, layer, patches }) {
@@ -251,6 +249,12 @@ export const handlers: Handlers = {
     // ids[0] is the root of the restored subtree, so deleting it again re-collects the same set.
     return { inverse: { type: 'node.delete', payload: { id: ids[0]! } }, target: { kind: 'node', id: ids[0]! } }
   }
+}
+
+/** The patch that puts back the settings a world's change changed. A setting it was saved without (by an older version) has its default either way. */
+function settingsUndo(previous: WorldSettings, next: WorldSettings): WorldSettingsPatch {
+  const undo = changedFields(previous, next).flatMap((path) => (valueAt(previous, path) === undefined ? [] : [[path, valueAt(previous, path)] as const]))
+  return (rowOf(undo) ?? {}) as WorldSettingsPatch
 }
 
 /** Applies an already-validated command inside the current transaction. */

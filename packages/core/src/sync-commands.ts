@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { CommandError } from './command-kit'
 import { base64ToBytes } from './encoding'
-import { mergeFields, sameStamps, type RowStamps } from './field-stamps'
+import { mergeFields, rowStamps, sameStamps, type MergedStamps } from './field-stamps'
 import { isPlainObject } from './fields'
 import { RECORD_SCHEMAS } from './records'
 import { SpatialNode } from './schema'
@@ -29,7 +29,7 @@ const ORDER: Record<Exclude<SyncRef['t'], 'node'>, number> = { world: 0, layer: 
 interface Landing {
   ref: SyncRef
   data: unknown
-  stamps: RowStamps | { fields: Record<string, string> }
+  stamps: MergedStamps
 }
 
 /**
@@ -57,7 +57,7 @@ export function mergeRows(store: Store, rows: SyncRow[]): void {
  * other moved it) falls back to the later row, whole.
  */
 function landingOf(store: Store, ledger: SyncLedger, ref: SyncRef, row: SyncRow): Landing | undefined {
-  const theirs = { ref, data: row.data, stamps: row.fields ? { stamp: row.stamp, fields: row.fields } : { stamp: row.stamp } }
+  const theirs = { ref, data: row.data, stamps: rowStamps(row.stamp, row.fields) }
   const own = ledger.stampsOf(ref)
   if (!own) return theirs
   const later = row.stamp > own.stamp ? theirs : undefined

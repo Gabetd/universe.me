@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import { CUBE_FACES, RECORD_KINDS, SyncClock, refKey, type RowStamps, type StampTable, type StampedKey, type SyncRef, type TerrainLayerName } from '@universe/core'
+import { CUBE_FACES, RECORD_KINDS, SyncClock, refKey, type FieldStamps, type RowStamps, type StampTable, type StampedKey, type SyncRef, type TerrainLayerName } from '@universe/core'
 
 /** A row of `row_stamps`, as SQLite returns it. */
 interface StampRow {
@@ -7,7 +7,7 @@ interface StampRow {
   fields: string | null
 }
 
-const stampsOf = ({ stamp, fields }: StampRow): RowStamps => (fields ? { stamp, fields: JSON.parse(fields) as Record<string, string> } : { stamp })
+const stampsOf = ({ stamp, fields }: StampRow): RowStamps => (fields ? { stamp, fields: JSON.parse(fields) as FieldStamps } : { stamp })
 
 /** Each row's sync stamps in the project file (PLAN.md §6.7), with the order this copy got them in. */
 export class SqliteStampTable implements StampTable {

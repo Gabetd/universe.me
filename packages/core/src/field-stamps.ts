@@ -9,9 +9,17 @@ import { changedFields, fieldsOf, isPlainObject, rowOf } from './fields'
  */
 export interface RowStamps {
   stamp: string
-  /** By path (see `fieldsOf`). */
-  fields?: Record<string, string>
+  fields?: FieldStamps
 }
+
+/** Fields' stamps, by path (see `fieldsOf`). */
+export type FieldStamps = Record<string, string>
+
+/** The stamps a merge gives the row it writes: another device's as they are, or (for a mix of both versions) the fields' alone, the row to get a new stamp. */
+export type MergedStamps = RowStamps | { fields: FieldStamps }
+
+/** A row's stamps, without a `fields` when there are none. */
+export const rowStamps = (stamp: string, fields: FieldStamps | undefined): RowStamps => (fields ? { stamp, fields } : { stamp })
 
 /** A version of a row: what it holds, and its stamps. */
 export interface StampedRow {
@@ -30,7 +38,7 @@ function stampsByField({ stamp, fields = {} }: RowStamps, values: ReadonlyMap<st
 }
 
 /** The field stamps a row keeps listed: all but those of fields it has at the row's own stamp (none: undefined). */
-function listed(byField: ReadonlyMap<string, string>, stamp: string, values: ReadonlyMap<string, unknown>): Record<string, string> | undefined {
+function listed(byField: ReadonlyMap<string, string>, stamp: string, values: ReadonlyMap<string, unknown>): FieldStamps | undefined {
   const kept = [...byField].filter(([path, s]) => s !== stamp || !values.has(path))
   return kept.length ? Object.fromEntries(kept) : undefined
 }
@@ -49,12 +57,11 @@ export function restamp(old: RowStamps | undefined, before: unknown, after: unkn
   const stamp = next()
   const byField = stampsByField(old ?? { stamp: ORIGIN_STAMP }, fieldsOf(before))
   for (const path of changed) byField.set(path, stamp)
-  const fields = listed(byField, stamp, fieldsOf(after))
-  return fields ? { stamp, fields } : { stamp }
+  return rowStamps(stamp, listed(byField, stamp, fieldsOf(after)))
 }
 
 /** What merging two versions of a row comes to: one of them as it is, or a row of fields from each, with each field's stamp. */
-export type FieldMerge = { keep: 'own' | 'theirs' } | { data: unknown; fields: Record<string, string> }
+export type FieldMerge = { keep: 'own' | 'theirs' } | { data: unknown; fields: FieldStamps }
 
 /**
  * Merges another device's version of a row with this copy's, field by field:
@@ -67,7 +74,7 @@ export function mergeFields(own: StampedRow, theirs: StampedRow): FieldMerge {
   const theirValues = fieldsOf(theirs.data)
   const ownStamps = stampsByField(own.stamps, ownValues)
   const theirStamps = stampsByField(theirs.stamps, theirValues)
-  const fields: Record<string, string> = {}
+  const fields: FieldStamps = {}
   const won: [path: string, value: unknown, stamp: string][] = []
   let ownWon = false
   let theirsWon = false

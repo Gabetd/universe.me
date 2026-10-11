@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { bytesToBase64 } from './encoding'
-import { restamp, type RowStamps } from './field-stamps'
+import { restamp, rowStamps, type MergedStamps, type RowStamps } from './field-stamps'
 import { RECORD_KINDS, type RecordKind } from './records'
 import type { Id } from './schema'
 import { ObservedStore } from './observed-store'
@@ -144,7 +144,7 @@ export interface SyncLedger {
    * ones; without a row stamp (fields from both versions), it gets a new one
    * from this device, after both.
    */
-  adopt(ref: SyncRef, stamps: RowStamps | { fields: Record<string, string> }): void
+  adopt(ref: SyncRef, stamps: MergedStamps): void
 }
 
 /** Rows from another device in one merge, at most: a pull is asked for in pages smaller than this. */
@@ -161,7 +161,7 @@ export class StampedStore extends ObservedStore {
   /** Rows written in the open transaction (each one of fields as it was before), and the stamps merged ones keep. */
   private readonly touched = new Map<string, SyncRef>()
   private readonly before = new Map<string, unknown>()
-  private readonly adopted = new Map<string, RowStamps | { fields: Record<string, string> }>()
+  private readonly adopted = new Map<string, MergedStamps>()
 
   constructor(
     inner: Store,
@@ -173,7 +173,8 @@ export class StampedStore extends ObservedStore {
       stampsOf: (ref) => this.table.get(refKey(ref)),
       adopt: (ref, stamps) => {
         this.adopted.set(refKey(ref), stamps)
-        for (const s of [...('stamp' in stamps ? [stamps.stamp] : []), ...Object.values(stamps.fields ?? {})]) this.clock.see(s)
+        // A new stamp for a mix of versions comes after each of its fields'.
+        for (const s of 'stamp' in stamps ? [stamps.stamp] : Object.values(stamps.fields)) this.clock.see(s)
       }
     }
   }
@@ -195,7 +196,7 @@ export class StampedStore extends ObservedStore {
       if (bytes > PAGE_BYTES) break
       const data = readRow(this.inner, parseRefKey(key))
       bytes += sizeOf(data)
-      rows.push(fields ? { key, stamp: s, fields, data } : { key, stamp: s, data })
+      rows.push({ key, ...rowStamps(s, fields), data })
     }
     const more = rows.length < got.length || got.length === limit
     // Everything got up to now has been seen, the asker's own rows too, unless the page ended first.
@@ -210,8 +211,11 @@ export class StampedStore extends ObservedStore {
    */
   protected override writing(ref: SyncRef, inserted: boolean): void {
     const key = refKey(ref)
-    if (!hasFields(ref) || this.before.has(key)) return
-    this.before.set(key, inserted ? undefined : ref.t === 'world' ? (this.inner.worlds.getSettings(ref.id) ?? DEFAULT_WORLD_SETTINGS) : readRow(this.inner, ref))
+    if (hasFields(ref) && !this.before.has(key)) this.before.set(key, inserted ? undefined : this.rowBefore(ref))
+  }
+
+  private rowBefore(ref: SyncRef): unknown {
+    return ref.t === 'world' ? (this.inner.worlds.getSettings(ref.id) ?? DEFAULT_WORLD_SETTINGS) : readRow(this.inner, ref)
   }
 
   protected wrote(ref: SyncRef): void {
