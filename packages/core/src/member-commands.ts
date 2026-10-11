@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { batchOf } from './command-kit'
 import type { HandlerMap } from './commands'
-import { Login, Member, loginName, memberWithLogin } from './members'
+import { Login, Member, memberWithLogin, personOf } from './members'
 import { NewId, create, recordCrud } from './record-kit'
 import { Id, Name, type CommandSource } from './schema'
 
@@ -43,9 +43,9 @@ export function changesMembers(command: { type: string; payload: unknown }): boo
 
 export const memberHandlers: HandlerMap<MemberCommand> = {
   'member.create': (store, { id, ownerId, login, name, invitedBy }, ctx) => {
-    const made = create(store, 'member', ctx, ownerId, id, { login, name: name ?? loginName(login), invitedBy: invitedBy?.login ?? null })
+    const made = create(store, 'member', ctx, ownerId, id, { ...personOf(login, name), invitedBy: invitedBy?.login ?? null })
     if (!invitedBy || memberWithLogin(store.records('member').byOwner(ownerId), invitedBy.login)) return made
-    const inviter = create(store, 'member', ctx, ownerId, undefined, { login: invitedBy.login, name: invitedBy.name ?? loginName(invitedBy.login), invitedBy: null }, [ownerId])
+    const inviter = create(store, 'member', ctx, ownerId, undefined, { ...personOf(invitedBy.login, invitedBy.name), invitedBy: null }, [ownerId])
     return { ...made, inverse: batchOf([inviter.inverse, made.inverse]) }
   },
   'member.update': members.update,

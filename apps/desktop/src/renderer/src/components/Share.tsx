@@ -188,7 +188,7 @@ function Invite({ me, people, members }: { me: Person; people: Person[]; members
 
 /** Where a member is, in a few words: in now and where, or not. */
 function memberLine(member: Member, you: boolean, inNow: PersonIn | undefined, members: Member[]): string {
-  const by = member.invitedBy && members.find((m) => m.login === member.invitedBy)
+  const by = member.invitedBy && memberWithLogin(members, member.invitedBy)
   const invited = by ? ` · invited by ${by.name}` : ''
   if (you) return `you${invited}`
   if (!inNow) return `not in now${invited}`

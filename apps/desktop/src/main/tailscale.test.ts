@@ -9,11 +9,11 @@ describe('reading Tailscale', () => {
     expect(readStatus(JSON.stringify({ BackendState: 'NeedsLogin', Self: {} }))).toEqual({ running: false, backend: 'NeedsLogin', peers: [], others: [] })
   })
 
-  it('finds who’s signed in, and their own other devices that are on', () => {
+  it('finds who’s signed in (their login as members keep it), and their own other devices that are on', () => {
     const status = {
       BackendState: 'Running',
       Self: { DNSName: `${HOST}.`, UserID: 7 },
-      User: { 7: { LoginName: 'me@example.com', DisplayName: 'Me' } },
+      User: { 7: { LoginName: 'Me@Example.com', DisplayName: 'Me' } },
       Peer: {
         a: { DNSName: 'laptop.tail1234.ts.net.', HostName: 'laptop', UserID: 7, Online: true },
         b: { DNSName: 'old.tail1234.ts.net.', HostName: 'old', UserID: 7, Online: false },

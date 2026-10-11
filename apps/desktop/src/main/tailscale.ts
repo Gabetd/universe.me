@@ -1,4 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process'
+import { normalLogin } from '@universe/core'
 import { APP_HTTPS_PORT } from './tailnet'
 import type { TailnetPeer, TailscaleState } from '../shared/api'
 
@@ -72,7 +73,7 @@ export interface TailnetStatus {
   backend: string
   /** This computer's tailnet name. */
   host?: string
-  /** Who's signed in here: their login, and what they're called. */
+  /** Who's signed in here: their login (in lower case, as members keep it, and so is every device's owner's), and what they're called. */
   login?: string
   name?: string
   /** The user's other devices that are online. */
@@ -98,7 +99,7 @@ export function readStatus(json: string): TailnetStatus {
   const me = user(self)
   const peer = (p: Node): TailnetPeer => {
     const owner = user(p.UserID)
-    return { host: name(p)!, name: p.HostName || name(p)!.split('.')[0]!, ...(owner?.LoginName && { login: owner.LoginName }), ...(owner?.DisplayName && { ownerName: owner.DisplayName }) }
+    return { host: name(p)!, name: p.HostName || name(p)!.split('.')[0]!, ...(owner?.LoginName && { login: normalLogin(owner.LoginName) }), ...(owner?.DisplayName && { ownerName: owner.DisplayName }) }
   }
   const online = self === undefined ? [] : Object.values(s.Peer ?? {}).filter((p) => p.Online && name(p))
   const peers = online.filter((p) => p.UserID === self).map(peer)
@@ -107,7 +108,7 @@ export function readStatus(json: string): TailnetStatus {
     running: s.BackendState === 'Running',
     backend: s.BackendState ?? 'unknown',
     ...(host && { host }),
-    ...(me?.LoginName && { login: me.LoginName }),
+    ...(me?.LoginName && { login: normalLogin(me.LoginName) }),
     ...(me?.DisplayName && { name: me.DisplayName }),
     peers,
     others

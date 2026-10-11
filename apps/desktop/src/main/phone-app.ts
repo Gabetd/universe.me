@@ -5,7 +5,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net'
 import { extname, join, normalize, sep } from 'node:path'
 import { errorMessage, errorStatus, readJson, readText, send, writePrivate, type OAuth } from '@universe/api'
-import { MAX_ASSET_BASE64 } from '@universe/core'
+import { MAX_ASSET_BASE64, normalLogin } from '@universe/core'
 import { isRemoteMethod, type RemoteEvent, type RemoteMethod } from '../shared/api'
 import { fromWire, toWire } from '../shared/wire'
 import type { SyncAnswer, SyncVisitor } from './device-sync'
@@ -182,9 +182,11 @@ export class PhoneAppServer {
    */
   private reached(req: IncomingMessage): Reached | undefined {
     const place = this.options.place()
-    const login = req.headers['tailscale-user-login']
+    const header = req.headers['tailscale-user-login']
     if (!place || req.headers['tailscale-funnel-request'] !== undefined || req.headers.host !== place.host) return undefined
-    if (typeof login !== 'string' || !login) return undefined
+    // As members keep it, so it's compared as it is from here on.
+    const login = typeof header === 'string' ? normalLogin(header) : ''
+    if (!login) return undefined
     return { base: `https://${place.host}`, source: String(req.headers['x-forwarded-for'] ?? 'tailnet').split(',').at(-1)!.trim(), login, owner: login === place.login }
   }
 

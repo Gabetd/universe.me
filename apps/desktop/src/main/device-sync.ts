@@ -1,4 +1,4 @@
-import { DEVICE_ID, MAX_MERGE_ROWS, SyncPage, SyncRow, loginName, normalLogin } from '@universe/core'
+import { DEVICE_ID, MAX_MERGE_ROWS, SyncPage, SyncRow, personOf } from '@universe/core'
 import { z } from 'zod'
 import type { AppState, Collaboration, DeviceStatus, Person, SharedDevice, TailnetPeer } from '../shared/api'
 import { MAX_PEOPLE, PresenceWire, Presences, Where } from './presence'
@@ -45,7 +45,7 @@ const Push = z.object({ syncId: SyncId, rows: z.array(SyncRow).max(MAX_MERGE_ROW
 
 /** Who's asking, as the tailnet server vouches for them. */
 export interface SyncVisitor {
-  /** Their tailnet login, which `tailscale serve` adds and a device can't. */
+  /** Their tailnet login (as members keep it), which `tailscale serve` adds and a device can't. */
   login: string
   /** Whether it's this computer's owner: one of their own devices. */
   owner: boolean
@@ -180,10 +180,9 @@ export class DeviceSync {
     if (!open || !this.mayVisit(visitor)) return { device, project: null }
     const visit = Visit.safeParse(body)
     if (!visit.success || visit.data.syncId !== open.syncId) return { device, project: open }
-    const login = normalLogin(visitor.login)
-    this.presences.hear(open.syncId, [{ login, name: visit.data.name ?? loginName(login), where: visit.data.where ?? null, age: 0 }], this.o.tailnet()?.me?.login)
+    this.presences.hear(open.syncId, [{ ...personOf(visitor.login, visit.data.name), where: visit.data.where ?? null, age: 0 }], this.o.tailnet()?.me?.login)
     this.tell()
-    return { device, project: open, people: this.peopleIn(open.syncId, login) }
+    return { device, project: open, people: this.peopleIn(open.syncId, visitor.login) }
   }
 
   changes(body: unknown, visitor: SyncVisitor): SyncAnswer {
@@ -214,7 +213,7 @@ export class DeviceSync {
     const host = z.object({ host: z.string() }).safeParse(body)
     const tailnet = this.o.tailnet()
     if (!host.success || !tailnet || !this.o.on() || !this.mayVisit(visitor)) return
-    const theirs = visitor.owner ? tailnet.peers : tailnet.others.filter((p) => p.login && normalLogin(p.login) === normalLogin(visitor.login))
+    const theirs = visitor.owner ? tailnet.peers : tailnet.others.filter((p) => p.login === visitor.login)
     const peer = theirs.find((p) => p.host === host.data.host)
     if (peer) void this.visit(peer, visitor.owner).then(() => this.o.changed())
   }
@@ -407,7 +406,7 @@ const notShared: SyncAnswer = { status: 403, body: { error: 'That universe isnâ€
 const notOpen: SyncAnswer = { status: 409, body: { error: 'That universe isnâ€™t open here' } }
 
 /** A device's owner, by their login. */
-const person = (peer: TailnetPeer): Person | undefined => (peer.login ? { login: normalLogin(peer.login), name: peer.ownerName ?? loginName(peer.login) } : undefined)
+const person = (peer: TailnetPeer): Person | undefined => (peer.login ? personOf(peer.login, peer.ownerName) : undefined)
 
 const sharedDevice = (d: Found, owner: Person, project: { syncId: string; name: string }): SharedDevice => ({
   host: d.host,

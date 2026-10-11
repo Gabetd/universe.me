@@ -39,3 +39,6 @@ export const memberWithLogin = (members: readonly Member[], login: string) => {
 
 /** What to call someone known only by their login: the part before the @. */
 export const loginName = (login: string) => normalLogin(login).split('@')[0] || login
+
+/** Someone by their login (as members keep it), called `name` if that's known, or else after their login. */
+export const personOf = (login: string, name?: string) => ({ login: normalLogin(login), name: name ?? loginName(login) })

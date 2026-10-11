@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ApiServer, OAuth, apiContext, clearDiscovery, fileStore, worldBible, writeDiscovery, writePrivate, type ApiContext, type ApiHost } from '@universe/api'
-import { loginName, normalLogin, type TerrainParams } from '@universe/core'
+import { personOf, type TerrainParams } from '@universe/core'
 import type { BaseTerrain, WaterInput, WorldWater } from '@universe/procgen'
 import { app } from 'electron'
 import createTerrainWorker from './terrain.worker?nodeWorker'
@@ -281,7 +281,7 @@ export class ApiController {
   private tailnet(): Tailnet | undefined {
     const ts = this.tailscale
     if (ts.kind !== 'ready') return undefined
-    const me = ts.login ? { login: normalLogin(ts.login), name: ts.name ?? loginName(ts.login) } : undefined
+    const me = ts.login ? personOf(ts.login, ts.name) : undefined
     return { host: ts.host, ...(me && { me }), peers: ts.peers, others: ts.others }
   }
 

@@ -193,6 +193,11 @@ describe('the phone app’s server', () => {
     expect((await hello(MEMBER, 'GET')).project).toEqual({ syncId: 's1', name: 'Aerth' })
     expect((await hello(MEMBER, 'POST')).project).toEqual({ syncId: 's1', name: 'Aerth' })
     expect(heard.at(-1)).toEqual({ what: 'hello', login: MEMBER, owner: false, body: { syncId: 's1' } })
+    // However Tailscale writes a login, it's compared as members keep it: the owner's too.
+    expect((await hello('Bob@Example.com', 'POST')).project).toEqual({ syncId: 's1', name: 'Aerth' })
+    expect(heard.at(-1)).toMatchObject({ login: MEMBER, owner: false })
+    await hello('Owner@Example.com', 'GET')
+    expect(heard.at(-1)).toMatchObject({ login: LOGIN, owner: true })
     expect((await as(MEMBER, '/sync/changes')).status).toBe(200)
     expect((await as(MEMBER, '/sync/push', 'POST', JSON.stringify({ syncId: 's1', rows: [] }))).status).toBe(200)
     expect((await as(MEMBER, '/sync/nudge', 'POST', '{"host":"bobs-studio"}')).status).toBe(202)
