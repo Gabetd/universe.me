@@ -95,6 +95,7 @@ test('power systems are the universe’s: pinned to a star system, one holds on 
   await expect(here).toContainText('Divine powers')
   await row(page, 'Sol').click()
   await expect(here).toContainText('pinned here')
+  await here.scrollIntoViewIfNeeded()
   await shot(page, '151-powers-shared')
   await here.getByRole('button', { name: 'Unpin Divine powers from Sol' }).click()
   await expect.poll(async () => (await state(page, 'timeline')).powers[0]?.pins).not.toContain(sol)
