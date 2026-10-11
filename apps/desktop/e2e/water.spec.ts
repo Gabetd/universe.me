@@ -1,4 +1,14 @@
-import { expect, httpMcp, inspector, newWorld, openMap, shot, SLOW, state, test, tool } from './helpers'
+import type { Page } from '@playwright/test'
+import { expect, httpMcp, inspector, newWorld, openMap, setPlayhead, shot, SLOW, state, test, tool } from './helpers'
+
+/** A sum of the map's pixels: changes when anything drawn on it does. */
+const mapPrint = (page: Page) =>
+  page.getByTestId('map').evaluate((canvas: HTMLCanvasElement) => {
+    const { data } = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height)
+    let sum = 0
+    for (let i = 0; i < data.length; i += 4) sum = (sum + data[i]! * 3 + data[i + 1]! * 5 + data[i + 2]! * 7) % 1_000_000_007
+    return sum
+  })
 
 test('a world has rivers and lakes from its land, each named, selectable and seen up close', async ({ h }) => {
   test.slow()
@@ -82,4 +92,29 @@ test('a world has rivers and lakes from its land, each named, selectable and see
   await panel.getByRole('button', { name: '🔍 View up close' }).click()
   await expect(page.locator('[data-chunks="25"]')).toBeVisible({ timeout: SLOW })
   await shot(page, '151-river-ground', { wait: 1500 })
+})
+
+test('the water is worked out again as the land changes, and the land wears down as time passes', async ({ h }) => {
+  test.slow()
+  const { page } = h
+  await newWorld(h, 'Erosion')
+  await openMap(page)
+  const counts = inspector(page).getByRole('region', { name: 'Rivers and lakes' }).getByText(/ rivers and /)
+  await expect(counts).toBeVisible({ timeout: SLOW })
+  const before = await counts.textContent()
+
+  // A higher sea drowns the lowlands and the rivers in them.
+  const sea = inspector(page).getByRole('slider', { name: 'Sea level change' })
+  await sea.focus()
+  for (let i = 0; i < 10; i++) await sea.press('ArrowRight')
+  await page.locator('.panel-title').click()
+  await expect(counts).not.toHaveText(before!, { timeout: SLOW })
+
+  // Thousands of years on, the land is worn down (rivers' valleys, slumped slopes); back at the start, it's as it was.
+  const start = await mapPrint(page)
+  await setPlayhead(page, '20000')
+  await expect.poll(() => mapPrint(page), { timeout: SLOW }).not.toBe(start)
+  await shot(page, '152-eroded-map', { wait: 500 })
+  await setPlayhead(page, '0')
+  await expect.poll(() => mapPrint(page), { timeout: SLOW }).toBe(start)
 })
