@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from 'electron'
-import { EVENTS, INVOKE, type AiChange, type ApiStatus, type AppState, type InvokeMethod, type MenuAction, type UniverseApi } from '../shared/api'
+import { EVENTS, INVOKE, type AiChange, type ApiStatus, type AppState, type Collaboration, type InvokeMethod, type MenuAction, type UniverseApi } from '../shared/api'
 import type { UpdateStatus } from '../shared/update'
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
@@ -29,7 +29,8 @@ const api: UniverseApi = {
   onMenu: (listener) => subscribe<MenuAction>(EVENTS.menu, listener),
   onUpdate: (listener) => subscribe<UpdateStatus>(EVENTS.update, listener),
   onApi: (listener) => subscribe<ApiStatus>(EVENTS.api, listener),
-  onAiChange: (listener) => subscribe<AiChange>(EVENTS.aiChange, listener)
+  onAiChange: (listener) => subscribe<AiChange>(EVENTS.aiChange, listener),
+  onCollaboration: (listener) => subscribe<Collaboration>(EVENTS.collaboration, listener)
 }
 
 contextBridge.exposeInMainWorld('universe', api)

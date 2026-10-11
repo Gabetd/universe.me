@@ -8,7 +8,7 @@ import { Blueprint, EventEffect, MaintenanceChange, Structure } from './structur
 import { Time } from './time'
 
 /** The biggest asset (a 3D model), as base64: about 75 MB. */
-const MAX_ASSET_BASE64 = 100_000_000
+export const MAX_ASSET_BASE64 = 100_000_000
 
 /** An asset as it's added (or synced): its bytes as base64. */
 export const AssetFields = z.object({ name: z.string().min(1).max(260), mime: z.string().min(1).max(100), data: z.string().min(1).max(MAX_ASSET_BASE64) })

@@ -19,6 +19,8 @@ describe('isAllowedRequest', () => {
   it('lets the main process ask Universe on the user’s other devices for sync, and nothing else on the tailnet', () => {
     expect(isAllowedRequest('https://laptop.tail1234.ts.net:8443/sync/changes', false)).toBe(true)
     expect(isAllowedRequest('https://laptop.tail1234.ts.net:8443/sync/changes', true)).toBe(false)
+    // Another person's device, shared into the tailnet from theirs, and a page given to it.
+    expect(isAllowedRequest('https://bobs-studio.tail5678.ts.net:8443/sync/push', false)).toBe(true)
     expect(isAllowedRequest('https://laptop.tail1234.ts.net:8443/bridge/getState', false)).toBe(false)
     expect(isAllowedRequest('https://laptop.tail1234.ts.net/sync/hello', false)).toBe(false)
     expect(isAllowedRequest('https://laptop.ts.net.example.com:8443/sync/hello', false)).toBe(false)

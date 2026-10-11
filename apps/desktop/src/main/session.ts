@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { buildSample, writePrivate } from '@universe/api'
-import { Command as CommandSchema, CommandError, DEVICE_ID, EMPTY_TIMELINE, type Command, type CommandSource, type ExecuteResult, type SyncPage, type SyncRow, type Target } from '@universe/core'
+import { Command as CommandSchema, CommandError, DEVICE_ID, EMPTY_TIMELINE, memberWithLogin, type Command, type Member, type CommandSource, type ExecuteResult, type SyncPage, type SyncRow, type Target } from '@universe/core'
 import { Project } from '@universe/db'
 import type { AppState, ProposalSummary, WorldTerrain } from '../shared/api'
 
@@ -100,11 +100,38 @@ export class Session {
 
   /** Where the open universe last asked a device for its changes from (0: never). */
   seen(device: string): number {
-    return Number(this.require().getMeta(`syncSeen:${device}`) ?? 0)
+    return this.mark(`syncSeen:${device}`)
   }
 
   setSeen(device: string, upTo: number): void {
-    this.require().setMeta(`syncSeen:${device}`, String(upTo))
+    this.setMark(`syncSeen:${device}`, upTo)
+  }
+
+  /** Where the open universe last gave a device its own changes up to (0: never): for a device that can't ask this one (PLAN.md §6.7). */
+  sent(device: string): number {
+    return this.mark(`syncSent:${device}`)
+  }
+
+  setSent(device: string, upTo: number): void {
+    this.setMark(`syncSent:${device}`, upTo)
+  }
+
+  private mark(key: string): number {
+    return Number(this.require().getMeta(key) ?? 0)
+  }
+
+  private setMark(key: string, upTo: number): void {
+    this.require().setMeta(key, String(upTo))
+  }
+
+  /** The people the open universe is shared with (none with nothing open). */
+  members(): Member[] {
+    return this.project?.store.records('member').all() ?? []
+  }
+
+  /** Whether `login` is one of them. */
+  isMember(login: string): boolean {
+    return !!memberWithLogin(this.members(), login)
   }
 
   async saveCopy(path: string): Promise<void> {

@@ -113,6 +113,87 @@ export interface DeviceStatus {
   error?: string
 }
 
+/**
+ * Several people in one universe (PLAN.md §6.7, "With other people"): what
+ * the window builds the sharing panel and who's-in marks on.
+ *
+ * - `collaboration()` reads it all, and `onCollaboration` hears each change
+ *   (who's in or where, the members, other people's devices), as `onApi`
+ *   hears sync's devices. It needs sync on (`ApiStatus.phone.sync.on`);
+ *   `on` says whether it is, and Tailscale signed in.
+ * - **Inviting** someone is a command, undoable like any:
+ *   `execute({ type: 'member.create', payload: { ownerId: state.project.rootId, login, name?, invitedBy: me } })`,
+ *   `login` being their tailnet login (one of `people`, or typed). Passing
+ *   `invitedBy` lists you too if you aren't yet, which their devices need to
+ *   answer yours. They then see the universe in `shared` on their computer
+ *   once it can reach one of yours with it open (Tailscale machine sharing
+ *   lets the person a machine is shared with reach it), and copy it with
+ *   `copyFromDevice(host)`, as for their own devices.
+ * - **Removing** someone: `execute({ type: 'member.delete', payload: { id } })`
+ *   with their member's id (renaming: `member.update`). Members are records of
+ *   the universe (`state.timeline.members` too), synced with it; API clients
+ *   can't change them.
+ * - **Where you are**: `setWhere({ nodeId, view, label })` whenever the
+ *   selection or the view changes (null with nothing open), as others will
+ *   read it ("Terra, the map").
+ */
+export interface Collaboration {
+  /** Whether sync is on and Tailscale says who's signed in: all of this needs both. */
+  on: boolean
+  /** Who's signed in to Tailscale here. */
+  me: Person | null
+  /** Who the open universe is shared with (none with nothing open); `you` marks your own entry. */
+  members: MemberInfo[]
+  /** Who's in the open universe now (heard from in the last half minute), but you, and where. */
+  here: PersonIn[]
+  /** Other people's devices with a universe shared with you open; `copyFromDevice(host)` copies one here. */
+  shared: SharedDevice[]
+  /** Other people on your tailnet, or with devices shared into it, whom you could invite. */
+  people: Person[]
+}
+
+/** Someone, by their tailnet login and what they're called. */
+export interface Person {
+  login: string
+  name: string
+}
+
+/** A member of the open universe (its `member` record). */
+export interface MemberInfo extends Person {
+  id: string
+  /** Who invited them, by login. */
+  invitedBy: string | null
+  /** Whether it's you. */
+  you: boolean
+}
+
+/** Where someone is in a universe, as the window tells it: what's selected, the view, and both in words. */
+export interface Where {
+  /** The node (a world, a star system…) they're on, if any. */
+  nodeId: string | null
+  /** The view, as the window names it ("map", "globe", "timeline", "canvas"…). */
+  view: string
+  /** Both in words, as others see it: "Terra, the map". */
+  label: string
+}
+
+/** Someone in a universe now, and where (null until their window says). */
+export interface PersonIn extends Person {
+  where: Where | null
+}
+
+/** Another person's device with a universe shared with you open. */
+export interface SharedDevice {
+  host: string
+  name: string
+  owner: Person
+  project: { syncId: string; name: string }
+  /** You have it open too: the two keep each other up to date. */
+  same: boolean
+  lastSync?: number
+  error?: string
+}
+
 /** A device on the user's tailnet (or shared into it): its tailnet name, its own name, and whose it is. */
 export interface TailnetPeer {
   host: string
@@ -219,8 +300,13 @@ export interface UniverseApi {
   denySignIn(id: string): Promise<ApiStatus>
   /** Disconnects a client that signed in: its tokens stop working at once. */
   removeConnection(id: string): Promise<ApiStatus>
-  /** Makes a copy here of the universe another device has open (saved where the user picks), and opens it; null if they cancel. */
+  /** Makes a copy here of the universe another device has open (one of the user's own, or another person's shared with them: `Collaboration.shared`), saved where the user picks, and opens it; null if they cancel. */
   copyFromDevice(host: string): Promise<Result<AppState | null>>
+  /** Several people in one universe: see `Collaboration`. */
+  collaboration(): Promise<Collaboration>
+  /** Where the user is in the open universe, for the others in it to see; null with nothing to say. */
+  setWhere(where: Where | null): Promise<void>
+  onCollaboration(listener: (collaboration: Collaboration) => void): () => void
   onApi(listener: (status: ApiStatus) => void): () => void
   onAiChange(listener: (change: AiChange) => void): () => void
   onState(listener: (state: AppState) => void): () => void
@@ -262,7 +348,7 @@ export interface UniverseApi {
 }
 
 /** The methods the main process answers; the others listen to what it sends. */
-export type InvokeMethod = Exclude<keyof UniverseApi, 'remote' | 'onState' | 'onMenu' | 'onUpdate' | 'onApi' | 'onAiChange'>
+export type InvokeMethod = Exclude<keyof UniverseApi, 'remote' | 'onState' | 'onMenu' | 'onUpdate' | 'onApi' | 'onAiChange' | 'onCollaboration'>
 
 /** The channel behind each method the main process answers. The preload makes those methods from this table. */
 export const INVOKE: Record<InvokeMethod, string> = {
@@ -285,6 +371,8 @@ export const INVOKE: Record<InvokeMethod, string> = {
   denySignIn: 'api:deny-sign-in',
   removeConnection: 'api:remove-connection',
   copyFromDevice: 'sync:copy',
+  collaboration: 'collab:get',
+  setWhere: 'collab:where',
   getTerrain: 'world:terrain',
   importModel: 'asset:import-model',
   getAsset: 'asset:get',
@@ -323,11 +411,12 @@ export const isRemoteMethod = (name: string): name is RemoteMethod => (REMOTE_ME
 export const REMOTE_EVENTS = ['state', 'aiChange'] as const
 export type RemoteEvent = (typeof REMOTE_EVENTS)[number]
 
-/** Channels the main process sends on, behind `onState`, `onMenu` and `onUpdate`. */
+/** Channels the main process sends on, behind `onState`, `onMenu`, `onUpdate`, `onApi`, `onAiChange` and `onCollaboration`. */
 export const EVENTS = {
   state: 'state:changed',
   menu: 'menu:action',
   update: 'update:changed',
   api: 'api:changed',
-  aiChange: 'ai:changed'
+  aiChange: 'ai:changed',
+  collaboration: 'collab:changed'
 } as const

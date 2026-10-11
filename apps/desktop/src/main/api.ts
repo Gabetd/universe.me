@@ -2,16 +2,17 @@ import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ApiServer, OAuth, apiContext, clearDiscovery, fileStore, worldBible, writeDiscovery, writePrivate, type ApiContext, type ApiHost } from '@universe/api'
-import type { TerrainParams } from '@universe/core'
+import { loginName, normalLogin, type TerrainParams } from '@universe/core'
 import type { BaseTerrain, WaterInput, WorldWater } from '@universe/procgen'
 import { app } from 'electron'
 import createTerrainWorker from './terrain.worker?nodeWorker'
 import type { TerrainJob } from './terrain.worker'
-import type { AiChange, ApiSettingsPatch, ApiStatus, AppState, PhoneStatus, RemoteEvent, RemoteMethod, TailscaleState } from '../shared/api'
+import type { AiChange, ApiSettingsPatch, ApiStatus, AppState, Collaboration, PhoneStatus, RemoteEvent, RemoteMethod, TailscaleState } from '../shared/api'
 import { PhoneAppServer, type PhoneAppPlace } from './phone-app'
-import { DeviceSync } from './device-sync'
+import { DeviceSync, type Tailnet } from './device-sync'
 import type { Session } from './session'
 import { APP_HTTPS_PORT, offNow, setFunnel, setServe, tailscaleState } from './tailscale'
+import { askDevice } from './tailnet-ask'
 
 /** Where the API listens unless that's taken (then the next few ports are tried). */
 const DEFAULT_PORT = 47615
@@ -43,6 +44,7 @@ export interface ApiEvents {
   state(state: AppState): void
   aiChange(change: AiChange): void
   status(status: ApiStatus): void
+  collaboration(collaboration: Collaboration): void
 }
 
 /**
@@ -90,9 +92,11 @@ export class ApiController {
     this.devices = new DeviceSync({
       session,
       on: () => this.syncActive,
-      tailnet: () => (this.tailscale.kind === 'ready' ? { host: this.tailscale.host, peers: this.tailscale.peers } : undefined),
+      tailnet: () => this.tailnet(),
       merged: (state) => this.events.state(state),
-      changed: () => this.events.status(this.status())
+      changed: () => this.events.status(this.status()),
+      collaboration: (collaboration) => this.events.collaboration(collaboration),
+      ask: askDevice
     })
     // Every change made here, however it was made: the user's other devices with this universe open are nudged to ask for it.
     session.onChange = () => this.devices.localChange()
@@ -235,7 +239,14 @@ export class ApiController {
         files: this.bridge?.files ?? '',
         place: () => this.tailnetPlace(),
         answer: (method, args) => (this.bridge ? this.bridge.answer(method, args) : Promise.reject(new Error('No phone app here'))),
-        sync: { on: () => this.settings.sync, hello: () => this.devices.hello(), changes: (body, device) => this.devices.changes(body, device), nudged: (body) => this.devices.nudged(body) },
+        sync: {
+          on: () => this.settings.sync,
+          mayVisit: (visitor) => this.devices.mayVisit(visitor),
+          hello: (visitor, body) => this.devices.hello(visitor, body),
+          changes: (body, visitor) => this.devices.changes(body, visitor),
+          push: (body, visitor) => this.devices.push(body, visitor),
+          nudged: (body, visitor) => this.devices.nudged(body, visitor)
+        },
         sessionsFile: join(this.userData, 'phone-sessions.json')
       })
       this.tailnetPort = await server.listen()
@@ -264,6 +275,14 @@ export class ApiController {
   /** A copy here of the universe another device has open, in a new file at `path`, opened. */
   copyFromDevice(host: string, path: string): Promise<AppState> {
     return this.devices.copyFrom(host, path)
+  }
+
+  /** This computer on the tailnet, as sync needs it, while Tailscale is ready. */
+  private tailnet(): Tailnet | undefined {
+    const ts = this.tailscale
+    if (ts.kind !== 'ready') return undefined
+    const me = ts.login ? { login: normalLogin(ts.login), name: ts.name ?? loginName(ts.login) } : undefined
+    return { host: ts.host, ...(me && { me }), peers: ts.peers, others: ts.others }
   }
 
   /** Whether the phone app or sync wants the tailnet server. */

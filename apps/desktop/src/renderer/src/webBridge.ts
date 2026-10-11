@@ -1,4 +1,4 @@
-import { INVOKE, isRemoteMethod, type AiChange, type AppState, type InvokeMethod, type UniverseApi } from '../../shared/api'
+import { INVOKE, isRemoteMethod, type AiChange, type AppState, type Collaboration, type InvokeMethod, type UniverseApi } from '../../shared/api'
 import { fromWire, toWire } from '../../shared/wire'
 
 /**
@@ -13,6 +13,9 @@ import { fromWire, toWire } from '../../shared/wire'
 /** Answers for what a phone doesn't ask the computer. */
 const ON_THE_PHONE: Partial<Record<InvokeMethod, () => unknown>> = {
   recentProjects: () => [],
+  // Who's in, and the universe's sharing, are the computer's: the phone is its owner's, already in.
+  collaboration: (): Collaboration => ({ on: false, me: null, members: [], here: [], shared: [], people: [] }),
+  setWhere: () => undefined,
   updateStatus: () => ({ state: 'none' }),
   checkForUpdates: () => 'Updates are installed on the computer.'
 }
@@ -65,7 +68,8 @@ export function installWebBridge(): void {
     onAiChange: subscribe(listeners.aiChange),
     onMenu: () => () => {},
     onUpdate: () => () => {},
-    onApi: () => () => {}
+    onApi: () => () => {},
+    onCollaboration: () => () => {}
   }
   Object.defineProperty(window, 'universe', { value: api })
 }

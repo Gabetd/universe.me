@@ -184,11 +184,11 @@ async function newSample(): Promise<AppState | null> {
   return path ? switchedTo(await session.createSample(path)) : null
 }
 
-/** A copy here of the universe one of the user's other devices has open (PLAN.md §6.7), saved where they pick, and opened. */
+/** A copy here of the universe another device has open (PLAN.md §6.7: one of the user's own, or another person's shared with them), saved where they pick, and opened. */
 async function copyFromDevice(host: string): Promise<AppState | null> {
-  const device = api.status().phone.sync.devices.find((d) => d.host === host)
-  if (!device?.project) throw new Error('That device has no universe open now')
-  const path = await savePath(`Copy “${device.project.name}” from ${device.name}`, 'Copy here', device.project.name)
+  const open = api.devices.openOn(host)
+  if (!open) throw new Error('That device has no universe open now')
+  const path = await savePath(`Copy “${open.project.name}” from ${open.device}`, 'Copy here', open.project.name)
   if (!path) return null
   api.opening(path)
   return switchedTo(await api.copyFromDevice(host, path))
@@ -449,6 +449,8 @@ function registerIpc(): void {
   handle('denySignIn', (id) => api.denySignIn(id))
   handle('removeConnection', (id) => api.removeConnection(id))
   handle('copyFromDevice', (host) => wrap(() => copyFromDevice(host)))
+  handle('collaboration', () => api.devices.collaboration())
+  handle('setWhere', (where) => api.devices.setWhere(where))
   handle('updateStatus', () => updater.current())
   handle('installUpdate', () => updater.install())
   handle('dismissUpdate', () => updater.dismiss())
@@ -517,7 +519,8 @@ app.whenReady().then(async () => {
       win?.webContents.send(EVENTS.aiChange, change)
       api.toPhones('aiChange', change)
     },
-    status: (status) => win?.webContents.send(EVENTS.api, status)
+    status: (status) => win?.webContents.send(EVENTS.api, status),
+    collaboration: (collaboration) => win?.webContents.send(EVENTS.collaboration, collaboration)
   }, __BUILD_INFO__.version)
   // The phone app serves the window's own built files (in development the window comes from the dev server, and there's no phone app).
   if (!devServer) api.useBridge({ files: RENDERER_DIR, answer: answerPhone })
