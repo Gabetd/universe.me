@@ -1,4 +1,4 @@
-import { DEVICE_ID, MAX_MERGE_ROWS, SyncPage, SyncRow, personOf } from '@universe/core'
+import { DEVICE_ID, MAX_MERGE_ROWS, SyncPage, personOf } from '@universe/core'
 import { z } from 'zod'
 import type { AppState, Collaboration, DeviceStatus, Person, SharedDevice, TailnetPeer } from '../shared/api'
 import { MAX_PEOPLE, PresenceWire, Presences, Where } from './presence'
@@ -12,20 +12,34 @@ import type { Session } from './session'
  * tailnet server as the phone app: the owner's devices, and other people's
  * only for a universe they're members of), and asks the others the same.
  * When two have the same universe open (the same sync id), each takes the
- * rows the other got since it last asked, and gives the rows it got since it
- * last gave (machine sharing lets the person a machine is shared with reach
- * it, but not the machine them, so a visitor brings its own changes); merged,
- * the later write of a row wins, and a row both ways is only merged once.
- * Hellos carry who's in the universe and where. They ask every few seconds
- * (more often while someone else is in), and at once when nudged after a
- * change.
+ * rows the other got since it last asked; a visit to another person's device
+ * also gives it the rows got here since the last it was given (machine
+ * sharing lets the person a machine is shared with reach it, but not the
+ * machine them, so a visitor brings its own changes), while the user's own
+ * devices, which reach each other, only take. Merged, the later write of a
+ * row wins, and a row both ways is only merged once. Hellos carry who's in
+ * the universe and where.
+ *
+ * The user's own devices and members' are visited every few seconds (more
+ * often while someone else is in), other people's, which may have a universe
+ * to share, at most every 10 s and less often while they have nothing. After
+ * a change here, the user's own devices with it open are nudged to ask, and
+ * other people's are given it at once.
  */
 
 const EVERY_MS = 10_000
 /** How often while someone else is in the universe here: changes and where they are show within moments. */
 const LIVE_MS = 3_000
+/** How long, at most, before another person's device that had nothing to share is asked again: each time it has nothing, the wait doubles from EVERY_MS. */
+const MAX_PROBE_MS = 80_000
+/** A round can come a moment before a device is due (timers aren't exact to the millisecond): it's asked then all the same. */
+const SLACK_MS = 500
+/** How long a device that turned down the newer hello (an older version) is greeted the older way before the newer one is tried again: it may have been updated. */
+const OLDER_MS = 10 * 60_000
 /** How long after a change the other devices are nudged (a burst of changes is one nudge). */
 const NUDGE_MS = 800
+/** How long after rows are pushed here the window is shown them (a burst of pages is one new state). */
+const SHOW_MS = 150
 /** Rows asked for or given at once, at most (a page also stops at about 2 MB: see StampedStore). */
 const PAGE = 100
 
@@ -42,7 +56,8 @@ type Hello = z.infer<typeof Hello>
 /** What a visitor's hello says (newer versions): the universe it has open, and where its person is in it. */
 const Visit = z.object({ syncId: SyncId, name: z.string().min(1).max(200), where: Where.nullable() }).partial()
 
-const Push = z.object({ syncId: SyncId, rows: z.array(SyncRow).max(MAX_MERGE_ROWS) })
+/** Rows a visitor gives, checked as they're merged. */
+const Push = z.object({ syncId: SyncId, rows: z.array(z.unknown()).max(MAX_MERGE_ROWS) })
 
 /** Who's asking, as the tailnet server vouches for them. */
 export interface SyncVisitor {
@@ -98,13 +113,43 @@ export interface SyncAnswer {
 /** A device as sync last found it, with whose it is for another person's. */
 type Found = DeviceStatus & { owner?: Person }
 
+/** The Universe on a device and the universe it has open, the same as here: changes made here can be given to it without a new hello. */
+interface Link {
+  device: string
+  syncId: string
+}
+
+/** What sync keeps of a device on the tailnet while it's online. */
+interface Contact {
+  /** As last found (once a visit got that far): what the window is shown. */
+  found?: Found
+  /** As of the last exchange, while it has this universe open too. */
+  link?: Link
+  /** When it last turned down the newer hello (an older version): it's greeted the older way for a while. */
+  older?: number
+  /** For another person's device that's no member's: when it's asked again, and how many times in a row it had nothing to share. */
+  probe?: { next: number; misses: number }
+}
+
+/** What the devices with this universe open are to hear of next: rows got here (`from` one device alone, which isn't given them back), where the user is, or both. */
+interface News {
+  rows: boolean
+  where: boolean
+  from?: string
+}
+
+const NO_NEWS: News = { rows: false, where: false }
+
 export class DeviceSync implements SyncRoutes {
-  /** The user's own devices, and other people's (with their owner), as last found, by host. */
-  private readonly found = new Map<string, Found>()
+  /** The user's own devices online, and other people's, by host. */
+  private readonly contacts = new Map<string, Contact>()
   private readonly presences = new Presences()
   private where: Where | null = null
   private timer: ReturnType<typeof setTimeout> | undefined
   private nudging: ReturnType<typeof setTimeout> | undefined
+  private news = NO_NEWS
+  /** Rows pushed here, on their way to the window. */
+  private showing: ReturnType<typeof setTimeout> | undefined
   /** One visit to a device at a time (a nudge while one runs waits for it). */
   private readonly visiting = new Map<string, Promise<void>>()
   /** The last collaboration told, as JSON: it's told again only once it's different. */
@@ -121,7 +166,8 @@ export class DeviceSync implements SyncRoutes {
     clearTimeout(this.timer)
     clearTimeout(this.nudging)
     this.timer = undefined
-    this.found.clear()
+    this.news = NO_NEWS
+    this.contacts.clear()
     this.presences.clear()
     this.o.changed()
     this.tell()
@@ -129,12 +175,12 @@ export class DeviceSync implements SyncRoutes {
 
   /** The user's own devices. */
   status(): DeviceStatus[] {
-    return [...this.found.values()].filter((d) => !d.owner)
+    return this.allFound().filter((d) => !d.owner)
   }
 
   /** What a device has open, as last asked, and what to call it (another person's by its owner too). */
   openOn(host: string): { device: string; project: { syncId: string; name: string } } | undefined {
-    const found = this.found.get(host)
+    const found = this.contacts.get(host)?.found
     return found?.project && { device: found.owner ? `${found.owner.name}’s ${found.name}` : found.name, project: found.project }
   }
 
@@ -146,7 +192,7 @@ export class DeviceSync implements SyncRoutes {
       on: this.o.on() && !!me,
       me,
       here: open ? this.presences.in(open.syncId, me?.login) : [],
-      shared: [...this.found.values()].filter((d): d is SharedDevice => !!d.owner && !!d.project),
+      shared: this.allFound().filter((d): d is SharedDevice => !!d.owner && !!d.project),
       people: peopleOf(tailnet?.others ?? [])
     }
   }
@@ -156,7 +202,7 @@ export class DeviceSync implements SyncRoutes {
     const parsed = Where.nullable().parse(where)
     if (JSON.stringify(parsed) === JSON.stringify(this.where)) return
     this.where = parsed
-    this.announce()
+    this.announce('where')
   }
 
   // Answering the other devices (phone-app.ts asks only about a visitor `mayVisit` lets in).
@@ -186,7 +232,7 @@ export class DeviceSync implements SyncRoutes {
     if (!open || !visitor) return { device, project: null }
     const visit = Visit.safeParse(body)
     if (!visit.success || visit.data.syncId !== open.syncId) return { device, project: open }
-    this.presences.hear(open.syncId, [{ ...personOf(visitor.login, visit.data.name), where: visit.data.where ?? null, age: 0 }], this.o.tailnet()?.me?.login)
+    this.presences.hear(open.syncId, [{ ...personOf(visitor.login, visit.data.name), where: visit.data.where ?? null, age: 0 }], this.myLogin())
     this.tell()
     return { device, project: open, people: this.peopleIn(open.syncId, visitor.login) }
   }
@@ -198,15 +244,20 @@ export class DeviceSync implements SyncRoutes {
     return { status: 200, body: this.o.session.changesSince(ask.data.since, visitor.device, PAGE) }
   }
 
-  /** Rows a visitor brings (a device that can reach this one, but not this one it), merged as pulled ones are; the other devices with this universe open then hear of them. */
-  push(body: unknown, _visitor: SyncVisitor): SyncAnswer {
+  /**
+   * Rows a visitor brings (a device that can reach this one, but not this
+   * one it), merged as pulled ones are: the window is shown them once a
+   * burst of pages is in, and the other devices with this universe open then
+   * hear of them (but the one that brought them).
+   */
+  push(body: unknown, visitor: SyncVisitor): SyncAnswer {
     const given = Push.safeParse(body)
     if (!given.success) return { status: 400, body: { error: 'Give a sync id and rows' } }
     const { session } = this.o
     if (session.syncInfo()?.syncId !== given.data.syncId) return notOpen
     if (session.merge(given.data.rows)) {
-      this.o.merged(session.state())
-      this.announce()
+      this.showSoon()
+      this.announce('rows', visitor.device)
     }
     return { status: 200, body: {} }
   }
@@ -225,22 +276,30 @@ export class DeviceSync implements SyncRoutes {
 
   /** Something changed here: the devices with this universe open hear of it soon. (Who it's shared with is the window's to read, in the universe itself.) */
   localChange(): void {
-    this.announce()
+    this.announce('rows')
   }
 
   /**
    * Every device online now, at once: the user's own (what they're doing is
-   * told once they've all answered) and other people's (who may share a
-   * universe with this one).
+   * told once they've all answered), members' of the universe open here, and
+   * other people's that are due (who may share a universe with this one).
    */
   async round(): Promise<void> {
     if (!this.o.on()) return
     const tailnet = this.o.tailnet()
     const [peers, others] = [tailnet?.peers ?? [], tailnet?.others ?? []]
-    forgetGone(this.found, [...peers, ...others])
+    forgetGone(this.contacts, [...peers, ...others])
+    const now = Date.now()
     const own = Promise.all(peers.map((p) => this.visit(p, true))).then(() => this.o.changed())
-    await Promise.all([own, ...others.map((p) => this.visit(p, false))])
+    const theirs = others.flatMap((p) => (this.mayVisit({ owner: false, login: p.login ?? '' }) ? [this.visit(p, false)] : this.due(p.host, now) ? [this.probe(p, now)] : []))
+    await Promise.all([own, ...theirs])
     this.tell()
+  }
+
+  /** Tailscale was looked at again (the user opened their devices: Connect AI, or the start screen): other people's are asked at once, however long they've had nothing to share. */
+  lookAgain(): Promise<void> {
+    for (const contact of this.contacts.values()) contact.probe = undefined
+    return this.round()
   }
 
   /** A round now, and the next one in a few seconds (sooner while someone else is in). */
@@ -252,38 +311,86 @@ export class DeviceSync implements SyncRoutes {
 
   private someoneIn(): boolean {
     const open = this.o.session.syncInfo()
-    return !!open && this.presences.in(open.syncId, this.o.tailnet()?.me?.login).length > 0
+    return !!open && this.presences.in(open.syncId, this.myLogin()).length > 0
   }
 
-  /** Soon (a burst of changes is one), the devices with this universe open hear of what's new here: the user's own are nudged to ask, and other people's are visited (they can't be sure to reach this one). */
-  private announce(): void {
+  /** Whether another person's device that's no member's is to be asked again. */
+  private due(host: string, now: number): boolean {
+    const probe = this.contacts.get(host)?.probe
+    return !probe || probe.next <= now + SLACK_MS
+  }
+
+  /** Asks another person's device that's no member's what it has open; each time it has nothing to share (it doesn't answer, has nothing open for this user, or isn't a Universe), it's asked again later. */
+  private async probe(peer: TailnetPeer, now: number): Promise<void> {
+    await this.visit(peer, false)
+    const contact = this.contact(peer.host)
+    const state = contact.found?.state
+    const misses = state === 'unreachable' || state === 'nothing' ? (contact.probe?.misses ?? 0) + 1 : 0
+    contact.probe = { next: now + Math.min(EVERY_MS * 2 ** misses, MAX_PROBE_MS), misses }
+  }
+
+  /**
+   * Soon (a burst is one), the devices with this universe open hear what's
+   * new here: rows (`from` a device that brought them, which isn't given
+   * them back, if they all came from it), or where the user is.
+   */
+  private announce(what: 'rows' | 'where', from?: string): void {
     if (!this.o.on()) return
+    const news = this.news
+    this.news = what === 'where' ? { ...news, where: true } : { ...news, rows: true, from: !news.rows || news.from === from ? from : undefined }
     clearTimeout(this.nudging)
-    this.nudging = setTimeout(() => {
-      for (const d of this.found.values()) if (d.state === 'same' && !d.owner) this.nudge(d.host)
-      const others = this.o.tailnet()?.others ?? []
-      for (const p of others) if (this.found.get(p.host)?.state === 'same') void this.visit(p, false)
-    }, NUDGE_MS)
+    this.nudging = setTimeout(() => this.spread(), NUDGE_MS)
+  }
+
+  /**
+   * Tells the devices with this universe open what's new here: the user's
+   * own are nudged to ask for new rows; other people's (which can't be sure
+   * to reach this one) are given them as they were last found, without a new
+   * hello, or, to hear where the user is, visited.
+   */
+  private spread(): void {
+    const { rows, where, from } = this.news
+    this.news = NO_NEWS
+    const others = this.o.tailnet()?.others ?? []
+    for (const [host, { found, link }] of this.contacts) {
+      if (found?.state !== 'same' || !link) continue
+      const fresh = rows && link.device !== from
+      const peer = where && found.owner && others.find((p) => p.host === host)
+      if (!found.owner) {
+        if (fresh) this.nudge(host)
+      } else if (peer) void this.visit(peer, false)
+      // Should it fail, the next visit gives them.
+      else if (fresh) void this.alone(host, () => this.give(host, link)).catch(() => {})
+    }
   }
 
   private visit(peer: TailnetPeer, mine: boolean): Promise<void> {
-    const running = this.visiting.get(peer.host)
+    return this.alone(peer.host, () => this.exchange(peer, mine))
+  }
+
+  /** Works with a device while nothing else does: while it's being visited, that visit is the answer. */
+  private alone(host: string, work: () => Promise<void>): Promise<void> {
+    const running = this.visiting.get(host)
     if (running) return running
-    const visit = this.exchange(peer, mine).finally(() => this.visiting.delete(peer.host))
-    this.visiting.set(peer.host, visit)
-    return visit
+    const done = work().finally(() => this.visiting.delete(host))
+    this.visiting.set(host, done)
+    return done
   }
 
   /**
    * What a device has open; if it's the universe open here, and its owner is
    * the user or one of the universe's members, who's in it there, everything
-   * it got since it was last asked, and everything this one got since it
-   * last gave it some.
+   * it got since it was last asked, and (another person's) everything this
+   * one got since it last gave it some.
    */
   private async exchange(peer: TailnetPeer, mine: boolean): Promise<void> {
-    const before = this.found.get(peer.host)
+    const contact = this.contact(peer.host)
+    const lastSync = contact.found?.lastSync
     const owner = mine ? undefined : person(peer)
-    const set = (status: Omit<DeviceStatus, 'host' | 'name'>) => void this.found.set(peer.host, { host: peer.host, name: peer.name, ...status, ...(owner && { owner }) })
+    const set = (status: Omit<DeviceStatus, 'host' | 'name'>, link?: Link) => {
+      contact.found = { host: peer.host, name: peer.name, ...status, ...(owner && { owner }) }
+      contact.link = link
+    }
     const trusted = this.mayVisit({ owner: mine, login: peer.login ?? '' })
     let hello: Hello
     try {
@@ -296,18 +403,19 @@ export class DeviceSync implements SyncRoutes {
     const project = { syncId: hello.project.syncId, name: hello.project.name }
     if (project.syncId !== here?.syncId) return set({ state: 'other', project })
     if (!trusted) return set({ state: 'other', project, error: `${owner?.name ?? peer.name} isn’t a member of this universe here` })
-    if (hello.people) this.presences.hear(project.syncId, hello.people, this.o.tailnet()?.me?.login)
+    if (hello.people) this.presences.hear(project.syncId, hello.people, this.myLogin())
+    const link = { device: hello.device, syncId: project.syncId }
     try {
       // Both at once: neither sends the other's own rows, and a row both have is only merged where it's newer.
-      await Promise.all([this.take(peer.host, hello.device, project.syncId, hello.project.upTo), this.give(peer.host, hello.device, project.syncId)])
-      set({ state: 'same', project, lastSync: Date.now() })
+      await Promise.all([this.take(peer.host, link, hello.project.upTo), mine ? undefined : this.give(peer.host, link)])
+      set({ state: 'same', project, lastSync: Date.now() }, link)
     } catch (err) {
-      set({ state: 'same', project, ...(before?.lastSync && { lastSync: before.lastSync }), error: (err as Error).message })
+      set({ state: 'same', project, ...(lastSync && { lastSync }), error: (err as Error).message }, link)
     }
   }
 
   /** Every page of rows `host` got since it was last asked (none if it's got nothing since: `upTo`), merged here; the window is told once. */
-  private async take(host: string, device: string, syncId: string, upTo = Infinity): Promise<void> {
+  private async take(host: string, { device, syncId }: Link, upTo = Infinity): Promise<void> {
     const { session } = this.o
     let merged = false
     try {
@@ -324,16 +432,21 @@ export class DeviceSync implements SyncRoutes {
     }
   }
 
-  /** Every page of rows this copy got since it last gave `host` some (but those `host` wrote: it has them), given to it. A version from before pushing doesn't take them: it asks for them instead. */
-  private async give(host: string, device: string, syncId: string): Promise<void> {
+  /**
+   * Every page of rows this copy got since it last gave `host` some (but
+   * those `host` wrote: it has them), given to it; nothing is asked when
+   * nothing came since. A version from before pushing doesn't take them: it
+   * asks for them instead.
+   */
+  private async give(host: string, { device, syncId }: Link): Promise<void> {
     const { session } = this.o
-    for (let since = session.sent(device); session.syncInfo()?.syncId === syncId; ) {
+    for (let since = session.sent(device); this.gotSince(syncId, since); ) {
       const page = session.changesSince(since, device, PAGE)
       if (page.rows.length) {
         try {
           await this.ask(host, '/sync/push', { syncId, rows: page.rows })
         } catch (err) {
-          if (err instanceof AskError && err.status === 404) return
+          if (isOlderVersion(err)) return
           throw err
         }
       }
@@ -344,26 +457,45 @@ export class DeviceSync implements SyncRoutes {
     }
   }
 
+  /** Whether the universe `syncId` is open here, and got rows after `since`. */
+  private gotSince(syncId: string, since: number): boolean {
+    const open = this.o.session.syncInfo()
+    return open?.syncId === syncId && open.upTo > since
+  }
+
+  /** Shows the window the rows pushed here, a moment after the last page of a burst. */
+  private showSoon(): void {
+    clearTimeout(this.showing)
+    this.showing = setTimeout(() => this.o.merged(this.o.session.state()), SHOW_MS)
+    this.showing.unref()
+  }
+
   /** Makes a copy here of the universe a device has open (the user's own, or one another person shares with them), in a new file at `path`, and opens it. */
   async copyFrom(host: string, path: string): Promise<AppState> {
     const hello = await this.hi(host, false)
     if (!hello.project) throw new Error('That device has no universe open now')
     this.o.session.createCopy(path, hello.project.name, hello.project.syncId)
-    await this.take(host, hello.device, hello.project.syncId)
+    await this.take(host, { device: hello.device, syncId: hello.project.syncId })
     // The device it came from learns at once that this one has it too.
     this.nudge(host)
     void this.round()
     return this.o.session.state()
   }
 
-  /** Says hello to a device: with who's here and where, to one that may hear it; to an older version, as it was asked before. */
+  /** Says hello to a device: with who's here and where, to one that may hear it; to an older version (as it said last time), as it was asked before. */
   private async hi(host: string, visit: boolean): Promise<Hello> {
-    try {
-      return Hello.parse(await this.ask(host, '/sync/hello', visit ? this.ownVisit() : {}))
-    } catch (err) {
-      if (err instanceof AskError && err.status === 404) return Hello.parse(await this.ask(host, '/sync/hello'))
-      throw err
+    const contact = this.contact(host)
+    if (contact.older === undefined || Date.now() - contact.older >= OLDER_MS) {
+      try {
+        const hello = Hello.parse(await this.ask(host, '/sync/hello', visit ? this.ownVisit() : {}))
+        contact.older = undefined
+        return hello
+      } catch (err) {
+        if (!isOlderVersion(err)) throw err
+        contact.older = Date.now()
+      }
     }
+    return Hello.parse(await this.ask(host, '/sync/hello'))
   }
 
   /** What this device's hello says of the universe open here and where its person is in it. */
@@ -380,6 +512,11 @@ export class DeviceSync implements SyncRoutes {
     return [...self, ...this.presences.wire(syncId, visitor)].slice(0, MAX_PEOPLE)
   }
 
+  /** Who's signed in to Tailscale here, by their login. */
+  private myLogin(): string | undefined {
+    return this.o.tailnet()?.me?.login
+  }
+
   /** Tells a device there's something new here. */
   private nudge(host: string): void {
     void this.ask(host, '/sync/nudge', { host: this.o.tailnet()?.host }).catch(() => {})
@@ -389,10 +526,22 @@ export class DeviceSync implements SyncRoutes {
     return this.o.ask(host, path, this.o.session.device, body)
   }
 
-  /** Tells the window what changed in who's in or other people's devices, if anything did. */
+  /** What's kept of a device, started if there's nothing yet. */
+  private contact(host: string): Contact {
+    let contact = this.contacts.get(host)
+    if (!contact) this.contacts.set(host, (contact = {}))
+    return contact
+  }
+
+  /** Every device as last found. */
+  private allFound(): Found[] {
+    return [...this.contacts.values()].flatMap((c) => (c.found ? [c.found] : []))
+  }
+
+  /** Tells the window what changed in who's in or other people's devices, if anything did (when they last synced alone isn't news: it goes with the next). */
   private tell(): void {
     const collaboration = this.collaboration()
-    const json = JSON.stringify(collaboration)
+    const json = JSON.stringify(collaboration, (key, value: unknown) => (key === 'lastSync' ? undefined : value))
     if (json === this.told) return
     this.told = json
     this.o.collaboration(collaboration)
@@ -400,6 +549,9 @@ export class DeviceSync implements SyncRoutes {
 }
 
 const notOpen: SyncAnswer = { status: 409, body: { error: 'That universe isn’t open here' } }
+
+/** Whether a device said it doesn't know what it was asked: an older version (or no Universe at all). */
+const isOlderVersion = (err: unknown) => err instanceof AskError && err.status === 404
 
 /** A device's owner, by their login. */
 const person = (peer: TailnetPeer): Person | undefined => (peer.login ? personOf(peer.login, peer.ownerName) : undefined)
@@ -414,7 +566,7 @@ function peopleOf(devices: readonly TailnetPeer[]): Person[] {
   return [...people.values()]
 }
 
-/** Devices no longer online aren't listed. */
-function forgetGone(found: Map<string, unknown>, online: readonly TailnetPeer[]): void {
-  for (const host of found.keys()) if (!online.some((p) => p.host === host)) found.delete(host)
+/** Devices no longer online aren't kept. */
+function forgetGone(kept: Map<string, unknown>, online: readonly TailnetPeer[]): void {
+  for (const host of kept.keys()) if (!online.some((p) => p.host === host)) kept.delete(host)
 }

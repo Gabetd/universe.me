@@ -94,6 +94,8 @@ async function computer(host: string, login: string, name: string): Promise<Comp
     answer: () => Promise.reject(new Error('No phone app here')),
     sessionsFile: join(dir, 'sessions.json')
   })
+  // Every change made here, as the app wires it (api.ts).
+  session.onChange = () => c.sync.localChange()
   c.port = await c.server.listen()
   computers.push(c)
   return c
@@ -113,10 +115,10 @@ async function aliceAndBob() {
   return { alice, bob }
 }
 
-/** Bob, invited, copies Alice's universe here. */
+/** Bob, invited, looks at his devices (asking Alice's studio at once, however often it's had nothing for him), and copies Alice's universe here. */
 async function bobCopies(alice: Computer, bob: Computer, at = bob) {
   invite(alice, at.login)
-  await at.sync.round()
+  await at.sync.lookAgain()
   expect(at.sync.collaboration().shared).toEqual([expect.objectContaining({ host: alice.host, owner: { login: alice.login, name: 'Alice' }, project: expect.objectContaining({ name: 'Aerth' }), state: 'other' })])
   await at.sync.copyFrom(alice.host, join(at.dir, 'Aerth copy.universe'))
   await at.sync.round()
@@ -156,6 +158,40 @@ describe('several people in one universe', () => {
     expect(rootName(alice)).toBe('Aerth')
     expect(bob.sync.collaboration().shared).toEqual([])
     expect(alice.asked.filter((a) => a.path === 'push')).toEqual([])
+  })
+
+  it('gives another person’s device a change made here at once, without a new hello, and doesn’t give back what it brought', async () => {
+    const { alice, bob } = await aliceAndBob()
+    await bobCopies(alice, bob)
+    // Alice's studio can reach Bob's laptop too, and has visited it.
+    alice.reaches.push(bob)
+    await alice.sync.round()
+    alice.asked.length = 0
+    bob.asked.length = 0
+    rename(bob, 'Aerth, now')
+    await expect.poll(() => rootName(alice), { timeout: 3000 }).toBe('Aerth, now')
+    expect(alice.asked.map((a) => a.path)).toEqual(['push'])
+    // Alice's studio passes it on to the others with it open, but not back to the laptop it came from.
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    expect(bob.asked).toEqual([])
+  })
+
+  it('asks another person’s device with nothing to share less and less often, and an older version the older way', async () => {
+    const { bob } = await aliceAndBob()
+    // Dan's machine runs a Universe from before the newer hello, with nothing open for Bob.
+    const asked: string[] = []
+    fakes.set('dan.tail7777.ts.net', (path, body) => {
+      asked.push(`${body ? 'POST' : 'GET'} ${path}`)
+      if (body) throw new AskError('Not here', 404)
+      return { device: 'dansdevice', project: null }
+    })
+    bob.reaches.push({ host: 'dan.tail7777.ts.net', login: 'dan@example.com', name: 'Dan' } as unknown as Computer)
+    await bob.sync.round()
+    await bob.sync.round()
+    expect(asked).toEqual(['POST /sync/hello', 'GET /sync/hello'])
+    // Bob looks at his devices: it's asked at once, as it answers.
+    await bob.sync.lookAgain()
+    expect(asked.slice(2)).toEqual(['GET /sync/hello'])
   })
 
   it('says who’s in and where, passes it on between visitors, and never back to the person it’s about', async () => {

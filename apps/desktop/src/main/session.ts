@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { buildSample, writePrivate } from '@universe/api'
-import { Command as CommandSchema, CommandError, DEVICE_ID, EMPTY_TIMELINE, checkSource, memoize, type Command, type Member, type CommandSource, type ExecuteResult, type SyncPage, type SyncRow, type Target } from '@universe/core'
+import { Command as CommandSchema, CommandError, DEVICE_ID, EMPTY_TIMELINE, checkSource, memoize, type Command, type Member, type CommandSource, type ExecuteResult, type SyncPage, type Target } from '@universe/core'
 import { Project } from '@universe/db'
 import type { AppState, ProposalSummary, WorldTerrain } from '../shared/api'
 
@@ -94,8 +94,8 @@ export class Session {
     return this.require().changesSince(since, { from, limit })
   }
 
-  /** Rows from another device, merged into the open universe; whether any came. */
-  merge(rows: SyncRow[]): boolean {
+  /** Rows from another device, checked and merged into the open universe; whether any came. */
+  merge(rows: readonly unknown[]): boolean {
     if (!rows.length) return false
     this.require().merge(rows)
     return true

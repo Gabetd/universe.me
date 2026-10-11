@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import { randomBytes } from 'node:crypto'
-import { CUBE_FACES, CommandBus, StampedStore, SyncClock, createRootUniverse, findRoot, type CommandBusOptions, type Store, type SyncPage, type SyncRow, type TerrainLayerName, type TerrainLayers } from '@universe/core'
+import { CUBE_FACES, CommandBus, StampedStore, SyncClock, createRootUniverse, findRoot, type CommandBusOptions, type Store, type SyncPage, type TerrainLayerName, type TerrainLayers } from '@universe/core'
 import { TrackedStore } from './changes'
 import { SqliteHistoryLog } from './history-log'
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations'
@@ -158,8 +158,8 @@ export class Project {
     return this.stamped.changesSince(since, options)
   }
 
-  /** Rows from another device, merged (the later write wins, row by row); a copy gets its universe this way. */
-  merge(rows: SyncRow[]): void {
+  /** Rows from another device, checked and merged (the later write wins, field by field); a copy gets its universe this way. */
+  merge(rows: readonly unknown[]): void {
     if (!rows.length) return
     this.bus.merge({ type: 'sync.merge', payload: { rows } })
     if (!this.rootId) this.rootId = findRoot(this.store)?.id ?? ''

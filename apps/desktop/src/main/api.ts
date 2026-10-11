@@ -218,6 +218,8 @@ export class ApiController {
         }
       }
       await this.syncTailnetServer(ts)
+      // The user is looking at their devices (or sync just started): other people's are asked again at once.
+      if (this.syncActive) void this.devices.lookAgain()
     }
     this.events.status(this.status())
   }
