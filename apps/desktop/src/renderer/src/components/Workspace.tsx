@@ -1,3 +1,4 @@
+import { versionLabel } from '../../../shared/update'
 import { ancestry } from '@universe/core'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { KIND_ICONS } from '../kinds'
@@ -124,8 +125,8 @@ export function Workspace() {
         <span title={project.path}>{project.path}</span>
         <span>All changes saved</span>
         <span className="statusbar-version">
-          {!isPhoneApp() && <ChangeVersion />}v{__BUILD_INFO__.version} · {__BUILD_INFO__.commit}
-          {__BUILD_INFO__.channel !== 'main' && ` · ${__BUILD_INFO__.channel}`}
+          {!isPhoneApp() && <ChangeVersion />}
+          <span title={`Build ${__BUILD_INFO__.commit}`}>{versionLabel(__BUILD_INFO__)}</span>
         </span>
       </footer>
     </ThemedWorkspace>

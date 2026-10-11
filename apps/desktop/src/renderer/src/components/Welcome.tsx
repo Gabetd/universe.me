@@ -1,3 +1,4 @@
+import { versionLabel } from '../../../shared/update'
 import { useEffect, useState } from 'react'
 import { ROADMAP } from '../roadmap'
 import { applyReply } from '../store'
@@ -76,8 +77,7 @@ export function Welcome() {
         </div>
 
         <footer className="muted small welcome-footer">
-          Version {__BUILD_INFO__.version} · build {__BUILD_INFO__.commit}
-          {__BUILD_INFO__.channel !== 'main' && ` · ${__BUILD_INFO__.channel} build`}
+          Version {versionLabel(__BUILD_INFO__)} · build {__BUILD_INFO__.commit}
           <ChangeVersion />
         </footer>
       </div>

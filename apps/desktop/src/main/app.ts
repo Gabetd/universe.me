@@ -8,7 +8,7 @@ import { EVENTS, INVOKE, type AppState, type BuildInfo, type ImportedModel, type
 import type { ApiController } from './api'
 import type { Session } from './session'
 import { TAILNET_URLS } from './tailnet'
-import { CHANNELS } from '../shared/update'
+import { CHANNELS, versionLabel } from '../shared/update'
 import { Updater } from './updater'
 
 declare const __BUILD_INFO__: BuildInfo
@@ -77,7 +77,7 @@ function createWindow(): void {
     show: false,
     backgroundColor: '#0b0e17',
     // Only a window made again (macOS) has a project to name.
-    title: session ? windowTitle(session.state()) : APP_NAME,
+    title: session ? windowTitle(session.state()) : APP_TITLE,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -129,7 +129,9 @@ function push(state: AppState | null): void {
   api?.toPhones('state', state)
 }
 
-const windowTitle = (state: AppState) => (state.project ? `${state.project.name} — ${APP_NAME}` : APP_NAME)
+/** The window's title, the version always in it beside the app's name: "Terra — Universe 0.1.72 (Dev)". */
+const APP_TITLE = `Universe ${versionLabel(__BUILD_INFO__)}`
+const windowTitle = (state: AppState) => (state.project ? `${state.project.name} — ${APP_TITLE}` : APP_TITLE)
 
 /**
  * The title and the menu (recent files, what's enabled) only change when a
@@ -345,7 +347,7 @@ function buildMenu(): void {
           label: `About ${APP_NAME}`,
           click: () =>
             void dialog.showMessageBox(win!, {
-              message: `${APP_NAME} ${__BUILD_INFO__.version}`,
+              message: `Universe ${versionLabel(__BUILD_INFO__)}`,
               detail: `Build ${__BUILD_INFO__.commit} (${__BUILD_INFO__.builtAt})\nElectron ${process.versions.electron}`
             })
         },

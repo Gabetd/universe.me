@@ -5,6 +5,11 @@ test('create a universe, build a hierarchy, undo/redo, and reopen it', async ({ 
   await expect(page.getByRole('heading', { name: 'Universe' })).toBeVisible()
   await shot(page, '01-welcome')
   await newProject(h, 'Aerth Saga')
+  // The version and which app it is, in the window's title beside the name and in the status bar: "0.1.72 (Dev)".
+  const version = /\d+\.\d+\.\d+ \((Live|Staging|Dev)\)/
+  const title = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getTitle())
+  expect(title).toMatch(new RegExp(`^Aerth Saga — Universe ${version.source}$`))
+  await expect(page.locator('.statusbar-version')).toContainText(version)
 
   await addChild(page, '+ Galaxy Cluster', 'Virgo Cluster')
   await addChild(page, '+ Galaxy', 'Milky Way')

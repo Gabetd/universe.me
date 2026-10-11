@@ -16,6 +16,9 @@ export const CHANNELS = {
   dev: { label: 'Dev', name: 'Universe (dev)', release: 'dev-build', about: 'What’s being worked on now; it may break.', command: 'universe-desktop-dev' }
 } as const
 export type Channel = keyof typeof CHANNELS
+
+/** "0.1.72 (Dev)": a build's version, then which of the apps it is. */
+export const versionLabel = ({ version, channel }: { version: string; channel: Channel }) => `${version} (${CHANNELS[channel].label})`
 /** Live first, then the ones before it. */
 export const CHANNEL_ORDER = Object.keys(CHANNELS) as Channel[]
 
