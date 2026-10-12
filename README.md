@@ -16,8 +16,10 @@ surface is generated from a seed: type any word and you get a whole planet
 (land type, water, islands, mountains, climate, colors), the same planet every
 time. Or customize every option yourself; either way a world code recreates
 that exact planet anywhere. View it as a 3D globe or a flat map, sculpt the
-terrain, paint biomes, change the sea level, draw named regions, and write
-rich-text notes.
+terrain, paint biomes, change the sea level, draw named regions, put named
+pins anywhere on the surface (right-click a point of the globe, the map or the
+ground: **Add a pin here**), and write rich-text notes. The globe turns less
+the closer you are to the ground.
 
 Water finds its own way: rain runs downhill to the sea, gathering into rivers
 that join on the way and filling basins as lakes, worked out again whenever
