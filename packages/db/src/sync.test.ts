@@ -139,4 +139,33 @@ describe('a project between devices', () => {
     expect(logged.length).toBeGreaterThan(0)
     expect(Math.max(...logged.map((r) => r.n))).toBeLessThan(2000)
   })
+
+  it('keeps what each field was written over and the notes and terrain to merge with, across closing and opening the file', () => {
+    const run = (p: Project, type: string, payload: object) => p.bus.execute({ type, payload } as Command)
+    const pathA = join(dir, 'a.universe')
+    let a = track(Project.create(pathA, 'Shared', { device: 'laptop' }))
+    const world = ['galaxy_cluster', 'galaxy', 'star_system', 'body', 'world'].reduce((parentId, kind) => run(a, 'node.create', { parentId, kind, name: kind }).targetId!, a.info().rootId)
+    const event = run(a, 'event.create', { ownerId: world, title: 'Founding', start: fromParts({ year: 1 }), notes: '<p>One</p><p>Two</p><p>Three</p>' }).targetId!
+    const face = (p: Project, cell: number, value: number) => {
+      const bytes = (p.store.worlds.getLayer(world, 'height', 1) ?? emptyLayer('height')).slice()
+      bytes[cell] = value
+      p.store.transaction(() => p.store.worlds.putLayer(world, 'height', 1, bytes))
+    }
+    face(a, 1, 10)
+    const b = track(Project.create(join(dir, 'b.universe'), 'Shared', { device: 'desktop', copyOf: a.syncId() }))
+    const seenA = pull(a, b)
+    run(a, 'event.update', { id: event, patch: { notes: '<p>One by A</p><p>Two</p><p>Three</p>' } })
+    face(a, 20, 20)
+    a.close()
+    a = track(Project.open(pathA, { device: 'laptop' }))
+    run(b, 'event.update', { id: event, patch: { notes: '<p>One</p><p>Two</p><p>Three by B</p>' } })
+    face(b, 40, 30)
+    pull(a, b, seenA)
+    pull(b, a)
+    for (const p of [a, b]) {
+      expect(p.snapshot().timeline.events[0]!.notes).toBe('<p>One by A</p><p>Two</p><p>Three by B</p>')
+      expect([1, 20, 40].map((i) => p.store.worlds.getLayer(world, 'height', 1)![i])).toEqual([10, 20, 30])
+      expect(p.snapshot().timeline.conflicts).toEqual([])
+    }
+  })
 })

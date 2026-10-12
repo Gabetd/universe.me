@@ -8,6 +8,7 @@ import { CommandError, batchOf, liveNode, liveRegion, liveWorld, newNode, patchR
 import { CHARACTER_COMMANDS, characterHandlers } from './character-commands'
 import { FACTION_COMMANDS, factionHandlers } from './faction-commands'
 import { FINDING_COMMANDS, findingHandlers } from './finding-commands'
+import { CONFLICT_COMMANDS, conflictHandlers } from './conflict-commands'
 import { POWER_COMMANDS, powerHandlers } from './power-commands'
 import { WATERWAY_COMMANDS, waterwayHandlers } from './waterway-commands'
 import { CANVAS_COMMANDS, canvasHandlers } from './canvas-commands'
@@ -84,6 +85,7 @@ export const Command = z.discriminatedUnion('type', [
   ...POWER_COMMANDS,
   ...WATERWAY_COMMANDS,
   ...FINDING_COMMANDS,
+  ...CONFLICT_COMMANDS,
   ...FACTION_COMMANDS,
   ...CANVAS_COMMANDS,
   ...MEMBER_COMMANDS,
@@ -108,6 +110,7 @@ export const handlers: Handlers = {
   ...powerHandlers,
   ...waterwayHandlers,
   ...findingHandlers,
+  ...conflictHandlers,
   ...factionHandlers,
   ...canvasHandlers,
   ...memberHandlers,

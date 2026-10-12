@@ -1,13 +1,23 @@
 import type { DatabaseSync } from 'node:sqlite'
-import { CUBE_FACES, RECORD_KINDS, SyncClock, refKey, type FieldStamps, type RowStamps, type StampTable, type StampedKey, type SyncRef, type TerrainLayerName } from '@universe/core'
+import { deflateSync, inflateSync } from 'node:zlib'
+import { CUBE_FACES, RECORD_KINDS, SyncClock, refKey, type FieldStamps, type Lineage, type RowStamps, type StampTable, type StampedKey, type SyncRef, type TerrainLayerName } from '@universe/core'
 
 /** A row of `row_stamps`, as SQLite returns it. */
 interface StampRow {
   stamp: string
   fields: string | null
+  lineage: string | null
 }
 
-const stampsOf = ({ stamp, fields }: StampRow): RowStamps => (fields ? { stamp, fields: JSON.parse(fields) as FieldStamps } : { stamp })
+const stampsOf = ({ stamp, fields, lineage }: StampRow): RowStamps => ({
+  stamp,
+  ...(fields && { fields: JSON.parse(fields) as FieldStamps }),
+  ...(lineage && { lineage: JSON.parse(lineage) as Lineage })
+})
+
+/** A kept version as stored: text as it is, terrain deflated (as its layers are). */
+const storedBase = (value: unknown): string | Uint8Array => (value instanceof Uint8Array ? deflateSync(value, { level: 1 }) : String(value))
+const readBase = (value: unknown): unknown => (value instanceof Uint8Array ? new Uint8Array(inflateSync(value)) : value)
 
 /** Each row's sync stamps in the project file (PLAN.md §6.7), with the order this copy got them in. */
 export class SqliteStampTable implements StampTable {
@@ -17,12 +27,16 @@ export class SqliteStampTable implements StampTable {
 
   constructor(db: DatabaseSync) {
     this.s = {
-      get: db.prepare('SELECT stamp, fields FROM row_stamps WHERE key = ?'),
+      get: db.prepare('SELECT stamp, fields, lineage FROM row_stamps WHERE key = ?'),
       put: db.prepare(
-        'INSERT INTO row_stamps (key, stamp, fields, seq) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET stamp = excluded.stamp, fields = excluded.fields, seq = excluded.seq'
+        'INSERT INTO row_stamps (key, stamp, fields, lineage, seq) VALUES (?, ?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET stamp = excluded.stamp, fields = excluded.fields, lineage = excluded.lineage, seq = excluded.seq'
       ),
       // The device's own rows are left out here, so the limit counts only rows that are sent.
-      since: db.prepare("SELECT key, stamp, fields, seq FROM row_stamps WHERE seq > ? AND stamp NOT LIKE '%.' || ? ESCAPE '\\' ORDER BY seq LIMIT ?")
+      since: db.prepare("SELECT key, stamp, fields, lineage, seq FROM row_stamps WHERE seq > ? AND stamp NOT LIKE '%.' || ? ESCAPE '\\' ORDER BY seq LIMIT ?"),
+      base: db.prepare('SELECT value FROM sync_bases WHERE key = ? AND path = ? AND stamp = ?'),
+      keepBase: db.prepare('INSERT OR REPLACE INTO sync_bases (key, path, stamp, value) VALUES (?, ?, ?, ?)'),
+      bases: db.prepare('SELECT stamp FROM sync_bases WHERE key = ? AND path = ?'),
+      dropBase: db.prepare('DELETE FROM sync_bases WHERE key = ? AND path = ? AND stamp = ?')
     }
     this.latest = (db.prepare('SELECT max(seq) AS n FROM row_stamps').get() as { n: number | null }).n ?? 0
   }
@@ -32,8 +46,21 @@ export class SqliteStampTable implements StampTable {
     return row && stampsOf(row)
   }
 
-  put(key: string, { stamp, fields }: RowStamps): void {
-    this.s.put.run(key, stamp, fields ? JSON.stringify(fields) : null, ++this.latest)
+  put(key: string, { stamp, fields, lineage }: RowStamps): void {
+    this.s.put.run(key, stamp, fields ? JSON.stringify(fields) : null, lineage ? JSON.stringify(lineage) : null, ++this.latest)
+  }
+
+  base(key: string, path: string, stamp: string): unknown {
+    const row = this.s.base.get(key, path, stamp) as { value: unknown } | undefined
+    return row && readBase(row.value)
+  }
+
+  keepBase(key: string, path: string, stamp: string, value: unknown): void {
+    this.s.keepBase.run(key, path, stamp, storedBase(value))
+  }
+
+  pruneBases(key: string, path: string, keep: readonly string[]): void {
+    for (const { stamp } of this.s.bases.all(key, path) as { stamp: string }[]) if (!keep.includes(stamp)) this.s.dropBase.run(key, path, stamp)
   }
 
   since(since: number, limit: number, skip?: string): StampedKey[] {

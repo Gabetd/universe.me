@@ -364,4 +364,132 @@ describe('sync', () => {
     expect(back).toEqual({ rows: [], upTo: b.store.changesSince(0).upTo, more: false })
     expect(b.store.changesSince(back.upTo, { from: 'A' }).rows).toEqual([])
   })
+
+  describe('changes made apart (M20)', () => {
+    const conflicts = (d: Device) => d.store.records('conflict').all().filter((c) => !c.deletedAt)
+
+    it('keeps the later of two changes made apart and the earlier as a conflict note, the same on both, which can be put back and undone', () => {
+      const time = { now: Date.UTC(2026, 0, 1) }
+      const { a, event, copies: [b] } = withEvent(time, 'B')
+      time.now += 10
+      run(a, 'event.update', { id: event, patch: { title: 'Mine' } })
+      time.now += 10
+      run(b!, 'event.update', { id: event, patch: { title: 'Theirs' } })
+      settle(a, b!)
+      for (const d of [a, b!]) {
+        expect(d.store.records('event').get(event)!.title).toBe('Theirs')
+        expect(conflicts(d)).toEqual([expect.objectContaining({ path: '/title', value: 'Mine', removed: false })])
+      }
+      expect(conflicts(a)[0]!.id).toBe(conflicts(b!)[0]!.id)
+      const id = conflicts(a)[0]!.id
+      run(a, 'conflict.use', { id })
+      expect(a.store.records('event').get(event)!.title).toBe('Mine')
+      expect(conflicts(a)).toEqual([])
+      a.bus.undo()
+      expect(a.store.records('event').get(event)!.title).toBe('Theirs')
+      expect(conflicts(a).map((c) => c.id)).toEqual([id])
+      // Dismissing it is removing it, and it goes for both.
+      time.now += 10
+      run(b!, 'record.remove', { refs: [{ kind: 'conflict', id }] })
+      settle(a, b!)
+      expect(conflicts(a)).toEqual([])
+    })
+
+    it('makes no note for a change made on top of another, however many came between', () => {
+      const time = { now: Date.UTC(2026, 0, 1) }
+      const { a, event, copies: [b, c] } = withEvent(time, 'B', 'C')
+      for (const title of ['One', 'Two', 'Three']) {
+        time.now += 10
+        run(a, 'event.update', { id: event, patch: { title } })
+      }
+      pull(a, b!)
+      time.now += 10
+      run(b!, 'event.update', { id: event, patch: { title: 'Four' } })
+      // C still has the first title: B's comes after it.
+      settle(a, b!, c!)
+      for (const d of [a, b!, c!]) {
+        expect(d.store.records('event').get(event)!.title).toBe('Four')
+        expect(conflicts(d)).toEqual([])
+      }
+    })
+
+    it('merges notes changed apart line by line, and keeps a note where both changed the same line', () => {
+      const time = { now: Date.UTC(2026, 0, 1) }
+      const { a, event, copies: [b] } = withEvent(time, 'B')
+      const notes = (d: Device, text: string) => run(d, 'event.update', { id: event, patch: { notes: text } })
+      time.now += 10
+      notes(a, '<p>One</p><p>Two</p><p>Three</p>')
+      settle(a, b!)
+      time.now += 10
+      notes(a, '<p>One, said A</p><p>Two</p><p>Three</p>')
+      time.now += 10
+      notes(b!, '<p>One</p><p>Two</p><p>Three, said B</p>')
+      settle(a, b!)
+      for (const d of [a, b!]) {
+        expect(d.store.records('event').get(event)!.notes).toBe('<p>One, said A</p><p>Two</p><p>Three, said B</p>')
+        expect(conflicts(d)).toEqual([])
+      }
+      expect(sent(a, { t: 'record', kind: 'event', id: event })).toEqual(sent(b!, { t: 'record', kind: 'event', id: event }))
+
+      time.now += 10
+      notes(a, '<p>One, said A</p><p>Two by A</p><p>Three, said B</p>')
+      time.now += 10
+      notes(b!, '<p>One, said A</p><p>Two by B</p><p>Three, said B</p><p>Four</p>')
+      settle(a, b!)
+      for (const d of [a, b!]) {
+        expect(d.store.records('event').get(event)!.notes).toBe('<p>One, said A</p><p>Two by B</p><p>Three, said B</p><p>Four</p>')
+        expect(conflicts(d)).toEqual([expect.objectContaining({ path: '/notes', value: '<p>One, said A</p><p>Two by A</p><p>Three, said B</p>' })])
+      }
+    })
+
+    it('merges a record made apart with the same id field by field: each side’s choices, the defaults losing', () => {
+      const time = { now: Date.UTC(2026, 0, 1) }
+      const { a, world, copies: [b] } = withEvent(time, 'B')
+      time.now += 10
+      run(a, 'waterway.set', { worldId: world, key: 'r1', patch: { name: 'The Silverrun' } })
+      time.now += 10
+      run(b!, 'waterway.set', { worldId: world, key: 'r1', patch: { notes: '<p>Wide and slow</p>' } })
+      settle(a, b!)
+      for (const d of [a, b!]) {
+        expect(d.store.records('waterway').all()).toEqual([expect.objectContaining({ name: 'The Silverrun', notes: '<p>Wide and slow</p>' })])
+        expect(conflicts(d)).toEqual([])
+      }
+    })
+
+    it('merges a face of terrain sculpted apart cell by cell', () => {
+      const time = { now: Date.UTC(2026, 0, 1) }
+      const { a, world, copies: [b] } = withEvent(time, 'B')
+      const sculpt = (d: Device, cell: number, height: number) => {
+        const bytes = (d.store.worlds.getLayer(world, 'height', 2) ?? emptyLayer('height')).slice()
+        bytes[cell] = height
+        d.store.transaction(() => d.store.worlds.putLayer(world, 'height', 2, bytes))
+      }
+      time.now += 10
+      sculpt(a, 10, 50)
+      settle(a, b!)
+      time.now += 10
+      sculpt(a, 20, 60)
+      time.now += 10
+      sculpt(b!, 30, 70)
+      sculpt(b!, 10, 80)
+      settle(a, b!)
+      for (const d of [a, b!]) {
+        const bytes = d.store.worlds.getLayer(world, 'height', 2)!
+        expect([bytes[10], bytes[20], bytes[30]]).toEqual([80, 60, 70])
+      }
+      expect(contents(a.store).height).toBe(contents(b!.store).height)
+    })
+
+    it('makes no notes from a device from before lineage', () => {
+      const time = { now: Date.UTC(2026, 0, 1) }
+      const { a, event, copies: [b] } = withEvent(time, 'B')
+      time.now += 10
+      run(b!, 'event.update', { id: event, patch: { title: 'Mine' } })
+      time.now += 10
+      const { lineage: _, ...old } = { ...sent(a, { t: 'record', kind: 'event', id: event }), stamp: new SyncClock('Old', () => time.now).next() }
+      b!.bus.merge({ type: 'sync.merge', payload: { rows: [{ ...old, data: { ...a.store.records('event').get(event)!, title: 'Old' } }] } })
+      expect(b!.store.records('event').get(event)!.title).toBe('Old')
+      expect(conflicts(b!)).toEqual([])
+    })
+  })
 })

@@ -102,6 +102,17 @@ export const MIGRATIONS: readonly string[] = [
   `,
   /* 8: the stamps of a row's fields that differ from the row's, as JSON (PLAN.md §6.7); null: all at the row's */ `
   ALTER TABLE row_stamps ADD COLUMN fields TEXT;
+  `,
+  /* 9: what each field was written over, as JSON (null: not known), and the versions of notes and terrain kept to merge with (PLAN.md §6.7, M20) */ `
+  ALTER TABLE row_stamps ADD COLUMN lineage TEXT;
+
+  CREATE TABLE sync_bases (
+    key   TEXT NOT NULL,
+    path  TEXT NOT NULL,
+    stamp TEXT NOT NULL,
+    value BLOB NOT NULL,
+    PRIMARY KEY (key, path, stamp)
+  );
   `
 ]
 

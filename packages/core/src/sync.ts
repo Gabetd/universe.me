@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { bytesToBase64 } from './encoding'
-import { restamp, rowStamps, type MergedStamps, type RowStamps } from './field-stamps'
+import { restamp, restampWhole, rowStamps, stampsByField, type FieldStamps, type MergedStamps, type RowStamps } from './field-stamps'
+import { fieldsOf } from './fields'
+import { LINEAGE_CAP, WHOLE, isBased, type Lineage } from './lineage'
 import { RECORD_KINDS, type RecordKind } from './records'
 import type { Id } from './schema'
 import { ObservedStore } from './observed-store'
@@ -118,6 +120,11 @@ export interface StampTable {
   since(since: number, limit: number, skip?: string): StampedKey[]
   /** When this copy last got a row (0: never). */
   readonly latest: number
+  /** A version of a row's field (`WHOLE` for terrain) kept to merge with (lineage.ts `isBased`): text, or bytes. */
+  base(key: string, path: string, stamp: string): unknown
+  keepBase(key: string, path: string, stamp: string, value: unknown): void
+  /** Forgets the versions of a field kept but those stamped `keep`. */
+  pruneBases(key: string, path: string, keep: readonly string[]): void
 }
 
 /** A row in the stamp table: its key, its stamps, and when this copy got it. */
@@ -125,6 +132,7 @@ export type StampedKey = RowStamps & { key: string; seq: number }
 
 export class MemoryStampTable implements StampTable {
   private readonly rows = new Map<string, { stamps: RowStamps; seq: number }>()
+  private readonly bases = new Map<string, Map<string, unknown>>()
   latest = 0
   get = (key: string) => this.rows.get(key)?.stamps
   put = (key: string, stamps: RowStamps) => void this.rows.set(key, { stamps, seq: ++this.latest })
@@ -134,6 +142,14 @@ export class MemoryStampTable implements StampTable {
       .sort((a, b) => a[1].seq - b[1].seq)
       .slice(0, limit)
       .map(([key, r]) => ({ key, ...r.stamps, seq: r.seq }))
+  base = (key: string, path: string, stamp: string) => this.bases.get(JSON.stringify([key, path]))?.get(stamp)
+  keepBase = (key: string, path: string, stamp: string, value: unknown) => {
+    const at = JSON.stringify([key, path])
+    this.bases.set(at, (this.bases.get(at) ?? new Map<string, unknown>()).set(stamp, value))
+  }
+  pruneBases = (key: string, path: string, keep: readonly string[]) => {
+    for (const stamp of this.bases.get(JSON.stringify([key, path]))?.keys() ?? []) if (!keep.includes(stamp)) this.bases.get(JSON.stringify([key, path]))!.delete(stamp)
+  }
 }
 
 /** What a store that syncs offers the merge: a row's stamps, and taking another device's for a row it writes. */
@@ -145,6 +161,10 @@ export interface SyncLedger {
    * one from this device, after both.
    */
   adopt(ref: SyncRef, stamps: MergedStamps): void
+  /** The fields of a row about to be made that are left at their defaults: stamped as never written, another device's choice wins (`restamp`). */
+  unset(ref: SyncRef, paths: readonly string[]): void
+  /** A version of a row's field kept to merge with, by its stamp, if it's kept. */
+  base(ref: SyncRef, path: string, stamp: string): unknown
 }
 
 /** Rows from another device in one merge, at most: a pull is asked for in pages smaller than this. */
@@ -161,6 +181,7 @@ export class StampedStore extends ObservedStore {
   /** Rows written in the open transaction, by key, and the stamps merged ones keep. */
   private readonly written = new Map<string, Written>()
   private readonly adopted = new Map<string, MergedStamps>()
+  private readonly defaults = new Map<string, readonly string[]>()
 
   constructor(
     inner: Store,
@@ -174,7 +195,9 @@ export class StampedStore extends ObservedStore {
         this.adopted.set(refKey(ref), stamps)
         // A new stamp for a mix of versions comes after each of its fields'.
         for (const s of 'stamp' in stamps ? [stamps.stamp] : Object.values(stamps.fields)) this.clock.see(s)
-      }
+      },
+      unset: (ref, paths) => void this.defaults.set(refKey(ref), paths),
+      base: (ref, path, stamp) => this.table.base(refKey(ref), path, stamp)
     }
   }
 
@@ -191,11 +214,11 @@ export class StampedStore extends ObservedStore {
     const got = this.table.since(since, limit, from)
     const rows: SyncRow[] = []
     let bytes = 0
-    for (const { key, stamp: s, fields } of got) {
+    for (const { key, stamp: s, fields, lineage } of got) {
       if (bytes > PAGE_BYTES) break
       const data = readRow(this.inner, parseRefKey(key))
       bytes += sizeOf(data)
-      rows.push({ key, ...rowStamps(s, fields), data })
+      rows.push({ key, ...rowStamps(s, fields, lineage), data })
     }
     const more = rows.length < got.length || got.length === limit
     // Everything got up to now has been seen, the asker's own rows too, unless the page ended first.
@@ -203,21 +226,24 @@ export class StampedStore extends ObservedStore {
   }
 
   /**
-   * Notes a row as the transaction first writes it: one of fields as it was
-   * before, to find which fields it changed (but one a merge writes, which
-   * keeps the stamps it brings). A world whose settings were never set has
-   * the defaults, so a first change to them stamps only what it changes (and
-   * two devices' first changes to different sliders both stay).
+   * Notes a row as the transaction first writes it, as it was before: a row
+   * of fields, to find which fields it changed (and to keep its notes as
+   * they were, to merge with), or a face of terrain (to keep). A world whose
+   * settings were never set has the defaults, so a first change to them
+   * stamps only what it changes (and two devices' first changes to
+   * different sliders both stay).
    */
   protected override writing(ref: SyncRef, inserted: boolean): void {
     const key = refKey(ref)
     if (this.written.has(key)) return
-    const before = hasFields(ref) && !inserted && !this.adopted.has(key) ? this.rowBefore(ref) : undefined
-    this.written.set(key, { ref, before, done: false, after: undefined })
+    const before = inserted ? undefined : this.rowBefore(ref)
+    this.written.set(key, { ref, before, old: this.table.get(key), done: false, after: undefined })
   }
 
   private rowBefore(ref: SyncRef): unknown {
-    return ref.t === 'world' ? (this.inner.worlds.getSettings(ref.id) ?? DEFAULT_WORLD_SETTINGS) : readRow(this.inner, ref)
+    if (ref.t === 'world') return this.inner.worlds.getSettings(ref.id) ?? DEFAULT_WORLD_SETTINGS
+    if (ref.t === 'layer') return this.inner.worlds.getLayer(ref.id, ref.layer, ref.face)
+    return hasFields(ref) ? readRow(this.inner, ref) : undefined
   }
 
   protected wrote(ref: SyncRef, _inserted: boolean, value: unknown): void {
@@ -231,27 +257,55 @@ export class StampedStore extends ObservedStore {
     for (const [key, row] of this.written) {
       if (!row.done) continue
       const adopted = this.adopted.get(key)
-      const stamps = adopted ? ('stamp' in adopted ? adopted : { stamp: this.clock.next(), ...adopted }) : this.restamped(key, row)
-      if (stamps) this.table.put(key, stamps)
+      const stamps = adopted ? ('stamp' in adopted ? adopted : this.mixed(adopted)) : this.restamped(key, row)
+      if (!stamps) continue
+      this.table.put(key, stamps)
+      this.keepBases(key, row, stamps)
     }
   }
 
+  /** A mix of two versions' stamps: a new stamp of its own, after both. */
+  private mixed({ fields, lineage }: { fields: FieldStamps; lineage?: Lineage }): RowStamps {
+    return rowStamps(this.clock.next(), Object.keys(fields).length ? fields : undefined, lineage)
+  }
+
   /** A row's new stamps after a write here: a field's changes only if it changed (none at all if nothing did). */
-  private restamped(key: string, { ref, before, after }: Written): RowStamps | undefined {
+  private restamped(key: string, { ref, before, after, old }: Written): RowStamps | undefined {
     const next = () => this.clock.next()
-    return hasFields(ref) ? restamp(this.table.get(key), before, after, next) : { stamp: next() }
+    if (ref.t === 'asset') return { stamp: next() }
+    return ref.t === 'layer' ? restampWhole(old, next()) : restamp(old, before, after, next, this.defaults.get(key))
+  }
+
+  /**
+   * Keeps the version a write replaced of each of a row's notes (or of a
+   * face of terrain) while it's in the line of what replaced it: a merge
+   * with a version made apart from it then has the version both came from.
+   */
+  private keepBases(key: string, { ref, before, old }: Written, stamps: RowStamps): void {
+    if (!old || before === undefined || ref.t === 'asset') return
+    const was = ref.t === 'layer' ? new Map([[WHOLE, before]]) : fieldsOf(before)
+    const oldBy = stampsByField(old, was)
+    for (const path of was.keys()) {
+      const previous = oldBy.get(path)
+      if (!isBased(path) || !previous || (stamps.fields?.[path] ?? stamps.stamp) === previous) continue
+      const line = stamps.lineage?.paths[path] ?? []
+      if (line.includes(previous)) this.table.keepBase(key, path, previous, was.get(path))
+      this.table.pruneBases(key, path, line)
+    }
   }
 
   protected override ended(): void {
     this.written.clear()
     this.adopted.clear()
+    this.defaults.clear()
   }
 }
 
-/** A row the open transaction wrote: as it was before (a row of fields, unless it's new or merged), and, once a write went through (`done`), as it was last written. */
+/** A row the open transaction wrote: as it was before (unless it's new; not a file), its stamps then, and, once a write went through (`done`), as it was last written. */
 interface Written {
   ref: SyncRef
   before: unknown
+  old: RowStamps | undefined
   done: boolean
   after: unknown
 }
@@ -263,12 +317,22 @@ function sizeOf(data: unknown): number {
   return typeof asset?.data === 'string' ? asset.data.length : JSON.stringify(data).length
 }
 
+/** What a row's fields were written over, as it travels. */
+export const SyncLineage = z.object({ from: SyncStamp, paths: z.record(z.string().max(2000), z.array(SyncStamp).max(LINEAGE_CAP)) }) satisfies z.ZodType<Lineage>
+
 /**
  * A row as it travels: its key, its stamp, the stamps of its fields that
  * differ from it (none from a device from before field stamps: they're all
- * at the row's), and what it holds (null: nothing, as an asset removed).
+ * at the row's), what each field was written over (none from a device from
+ * before lineage), and what it holds (null: nothing, as an asset removed).
  */
-export const SyncRow = z.object({ key: z.string().min(1).max(2000), stamp: SyncStamp, fields: z.record(z.string().max(2000), SyncStamp).optional(), data: z.unknown() })
+export const SyncRow = z.object({
+  key: z.string().min(1).max(2000),
+  stamp: SyncStamp,
+  fields: z.record(z.string().max(2000), SyncStamp).optional(),
+  lineage: SyncLineage.optional(),
+  data: z.unknown()
+})
 export type SyncRow = z.infer<typeof SyncRow>
 
 /** A page of rows another device asked for: where to ask from next, and whether there's more after it. */

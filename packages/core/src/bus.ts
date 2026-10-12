@@ -116,7 +116,7 @@ export class CommandBus {
     if (!parsed.success) throw new CommandError(`Rows from another device: ${parsed.error.issues[0]?.message ?? 'not rows'}`)
     const { rows } = parsed.data.payload
     this.store.transaction(() => {
-      mergeRows(this.store, rows)
+      mergeRows(this.store, rows, this.ctx.now())
       const logged = (rows: { key: string; stamp: string }[]): LoggedMerge => ({ type: 'sync.merge', payload: { rows } })
       this.options.log?.append({ action: 'do', source: 'system', at: this.ctx.now(), command: logged(rows.map(({ key, stamp }) => ({ key, stamp }))), inverse: logged([]) })
     })

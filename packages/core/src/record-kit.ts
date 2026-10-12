@@ -20,6 +20,7 @@ import {
 import type { Command, Handler } from './commands'
 import { RECORD_KINDS, type RecordKind, type RecordOf } from './records'
 import { Id } from './schema'
+import { pathOf } from './fields'
 import type { Store } from './store'
 import { findBlueprint } from './builtin-blueprints'
 import type { Blueprint } from './structures'
@@ -124,7 +125,9 @@ const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>, check
   ...factionValidators,
   finding: (store, f) => void liveWorld(store, f.ownerId),
   ...canvasValidators,
-  ...memberValidators
+  ...memberValidators,
+  // A note on what a merge lost: made by sync alone, about whatever it was, deleted or not.
+  conflict: () => {}
 }
 
 /** A blueprint by id: a built-in one or one in the project's library. */
@@ -175,7 +178,11 @@ export function upsert<K extends RecordKind>(
   set: (previous: Partial<Fields<K>>) => Command, reset: Command, patch: Partial<Fields<K>> = fields
 ): HandlerResult {
   const existing = store.records(kind).get(id)
-  if (!existing) return { ...create(store, kind, ctx, ownerId, id, fields), inverse: reset }
+  if (!existing) {
+    // Made with the same id on another device too, its choices win the fields left at their defaults here.
+    store.sync?.unset({ t: 'record', kind, id }, Object.keys(fields).filter((key) => !(key in patch)).map((key) => pathOf([key])))
+    return { ...create(store, kind, ctx, ownerId, id, fields), inverse: reset }
+  }
   const { deletedAt } = existing
   if (deletedAt) store.records(kind).update({ ...existing, deletedAt: null })
   const { previous = {} } = patchRecord(store, kind, ctx, id, patch)
