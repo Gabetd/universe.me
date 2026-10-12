@@ -41,6 +41,8 @@ export class Session {
 
   /** Sync's heavy work, off this thread (sync.worker.ts), when the app gives one. */
   offThread: WorkerCalls<SyncJob> | undefined
+  /** Whether the worker has the open file open to read pages from. */
+  private reading = false
 
   constructor(private readonly userDataDir: string) {
     this.device = loadDevice(join(userDataDir, 'device.json'))
@@ -116,7 +118,9 @@ export class Session {
    */
   async changesSinceOff(since: number, from: string, limit: number): Promise<SyncPage> {
     const p = this.require()
-    return this.offThread ? this.offThread.call<SyncPage>({ job: 'page', path: p.path, since, from, limit }) : p.changesSince(since, { from, limit })
+    if (!this.offThread) return p.changesSince(since, { from, limit })
+    this.reading = true
+    return this.offThread.call<SyncPage>({ job: 'page', path: p.path, since, from, limit })
   }
 
   /** Rows from another device, merged as `merge` does, worked out off this thread (`planMerge`, in the worker) and written here; whether any came. */
@@ -191,7 +195,8 @@ export class Session {
 
   close(): void {
     // The worker's reader of the file lets go of it too.
-    void this.offThread?.call({ job: 'close' }).catch(() => {})
+    if (this.reading) void this.offThread?.call({ job: 'close' }).catch(() => {})
+    this.reading = false
     this.project?.close()
     this.project = null
     this.focus = undefined

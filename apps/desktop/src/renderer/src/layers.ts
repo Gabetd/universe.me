@@ -60,6 +60,3 @@ export function useLayer(open: boolean, close: () => void, alsoKey?: string): nu
   const at = useSyncExternalStore(subscribe, () => stack.indexOf(layer))
   return BASE_Z + Math.max(0, at)
 }
-
-/** How many dialogs and menus are open: for tests. */
-export const openLayers = () => stack.length
