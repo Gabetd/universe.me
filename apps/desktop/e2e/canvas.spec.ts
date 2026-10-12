@@ -162,13 +162,17 @@ test('the canvas as Obsidian has it: cards of every kind, connections, selection
   await pickCard('text')
   await dragPoints(page, center((await card('text').locator('.side-handle.right').boundingBox())!), center(elementBox))
   await expect.poll(async () => (await state(page, 'timeline')).connections.length).toBe(1)
-  // Picked by a click on its line, even where it runs under a card (the lines are picked above the cards).
+  // Picked by a click on its line, even where it runs under a card (the lines are picked above the cards): where nothing else is over it (the bar of what's selected can be).
   const line = page.locator('[data-connection-id]')
   const pick = async () => {
     const at = await line.evaluate((path: SVGPathElement) => {
-      const p = path.getPointAtLength(path.getTotalLength() / 2)
       const box = path.ownerSVGElement!.getBoundingClientRect()
-      return { x: box.left + p.x, y: box.top + p.y }
+      for (const f of [0.5, 0.35, 0.65, 0.25, 0.75]) {
+        const p = path.getPointAtLength(path.getTotalLength() * f)
+        const [x, y] = [box.left + p.x, box.top + p.y]
+        if (document.elementFromPoint(x, y) === path) return { x, y }
+      }
+      throw new Error('The line is covered all along')
     })
     await page.mouse.click(at.x, at.y)
   }
