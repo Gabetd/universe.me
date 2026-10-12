@@ -271,4 +271,9 @@ test('the canvas as Obsidian has it: cards of every kind, connections, selection
   await stubSaveDialog(app, join(dir, 'board.png'))
   await controls.getByRole('button', { name: 'Export as image' }).click()
   await expect.poll(() => (existsSync(join(dir, 'board.png')) ? readFileSync(join(dir, 'board.png')).subarray(1, 4).toString() : '')).toBe('PNG')
+  // Drawn from the board's own data at twice its size, whatever the view: not a capture of the window.
+  const png = readFileSync(join(dir, 'board.png'))
+  const [width, height] = [png.readUInt32BE(16), png.readUInt32BE(20)]
+  expect(width % 2 + (height % 2)).toBe(0)
+  expect(width).toBeGreaterThan(400)
 })

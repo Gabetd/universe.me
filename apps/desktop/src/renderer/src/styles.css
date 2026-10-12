@@ -1771,10 +1771,6 @@ input.canvas-edge-label {
   text-align: center;
   pointer-events: none;
 }
-/* Exported as an image: the board without the selection. */
-.event-board.capturing .canvas-item.selected {
-  outline: none;
-}
 .canvas-dialog form,
 .canvas-dialog {
   display: grid;

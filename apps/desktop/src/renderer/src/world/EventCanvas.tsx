@@ -15,6 +15,7 @@ import { CardBody, GroupLabel, InlineEditor } from './canvas/CardView'
 import { useCanvasSettings } from './canvas/canvasSettings'
 import { ElementPicker, LinkDialog } from './canvas/dialogs'
 import { openTarget } from './canvas/elements'
+import { drawBoard, type Drawn, type DrawnLine } from './canvas/drawBoard'
 
 const NODE_W = 200
 const NODE_H = 86
@@ -98,7 +99,6 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   const [edge, setEdge] = useState<Edge | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [dialog, setDialog] = useState<{ kind: 'link' | 'element'; at: Point } | null>(null)
-  const [capturing, setCapturing] = useState(false)
   const boardRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   /** Where a picture chosen from the file picker goes. */
@@ -586,17 +586,30 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   const marquee = drag?.kind === 'marquee' ? boxBetween(drag.start, drag.to) : null
   const draft = drag?.kind === 'connect' || drag?.kind === 'link' ? placed.get(drag.fromId) : undefined
 
+  /** Saves the whole board as a PNG, drawn from what's on it (drawBoard.ts) at full size, whatever the view. */
   const exportImage = async () => {
-    if (!size.w) return
-    const before = view
-    setCapturing(true)
-    setView(fitted())
-    // Once it's drawn there (events glide into place).
-    await new Promise((done) => setTimeout(done, 400))
-    const r = boardRef.current!.getBoundingClientRect()
-    await useUi.getState().run(window.universe.exportImage({ x: r.left, y: r.top, width: r.width, height: r.height }, `${worldName} canvas`))
-    if (before) setView(before)
-    setCapturing(false)
+    const shown = items.filter((i) => !i.event?.canvasHidden)
+    const boxOfId = new Map(shown.map((i) => [i.id, i.box]))
+    const drawnItems: Drawn[] = shown.map((i) =>
+      i.event ? { box: i.box, event: { title: i.event.title, dates: eventDates(i.event, cal), place: i.event.locations.map((l) => locationLabel(l, regions)).join(' · '), color: i.event.color } } : { box: i.box, card: i.card! }
+    )
+    const line = (fromId: string, toId: string, fromSide: Side | null, toSide: Side | null) => {
+      const [a, b] = [boxOfId.get(fromId), boxOfId.get(toId)]
+      return a && b ? connectionCurve(a, b, fromSide, toSide) : undefined
+    }
+    const lines: DrawnLine[] = [
+      ...own.links.flatMap((l) => {
+        const curve = line(l.fromId, l.toId, null, null)
+        const style = LINK_STYLE[l.type]
+        return curve ? [{ curve, color: style.color, dash: style.dash?.split(' ').map(Number), arrows: { start: false, end: style.arrow } }] : []
+      }),
+      ...connections.flatMap((c) => {
+        const curve = line(c.fromId, c.toId, c.fromSide, c.toSide)
+        return curve ? [{ curve, color: canvasColor(c.color) ?? '#aab4d0', arrows: { start: c.arrows === 'start' || c.arrows === 'both', end: c.arrows === 'end' || c.arrows === 'both' }, label: c.label }] : []
+      })
+    ]
+    const png = await drawBoard(drawnItems, lines)
+    await useUi.getState().run(window.universe.exportImage(png, `${worldName} canvas`))
   }
 
   return (
@@ -621,7 +634,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
         ref={boardRef}
         tabIndex={0}
         aria-label={`${worldName}’s canvas`}
-        className={`event-board${drag ? ' dragging' : ''}${capturing ? ' capturing' : ''}${readOnly ? ' read-only' : ''}`}
+        className={`event-board${drag ? ' dragging' : ''}${readOnly ? ' read-only' : ''}`}
         data-testid="event-canvas"
         style={view ? { backgroundPosition: `${view.x}px ${view.y}px`, backgroundSize: `${32 * view.zoom}px ${32 * view.zoom}px` } : undefined}
         onWheel={onWheel}
@@ -720,7 +733,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
         </svg>
 
         {marquee && <div className="canvas-marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />}
-        {barAt && !drag && !editing && !capturing && Object.keys(actions).length > 0 && <SelectionBar at={barAt} actions={actions} />}
+        {barAt && !drag && !editing && Object.keys(actions).length > 0 && <SelectionBar at={barAt} actions={actions} />}
         {items.length === 0 && (
           <p className="canvas-empty muted">
             The world’s events show up here, beside cards of your own: double-click to write one, or add one from the toolbar. Drag to select, Space-drag to pan, scroll to zoom; drag from a card’s side onto another to connect them.
@@ -747,7 +760,7 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   function renderItem(item: Placed) {
     const isSelected = selected.has(item.id)
     const dragging = moving?.has(item.id) ?? false
-    const handles = !readOnly && !capturing && (
+    const handles = !readOnly && (
       <>
         {SIDES.map((side) => (
           <span key={side} className={`side-handle ${side}`} title="Drag onto another card to connect them" aria-label={`Connect from the ${side}`} onPointerDown={(e) => startDrag(e, (p) => ({ kind: 'connect', fromId: item.id, fromSide: side, start: p, to: p }))} />

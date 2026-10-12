@@ -276,12 +276,15 @@ const exportBible = (worldId: string) =>
 /** An address the browser is given to open: a web page (as a canvas's link card holds), nothing else (no files, no other apps' links). */
 const isWebPage = (url: string) => CardUrl.safeParse(url).success
 
-/** Saves a part of the window (in CSS px; the page may be zoomed) as a PNG where the user says. */
-async function exportImage(rect: { x: number; y: number; width: number; height: number }, name: string): Promise<string | null> {
-  const zoom = win!.webContents.getZoomFactor()
-  const [x, y, width, height] = [rect.x, rect.y, rect.width, rect.height].map((v) => Math.round(v * zoom))
-  const image = await win!.webContents.capturePage({ x: x!, y: y!, width: width!, height: height! })
-  return exportTo('Export as an image', name, { name: 'PNG image', extension: 'png' }, async () => image.toPNG())
+/** A PNG's first bytes. */
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+/** The biggest picture the window may hand over to save. */
+const MAX_PNG_BYTES = 256 * 1024 * 1024
+
+/** Saves a PNG the window drew (the canvas's picture of itself) where the user says. */
+async function exportImage(png: unknown, name: string): Promise<string | null> {
+  if (!(png instanceof Uint8Array) || png.length > MAX_PNG_BYTES || !PNG_SIGNATURE.every((b, i) => png[i] === b)) throw new Error('That isn’t a PNG picture')
+  return exportTo('Export as an image', name, { name: 'PNG image', extension: 'png' }, async () => Buffer.from(png))
 }
 
 /** Menu-triggered actions that can fail show their error in a dialog, since there is no caller to return it to. */
@@ -438,7 +441,7 @@ function registerIpc(): void {
   handle('acceptProposal', (id) => wrap(() => changed(session.accept(id), 'An AI suggestion accepted in the app')))
   handle('rejectProposal', (id) => wrap(() => session.reject(id)))
   handle('exportBible', (worldId) => wrap(() => exportBible(worldId)))
-  handle('exportImage', (rect, name) => wrap(() => exportImage(rect, name)))
+  handle('exportImage', (png, name) => wrap(() => exportImage(png, name)))
   // Tailscale is looked at again each time Connect AI opens; what it finds comes as a status event.
   handle('apiStatus', () => {
     void api.syncPhone()
