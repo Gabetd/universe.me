@@ -1,6 +1,7 @@
 import { closeSync, openSync, readFileSync, realpathSync, rmSync, statSync, writeSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { ours, writePrivate } from './private-file'
 
 /**
@@ -41,6 +42,24 @@ export function alive(pid: number, own = false): boolean {
   } catch (err) {
     return !own && (err as NodeJS.ErrnoException).code === 'EPERM'
   }
+}
+
+/**
+ * Proof that a server knows the token, without it being sent: an HMAC of a
+ * nonce the asker makes. A stdio server asks for it before handing the app
+ * its token, so another program that took the app's port after the app quit
+ * (its discovery still on disk a moment) never gets it.
+ */
+export const proofOf = (token: string, nonce: string) => createHmac('sha256', token).update(`universe-stdio:${nonce}`).digest('hex')
+
+/** A nonce to ask for that proof with. */
+export const newNonce = () => randomBytes(32).toString('hex')
+
+/** Whether a proof is the one `token` gives for `nonce`. */
+export function provesToken(token: string, nonce: string, proof: unknown): boolean {
+  if (typeof proof !== 'string') return false
+  const [want, got] = [Buffer.from(proofOf(token, nonce)), Buffer.from(proof)]
+  return want.length === got.length && timingSafeEqual(want, got)
 }
 
 /** Writes the discovery, for this user alone. */

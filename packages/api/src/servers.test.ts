@@ -1,3 +1,5 @@
+import { createServer as createHttpServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { chmodSync, mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -139,6 +141,32 @@ describe('the MCP server', () => {
     app.close()
     input.end()
     await done
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('over stdio, hands the app its token only once it has proven it knows it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'universe-discovery-'))
+    const discovery = join(dir, 'api.json')
+    // Something else took the port the app was on: it answers anything, and keeps what it's sent.
+    const heard: string[] = []
+    const impostor = createHttpServer((req, res) => {
+      heard.push(`${req.method} ${req.url} ${req.headers.authorization ?? ''}`)
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ proof: 'trust me' }))
+    })
+    await new Promise<void>((r) => impostor.listen(0, '127.0.0.1', r))
+    writeDiscovery({ pid: process.pid, port: (impostor.address() as AddressInfo).port, token: TOKEN, project: p.project.path, version: 'x' }, discovery)
+    const input = new PassThrough()
+    const output = new PassThrough()
+    const replies: { id?: number; error?: { message: string } }[] = []
+    output.on('data', (chunk: Buffer) => chunk.toString().trim().split('\n').forEach((l) => replies.push(JSON.parse(l))))
+    const done = serveStdio({ project: p.project.path, version: '0.0.0-test', input, output, discovery })
+    input.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_worlds', arguments: {} } })}\n`)
+    for (let i = 0; i < 200 && !replies.length; i++) await new Promise((r) => setTimeout(r, 10))
+    expect(replies[0]?.error?.message).toMatch(/isn’t Universe/)
+    expect(heard).toEqual([expect.stringMatching(/^GET \/v1\/prove\?nonce=[0-9a-f]{64} $/)])
+    input.end()
+    await done
+    impostor.close()
     rmSync(dir, { recursive: true, force: true })
   })
 

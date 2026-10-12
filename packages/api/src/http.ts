@@ -5,6 +5,7 @@ import { errorMessage, errorStatus } from './errors'
 import { readJson, send } from './http-io'
 import { ApiError } from './host'
 import { McpServer } from './mcp'
+import { proofOf } from './discovery'
 import { sameText, type OAuth, type Sender } from './oauth'
 import { openApi } from './openapi'
 import type { ApiContext, Operation } from './operation'
@@ -184,6 +185,12 @@ export class ApiServer {
       const origin = req.headers.origin
       if (origin && !(origin === at.base && req.method === 'POST' && url.pathname === '/oauth/authorize')) return send(res, 403, { error: 'Requests from web pages are not allowed' })
       if (await this.options.oauth?.handle(req, res, url, at.base, at)) return
+      // Proof that this is the app, for a stdio server about to hand it its token (from this computer only; the token isn't sent).
+      if (!at.remote && req.method === 'GET' && url.pathname === '/v1/prove') {
+        const nonce = url.searchParams.get('nonce') ?? ''
+        if (!/^[0-9a-f]{64}$/.test(nonce)) return send(res, 400, { error: 'Ask with a nonce: 64 hex digits' })
+        return send(res, 200, { proof: proofOf(this.options.token, nonce) })
+      }
       const token = /^Bearer (.+)$/i.exec(req.headers.authorization ?? '')?.[1] ?? ''
       if (!this.authorized(token, at)) {
         const oauth = this.options.oauth && `, resource_metadata="${at.base}/.well-known/oauth-protected-resource/mcp"`

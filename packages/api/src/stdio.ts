@@ -2,7 +2,7 @@ import { createInterface } from 'node:readline'
 import type { Readable, Writable } from 'node:stream'
 import { Project } from '@universe/db'
 import { apiContext } from './catalog'
-import { canonical, readDiscovery, withProjectLock, type Discovery } from './discovery'
+import { canonical, newNonce, provesToken, readDiscovery, withProjectLock, type Discovery } from './discovery'
 import { errorMessage } from './errors'
 import { ApiError } from './host'
 import { McpServer, type JsonRpcMessage } from './mcp'
@@ -123,8 +123,27 @@ export async function serveStdio(options: { project?: string; version: string; i
   release()
 }
 
-/** Passes a message to the app's MCP endpoint, and its answer back. */
+/** The apps (by process, port and token) that proved they know their token: asked once each. */
+const proven = new Set<string>()
+
+/**
+ * Asks the server at the app's port to prove it knows the app's token before
+ * the token is sent to it (`proofOf`): a program that took the port after the
+ * app quit can't, and is never handed it.
+ */
+async function proveApp(app: Discovery): Promise<void> {
+  const key = JSON.stringify([app.pid, app.port, app.token])
+  if (proven.has(key)) return
+  const nonce = newNonce()
+  const res = await fetch(`http://127.0.0.1:${app.port}/v1/prove?nonce=${nonce}`)
+  const proof = res.ok ? ((await res.json()) as { proof?: unknown }).proof : undefined
+  if (!provesToken(app.token, nonce, proof)) throw new Error('What answers at Universe’s port isn’t Universe: its token wasn’t sent')
+  proven.add(key)
+}
+
+/** Passes a message to the app's MCP endpoint (once it's shown it's the app), and its answer back. */
 async function forward(app: Discovery, message: JsonRpcMessage): Promise<unknown> {
+  await proveApp(app)
   const res = await fetch(`http://127.0.0.1:${app.port}/mcp`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', Authorization: `Bearer ${app.token}` },
