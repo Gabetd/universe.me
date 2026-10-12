@@ -142,13 +142,18 @@ export class MemoryStampTable implements StampTable {
       .sort((a, b) => a[1].seq - b[1].seq)
       .slice(0, limit)
       .map(([key, r]) => ({ key, ...r.stamps, seq: r.seq }))
-  base = (key: string, path: string, stamp: string) => this.bases.get(JSON.stringify([key, path]))?.get(stamp)
-  keepBase = (key: string, path: string, stamp: string, value: unknown) => {
+  /** A field's kept versions, by stamp (started if there are none yet). */
+  private basesOf(key: string, path: string): Map<string, unknown> {
     const at = JSON.stringify([key, path])
-    this.bases.set(at, (this.bases.get(at) ?? new Map<string, unknown>()).set(stamp, value))
+    let kept = this.bases.get(at)
+    if (!kept) this.bases.set(at, (kept = new Map()))
+    return kept
   }
+  base = (key: string, path: string, stamp: string) => this.basesOf(key, path).get(stamp)
+  keepBase = (key: string, path: string, stamp: string, value: unknown) => void this.basesOf(key, path).set(stamp, value)
   pruneBases = (key: string, path: string, keep: readonly string[]) => {
-    for (const stamp of this.bases.get(JSON.stringify([key, path]))?.keys() ?? []) if (!keep.includes(stamp)) this.bases.get(JSON.stringify([key, path]))!.delete(stamp)
+    const kept = this.basesOf(key, path)
+    for (const stamp of kept.keys()) if (!keep.includes(stamp)) kept.delete(stamp)
   }
 }
 
