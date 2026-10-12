@@ -1,4 +1,4 @@
-        <!-- `universe` on the command line runs it, as a Store app's own folder can't be run by its path: Claude Code starts the MCP server with `universe --mcp`. -->
+        <!-- `universe` on the command line runs it, as a Store app's own folder can't be run by its path: Claude Code starts the MCP server with `universe` and its MCP flag. -->
         <uap3:Extension xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3" Category="windows.appExecutionAlias" Executable="app\Universe.exe" EntryPoint="Windows.FullTrustApplication">
           <uap3:AppExecutionAlias>
             <desktop:ExecutionAlias Alias="universe.exe" />
