@@ -256,7 +256,7 @@ describe('Project', () => {
     p.close()
     // Written the way M1 saved it: three terrain options, no seed.
     const raw = new DatabaseSync(path)
-    raw.prepare('INSERT INTO worlds (id, settings) VALUES (?, ?)').run(parent, JSON.stringify({ radiusKm: 5000, seaLevel: 10, terrain: { continentScale: 2, roughness: 0.4, mountainHeight: 3000 } }))
+    raw.prepare('UPDATE worlds SET settings = ? WHERE id = ?').run(JSON.stringify({ radiusKm: 5000, seaLevel: 10, terrain: { continentScale: 2, roughness: 0.4, mountainHeight: 3000 } }), parent)
     raw.close()
     const q = track(Project.open(path))
     expect(q.store.worlds.getSettings(parent)).toEqual({
@@ -287,5 +287,24 @@ describe('Project', () => {
     expect(s.timeline.members).toEqual([expect.objectContaining({ login: 'bea@example.com', role: 'editor' })])
     expect(again.unreadable().map((u) => u.what).sort()).toEqual([`event e1`, `node ${cluster}`])
     again.close()
+  })
+
+  it('gives every world its settings as a row of its own: a new one from the start, an older one as it opens, stamped to sync', () => {
+    const path = join(dir, 'settings.universe')
+    const p = Project.create(path, 'Settings')
+    let parent = p.info().rootId
+    for (const kind of ['galaxy_cluster', 'galaxy', 'star_system', 'body', 'world']) parent = p.bus.execute({ type: 'node.create', payload: { parentId: parent, kind } }).targetId!
+    const key = JSON.stringify(['world', parent])
+    expect(p.changesSince(0).rows.find((r) => r.key === key)?.data).toEqual(DEFAULT_WORLD_SETTINGS)
+    p.close()
+    // As a project from before saved it: no settings for a world never changed, and no stamp for them.
+    const raw = new DatabaseSync(path)
+    raw.prepare('UPDATE worlds SET settings = NULL WHERE id = ?').run(parent)
+    raw.prepare('DELETE FROM row_stamps WHERE key = ?').run(key)
+    raw.exec('PRAGMA user_version = 9')
+    raw.close()
+    const q = track(Project.open(path))
+    expect(q.store.worlds.getSettings(parent)).toEqual(DEFAULT_WORLD_SETTINGS)
+    expect(q.changesSince(0).rows.find((r) => r.key === key)?.data).toEqual(DEFAULT_WORLD_SETTINGS)
   })
 })

@@ -73,14 +73,18 @@ export class SqliteStampTable implements StampTable {
 /**
  * Stamps every row a project from before sync already has, once, so a copy
  * made from it gets them all. Only ever needed on such a project's first
- * open: from then on every write is stamped as it's made.
+ * open: from then on every write is stamped as it's made. A project that
+ * syncs already only has its worlds' settings to stamp, those migration 10
+ * made rows of their own.
  */
 export function stampExisting(db: DatabaseSync, table: SqliteStampTable, clock: SyncClock, transaction: (fn: () => void) => void): void {
-  if (table.latest > 0) return
   const ids = (sql: string) => db.prepare(sql).all() as { id: string }[]
-  const refs: SyncRef[] = [
+  const worlds = () => ids('SELECT id FROM worlds WHERE settings IS NOT NULL').map(({ id }): SyncRef => ({ t: 'world', id }))
+  const stamp = (refs: SyncRef[]) => refs.length && transaction(() => refs.forEach((ref) => table.put(refKey(ref), { stamp: clock.next() })))
+  if (table.latest > 0) return void stamp(worlds().filter((ref) => !table.get(refKey(ref))))
+  stamp([
     ...ids('SELECT id FROM nodes').map(({ id }): SyncRef => ({ t: 'node', id })),
-    ...ids('SELECT id FROM worlds WHERE settings IS NOT NULL').map(({ id }): SyncRef => ({ t: 'world', id })),
+    ...worlds(),
     ...(db.prepare('SELECT world_id AS id, layer, face FROM terrain_layers').all() as { id: string; layer: TerrainLayerName; face: number }[])
       .filter((r) => r.face >= 0 && r.face < CUBE_FACES)
       .map(({ id, layer, face }): SyncRef => ({ t: 'layer', id, layer, face })),
@@ -89,8 +93,5 @@ export function stampExisting(db: DatabaseSync, table: SqliteStampTable, clock: 
       .filter((r): r is { kind: (typeof RECORD_KINDS)[number]; id: string } => (RECORD_KINDS as string[]).includes(r.kind))
       .map(({ kind, id }): SyncRef => ({ t: 'record', kind, id })),
     ...ids('SELECT id FROM assets').map(({ id }): SyncRef => ({ t: 'asset', id }))
-  ]
-  transaction(() => {
-    for (const ref of refs) table.put(refKey(ref), { stamp: clock.next() })
-  })
+  ])
 }

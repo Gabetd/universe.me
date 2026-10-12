@@ -113,6 +113,10 @@ export const MIGRATIONS: readonly string[] = [
     value BLOB NOT NULL,
     PRIMARY KEY (key, path, stamp)
   );
+  `,
+  /* 10: every world has its settings as a row of its own, its defaults until changed (M21); stamped when the project opens */ `
+  INSERT INTO worlds (id, settings) SELECT id, '{}' FROM nodes WHERE kind = 'world'
+  ON CONFLICT(id) DO UPDATE SET settings = '{}' WHERE worlds.settings IS NULL;
   `
 ]
 

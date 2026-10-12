@@ -143,6 +143,8 @@ export const handlers: Handlers = {
     if (store.nodes.get(id)) throw new CommandError(`Node ${id} already exists`)
     const now = ctx.now()
     store.nodes.insert(newNode({ ...p, id, parentId: parent.id, name: p.name ?? `New ${KIND_LABELS[p.kind]}`, seed: p.seed ?? ctx.randomSeed() }, now))
+    // A world's settings are a row of their own from the start (its defaults), stamped and synced like the world itself.
+    if (p.kind === 'world') store.worlds.putSettings(id, DEFAULT_WORLD_SETTINGS)
     return { inverse: { type: 'node.delete', payload: { id } }, target: { kind: 'node', id } }
   },
 
