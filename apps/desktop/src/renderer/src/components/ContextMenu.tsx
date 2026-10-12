@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { fromKeyboard, openElementMenu, parseMenuRef, useContextMenu } from '../contextMenu'
 import { editableAt, textMenu } from '../spelling'
+import { useLayer } from '../layers'
 
 
 /**
@@ -13,6 +14,8 @@ export function ContextMenuHost() {
   const menu = useContextMenu((s) => s.menu)
   const close = useContextMenu((s) => s.close)
   const ref = useRef<HTMLDivElement>(null)
+  // In front of whatever opened before it (a dialog it's over), and the first that Escape closes.
+  const zIndex = useLayer(!!menu, close)
 
   // A right-click on a marked element, unless a view already answered it.
   useEffect(() => {
@@ -78,13 +81,12 @@ export function ContextMenuHost() {
       className="context-menu floating"
       role="menu"
       aria-label={menu.title ?? 'Options'}
-      style={{ left: menu.x, top: menu.y }}
+      style={{ left: menu.x, top: menu.y, zIndex }}
       onKeyDown={(e) => {
         // Keys pressed in the menu are the menu's: Escape doesn't also zoom out, nor Delete delete what's selected.
         e.stopPropagation()
         if (e.key === 'ArrowDown') move(e, 1)
         else if (e.key === 'ArrowUp') move(e, -1)
-        else if (e.key === 'Escape') close()
         else if (e.key === 'Delete' || e.key === 'Backspace') e.preventDefault()
       }}
     >

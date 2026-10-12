@@ -2,6 +2,7 @@ import { MATERIALS, MATERIAL_INFO, SHAPES, STAGES, stageOf, type Blueprint, type
 import { OrbitControls } from '@react-three/drei'
 import { Canvas, useThree } from '@react-three/fiber'
 import { memo, useCallback, useEffect, useState } from 'react'
+import { useLayer } from '../layers'
 import { SPACE_BG } from '../theme'
 import { useUi } from '../store'
 import { LAYOUT_SIZE } from '../world/SurfaceCanvas'
@@ -32,11 +33,7 @@ export function BlueprintBuilder({ initial, onClose }: { initial: BlueprintDraft
   const execute = useUi((s) => s.execute)
   const extent = blueprintExtent(draft as Blueprint)
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  useLayer(true, onClose)
 
   // Stable, so the part rows (memoized) don't all re-render when one part changes.
   const setPart = useCallback((i: number, patch: Partial<BlueprintPart>) => setDraft((d) => ({ ...d, parts: d.parts.map((p, j) => (j === i ? { ...p, ...patch } : p)) })), [])
