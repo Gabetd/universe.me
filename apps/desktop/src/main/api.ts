@@ -431,8 +431,9 @@ const shellWord = (word: string) => (process.platform === 'win32' ? `"${word.rep
 
 /** The command that adds the stdio server to Claude Code: this app's executable with --mcp, and the open project. */
 function stdioCommand(project: string | undefined): string {
-  // An AppImage runs from a new mount each time: the AppImage file itself is what stays put.
-  const exe = process.env.APPIMAGE ?? process.execPath
+  // An AppImage runs from a new mount each time: the AppImage file itself is what stays put. A Store
+  // copy's folder can't be run by its path: its package gives it `universe` (build/appx-extensions.xml).
+  const exe = process.windowsStore ? 'universe' : (process.env.APPIMAGE ?? process.execPath)
   const args = app.isPackaged ? [] : [app.getAppPath()]
   return `claude mcp add universe -- ${[exe, ...args].map(shellWord).join(' ')} --mcp --project ${project ? shellWord(project) : '<path to your .universe file>'}`
 }

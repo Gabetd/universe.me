@@ -65,6 +65,7 @@ export class Updater {
 
   /** Every channel's newest build, for Change version, all asked at once. */
   async versions(): Promise<ChannelVersion[]> {
+    if (FROM_STORE) return CHANNEL_ORDER.map((channel) => ({ channel, current: channel === this.channel, installable: false, error: STORE_UPDATES }))
     const off = this.manifestUrl === 'off' || !this.publicKey
     return Promise.all(
       CHANNEL_ORDER.map(async (channel): Promise<ChannelVersion> => {
@@ -89,6 +90,7 @@ export class Updater {
     const { kind } = this
     if (!CHANNEL_ORDER.includes(channel)) return 'There’s no such version.'
     if (channel === this.channel) return 'That’s this copy: use Update instead.'
+    if (FROM_STORE) return STORE_UPDATES
     if (!kind || !this.publicKey) return `This copy can’t install other versions itself: download ${CHANNELS[channel].name} from the project’s releases on GitHub.`
     try {
       const manifest = await this.manifest(channel)
@@ -124,6 +126,7 @@ export class Updater {
    * or null if the banner is showing. `manual` re-offers a dismissed version.
    */
   async check(manual = false): Promise<string | null> {
+    if (FROM_STORE) return STORE_UPDATES
     if (this.manifestUrl === 'off') return 'Checking for updates is turned off.'
     if (!this.publicKey) return 'This copy can’t check that an update is genuine, so it doesn’t look for them: download the latest from the project’s releases on GitHub.'
     if (this.status.state === 'downloading' || this.status.state === 'installing') return null
@@ -239,7 +242,16 @@ const BESIDE: Record<InstallKind, (file: string, dir: string, channel: Channel, 
   }
 }
 
+/**
+ * Installed from the Microsoft Store (its MSIX package): the Store signs it
+ * and keeps it up to date, and its folder is the Store's, so this copy
+ * neither updates itself nor installs other versions.
+ */
+const FROM_STORE = process.windowsStore === true
+const STORE_UPDATES = 'The Microsoft Store keeps this copy of Universe up to date.'
+
 function installKind(): InstallKind | null {
+  if (FROM_STORE) return null
   const forced = process.env.UNIVERSE_UPDATE_KIND as InstallKind | undefined
   if (forced) return forced
   if (!app.isPackaged) return null

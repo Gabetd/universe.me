@@ -103,6 +103,40 @@ jobs:
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.deb
 
+  # Universe's Microsoft Store package (MSIX), which the Store signs once it's submitted, so a copy
+  # installed from there is never warned about. Always Universe's (only it is in the Store), packaged on
+  # every branch to check it; main's release carries it, to submit in Partner Center.
+  store:
+    name: Package for the Microsoft Store
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      UNIVERSE_CHANNEL: main
+      VERSION: 0.1.${{ github.run_number }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # Its identity, as Partner Center gives it (repository variables, not secrets: they're in every package).
+      STORE_IDENTITY_NAME: ${{ vars.STORE_IDENTITY_NAME }}
+      STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+      STORE_PUBLISHER_NAME: ${{ vars.STORE_PUBLISHER_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          electron: packaging
+      - name: Stamp the build version
+        working-directory: apps/desktop
+        run: npm pkg set version=${{ env.VERSION }}
+      - name: Build and package for the Store
+        working-directory: apps/desktop
+        run: pnpm exec electron-vite build && pnpm exec electron-builder --win appx --x64 --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-package
+          if-no-files-found: error
+          path: apps/desktop/release/*.appx
+
   # The packaged apps' end-to-end tests, all at once. Windows Server 2025 is the
   # Windows 11 24H2 base; Server 2022 shares the Windows 10 (21H2) codebase, as
   # what's published has to run on Windows 10 too.
@@ -142,7 +176,7 @@ jobs:
 
   publish:
     name: Publish ${{ github.ref_name }} build
-    needs: [check, package, test]
+    needs: [check, package, store, test]
     if: github.ref_name == 'main' || github.ref_name == 'staging' || github.ref_name == 'dev'
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -169,6 +203,11 @@ jobs:
           pattern: universe-*
           path: dist
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        if: github.ref_name == 'main'
+        with:
+          name: store-package
+          path: dist
       - name: Replace the ${{ env.TAG }} release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -176,7 +215,10 @@ jobs:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: |
           short=$(echo "$GITHUB_SHA" | cut -c1-7)
-          if [[ $GITHUB_REF_NAME == main ]]; then APP_NAME=Universe; CHANNEL_NOTE=''; else
+          STORE_ROW=''
+          if [[ $GITHUB_REF_NAME == main ]]; then APP_NAME=Universe; CHANNEL_NOTE=''
+            STORE_ROW='| Microsoft Store | `Universe-*-store.appx` is the package submitted to the Store, which signs it: installed from the Store, Windows and the browser never warn. |'
+          else
             APP_NAME="Universe ($GITHUB_REF_NAME)"
             CHANNEL_NOTE=" It installs beside Universe, with its own data, and only updates to newer $GITHUB_REF_NAME builds."
           fi
@@ -195,6 +237,7 @@ jobs:
           | macOS (Apple Silicon) | \`Universe-*-mac-arm64.dmg\` |
           | macOS (Intel) | \`Universe-*-mac-x64.dmg\` |
           | Linux | \`.AppImage\` (\`chmod +x\`, then run) or \`.deb\` |
+          ${STORE_ROW}
 
           Version 0.1.${{ github.run_number }} of **${APP_NAME}**. Installed copies offer to upgrade themselves when a newer build
           is published here (the \`.zip\` files and the signed \`update.signed.json\` are for that).${CHANNEL_NOTE}

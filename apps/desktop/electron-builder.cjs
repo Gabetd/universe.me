@@ -34,6 +34,31 @@ const azure = signed && env.AZURE_SIGNING_ENDPOINT && {
  */
 const apple = signed && env.MAC_CERTIFICATE && { cscLink: env.MAC_CERTIFICATE, cscKeyPassword: env.MAC_CERTIFICATE_PASSWORD }
 
+/**
+ * The Microsoft Store package (MSIX, electron-builder's appx target): the Store signs what's
+ * submitted to it, so Windows and the browser never warn about a copy installed from there. Its
+ * identity is the one Partner Center gives the app (Product identity: Package/Identity/Name,
+ * Package/Identity/Publisher and Package/Properties/PublisherDisplayName), as the repository
+ * variables STORE_IDENTITY_NAME, STORE_PUBLISHER and STORE_PUBLISHER_NAME; until they're set, the
+ * package is built with stand-ins (it can't be submitted then, but the build is checked). Only
+ * Universe (main) is in the Store: build.yml's store job packages it (`--win appx`) on every
+ * branch, to check it, and main's release carries it.
+ */
+const store = {
+  identityName: env.STORE_IDENTITY_NAME || 'UniverseMe.Universe',
+  publisher: env.STORE_PUBLISHER || 'CN=00000000-0000-0000-0000-000000000000',
+  publisherDisplayName: env.STORE_PUBLISHER_NAME || 'universe.me',
+  displayName: app.productName,
+  applicationId: 'Universe',
+  backgroundColor: '#0e1230',
+  languages: ['en-US'],
+  // Windows 10 1809 and later: as far back as the app runs.
+  minVersion: '10.0.17763.0',
+  // `universe` on the command line (an app execution alias), for `universe --mcp`.
+  customExtensionsPath: 'build/appx-extensions.xml',
+  artifactName: 'Universe-${version}-store.${ext}'
+}
+
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
   appId: app.appId,
@@ -49,6 +74,7 @@ module.exports = {
   asar: true,
   fileAssociations: [{ ext: 'universe', name: 'Universe Project', role: 'Editor' }],
   win: { target: [{ target: 'portable' }, { target: 'nsis' }], ...(azure && { azureSignOptions: azure }) },
+  appx: store,
   portable: { artifactName: 'Universe-${version}-windows-portable.${ext}' },
   nsis: { oneClick: false, allowToChangeInstallationDirectory: true },
   mac: {
