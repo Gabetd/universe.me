@@ -236,7 +236,9 @@ Each is an app of its own: it installs beside Universe, keeps its own settings
 and recent projects, and only updates to newer builds of its own branch. (Open
 a project in one at a time: they're the same files.)
 
-**On Windows, the easiest way in** skips the browser's "isn't commonly downloaded" block and SmartScreen's "Windows protected your PC". Run this in PowerShell (Start → type *PowerShell*):
+**On Windows, the Microsoft Store** is the way in without any warning: the Store signs what it publishes, so neither Windows nor the browser asks whether Universe is safe, and the Store keeps it up to date (it doesn't update itself then). *(Once it's listed: see [Putting Universe in the Microsoft Store](#putting-universe-in-the-microsoft-store).)*
+
+**Without the Store**, the install script skips the browser's "isn't commonly downloaded" block and SmartScreen's "Windows protected your PC". Run this in PowerShell (Start → type *PowerShell*):
 
 ```powershell
 irm https://github.com/Gabetd/universe.me/releases/download/latest-build/install.ps1 | iex
@@ -252,7 +254,19 @@ It downloads the installer itself and checks it against the release's update man
 | macOS, Intel | `Universe-…-mac-x64.dmg` | Same as above. |
 | Linux | `Universe-…-linux-x86_64.AppImage` | `chmod +x` it, then run it. Or install the `.deb`. |
 
-The builds aren't code-signed yet, which is why the OS asks for confirmation when one is downloaded in a browser. The lasting fix is signing them (milestone M19); until then, the install script avoids the question on Windows. Windows 11's Smart App Control, if it's turned on, blocks unsigned apps however they arrive.
+The builds on GitHub aren't code-signed, which is why the OS asks for confirmation when one is downloaded in a browser. On Windows, the Store's copy avoids the question for good, and the install script for a download from here; signing these too is [below](#signing-the-builds-m19). Windows 11's Smart App Control, if it's turned on, blocks unsigned apps however they arrive.
+
+### Putting Universe in the Microsoft Store
+
+Each `main` build also packages Universe for the Store (`Universe-…-store.appx`, on the latest-build release; build.yml's *Package for the Microsoft Store* job, which checks the package on every branch). The Store signs it when it's published, so a copy installed from there is never warned about. To list it, once:
+
+1. **Register** as an individual developer in [Partner Center](https://partner.microsoft.com/dashboard/registration) with your Microsoft account: free for individuals since September 2025, with an ID and a selfie to verify you.
+2. **Reserve the name** *Universe* (Apps and games → New product → MSIX or PWA app).
+3. **Copy its identity** from Product management → Product identity into the repository's *variables* (Settings → Secrets and variables → Actions → Variables; not secrets, as they're in every package): `STORE_IDENTITY_NAME` (Package/Identity/Name), `STORE_PUBLISHER` (Package/Identity/Publisher, `CN=…`) and `STORE_PUBLISHER_NAME` (Package/Properties/PublisherDisplayName).
+4. **Push to `main`** (or re-run its build), so the package carries that identity, and **submit** that build's `Universe-…-store.appx` in a new submission, with the listing (description, screenshots: the build log has some), an age rating, and *runFullTrust* explained (it's a desktop app: it reads and writes your project files, runs Tailscale and serves the local API).
+5. Each later version: a new submission with the newest `.appx`. Installed copies get it from the Store.
+
+Universe (dev) and Universe (staging) stay on GitHub's releases.
 
 ### Signing the builds (M19)
 
