@@ -16,6 +16,8 @@ export interface ProjectSummary {
   path: string
   name: string
   rootId: string
+  /** How many of its rows couldn't be read (damaged, or not what they should be) and are left out (none: undefined). */
+  unreadable?: number
 }
 
 export interface AppState {

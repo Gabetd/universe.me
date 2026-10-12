@@ -266,4 +266,26 @@ describe('Project', () => {
       terrain: { ...DEFAULT_WORLD_SETTINGS.terrain, continentScale: 2, roughness: 0.4, mountainHeight: 3000 }
     })
   })
+
+  it('checks every row as it’s read: one that isn’t valid is left out and told of, and one from before a field was added gets its default', () => {
+    const path = join(dir, 'damaged.universe')
+    const p = Project.create(path, 'Damaged')
+    const root = p.info().rootId
+    const cluster = p.bus.execute({ type: 'node.create', payload: { parentId: root, kind: 'galaxy_cluster', name: 'Virgo' } }).targetId!
+    p.bus.execute({ type: 'member.create', payload: { ownerId: root, login: 'bea@example.com' } })
+    p.close()
+    const db = new DatabaseSync(path)
+    // A node of a kind there isn't, a member from before roles, and a record that isn't JSON.
+    db.prepare("UPDATE nodes SET kind = 'not-a-kind' WHERE id = ?").run(cluster)
+    db.exec("UPDATE records SET data = json_remove(data, '$.role') WHERE kind = 'member'")
+    db.exec("INSERT INTO records (kind, id, owner_id, data) VALUES ('event', 'e1', '" + root + "', '{not json')")
+    db.close()
+    const again = Project.open(path)
+    const s = again.snapshot()
+    expect(s.nodes.map((n) => n.id)).toEqual([root])
+    expect(s.timeline.events).toEqual([])
+    expect(s.timeline.members).toEqual([expect.objectContaining({ login: 'bea@example.com', role: 'editor' })])
+    expect(again.unreadable().map((u) => u.what).sort()).toEqual([`event e1`, `node ${cluster}`])
+    again.close()
+  })
 })

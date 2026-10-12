@@ -43,6 +43,7 @@ export class Project {
   private readonly stamped: StampedStore
   private readonly stamps: SqliteStampTable
   private readonly clock: SyncClock
+  private readonly sqlite: SqliteStore
   /** Read once: the name and sync id only change through `setMeta`, and the root is never deleted. */
   private name: string | undefined
   private syncIdValue: string | undefined
@@ -54,7 +55,7 @@ export class Project {
     { device, ...busOptions }: ProjectOptions
   ) {
     // Every write goes through the tracked store, so a snapshot reloads only what changed, and is stamped for sync; reads go straight to SQLite.
-    const sqlite = new SqliteStore(db)
+    const sqlite = (this.sqlite = new SqliteStore(db))
     this.stamps = new SqliteStampTable(db)
     this.clock = new SyncClock(device ?? randomBytes(9).toString('base64url'))
     this.stamped = new StampedStore(sqlite, this.stamps, this.clock)
@@ -122,6 +123,11 @@ export class Project {
       rootId: this.rootId,
       schemaVersion: SCHEMA_VERSION
     }
+  }
+
+  /** Rows read so far that weren't valid (a damaged file, or one made to break the app), left out of everything: what each is, with why. */
+  unreadable(): { what: string; why: string }[] {
+    return this.sqlite.unreadable()
   }
 
   /** Everything live in the project. Cheap to call again: only what was written since the last call is reloaded. */

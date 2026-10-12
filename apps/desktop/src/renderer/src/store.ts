@@ -1,7 +1,7 @@
 import { EMPTY_TIMELINE, powersOn, timelineOwner, type Command, type PowerSystem, type SpatialNode, type TimelineData, type TimelineEvent } from '@universe/core'
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import type { AppState, Result } from '../../shared/api'
+import type { AppState, ProjectSummary, Result } from '../../shared/api'
 import { reconcile } from './reconcile'
 
 interface UiState extends AppState {
@@ -63,7 +63,7 @@ export const useUi = create<UiState>((set, get) => ({
   apply(reply) {
     const before = get()
     const state = reconcile(before, reply)
-    set({ ...state, ready: true, ...nextSelection(state, before, isNew(before, state.focus) || selectionGone(state, before)) })
+    set({ ...state, ready: true, ...nextSelection(state, before, isNew(before, state.focus) || selectionGone(state, before)), ...unreadableNotice(before.project, reply.project) })
   },
 
   select: (id) => set({ selectedId: id, ...NOTHING_ON_WORLD }),
@@ -183,6 +183,14 @@ function keptTimelineSelection(state: AppState, selection: TimelineSelection | n
   const live = new Set(state.timeline[`${selection.kind}s`].map((r) => r.id))
   const ids = selection.ids.filter((id) => live.has(id))
   return ids.length ? { ...selection, ids } : null
+}
+
+/** Says so when more of the open file couldn't be read than before (it's left out): once as it's opened, and again if more turns up. */
+function unreadableNotice(before: ProjectSummary | null, now: ProjectSummary | null): { error: string } | undefined {
+  const count = now?.unreadable ?? 0
+  const was = before?.path === now?.path ? (before?.unreadable ?? 0) : 0
+  if (count <= was) return undefined
+  return { error: `${count === 1 ? 'Part' : `${count} parts`} of this file couldn’t be read (damaged, or not what Universe writes) and ${count === 1 ? 'is' : 'are'} left out. The rest is as it was.` }
 }
 
 export const selectNode = (s: UiState): SpatialNode | undefined => s.nodes.find((n) => n.id === s.selectedId)

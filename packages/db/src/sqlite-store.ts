@@ -1,6 +1,6 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite'
 import { deflateSync, inflateSync } from 'node:zlib'
-import { DEFAULT_WORLD_SETTINGS, LAYER_BYTES_PER_CELL, TERRAIN_RES, mergeWorldSettings } from '@universe/core'
+import { DEFAULT_WORLD_SETTINGS, LAYER_BYTES_PER_CELL, RECORD_SCHEMAS, Region as RegionSchema, SpatialNode as NodeSchema, TERRAIN_RES, WorldSettings, mergeWorldSettings } from '@universe/core'
 import type {
   Asset,
   AssetRepository,
@@ -13,8 +13,35 @@ import type {
   SpatialNode,
   Store,
   WorldRepository,
+  WorldSettings as WorldSettingsType,
   WorldSettingsPatch
 } from '@universe/core'
+
+/** A schema a row is checked against as it's read (zod's, as core has them). */
+interface Schema<T> {
+  safeParse(value: unknown): { success: true; data: T } | { success: false; error: { issues: { path: PropertyKey[]; message: string }[] } }
+}
+
+/** Told of a row that isn't what its table holds: what it is ("node n1"), and why. */
+export type BadRow = (what: string, why: string) => void
+
+/**
+ * Reads a row and checks it against its schema (PLAN.md §9, M21): a row that
+ * isn't one (a damaged file, or one made to break the app) is left out, as if
+ * it weren't there, and told to `bad`; one from an older version gets the
+ * defaults of what's been added since.
+ */
+function checked<T>(schema: Schema<T>, what: string, bad: BadRow, read: () => unknown): T | undefined {
+  try {
+    const parsed = schema.safeParse(read())
+    if (parsed.success) return parsed.data
+    const issue = parsed.error.issues[0]
+    bad(what, issue ? `${issue.path.join('.') || 'it'}: ${issue.message}` : 'not valid')
+  } catch (err) {
+    bad(what, (err as Error).message)
+  }
+  return undefined
+}
 
 type SqlValue = string | number | null
 /** A table's columns, each with how to get its value from the object a row holds. */
@@ -38,7 +65,7 @@ const NODE_COLUMNS = {
   deleted_at: (n: SpatialNode) => n.deletedAt
 }
 
-const toNode = (r: RowOf<typeof NODE_COLUMNS>): SpatialNode => ({
+const toNode = (r: RowOf<typeof NODE_COLUMNS>) => ({
   id: r.id,
   parentId: r.parent_id,
   kind: r.kind,
@@ -46,7 +73,7 @@ const toNode = (r: RowOf<typeof NODE_COLUMNS>): SpatialNode => ({
   seed: r.seed,
   position: { x: r.pos_x, y: r.pos_y, z: r.pos_z },
   notes: r.notes,
-  tags: JSON.parse(r.tags) as string[],
+  tags: JSON.parse(r.tags) as unknown,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   deletedAt: r.deleted_at
@@ -64,17 +91,23 @@ const REGION_COLUMNS = {
   deleted_at: (r: Region) => r.deletedAt
 }
 
-const toRegion = (r: RowOf<typeof REGION_COLUMNS>): Region => ({
+const toRegion = (r: RowOf<typeof REGION_COLUMNS>) => ({
   id: r.id,
   worldId: r.world_id,
   name: r.name,
   color: r.color,
-  points: JSON.parse(r.points) as Region['points'],
+  points: JSON.parse(r.points) as unknown,
   notes: r.notes,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   deletedAt: r.deleted_at
 })
+
+/** A row of the records table as it's read: its id, and the record as JSON. */
+interface RecordRow {
+  id: string
+  data: string
+}
 
 /** `UPDATE` that fails loudly when the row is missing, instead of silently doing nothing. */
 function updateExisting(stmt: StatementSync, params: Record<string, SqlValue>, what: string): void {
@@ -83,9 +116,12 @@ function updateExisting(stmt: StatementSync, params: Record<string, SqlValue>, w
 
 /**
  * Reads and writes of a soft-deletable table, with the SQL made from its
- * columns. Live rows come oldest first; `query` reads other selects the same way.
+ * columns. Live rows come oldest first; `query` reads other selects the same
+ * way. Each row is checked as it's read (`checked`): one that isn't valid
+ * isn't there.
  */
-function softDeleteTable<T extends { id: string }, C extends Columns<T>>(db: DatabaseSync, table: string, columns: C, read: (row: RowOf<C>) => T, what: string) {
+function softDeleteTable<T extends { id: string }, C extends Columns<T>>(db: DatabaseSync, table: string, columns: C, schema: Schema<T>, toRow: (row: RowOf<C>) => unknown, what: string, bad: BadRow) {
+  const read = (row: RowOf<C>) => checked(schema, `${what.toLowerCase()} ${String((row as { id?: unknown }).id)}`, bad, () => toRow(row))
   const names = Object.keys(columns)
   const s = {
     get: db.prepare(`SELECT * FROM ${table} WHERE id = ?`),
@@ -94,7 +130,7 @@ function softDeleteTable<T extends { id: string }, C extends Columns<T>>(db: Dat
     update: db.prepare(`UPDATE ${table} SET ${names.filter((c) => c !== 'id').map((c) => `${c} = :${c}`).join(', ')} WHERE id = :id`)
   }
   const params = (value: T) => Object.fromEntries(names.map((c) => [c, columns[c]!(value)]))
-  const query = (stmt: StatementSync, ...args: SqlValue[]) => (stmt.all(...args) as unknown as RowOf<C>[]).map(read)
+  const query = (stmt: StatementSync, ...args: SqlValue[]) => (stmt.all(...args) as unknown as RowOf<C>[]).flatMap((row) => read(row) ?? [])
   return {
     get: (id: string) => {
       const row = s.get.get(id) as RowOf<C> | undefined
@@ -115,9 +151,12 @@ export class SqliteStore implements Store {
   private depth = 0
   private readonly recordRepos = new Map<RecordKind, RecordRepository<unknown>>()
   private readonly recordStmts: Record<'get' | 'all' | 'byOwner' | 'insert' | 'update', StatementSync>
+  /** Rows that couldn't be read (left out), by what they are, with why. */
+  private readonly bad = new Map<string, string>()
+  private readonly tell: BadRow = (what, why) => void this.bad.set(what, why)
 
   constructor(private readonly db: DatabaseSync) {
-    const { query, ...nodes } = softDeleteTable(db, 'nodes', NODE_COLUMNS, toNode, 'Node')
+    const { query, ...nodes } = softDeleteTable(db, 'nodes', NODE_COLUMNS, NodeSchema as Schema<SpatialNode>, toNode, 'Node', this.tell)
     const children = db.prepare('SELECT * FROM nodes WHERE parent_id = ? AND deleted_at IS NULL ORDER BY created_at, id')
     const root = db.prepare('SELECT * FROM nodes WHERE parent_id IS NULL AND deleted_at IS NULL ORDER BY created_at, id LIMIT 1')
     this.nodes = { ...nodes, children: (parentId) => query(children, parentId), root: () => query(root)[0] }
@@ -140,7 +179,7 @@ export class SqliteStore implements Store {
       getSettings: (id) => {
         const row = w.getSettings.get(id) as { settings: string | null } | undefined
         // Older projects saved fewer options; the rest get their defaults.
-        return row?.settings ? mergeWorldSettings(DEFAULT_WORLD_SETTINGS, JSON.parse(row.settings) as WorldSettingsPatch) : undefined
+        return row?.settings ? checked(WorldSettings as Schema<WorldSettingsType>, `world ${id}’s settings`, this.tell, () => mergeWorldSettings(DEFAULT_WORLD_SETTINGS, JSON.parse(row.settings!) as WorldSettingsPatch)) : undefined
       },
       putSettings: (id, settings) => void w.putSettings.run(id, JSON.stringify(settings)),
       // Edit layers are mostly zeros, so they compress to a few KB per face.
@@ -158,7 +197,7 @@ export class SqliteStore implements Store {
       bumpTerrainRevision: (id) => void w.bump.run(id)
     }
 
-    const { get, all, insert, update } = softDeleteTable(db, 'regions', REGION_COLUMNS, toRegion, 'Region')
+    const { get, all, insert, update } = softDeleteTable(db, 'regions', REGION_COLUMNS, RegionSchema as Schema<Region>, toRegion, 'Region', this.tell)
     this.regions = { get, all, insert, update }
 
     const a = {
@@ -178,9 +217,9 @@ export class SqliteStore implements Store {
 
     // Timeline records are stored whole as JSON, one table for every kind.
     this.recordStmts = {
-      get: db.prepare('SELECT data FROM records WHERE kind = ? AND id = ?'),
-      all: db.prepare('SELECT data FROM records WHERE kind = ? AND deleted_at IS NULL ORDER BY rowid'),
-      byOwner: db.prepare('SELECT data FROM records WHERE kind = ? AND owner_id = ? AND deleted_at IS NULL ORDER BY rowid'),
+      get: db.prepare('SELECT id, data FROM records WHERE kind = ? AND id = ?'),
+      all: db.prepare('SELECT id, data FROM records WHERE kind = ? AND deleted_at IS NULL ORDER BY rowid'),
+      byOwner: db.prepare('SELECT id, data FROM records WHERE kind = ? AND owner_id = ? AND deleted_at IS NULL ORDER BY rowid'),
       insert: db.prepare('INSERT INTO records (kind, id, owner_id, data, deleted_at) VALUES (:kind, :id, :owner_id, :data, :deleted_at)'),
       update: db.prepare('UPDATE records SET owner_id = :owner_id, data = :data, deleted_at = :deleted_at WHERE kind = :kind AND id = :id')
     }
@@ -191,10 +230,11 @@ export class SqliteStore implements Store {
     if (!repo) {
       const s = this.recordStmts
       const params = (r: RecordOf<K>) => ({ kind, id: r.id, owner_id: r.ownerId, data: JSON.stringify(r), deleted_at: r.deletedAt })
-      const parse = (row: { data: string } | undefined) => row && (JSON.parse(row.data) as RecordOf<K>)
-      const parseAll = (rows: unknown[]) => (rows as { data: string }[]).map((row) => parse(row)!)
+      const schema = RECORD_SCHEMAS[kind] as unknown as Schema<RecordOf<K>>
+      const parse = (row: RecordRow | undefined) => row && checked(schema, `${kind} ${row.id}`, this.tell, () => JSON.parse(row.data))
+      const parseAll = (rows: unknown[]) => (rows as RecordRow[]).flatMap((row) => parse(row) ?? [])
       const typed: RecordRepository<RecordOf<K>> = {
-        get: (id) => parse(s.get.get(kind, id) as { data: string } | undefined),
+        get: (id) => parse(s.get.get(kind, id) as RecordRow | undefined),
         all: () => parseAll(s.all.all(kind)),
         byOwner: (ownerId) => parseAll(s.byOwner.all(kind, ownerId)),
         insert: (record) => void s.insert.run(params(record)),
@@ -204,6 +244,11 @@ export class SqliteStore implements Store {
       this.recordRepos.set(kind, repo)
     }
     return repo as RecordRepository<RecordOf<K>>
+  }
+
+  /** The rows read so far that weren't valid, and were left out: what each is, with why. */
+  unreadable(): { what: string; why: string }[] {
+    return [...this.bad].map(([what, why]) => ({ what, why }))
   }
 
   transaction<T>(fn: () => T): T {

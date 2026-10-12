@@ -55,7 +55,9 @@ export class Session {
     if (!p) return { project: null, nodes: [], worlds: [], regions: [], timeline: EMPTY_TIMELINE, canUndo: false, canRedo: false, aiChanges: 0, proposals: [] }
     const { path, name, rootId } = p.info()
     const proposals = this.proposals.map(({ id, summary, at }) => ({ id, summary, at }))
-    return { project: { path, name, rootId }, ...p.snapshot(), canUndo: p.bus.canUndo, canRedo: p.bus.canRedo, aiChanges: p.bus.latestFrom('ai'), proposals, focus: this.focus }
+    const snapshot = p.snapshot()
+    const unreadable = p.unreadable().length
+    return { project: { path, name, rootId, ...(unreadable && { unreadable }) }, ...snapshot, canUndo: p.bus.canUndo, canRedo: p.bus.canRedo, aiChanges: p.bus.latestFrom('ai'), proposals, focus: this.focus }
   }
 
   create(path: string): AppState {
