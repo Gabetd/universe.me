@@ -3180,3 +3180,14 @@ button.small {
 .tl-life-bar:focus-visible {
   outline: 2px solid var(--accent);
 }
+.finding.conflict {
+  border-left-color: var(--accent);
+}
+.conflict-value {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 2px solid var(--border);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}

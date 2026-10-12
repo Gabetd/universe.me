@@ -1,6 +1,7 @@
 import { SEVERITY_LABELS, ecosystemWarnings, factionWarnings, structureWarnings, timelineWarnings, type Finding, type FindingStatus } from '@universe/core'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { menuRef, nameOf, openElement, parseMenuRef, type ElementKind } from '../contextMenu'
+import { ConflictList, useConflicts } from '../components/Conflicts'
 import { useOwnRecords, useUi } from '../store'
 import { useSteadyScroll } from '../useSteadyScroll'
 import { useEditor } from './editorStore'
@@ -9,7 +10,8 @@ import { useConditionCurves } from './useStructures'
 /**
  * A world's warnings (PLAN.md §6.5): what Claude found inconsistent reading
  * it as a whole (each about some of the world's elements, open until resolved
- * or dismissed), and the app's own checks. Claude is asked from here: the
+ * or dismissed), changes made at once on two devices that lost (conflict
+ * notes, M20), and the app's own checks. Claude is asked from here: the
  * request is copied, to paste into Claude wherever it's connected.
  */
 
@@ -20,9 +22,9 @@ function show(ref: { kind: string; id: string }) {
   if (element) openElement(element)
 }
 
-/** What a world's open findings and the app's checks come to, for the tab's count. */
+/** What a world's open findings and conflict notes come to, for the tab's count. */
 export function useWarningCount(worldId: string): number {
-  return useOwnRecords('findings', worldId).filter((f) => f.status === 'open').length
+  return useOwnRecords('findings', worldId).filter((f) => f.status === 'open').length + useConflicts(worldId).length
 }
 
 export function WarningsView({ worldId }: { worldId: string }) {
@@ -32,6 +34,7 @@ export function WarningsView({ worldId }: { worldId: string }) {
   const open = findings.filter((f) => f.status === 'open')
   const closed = findings.filter((f) => f.status !== 'open')
   const checks = useAppChecks(worldId)
+  const conflicts = useConflicts(worldId)
   const content = useRef<HTMLDivElement>(null)
   useSteadyScroll(content, worldId)
 
@@ -46,6 +49,15 @@ export function WarningsView({ worldId }: { worldId: string }) {
           </p>
           <CopyRequest worldId={worldId} name={name} />
         </section>
+
+        {conflicts.length > 0 && (
+          <section aria-label="Changed at once">
+            <h4>
+              Changed at once <span className="badge">{conflicts.length}</span>
+            </h4>
+            <ConflictList conflicts={conflicts} />
+          </section>
+        )}
 
         <section aria-label="From Claude">
           <h4>

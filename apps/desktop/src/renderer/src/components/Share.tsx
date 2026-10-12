@@ -8,6 +8,7 @@ import { initials, isWorldView, personHue, personLine } from '../people'
 import { useUi } from '../store'
 import { openView } from '../world/WorldEditor'
 import { SectionError, stoppedLine, useApiStatus } from './AiPanels'
+import { ConflictList, useConflicts } from './Conflicts'
 import { Modal, dialogStore } from './Modal'
 import { zoomTo } from './zoom'
 
@@ -98,6 +99,7 @@ function Share() {
       </p>
       {on && me ? <Invite me={me} people={people} members={members} /> : <SharingOff status={status} set={set} />}
       <Members members={members} here={here} me={me} />
+      <ChangedAtOnce />
     </Modal>
   )
 }
@@ -222,6 +224,18 @@ function Members({ members, here, me }: { members: Member[]; here: PersonIn[]; m
           })}
         </ul>
       )}
+    </section>
+  )
+}
+
+/** Every change that lost to one made at the same time on another device, wherever it was (a world's are in its Warnings too). */
+function ChangedAtOnce() {
+  const conflicts = useConflicts()
+  if (!conflicts.length) return null
+  return (
+    <section className="share-conflicts" aria-label="Changed at once">
+      <h3>Changed at once</h3>
+      <ConflictList conflicts={conflicts} />
     </section>
   )
 }
