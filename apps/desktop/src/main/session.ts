@@ -2,9 +2,11 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { buildSample, writePrivate } from '@universe/api'
-import { Command as CommandSchema, CommandError, DEVICE_ID, EMPTY_TIMELINE, checkSource, memoize, refusal, rowsFrom, type Command, type Member, type CommandSource, type ExecuteResult, type SyncPage, type Target } from '@universe/core'
+import { Command as CommandSchema, CommandError, DEVICE_ID, EMPTY_TIMELINE, checkSource, memoize, refusal, rowsFrom, type Command, type Member, type CommandSource, type ExecuteResult, type MergePlan, type SyncPage, type Target } from '@universe/core'
 import { Project } from '@universe/db'
 import type { AppState, ProposalSummary, WorldTerrain } from '../shared/api'
+import type { SyncJob } from './sync.worker'
+import type { WorkerCalls } from './worker-calls'
 
 const MAX_RECENT = 10
 /** Suggestions waiting at most: a client stuck in a loop can't fill memory with them. */
@@ -36,6 +38,9 @@ export class Session {
 
   /** Who's signed in to Tailscale here, if anyone: a universe shared with them to view can't be changed here, and only its owner changes who it's shared with (M20). */
   whoAmI: () => string | undefined = () => undefined
+
+  /** Sync's heavy work, off this thread (sync.worker.ts), when the app gives one. */
+  offThread: WorkerCalls<SyncJob> | undefined
 
   constructor(private readonly userDataDir: string) {
     this.device = loadDevice(join(userDataDir, 'device.json'))
@@ -106,16 +111,41 @@ export class Session {
   }
 
   /**
+   * What another device asks for, read off this thread (a worker with its
+   * own connection to the file); in tests, and without a worker, read here.
+   */
+  async changesSinceOff(since: number, from: string, limit: number): Promise<SyncPage> {
+    const p = this.require()
+    return this.offThread ? this.offThread.call<SyncPage>({ job: 'page', path: p.path, since, from, limit }) : p.changesSince(since, { from, limit })
+  }
+
+  /** Rows from another device, merged as `merge` does, worked out off this thread (`planMerge`, in the worker) and written here; whether any came. */
+  async mergeOff(rows: readonly unknown[], from?: string): Promise<boolean> {
+    const taken = this.allowed(rows, from)
+    if (!taken.length) return false
+    const p = this.require()
+    const worker = this.offThread
+    if (worker) await p.mergeWith(taken, (inputs) => worker.call<MergePlan[]>({ job: 'plan', inputs }))
+    else p.merge(taken)
+    return true
+  }
+
+  /**
    * Rows from another device, checked and merged into the open universe;
    * whether any came. From another person's device (`from`, their login),
    * only those they may write: none if they can only look, and changes to
    * who it's shared with only from its owner.
    */
   merge(rows: readonly unknown[], from?: string): boolean {
-    const taken = from === undefined ? rows : rowsFrom(this.members(), from, rows.map((row, i) => ({ key: keyOf(row), i }))).map(({ i }) => rows[i])
+    const taken = this.allowed(rows, from)
     if (!taken.length) return false
     this.require().merge(taken)
     return true
+  }
+
+  /** The rows another person (`from`, their login; undefined: the user's own devices) may write: none if they can only look, and changes to who it's shared with only from its owner. */
+  private allowed(rows: readonly unknown[], from: string | undefined): readonly unknown[] {
+    return from === undefined ? rows : rowsFrom(this.members(), from, rows.map((row, i) => ({ key: keyOf(row), i }))).map(({ i }) => rows[i])
   }
 
   /** Where the open universe last asked a device for its changes from (0: never). */
@@ -160,6 +190,8 @@ export class Session {
   }
 
   close(): void {
+    // The worker's reader of the file lets go of it too.
+    void this.offThread?.call({ job: 'close' }).catch(() => {})
     this.project?.close()
     this.project = null
     this.focus = undefined

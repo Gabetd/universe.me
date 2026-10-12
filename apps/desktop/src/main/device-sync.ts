@@ -249,11 +249,11 @@ export class DeviceSync implements SyncRoutes {
     return { ...me, project: open, people: this.peopleIn(open.syncId, visitor.login) }
   }
 
-  changes(body: unknown, visitor: SyncVisitor): SyncAnswer {
+  async changes(body: unknown, visitor: SyncVisitor): Promise<SyncAnswer> {
     const ask = z.object({ syncId: z.string(), since: z.number().int().min(0) }).safeParse(body)
     if (!ask.success || !visitor.device) return { status: 400, body: { error: 'Ask with a sync id and where from' } }
     if (this.o.session.syncInfo()?.syncId !== ask.data.syncId) return notOpen
-    return { status: 200, body: this.o.session.changesSince(ask.data.since, visitor.device, PAGE) }
+    return { status: 200, body: await this.o.session.changesSinceOff(ask.data.since, visitor.device, PAGE) }
   }
 
   /**
@@ -262,12 +262,12 @@ export class DeviceSync implements SyncRoutes {
    * burst of pages is in, and the other devices with this universe open then
    * hear of them (but the one that brought them).
    */
-  push(body: unknown, visitor: SyncVisitor): SyncAnswer {
+  async push(body: unknown, visitor: SyncVisitor): Promise<SyncAnswer> {
     const given = Push.safeParse(body)
     if (!given.success) return { status: 400, body: { error: 'Give a sync id and rows' } }
     const { session } = this.o
     if (session.syncInfo()?.syncId !== given.data.syncId) return notOpen
-    if (session.merge(given.data.rows, visitor.owner ? undefined : visitor.login)) {
+    if (await session.mergeOff(given.data.rows, visitor.owner ? undefined : visitor.login)) {
       this.showSoon()
       this.announce('rows', visitor.device)
     }
@@ -435,7 +435,7 @@ export class DeviceSync implements SyncRoutes {
         const page = SyncPage.parse(await this.ask(host, '/sync/changes', { syncId, since }))
         // The universe here changed while asking (another was opened): the rows aren't its.
         if (session.syncInfo()?.syncId !== syncId) return
-        merged = session.merge(page.rows, from) || merged
+        merged = (await session.mergeOff(page.rows, from)) || merged
         if (page.upTo !== since) session.setSeen(device, (since = page.upTo))
         if (!page.more) return
       }
@@ -455,7 +455,7 @@ export class DeviceSync implements SyncRoutes {
     // It said it doesn't take rows given (none says so yet): it asks for them.
     if (this.contacts.get(host)?.can?.includes('push') === false) return
     for (let since = session.sent(device); this.gotSince(syncId, since); ) {
-      const page = session.changesSince(since, device, PAGE)
+      const page = await session.changesSinceOff(since, device, PAGE)
       if (page.rows.length) {
         try {
           await this.ask(host, '/sync/push', { syncId, rows: page.rows })

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import { randomBytes } from 'node:crypto'
-import { CUBE_FACES, CommandBus, StampedStore, SyncClock, createRootUniverse, findRoot, type CommandBusOptions, type Store, type SyncPage, type TerrainLayerName, type TerrainLayers } from '@universe/core'
+import { CUBE_FACES, CommandBus, StampedStore, SyncClock, createRootUniverse, findRoot, type CommandBusOptions, type Store, type MergeInput, type MergePlan, type SyncPage, type TerrainLayerName, type TerrainLayers } from '@universe/core'
 import { TrackedStore } from './changes'
 import { SqliteHistoryLog } from './history-log'
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations'
@@ -168,6 +168,25 @@ export class Project {
   merge(rows: readonly unknown[]): void {
     if (!rows.length) return
     this.bus.merge({ type: 'sync.merge', payload: { rows } })
+    this.foundRoot()
+  }
+
+  /**
+   * The same, with the merge worked out by `plan` (`planMerge`, in a worker,
+   * PLAN.md §6.7, M21): what it needs of this copy is read here first, and
+   * what it comes to written here after (a row changed here meanwhile is
+   * worked out again as it's written).
+   */
+  async mergeWith(rows: readonly unknown[], plan: (inputs: MergeInput[]) => Promise<MergePlan[]>): Promise<void> {
+    if (!rows.length) return
+    const parsed = this.bus.mergeInput({ type: 'sync.merge', payload: { rows } })
+    const plans = await plan(this.bus.gather(parsed))
+    this.bus.land(parsed, plans)
+    this.foundRoot()
+  }
+
+  /** A copy's universe is there once its root has come. */
+  private foundRoot(): void {
     if (!this.rootId) this.rootId = findRoot(this.store)?.id ?? ''
   }
 

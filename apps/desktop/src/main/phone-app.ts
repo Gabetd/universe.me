@@ -89,8 +89,8 @@ export interface SyncRoutes {
   on(): boolean
   mayVisit(visitor: SyncVisitor): boolean
   hello(visitor?: SyncVisitor, body?: unknown): object
-  changes(body: unknown, visitor: SyncVisitor): SyncAnswer
-  push(body: unknown, visitor: SyncVisitor): SyncAnswer
+  changes(body: unknown, visitor: SyncVisitor): SyncAnswer | Promise<SyncAnswer>
+  push(body: unknown, visitor: SyncVisitor): SyncAnswer | Promise<SyncAnswer>
   nudged(body: unknown, visitor: SyncVisitor): void
 }
 
@@ -236,12 +236,12 @@ export class PhoneAppServer {
     const visitor: SyncVisitor = { login: at.login, owner: at.owner, device: typeof device === 'string' ? device : undefined }
     if (!sync.mayVisit(visitor)) return hello ? send(res, 200, sync.hello()) : send(res, 403, { error: 'That universe isn’t shared with you' })
     const body = req.method === 'POST' ? await readJson(req, path === '/sync/push' ? MAX_PUSH_BODY : MAX_SYNC_BODY) : undefined
-    const answer = this.syncAnswer(path, body, visitor)
+    const answer = await this.syncAnswer(path, body, visitor)
     send(res, answer.status, answer.body)
   }
 
   /** A sync question from someone who may ask it. */
-  private syncAnswer(path: string, body: unknown, visitor: SyncVisitor): SyncAnswer {
+  private async syncAnswer(path: string, body: unknown, visitor: SyncVisitor): Promise<SyncAnswer> {
     const { sync } = this.options
     switch (path) {
       case '/sync/hello':

@@ -4,7 +4,8 @@ import { Footprint } from './footprint'
 import { stepStore } from './step-store'
 import type { CommandSource } from './schema'
 import type { Store } from './store'
-import { SyncMerge, mergeRows, type LoggedMerge } from './sync-commands'
+import { SyncMerge, applyMerge, gatherMerge, planMerge, type LoggedMerge, type MergeInput, type MergePlan } from './sync-commands'
+import type { SyncRow } from './sync'
 
 export type HistoryAction = 'do' | 'undo' | 'redo'
 
@@ -113,11 +114,26 @@ export class CommandBus {
    * here.
    */
   merge(input: unknown): void {
+    const rows = this.mergeInput(input)
+    this.land(rows, planMerge(this.gather(rows)))
+  }
+
+  /** Rows from another device as a merge takes them; throws `CommandError` on what isn't. */
+  mergeInput(input: unknown): SyncRow[] {
     const parsed = SyncMerge.safeParse(input)
     if (!parsed.success) throw new CommandError(`Rows from another device: ${parsed.error.issues[0]?.message ?? 'not rows'}`)
-    const { rows } = parsed.data.payload
+    return parsed.data.payload.rows
+  }
+
+  /** What working out a merge of `rows` needs of this copy (`gatherMerge`): with it, the merge can be worked out elsewhere (`planMerge`, in a worker) and landed here. */
+  gather(rows: readonly SyncRow[]): MergeInput[] {
+    return gatherMerge(this.store, rows)
+  }
+
+  /** Lands a merge as worked out (`planMerge`), as `merge` does: a row changed here since is worked out again. */
+  land(rows: readonly SyncRow[], plans: readonly MergePlan[]): void {
     this.store.transaction(() => {
-      mergeRows(this.store, rows, this.ctx.now())
+      applyMerge(this.store, rows, plans, this.ctx.now())
       const logged = (rows: { key: string; stamp: string }[]): LoggedMerge => ({ type: 'sync.merge', payload: { rows } })
       this.options.log?.append({ action: 'do', source: 'system', at: this.ctx.now(), command: logged(rows.map(({ key, stamp }) => ({ key, stamp }))), inverse: logged([]) })
     })

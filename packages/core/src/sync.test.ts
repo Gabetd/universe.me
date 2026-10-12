@@ -10,6 +10,7 @@ import {
   emptyLayer,
   fromParts,
   parseRefKey,
+  planMerge,
   refKey,
   type Command,
   type Store,
@@ -352,6 +353,19 @@ describe('sync', () => {
     expect([cell(a, 10), cell(a, 20)]).toEqual([0, 90])
     a.bus.redo()
     expect([cell(a, 10), cell(a, 20)]).toEqual([50, 90])
+  })
+
+  it('works a merge out apart from writing it (as a worker does), and works a row out again if it changed here in between', () => {
+    const time = { now: Date.UTC(2026, 0, 1) }
+    const { a, event, copies: [b] } = withEvent(time, 'B')
+    time.now += 10
+    run(b!, 'event.update', { id: event, patch: { title: 'The Founding' } })
+    const rows = b!.store.changesSince(0, { from: 'A' }).rows
+    const plans = planMerge(structuredClone(a.bus.gather(rows)))
+    time.now += 10
+    run(a, 'event.update', { id: event, patch: { notes: 'Written meanwhile.' } })
+    a.bus.land(rows, plans)
+    expect(a.store.records('event').get(event)).toMatchObject({ title: 'The Founding', notes: 'Written meanwhile.' })
   })
 
   it('undoes a step that changed a field twice back to where it began', () => {

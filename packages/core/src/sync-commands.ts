@@ -5,7 +5,7 @@ import { base64ToBytes, bytesToBase64 } from './encoding'
 import { mergeFields, rowStamps, sameStamps, type LostField, type MergedStamps, type RowStamps } from './field-stamps'
 import { isPlainObject } from './fields'
 import { mergeCells } from './line-merge'
-import { WHOLE, descends, joined, lineOf, meeting } from './lineage'
+import { WHOLE, descends, isBased, joined, lineOf, meeting } from './lineage'
 import { RECORD_SCHEMAS } from './records'
 import { SpatialNode } from './schema'
 import type { Store } from './store'
@@ -29,7 +29,7 @@ export interface LoggedMerge {
 const ORDER: Record<Exclude<SyncRef['t'], 'node'>, number> = { world: 0, layer: 1, region: 2, record: 3, asset: 4 }
 
 /** A row as a merge writes it: what it holds, and the stamps it keeps (without a row stamp, a new one: see `SyncLedger.adopt`). */
-interface Landing {
+export interface Landing {
   ref: SyncRef
   data: unknown
   stamps: MergedStamps
@@ -44,12 +44,76 @@ interface Landing {
  * checked like any other write: the other device's row as it is when it's
  * later in every field, and otherwise a new one made of both. What a version
  * changed apart from the other lost is kept as a conflict note (made `now`).
+ * In three parts, so the middle one (the work) can be done off the thread
+ * that holds the project: what's needed of this copy is read
+ * (`gatherMerge`), what each row comes to worked out (`planMerge`), and
+ * written (`applyMerge`).
  */
 export function mergeRows(store: Store, rows: SyncRow[], now: string): void {
-  const ledger = store.sync
-  if (!ledger) throw new CommandError('This project doesn’t sync')
-  const merges = rows.map((row) => ({ key: row.key, ...landingOf(store, ledger, parseRefKey(row.key), row) }))
-  const landing = merges.flatMap((m) => m.landing ?? [])
+  applyMerge(store, rows, planMerge(gatherMerge(store, rows)), now)
+}
+
+/** What working out a merge needs of this copy's version of a row, read first. */
+export interface MergeInput {
+  row: SyncRow
+  /** This copy's stamps, and what it holds (as it travels: `readRow`), if it has the row. */
+  own?: { stamps: RowStamps; data: unknown }
+  /** The versions of its notes (or of a face of terrain) this copy kept to merge with, by `baseKey`. */
+  bases: Record<string, unknown>
+}
+
+/** What a row from another device comes to: what lands (nothing: this copy's stays as it is), what a version lost, and the stamps of this copy's version it was worked out from. */
+export interface MergePlan {
+  key: string
+  landing?: Landing
+  lost?: LostField[]
+  from?: RowStamps
+}
+
+const baseKey = (path: string, stamp: string) => JSON.stringify([path, stamp])
+
+/** Reads what working out a merge of each row needs of this copy: its version, its stamps, and the versions of its notes or terrain kept along its lines. */
+export function gatherMerge(store: Store, rows: readonly SyncRow[]): MergeInput[] {
+  const ledger = ledgerOf(store)
+  return rows.map((row) => {
+    const ref = parseRefKey(row.key)
+    const stamps = ledger.stampsOf(ref)
+    if (!stamps) return { row, bases: {} }
+    // The same version: nothing to merge, nor to read.
+    if (sameStamps(stamps, rowStamps(row.stamp, row.fields, row.lineage))) return { row, own: { stamps, data: null }, bases: {} }
+    const bases: Record<string, unknown> = {}
+    // Only rows changed apart are merged from a version both came from: one in this copy's lines.
+    if (stamps.lineage && row.lineage) {
+      for (const [path, line] of Object.entries(stamps.lineage.paths)) {
+        if (!isBased(path)) continue
+        for (const stamp of line) {
+          const base = ledger.base(ref, path, stamp)
+          if (base !== undefined) bases[baseKey(path, stamp)] = base
+        }
+      }
+    }
+    return { row, own: { stamps, data: readRow(store, ref) }, bases }
+  })
+}
+
+/** What each row comes to (no store: it can be worked out anywhere, such as a worker). */
+export function planMerge(inputs: readonly MergeInput[]): MergePlan[] {
+  return inputs.map((input) => ({ key: input.row.key, ...landingOf(parseRefKey(input.row.key), input), ...(input.own && { from: input.own.stamps }) }))
+}
+
+/**
+ * Writes what each row came to, in order (parents first), checked like any
+ * other write, and keeps what was lost as conflict notes. A row this copy
+ * changed after its plan was worked out (`from`) is worked out again here.
+ */
+export function applyMerge(store: Store, rows: readonly SyncRow[], plans: readonly MergePlan[], now: string): void {
+  const ledger = ledgerOf(store)
+  const fresh = plans.map((plan, i) => {
+    const current = ledger.stampsOf(parseRefKey(plan.key))
+    const same = current && plan.from ? sameStamps(current, plan.from) : !current && !plan.from
+    return same ? plan : planMerge(gatherMerge(store, [rows[i]!]))[0]!
+  })
+  const landing = fresh.flatMap((m) => m.landing ?? [])
   const nodes = landing.filter((r) => r.ref.t === 'node')
   const rest = landing.filter((r): r is Landing & { ref: Exclude<SyncRef, { t: 'node' }> } => r.ref.t !== 'node').sort((a, b) => ORDER[a.ref.t] - ORDER[b.ref.t])
   for (const row of [...parentsFirst(store, nodes), ...rest]) {
@@ -57,13 +121,13 @@ export function mergeRows(store: Store, rows: SyncRow[], now: string): void {
     ledger.adopt(row.ref, row.stamps)
     write(store, row)
   }
-  for (const { key, lost } of merges) if (lost?.length) keepLost(store, parseRefKey(key), key, lost, now)
+  for (const { key, lost } of fresh) if (lost?.length) keepLost(store, parseRefKey(key), key, lost, now)
 }
 
-/** What a row from another device comes to: what lands (nothing: this copy's stays as it is), and what a version lost. */
-interface Merge {
-  landing?: Landing
-  lost?: LostField[]
+function ledgerOf(store: Store): SyncLedger {
+  const ledger = store.sync
+  if (!ledger) throw new CommandError('This project doesn’t sync')
+  return ledger
 }
 
 /**
@@ -74,18 +138,17 @@ interface Merge {
  * sense together, such as a canvas card's place made null on one device as
  * the other moved it) falls back to the later row, whole.
  */
-function landingOf(store: Store, ledger: SyncLedger, ref: SyncRef, row: SyncRow): Merge {
+function landingOf(ref: SyncRef, { row, own, bases }: MergeInput): Omit<MergePlan, 'key' | 'from'> {
   const theirs = { ref, data: row.data, stamps: rowStamps(row.stamp, row.fields, row.lineage) }
-  const own = ledger.stampsOf(ref)
   if (!own) return { landing: theirs }
-  const later = row.stamp > own.stamp ? theirs : undefined
-  if (sameStamps(own, theirs.stamps)) return {}
-  if (ref.t === 'layer') return { landing: cellsMerged(store, ledger, ref, own, theirs.stamps, row.data) ?? later }
+  const later = row.stamp > own.stamps.stamp ? theirs : undefined
+  if (sameStamps(own.stamps, theirs.stamps)) return {}
+  if (ref.t === 'layer') return { landing: cellsMerged(ref, own, theirs.stamps, row.data, bases) ?? later }
   if (!hasFields(ref) || !isPlainObject(row.data)) return { landing: later }
-  const data = readRow(store, ref)
+  const { data } = own
   const here = (landing: Landing | undefined) => landing && { ...landing, here: data !== null }
   if (!isPlainObject(data)) return { landing: here(later) }
-  const { outcome, lost } = mergeFields({ data, stamps: own }, theirs, (path, stamp) => ledger.base(ref, path, stamp))
+  const { outcome, lost } = mergeFields({ data, stamps: own.stamps }, theirs, (path, stamp) => bases[baseKey(path, stamp)])
   if ('keep' in outcome) return { landing: outcome.keep === 'theirs' ? here(theirs) : undefined, lost }
   const parsed = schemaOf(ref).safeParse(outcome.data)
   const merged = { ref, data: parsed.data, stamps: { fields: outcome.fields, ...(outcome.lineage && { lineage: outcome.lineage }) }, checked: true }
@@ -99,21 +162,20 @@ function landingOf(store: Store, ledger: SyncLedger, ref: SyncRef, row: SyncRow)
  * was sculpted on top of the other, the version both came from isn't kept
  * here, or the merge is the later one (which is then kept whole).
  */
-function cellsMerged(store: Store, ledger: SyncLedger, ref: Extract<SyncRef, { t: 'layer' }>, own: RowStamps, theirs: RowStamps, data: unknown): Landing | undefined {
-  const [mine, yours] = [lineOf(own.lineage, WHOLE, own.stamp), lineOf(theirs.lineage, WHOLE, theirs.stamp)]
-  const theirsLater = theirs.stamp > own.stamp
+function cellsMerged(ref: Extract<SyncRef, { t: 'layer' }>, own: { stamps: RowStamps; data: unknown }, theirs: RowStamps, data: unknown, bases: Record<string, unknown>): Landing | undefined {
+  const [mine, yours] = [lineOf(own.stamps.lineage, WHOLE, own.stamps.stamp), lineOf(theirs.lineage, WHOLE, theirs.stamp)]
+  const theirsLater = theirs.stamp > own.stamps.stamp
   const [earlier, later] = theirsLater ? [mine, yours] : [yours, mine]
-  if (descends(later, earlier.stamp) || typeof data !== 'string') return undefined
+  if (descends(later, earlier.stamp) || typeof data !== 'string' || typeof own.data !== 'string') return undefined
   const met = meeting(mine, yours)
-  const base = met === undefined ? undefined : ledger.base(ref, WHOLE, met)
-  const ownBytes = store.worlds.getLayer(ref.id, ref.layer, ref.face)
-  const theirBytes = base64ToBytes(data)
+  const base = met === undefined ? undefined : bases[baseKey(WHOLE, met)]
+  const [ownBytes, theirBytes] = [base64ToBytes(own.data), base64ToBytes(data)]
   const size = TERRAIN_RES * TERRAIN_RES * LAYER_BYTES_PER_CELL[ref.layer]
-  if (!(base instanceof Uint8Array) || !ownBytes || [base, ownBytes, theirBytes].some((b) => b.length !== size)) return undefined
+  if (!(base instanceof Uint8Array) || [base, ownBytes, theirBytes].some((b) => b.length !== size)) return undefined
   const [e, l] = theirsLater ? [ownBytes, theirBytes] : [theirBytes, ownBytes]
   const merged = mergeCells(base, e, l, LAYER_BYTES_PER_CELL[ref.layer])
   if (merged.every((byte, i) => byte === l[i])) return undefined
-  const from = own.lineage!.from > theirs.lineage!.from ? own.lineage!.from : theirs.lineage!.from
+  const from = own.stamps.lineage!.from > theirs.lineage!.from ? own.stamps.lineage!.from : theirs.lineage!.from
   return { ref, data: bytesToBase64(merged), stamps: { fields: {}, lineage: { from, paths: { [WHOLE]: joined(mine, yours) } } } }
 }
 

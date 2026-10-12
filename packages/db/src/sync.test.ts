@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { emptyLayer, fromParts, type Command } from '@universe/core'
-import { Project } from './index'
+import { emptyLayer, fromParts, planMerge, type Command } from '@universe/core'
+import { PageReader, Project } from './index'
 
 let dir: string
 const open: Project[] = []
@@ -166,6 +166,25 @@ describe('a project between devices', () => {
       expect(p.snapshot().timeline.events[0]!.notes).toBe('<p>One by A</p><p>Two</p><p>Three by B</p>')
       expect([1, 20, 40].map((i) => p.store.worlds.getLayer(world, 'height', 1)![i])).toEqual([10, 20, 30])
       expect(p.snapshot().timeline.conflicts).toEqual([])
+    }
+  })
+
+  it('pages what another device asks for through a reader of its own, and merges with the work done apart, as a worker does them', async () => {
+    const run = (p: Project, type: string, payload: object) => p.bus.execute({ type, payload } as Command)
+    const a = track(Project.create(join(dir, 'a.universe'), 'Shared', { device: 'laptop' }))
+    const world = ['galaxy_cluster', 'galaxy', 'star_system', 'body', 'world'].reduce((parentId, kind) => run(a, 'node.create', { parentId, kind, name: kind }).targetId!, a.info().rootId)
+    run(a, 'event.create', { ownerId: world, title: 'Founding', start: fromParts({ year: 1 }) })
+    const reader = new PageReader(a.path)
+    try {
+      expect(reader.changesSince(0, { limit: 4 })).toEqual(a.changesSince(0, { limit: 4 }))
+      // What's written after the reader opened is read too.
+      run(a, 'era.create', { ownerId: world, name: 'Dawn', start: 0, end: fromParts({ year: 50 }) })
+      expect(reader.changesSince(0)).toEqual(a.changesSince(0))
+      const b = track(Project.create(join(dir, 'b.universe'), 'Shared', { device: 'desktop', copyOf: a.syncId() }))
+      await b.mergeWith(reader.changesSince(0).rows, async (inputs) => planMerge(structuredClone(inputs)))
+      expect(contents(b)).toEqual(contents(a))
+    } finally {
+      reader.close()
     }
   })
 })

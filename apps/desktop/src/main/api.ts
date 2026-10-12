@@ -6,7 +6,10 @@ import { personOf, type TerrainParams } from '@universe/core'
 import type { BaseTerrain, WaterInput, WorldWater } from '@universe/procgen'
 import { app } from 'electron'
 import createTerrainWorker from './terrain.worker?nodeWorker'
+import createSyncWorker from './sync.worker?nodeWorker'
+import type { SyncJob } from './sync.worker'
 import type { TerrainJob } from './terrain.worker'
+import { workerCalls } from './worker-calls'
 import type { AiChange, ApiSettingsPatch, ApiStatus, AppState, Collaboration, PhoneStatus, RemoteEvent, RemoteMethod, TailscaleState } from '../shared/api'
 import { PhoneAppServer, type PhoneAppPlace } from './phone-app'
 import { DeviceSync, type Tailnet } from './device-sync'
@@ -98,6 +101,8 @@ export class ApiController {
       collaboration: (collaboration) => this.events.collaboration(collaboration),
       ask: askDevice
     })
+    // Sync's reading of pages and working out of merges, off this thread.
+    session.offThread = workerCalls<SyncJob>(() => createSyncWorker({}))
     // Every change made here, however it was made: the user's other devices with this universe open are nudged to ask for it.
     session.onChange = () => this.devices.localChange()
     session.whoAmI = () => this.tailnet()?.me?.login
@@ -433,36 +438,8 @@ function stdioCommand(project: string | undefined): string {
 }
 
 /** Worlds' base terrain, and their rivers and lakes, from a worker thread, so a query about structures or rivers doesn't hold up the window. */
-let worker: ReturnType<typeof createTerrainWorker> | undefined
-const pending = new Map<number, { resolve(result: unknown): void; reject(err: Error): void }>()
-let nextId = 0
-
-function terrainWork<T>(job: TerrainJob): Promise<T> {
-  if (!worker) {
-    const w = createTerrainWorker({})
-    worker = w
-    w.unref()
-    w.on('message', ({ id, result, error }: { id: number; result?: unknown; error?: string }) => {
-      const call = pending.get(id)
-      pending.delete(id)
-      if (error) call?.reject(new Error(error))
-      else call?.resolve(result)
-    })
-    // A worker that fails or stops takes its unanswered calls with it; the next call starts a new one.
-    const fail = (err: Error) => {
-      for (const call of pending.values()) call.reject(err)
-      pending.clear()
-      if (worker === w) worker = undefined
-    }
-    w.on('error', fail)
-    w.on('exit', () => fail(new Error('The terrain worker stopped')))
-  }
-  const id = nextId++
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve: resolve as (result: unknown) => void, reject })
-    worker!.postMessage({ id, ...job })
-  })
-}
+const terrain = workerCalls<TerrainJob>(() => createTerrainWorker({}))
+const terrainWork = <T>(job: TerrainJob) => terrain.call<T>(job)
 
 const baseTerrain = (seed: number, params: TerrainParams) => terrainWork<BaseTerrain>({ job: 'base', seed, params })
 
