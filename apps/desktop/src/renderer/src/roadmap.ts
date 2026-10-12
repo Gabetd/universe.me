@@ -28,5 +28,8 @@ export const ROADMAP: Milestone[] = [
   { id: 'M16', title: 'Plugins', status: 'done', summary: 'Your own generators, exporters and name generators, sandboxed, undone in one step; a manager and a template to start from; sub-factions as deep as they go' },
   { id: 'M17', title: 'The canvas, as Obsidian has it', status: 'done', summary: 'Text, element, picture and link cards, groups, labelled connections, colours, resizing, selection and the board’s tools' },
   { id: 'M18', title: 'Live collaboration', status: 'done', summary: 'Several people in one universe at once over their tailnets: shared by tailnet login, who’s in and where, merges field by field and undo per person' },
-  { id: 'M19', title: 'Signed installers', status: 'active', summary: 'Installers signed and notarized as soon as the certificates are added, and the app locked to its own code' }
+  { id: 'M19', title: 'Signed installers', status: 'active', summary: 'Installers signed and notarized as soon as the certificates are added, and the app locked to its own code' },
+  { id: 'M20', title: 'Collaboration, part two', status: 'planned', summary: 'Conflicts kept as notes, notes merged line by line, members who can only look, tried on real tailnets' },
+  { id: 'M21', title: 'Sturdier underneath', status: 'planned', summary: 'Undo per person for every change, merging off the main thread, projects checked as they load' },
+  { id: 'M22', title: 'Worlds up close', status: 'planned', summary: 'Reshape regions by their corners, seamless lighting on the globe, finer terrain close up' }
 ]

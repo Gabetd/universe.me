@@ -589,6 +589,21 @@ A world's canvas does everything Obsidian's Canvas does, with the world's events
 - [ ] The certificates: an Azure Artifact Signing account and certificate profile (individuals in the US and Canada; organizations in more places), and an Apple Developer ID, as repository secrets. SmartScreen then learns the signed builds' reputation as they're downloaded; the install script below stays for the meantime.
 - [x] *Meanwhile:* a PowerShell install script (`scripts/install.ps1`, published with each release) downloads the Windows installer itself, so it carries no mark of the web and neither the browser nor SmartScreen stops it, and checks it against the release's update manifest before running it.
 
+### M20 — Collaboration, part two (2–3 weeks) — *planned*
+- What M18 left for later (§6.7): the losing version of a conflict kept as a note; notes merged line by line rather than whole; a record two devices first create apart with the same id (a world's timeline settings, a star) merged rather than the later one kept; a sculpt on one face of terrain merged cell by cell with another's.
+- Per-person permissions: members who can only look, and only the universe's owner able to change who it's shared with (today every member is trusted alike).
+- Tried on two real tailnets, with a machine shared between two people (so far only the stand-in Tailscale has run it); what each device can answer said in its hello, rather than an older version found by its 404s.
+
+### M21 — Sturdier underneath (2 weeks) — *planned*
+- From the reviews: per-person undo moved into the store's write path, so creates, deletes, restores and terrain are covered too; a world's settings a row of their own from the start (no stand-in stamp for settings never set); merging and paging rows off the main thread; one stack for dialogs and menus, so Escape and what's in front follow the order they opened in.
+- The canvas: its drag handling in a hook of its own, connections picked above the cards they pass under, and Export as image drawn from the board's data rather than captured from the window.
+- From the audit: every row of a project checked as it loads; the .deb installer's wait between checking and installing; a nonce the stdio server checks before handing the app its token.
+
+### M22 — Worlds up close (3 weeks) — *planned*
+- Deferred from M1: dragging a region's corners to reshape it, lighting without seams across the globe's face edges, and finer terrain close up (a quadtree of detail where the camera is).
+
+**Where things stand (12 Oct 2026):** M0–M18 are done and live (0.1.87 has live collaboration). M19 is live (0.1.90) in all that doesn't need certificates: the fuses, and signing ready to switch on; its last step is the certificates, as repository secrets. M20–M22 are what's next.
+
 **Rough total: 19–25 weeks** to v1 (M0–M13); M14–M19 are after it. for one full-time developer. M7 (API/MCP) can be pulled earlier, right after M2, if AI assistance is wanted sooner. The core layer makes it cheap to add.
 
 ---
@@ -625,6 +640,6 @@ A world's canvas does everything Obsidian's Canvas does, with the world's events
 ---
 
 ## 13. Immediate next steps
-1. Confirm the stack (Electron vs. Tauri) and the v1 scope above.
-2. Scaffold M0: monorepo, Electron app shell, `core` + `db` packages, CI.
-3. Write the Zod schemas for §4 and the first migration. Everything else builds on them.
+1. **Certificates (finishes M19):** an Azure Artifact Signing account and certificate profile for Windows, and an Apple Developer ID for macOS, added as repository secrets (names in the README); the next `main` and `staging` builds are then signed, and SmartScreen learns their reputation as they're downloaded.
+2. **Verified commits:** the owner's commit-signing key given to the cloud environment (as a secret, never in the chat) with its public half on the owner's GitHub account, so commits show as Verified.
+3. **M20**, collaboration's second part, then M21 and M22.
