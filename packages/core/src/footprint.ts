@@ -1,9 +1,8 @@
 import { sameValue, valueAt } from './fields'
-import { refKey, type SyncRef } from './sync'
 
 /**
- * What one step on the undo stack left in the rows it patched, field by
- * field (PLAN.md §6.7). Undoing the step, or redoing it, leaves alone a
+ * What one step on the undo stack left in the rows it wrote, field by field
+ * (and in terrain, cell by cell: PLAN.md §6.7). Undoing the step, or redoing it, leaves alone a
  * field that holds something else by then (someone's change since, merged
  * from another device) and undoes the rest, so undo is per person: it never
  * takes back someone else's change. Each write it lets through notes what it
@@ -12,11 +11,16 @@ import { refKey, type SyncRef } from './sync'
 export class Footprint {
   /** By row and path. */
   private readonly left = new Map<string, unknown>()
+  /** A face of terrain's cells, by row, then cell: the cell's bytes as one number. */
+  private readonly cells = new Map<string, Map<number, number>>()
 
   /** Whether `row` (named `key`) still holds at `path` what this step left there; at a path it didn't write, it does. */
   holds(key: string, row: unknown, path: string): boolean {
     const at = JSON.stringify([key, path])
-    return !this.left.has(at) || sameValue(valueAt(row, path), this.left.get(at))
+    if (!this.left.has(at)) return true
+    const [now, left] = [valueAt(row, path), this.left.get(at)]
+    // Deleted or not is what counts, not when: a row deleted again (by a step undone since) still holds this step's delete.
+    return path === '/deletedAt' ? (now === null) === (left === null) : sameValue(now, left)
   }
 
   /** Notes what a write left at each path it set in a row. */
@@ -24,33 +28,26 @@ export class Footprint {
     for (const path of paths) this.left.set(JSON.stringify([key, path]), valueAt(row, path))
   }
 
-  /** Steps made one: what the latest of them left at each path. */
+  /** Whether a face of terrain (`key`) still holds in cell `cell` (its bytes as one number) what this step left there; one it didn't write, it does. */
+  holdsCell(key: string, cell: number, value: number): boolean {
+    const left = this.cells.get(key)?.get(cell)
+    return left === undefined || left === value
+  }
+
+  /** Notes what a write left in cells of a face of terrain. */
+  wroteCells(key: string, cells: Iterable<readonly [cell: number, value: number]>): void {
+    let left = this.cells.get(key)
+    if (!left) this.cells.set(key, (left = new Map()))
+    for (const [cell, value] of cells) left.set(cell, value)
+  }
+
+  /** Steps made one: what the latest of them left at each path and cell. */
   static of(steps: readonly Footprint[]): Footprint {
     const joined = new Footprint()
-    for (const step of steps) for (const [at, value] of step.left) joined.left.set(at, value)
+    for (const step of steps) {
+      for (const [at, value] of step.left) joined.left.set(at, value)
+      for (const [key, cells] of step.cells) joined.wroteCells(key, cells)
+    }
     return joined
   }
-}
-
-/**
- * Patches a row (`ref`, as it is now: `row`) as a step does each time it's
- * made, undone or redone: of the fields it asks for (each by its path
- * first), those the step still holds (all of them, the first time) are
- * written by `write`, which gives back the row as written, and noted as what
- * the step left there. With none left (each changed since, by someone else),
- * nothing is written (undefined); a patch that asks for nothing still is.
- */
-export function patchThrough<E extends readonly [path: string, ...rest: unknown[]], R>(
-  footprint: Footprint | undefined,
-  ref: SyncRef,
-  row: unknown,
-  asked: readonly E[],
-  write: (kept: readonly E[]) => R
-): { kept: readonly E[]; written: R } | undefined {
-  const key = refKey(ref)
-  const kept = footprint ? asked.filter(([path]) => footprint.holds(key, row, path)) : asked
-  if (asked.length && !kept.length) return undefined
-  const written = write(kept)
-  footprint?.wrote(key, written, kept.map(([path]) => path))
-  return { kept, written }
 }

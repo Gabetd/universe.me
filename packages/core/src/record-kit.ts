@@ -163,7 +163,7 @@ export function update<K extends RecordKind>(store: Store, kind: K, ctx: Command
 /** Patches a live record, checked: the patch that undoes it (undefined if an undo had nothing left to change: see `patchRow`), and the record's owner. */
 function patchRecord<K extends RecordKind>(store: Store, kind: K, ctx: CommandContext, id: string, patch: Partial<Fields<K>>) {
   const record = liveRecord(store, kind, id)
-  const previous = patchRow(store.records(kind), { t: 'record', kind, id }, record, patch, ctx, (next) => validate(store, kind, next, { previous: record }))
+  const previous = patchRow(store.records(kind), record, patch, ctx, (next) => validate(store, kind, next, { previous: record }))
   return { previous, ownerId: record.ownerId }
 }
 

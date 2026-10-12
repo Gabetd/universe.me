@@ -324,6 +324,36 @@ describe('sync', () => {
     expect(a.store.nodes.get(world)!.name).toBe('Theirs')
   })
 
+  it('undoes creates, deletes and terrain per person too: what someone else changed since stays as they left it', () => {
+    const time = { now: Date.UTC(2026, 0, 1) }
+    const { a, world, copies: [b] } = withEvent(time, 'B')
+    // A makes an era, which B deletes: undoing A's create leaves B's delete, and redoing it doesn't bring the era back over it.
+    time.now += 10
+    const era = run(a, 'era.create', { ownerId: world, name: 'Dawn', start: 0, end: fromParts({ year: 100 }) }).targetId!
+    pull(a, b!)
+    time.now += 10
+    run(b!, 'era.delete', { id: era })
+    pull(b!, a)
+    a.bus.undo()
+    a.bus.redo()
+    expect(a.store.records('era').get(era)!.deletedAt).not.toBeNull()
+
+    // A sculpts two cells of a face; B sculpts one of them after: undoing A's stroke takes back only the other.
+    const cell = (d: Device, at: number) => (d.store.worlds.getLayer(world, 'height', 2) ?? emptyLayer('height'))[at * 2 + 1]!
+    const stroke = (d: Device, at: number, value: number) =>
+      run(d, 'terrain.patch', { worldId: world, layer: 'height', patches: [{ face: 2, x: at, y: 0, w: 1, h: 1, data: bytesToBase64(new Uint8Array([0, value])) }] })
+    time.now += 10
+    a.bus.execute({ type: 'batch', payload: { commands: [10, 20].map((at) => ({ type: 'terrain.patch', payload: { worldId: world, layer: 'height', patches: [{ face: 2, x: at, y: 0, w: 1, h: 1, data: bytesToBase64(new Uint8Array([0, 50])) }] } })) } } as Command)
+    pull(a, b!)
+    time.now += 10
+    stroke(b!, 20, 90)
+    pull(b!, a)
+    a.bus.undo()
+    expect([cell(a, 10), cell(a, 20)]).toEqual([0, 90])
+    a.bus.redo()
+    expect([cell(a, 10), cell(a, 20)]).toEqual([50, 90])
+  })
+
   it('undoes a step that changed a field twice back to where it began', () => {
     const time = { now: Date.UTC(2026, 0, 1) }
     const { a, event } = withEvent(time)

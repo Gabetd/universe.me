@@ -4,7 +4,6 @@ import type { HandlerMap } from './commands'
 import { Conflict, conflictId } from './conflicts'
 import { fieldsOf, rowOf, valueAt } from './fields'
 import type { LostField } from './field-stamps'
-import { patchThrough } from './footprint'
 import { RECORD_SCHEMAS } from './records'
 import { validate } from './record-kit'
 import { Id, SpatialNode } from './schema'
@@ -54,19 +53,15 @@ function putRow(store: Store, ref: SyncRef, data: unknown): void {
   }
 }
 
-/** Sets a conflict's field to `value` (or takes it out), through the step's footprint, and opens or closes the note; gives back what the field held before. */
-function put(store: Store, id: string, value: unknown, removed: boolean, deletedAt: string | null, now: string, footprint: Parameters<typeof patchThrough>[0]) {
+/** Sets a conflict's field to `value` (or takes it out), and opens or closes the note; gives back what the field held before. */
+function put(store: Store, id: string, value: unknown, removed: boolean, deletedAt: string | null, now: string) {
   const conflict = store.records('conflict').get(id)
   if (!conflict) throw new CommandError('No such conflict note')
   const ref = parseRefKey(conflict.key)
   const row = readRow(store, ref)
   if (row === null) throw new CommandError('What that conflict note was about isn’t here any more')
   const previous = { value: valueAt(row, conflict.path) ?? null, removed: !fieldsOf(row).has(conflict.path) }
-  patchThrough(footprint, ref, row, [[conflict.path]], () => {
-    const next = withField(row, conflict.path, value, removed)
-    putRow(store, ref, next)
-    return next
-  })
+  putRow(store, ref, withField(row, conflict.path, value, removed))
   store.records('conflict').update({ ...conflict, deletedAt, updatedAt: now })
   return { previous, owner: conflict.ownerId }
 }
@@ -75,11 +70,11 @@ export const conflictHandlers: HandlerMap<ConflictCommand> = {
   'conflict.use': (store, { id }, ctx) => {
     const conflict = store.records('conflict').get(id)
     if (!conflict || conflict.deletedAt) throw new CommandError('No such conflict note open')
-    const { previous, owner } = put(store, id, conflict.value, conflict.removed, ctx.now(), ctx.now(), ctx.footprint)
+    const { previous, owner } = put(store, id, conflict.value, conflict.removed, ctx.now(), ctx.now())
     return { inverse: { type: 'conflict.unuse', payload: { id, ...previous } }, target: { kind: 'conflict', id }, owner }
   },
   'conflict.unuse': (store, { id, value, removed }, ctx) => {
-    const { owner } = put(store, id, value, removed, null, ctx.now(), ctx.footprint)
+    const { owner } = put(store, id, value, removed, null, ctx.now())
     return { inverse: { type: 'conflict.use', payload: { id } }, target: { kind: 'conflict', id }, owner }
   }
 }

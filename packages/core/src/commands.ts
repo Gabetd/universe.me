@@ -2,7 +2,6 @@ import { z } from 'zod'
 import { ALLOWED_CHILDREN, Id, KIND_LABELS, NodeKind, NodePatch, Notes, Seed, Vec3, type CommandSource, type SpatialNode } from './schema'
 import { base64ToBytes, bytesToBase64 } from './encoding'
 import { changedFields, fieldsOf, rowOf } from './fields'
-import { patchThrough } from './footprint'
 import type { Store } from './store'
 import { CommandError, batchOf, liveNode, liveRegion, liveWorld, newNode, patchRow, pickColor, requireRow, softDelete, type CommandContext, type HandlerResult, type Run } from './command-kit'
 import { CHARACTER_COMMANDS, characterHandlers } from './character-commands'
@@ -149,7 +148,7 @@ export const handlers: Handlers = {
   },
 
   'node.update'(store, { id, patch }, ctx) {
-    const previous = patchRow(store.nodes, { t: 'node', id }, liveNode(store, id), patch, ctx)
+    const previous = patchRow(store.nodes, liveNode(store, id), patch, ctx)
     return { inverse: { type: 'node.update', payload: { id, patch: previous ?? {} } }, target: { kind: 'node', id } }
   },
 
@@ -165,17 +164,16 @@ export const handlers: Handlers = {
   },
 
   // Undone by the settings it changed, as they were: like a row's patch (`patchRow`), undoing it leaves a slider moved since as it is.
-  'world.update'(store, { id, patch }, ctx) {
+  'world.update'(store, { id, patch }) {
     liveWorld(store, id)
     const previous = store.worlds.getSettings(id) ?? DEFAULT_WORLD_SETTINGS
-    const asked = [...fieldsOf(patch)].filter(([path]) => path)
-    const done = patchThrough(ctx.footprint, { t: 'world', id }, previous, asked, (kept) => {
-      const next = WorldSettings.safeParse(quantizeSettings(mergeWorldSettings(previous, (rowOf(kept) ?? {}) as WorldSettingsPatch)))
-      if (!next.success) throw new CommandError(`Invalid world settings: ${next.error.issues[0]?.message}`)
-      store.worlds.putSettings(id, next.data)
-      return next.data
-    })
-    return { inverse: { type: 'world.update', payload: { id, patch: done ? settingsUndo(previous, done.written) : {} } }, target: { kind: 'node', id }, owner: done && id }
+    const next = WorldSettings.safeParse(quantizeSettings(mergeWorldSettings(previous, patch)))
+    if (!next.success) throw new CommandError(`Invalid world settings: ${next.error.issues[0]?.message}`)
+    store.worlds.putSettings(id, next.data)
+    // What was written: undoing or redoing, the step's store leaves a slider moved since by someone else as it is (step-store.ts).
+    const undo = settingsUndo(previous, store.worlds.getSettings(id) ?? next.data)
+    const changed = Object.keys(undo).length > 0
+    return { inverse: { type: 'world.update', payload: { id, patch: undo } }, target: { kind: 'node', id }, owner: changed ? id : undefined }
   },
 
   'terrain.patch'(store, { worldId, layer, patches }) {
@@ -237,7 +235,7 @@ export const handlers: Handlers = {
 
   'region.update'(store, { id, patch }, ctx) {
     const region = liveRegion(store, id)
-    const previous = patchRow(store.regions, { t: 'region', id }, region, patch, ctx)
+    const previous = patchRow(store.regions, region, patch, ctx)
     return { inverse: { type: 'region.update', payload: { id, patch: previous ?? {} } }, target: { kind: 'region', id }, owner: previous && region.worldId }
   },
 

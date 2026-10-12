@@ -1,6 +1,7 @@
 import { DEFAULT_CONTEXT, batchOf } from './command-kit'
 import { Command, CommandError, applyCommand, checkSource, type CommandContext, type HandlerResult, type Target } from './commands'
 import { Footprint } from './footprint'
+import { stepStore } from './step-store'
 import type { CommandSource } from './schema'
 import type { Store } from './store'
 import { SyncMerge, mergeRows, type LoggedMerge } from './sync-commands'
@@ -147,7 +148,7 @@ export class CommandBus {
 
   private apply(action: HistoryAction, command: Command, source: CommandSource, footprint: Footprint): HandlerResult {
     return this.store.transaction(() => {
-      const result = applyCommand(this.store, command, { ...this.ctx, footprint })
+      const result = applyCommand(stepStore(this.store, footprint, action), command, this.ctx)
       if (result.owner) {
         const owner = this.store.nodes.get(result.owner)
         if (owner) this.store.nodes.update({ ...owner, updatedAt: this.ctx.now() })

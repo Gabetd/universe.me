@@ -1,10 +1,8 @@
 import { v7 as uuidv7 } from 'uuid'
 import type { Command } from './commands'
-import { pathOf } from './fields'
-import { patchThrough, type Footprint } from './footprint'
+import { sameValue } from './fields'
 import type { SpatialNode } from './schema'
 import type { Store } from './store'
-import type { SyncRef } from './sync'
 import type { RecordKind, RecordOf } from './records'
 import { stripUndefined } from './util'
 import { PALETTE, type Region } from './world'
@@ -15,8 +13,6 @@ export interface CommandContext {
   newId(): string
   /** Returns an unsigned 32-bit integer. */
   randomSeed(): number
-  /** What the step being made (or undone, or redone) left in the rows it patched; the bus gives one to each. */
-  footprint?: Footprint
 }
 
 /** The clock, ids and seeds commands use unless a test gives its own. */
@@ -66,12 +62,14 @@ export class CommandError extends Error {
 
 /** What nodes, regions and records have in common: rows that are soft-deleted and know when they last changed. */
 interface Row {
+  id: string
   updatedAt: string
   deletedAt: string | null
 }
 
 /** A repository of rows (`store.nodes`, `store.regions`, `store.records(kind)`). */
 interface Rows<T extends Row> {
+  get(id: string): T | undefined
   update(row: T): void
 }
 
@@ -106,22 +104,21 @@ export function liveRecord<K extends RecordKind>(store: Store, kind: K, id: stri
 }
 
 /**
- * Writes a patch over a row (`ref`: a node, a region, a record), once
- * `check` (if any) accepts the result; returns the patch that undoes it.
- * Undoing or redoing, a field that holds something other than what the step
- * left there stays as it is (see `patchThrough`); with nothing left to
- * change, nothing is written, and there's nothing to undo (undefined).
+ * Writes a patch over a row (a node, a region, a record), once `check` (if
+ * any) accepts the result; returns the patch that undoes it. Undoing or
+ * redoing, the step's store leaves a field someone has changed since as it is
+ * (step-store.ts): the patch undoes what was written, and with nothing left
+ * to change there's nothing to undo (undefined).
  */
-export function patchRow<T extends Row, P extends object>(rows: Rows<T>, ref: SyncRef, row: T, patch: P, ctx: CommandContext, check?: (next: T) => void): P | undefined {
-  const asked = Object.entries(stripUndefined(patch)).map(([field, value]) => [pathOf([field]), field, value] as const)
-  const fields = (kept: readonly (typeof asked)[number][]) => Object.fromEntries(kept.map(([, field, value]) => [field, value]))
-  const done = patchThrough(ctx.footprint, ref, row, asked, (kept) => {
-    const next = { ...row, ...fields(kept), updatedAt: ctx.now() }
-    check?.(next)
-    rows.update(next)
-    return next
-  })
-  return done && (previousValues(row as Record<string, unknown>, fields(done.kept)) as P)
+export function patchRow<T extends Row, P extends object>(rows: Rows<T>, row: T, patch: P, ctx: CommandContext, check?: (next: T) => void): P | undefined {
+  const asked = stripUndefined(patch) as Record<string, unknown>
+  const next = { ...row, ...asked, updatedAt: ctx.now() }
+  check?.(next)
+  rows.update(next)
+  const written = (rows.get(row.id) ?? next) as Record<string, unknown>
+  const kept = Object.entries(asked).filter(([field, value]) => sameValue(written[field], value))
+  if (Object.keys(asked).length && !kept.length) return undefined
+  return previousValues(row as Record<string, unknown>, Object.fromEntries(kept)) as P
 }
 
 /** Marks a row deleted at `deletedAt`, or with null, not deleted. */
