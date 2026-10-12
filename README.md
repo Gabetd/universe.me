@@ -6,7 +6,7 @@ a local API and MCP server. See [PLAN.md](PLAN.md) for the full design and roadm
 
 **Status:** M0 to M13 are done (v1: up to phone access, sync between your
 devices, and polish), and so are M14 (factions and relationships), M15
-(rivers and erosion), M16 (plugins), M17 (the canvas, as Obsidian has it) M18 (live collaboration, with people on other tailnets) M20 (collaboration's second part: conflicts kept as notes, notes merged line by line, members who can only look) and M21 (sturdier underneath: undo per person for every change, sync's work off the main thread, projects checked as they load). New here? On the start screen,
+(rivers and erosion), M16 (plugins), M17 (the canvas, as Obsidian has it), M18 (live collaboration, with people on other tailnets), M20 (collaboration's second part: conflicts kept as notes, notes merged line by line, members who can only look) and M21 (sturdier underneath: undo per person for every change, sync's work off the main thread, projects checked as they load). New here? On the start screen,
 **Explore a sample universe** opens Calder, a world with fifteen centuries of
 history to look around in. Press `?` for the keyboard shortcuts.
 
