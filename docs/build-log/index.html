@@ -211,6 +211,16 @@
   // One entry per published build, newest first.
   const LOG = [
     {
+      ver: '0.1.90', date: '12 Oct 2026', tag: 'M19',
+      title: 'Ready to be signed, and locked to its own code',
+      points: [
+        'The app now runs only the code it was shipped with: on Windows and macOS it checks its own files against a fingerprint built into it, and settings from outside (NODE_OPTIONS) can’t change how it runs.',
+        'Signed installers are ready to switch on: Windows builds through Microsoft’s Artifact Signing, Mac builds with an Apple Developer ID and notarized. They turn on by themselves for Universe and Universe (staging) once the certificates are added; until then the install script avoids Windows’ warnings.',
+        'Behind the scenes: the canvas’s drags and handles were made sturdy on every screen size, which the tests on Windows and Linux now check.'
+      ],
+      shots: []
+    },
+    {
       ver: '0.1.87', date: '11 Oct 2026', tag: 'M18',
       title: 'Live collaboration: a universe shared with other people',
       points: [
