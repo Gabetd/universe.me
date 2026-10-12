@@ -87,3 +87,67 @@ test('collaboration: a universe shared with someone else, both in it at once, ed
     await expect(row(ana.page, 'Sol')).toBeVisible()
   })
 })
+
+test('collaboration: someone it’s shared with to view only looks; made an editor, the two change one title at once, and the change that lost is put back', async () => {
+  test.slow()
+  await twoComputers(ANA, BEA, async (ana, bea) => {
+    // Ana shares her universe with Bea to view only.
+    await newWorld(ana, 'Aerth', { surface: false })
+    await openShare(ana.page)
+    const share = shareDialog(ana.page)
+    await share.getByRole('button', { name: 'Turn on sync' }).click()
+    await share.getByLabel('They can').selectOption('viewer')
+    await share.getByRole('group', { name: 'On your tailnet' }).getByRole('button', { name: '+ bea' }).click()
+    const members = share.getByRole('list', { name: 'Members' })
+    await expect(members.getByRole('listitem').filter({ hasText: 'ana@example.com' })).toContainText('Owner')
+
+    const devices = bea.page.getByRole('region', { name: 'Your other devices' })
+    await devices.getByLabel('Sync with my other devices').check()
+    const sharedWithBea = devices.getByRole('list', { name: 'Shared with you' })
+    await expect(sharedWithBea).toContainText('has “Aerth” open', { timeout: SLOW })
+    await stubSaveDialog(bea.app, join(bea.dir, 'Aerth.universe'))
+    await sharedWithBea.getByRole('button', { name: 'Copy “Aerth” here' }).click()
+    await expect(row(bea.page, 'Terra')).toBeVisible()
+
+    // Bea can only look: her copy says so, and turns down a change.
+    await expect(bea.page.getByText('View only', { exact: true })).toBeVisible({ timeout: SLOW })
+    await row(bea.page, 'Sol').click()
+    await fill(bea.page, 'Name', 'Helios')
+    await expect(bea.page.getByRole('alert')).toContainText('to look at, not to change')
+    await bea.page.getByRole('alert').getByRole('button', { name: 'Dismiss' }).click()
+    await openShare(bea.page)
+    await expect(shareDialog(bea.page).getByLabel('Sharing status')).toContainText('shared this universe with you to look at')
+    await bea.page.getByRole('button', { name: 'Close share' }).click()
+
+    // Ana lets her edit.
+    await members.getByLabel('What bea can do').selectOption('editor')
+    await expect(bea.page.getByText('View only', { exact: true })).toHaveCount(0, { timeout: SLOW })
+    await ana.page.getByRole('button', { name: 'Close share' }).click()
+
+    // Both rename one event at once: the later title is kept on both, the other is a conflict note on both.
+    await row(ana.page, 'Terra').click()
+    await ana.page.getByRole('button', { name: '+ Event' }).click()
+    await fill(ana.page, 'Event title', 'Founding')
+    await row(bea.page, 'Terra').click()
+    await expect(eventBar(bea.page, 'Founding')).toBeVisible({ timeout: SLOW })
+    await eventBar(bea.page, 'Founding').click()
+    await expect(inspector(bea.page).getByRole('region', { name: 'Event' })).toBeVisible()
+    await Promise.all([fill(ana.page, 'Event title', 'Founding by Ana'), fill(bea.page, 'Event title', 'Founding by Bea')])
+    const titles = async () => Promise.all([firstEvent(ana.page), firstEvent(bea.page)]).then((events) => events.map((e) => e?.title))
+    await expect.poll(async () => new Set(await titles()).size, { timeout: SLOW }).toBe(1)
+    const [kept] = await titles()
+    const lost = kept === 'Founding by Ana' ? 'Founding by Bea' : 'Founding by Ana'
+    const notes = async (page: Page) => (await state(page, 'timeline')).conflicts.filter((c) => !c.deletedAt).map((c) => c.value)
+    await expect.poll(() => notes(ana.page), { timeout: SLOW }).toEqual([lost])
+    await expect.poll(() => notes(bea.page), { timeout: SLOW }).toEqual([lost])
+
+    // Ana sees it in the Share dialog (and in Terra's Warnings), and puts it back: on both.
+    await openShare(ana.page)
+    const note = share.getByRole('region', { name: 'Changed at once' }).getByRole('article')
+    await expect(note).toContainText(lost)
+    await shot(ana.page, '242-changed-at-once')
+    await note.getByRole('button', { name: 'Use this instead' }).click()
+    await expect.poll(titles, { timeout: SLOW }).toEqual([lost, lost])
+    await expect.poll(() => notes(bea.page), { timeout: SLOW }).toEqual([])
+  })
+})
