@@ -257,6 +257,14 @@ describe('the operations', () => {
     expect(bytes[3]).toBe(255)
   })
 
+  it('pin places on a world, rename and move them, and list them', async () => {
+    const { pinId } = await p.call<{ pinId: string }>('add_map_pin', { worldId: p.worldId, name: 'Old well', lat: 10, lon: 20, notes: 'Dry since the war.' })
+    await p.call('update_map_pin', { worldId: p.worldId, pinId, name: 'The old well', lat: 11 })
+    const { pins } = await p.call<{ pins: object[] }>('list_map_pins', { worldId: p.worldId })
+    expect(pins).toEqual([{ id: pinId, name: 'The old well', lat: 11, lon: 20, color: '#e8524a', notes: 'Dry since the war.' }])
+    await expect(p.call('update_map_pin', { worldId: p.worldId, pinId: 'nope', name: 'X' })).rejects.toThrow()
+  })
+
   it('lay out a world’s canvas: text, an element, a web page and a group, connected, moved and read back', async () => {
     const { eventId } = await p.call<{ eventId: string }>('create_event', { worldId: p.worldId, title: 'The comet', start: '1204' })
     const note = await p.call<{ cardId: string }>('add_canvas_card', { worldId: p.worldId, kind: 'text', text: '# Omens\nIt came **red**.', x: 0, y: 0 })
