@@ -30,6 +30,6 @@ export const ROADMAP: Milestone[] = [
   { id: 'M18', title: 'Live collaboration', status: 'done', summary: 'Several people in one universe at once over their tailnets: shared by tailnet login, who’s in and where, merges field by field and undo per person' },
   { id: 'M19', title: 'Signed installers', status: 'active', summary: 'Installers signed and notarized as soon as the certificates are added, and the app locked to its own code' },
   { id: 'M20', title: 'Collaboration, part two', status: 'active', summary: 'Conflicts kept as notes, notes merged line by line and terrain cell by cell, an owner and members who can only look; next, tried on two real tailnets' },
-  { id: 'M21', title: 'Sturdier underneath', status: 'planned', summary: 'Undo per person for every change, merging off the main thread, projects checked as they load' },
+  { id: 'M21', title: 'Sturdier underneath', status: 'done', summary: 'Undo per person for every change, sync’s work off the main thread, projects checked as they load, one stack for dialogs and menus, the canvas’s lines and exported pictures' },
   { id: 'M22', title: 'Worlds up close', status: 'planned', summary: 'Reshape regions by their corners, seamless lighting on the globe, finer terrain close up' }
 ]
