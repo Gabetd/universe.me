@@ -96,13 +96,14 @@ async function computer(host: string, login: string, name: string): Promise<Comp
   })
   // Every change made here, as the app wires it (api.ts).
   session.onChange = () => c.sync.localChange()
+  session.whoAmI = () => login
   c.port = await c.server.listen()
   computers.push(c)
   return c
 }
 
 const rootOf = (c: Computer) => c.session.state().project!.rootId
-const invite = (c: Computer, login: string) => c.session.execute({ type: 'member.create', payload: { ownerId: rootOf(c), login, invitedBy: { login: c.login, name: c.name } } })
+const invite = (c: Computer, login: string, role?: 'viewer') => c.session.execute({ type: 'member.create', payload: { ownerId: rootOf(c), login, invitedBy: { login: c.login, name: c.name }, ...(role && { role }) } })
 const rename = (c: Computer, name: string) => c.session.execute({ type: 'node.update', payload: { id: rootOf(c), patch: { name } } })
 const rootName = (c: Computer) => c.session.state().nodes.find((n) => n.id === rootOf(c))!.name
 
@@ -116,8 +117,8 @@ async function aliceAndBob() {
 }
 
 /** Bob, invited, looks at his devices (asking Alice's studio at once, however often it's had nothing for him), and copies Alice's universe here. */
-async function bobCopies(alice: Computer, bob: Computer, at = bob) {
-  invite(alice, at.login)
+async function bobCopies(alice: Computer, bob: Computer, at = bob, role?: 'viewer') {
+  invite(alice, at.login, role)
   await at.sync.lookAgain()
   expect(at.sync.collaboration().shared).toEqual([expect.objectContaining({ host: alice.host, owner: { login: alice.login, name: 'Alice' }, project: expect.objectContaining({ name: 'Aerth' }), state: 'other' })])
   await at.sync.copyFrom(alice.host, join(at.dir, 'Aerth copy.universe'))
@@ -229,5 +230,37 @@ describe('several people in one universe', () => {
     expect(asked).toEqual(['/sync/hello {}'])
     expect(bob.sync.collaboration().here.map((p) => p.login)).not.toContain('mallory@example.com')
     expect(bob.sync.collaboration().shared.find((d) => d.host.startsWith('mallory'))).toMatchObject({ state: 'other', error: expect.stringMatching(/isn’t a member/) })
+  })
+
+  it('lets someone it’s shared with to view only look: nothing they change here or bring is taken', async () => {
+    const { alice, bob } = await aliceAndBob()
+    await bobCopies(alice, bob, bob, 'viewer')
+    expect(() => rename(bob, 'By Bob')).toThrow(/to look at, not to change/)
+    // Changed all the same (signed out of Tailscale at the time, say): Alice's studio doesn't take it.
+    bob.session.whoAmI = () => undefined
+    rename(bob, 'By Bob')
+    await bob.sync.round()
+    expect(rootName(alice)).toBe('Aerth')
+    rename(alice, 'By Alice')
+    await bob.sync.round()
+    expect(rootName(bob)).toBe('By Alice')
+  })
+
+  it('lets only the owner change who it’s shared with, and takes no such change from anyone else', async () => {
+    const { alice, bob } = await aliceAndBob()
+    await bobCopies(alice, bob)
+    expect(alice.session.members().find((m) => m.login === alice.login)!.role).toBe('owner')
+    expect(() => invite(bob, 'carol@example.com')).toThrow(/Only Alice/)
+    bob.session.whoAmI = () => undefined
+    invite(bob, 'carol@example.com')
+    rename(bob, 'Aerth, by Bob')
+    await bob.sync.round()
+    // His other change is taken; the invitation isn't.
+    expect(rootName(alice)).toBe('Aerth, by Bob')
+    expect(alice.session.members().map((m) => m.login).sort()).toEqual(['alice@example.com', 'bob@example.com'])
+  })
+
+  it('says in its hello what it answers', () => {
+    return aliceAndBob().then(({ alice }) => expect(alice.sync.hello({ login: 'bob@example.com', owner: false, device: 'x' })).toMatchObject({ can: ['visit', 'push'] }))
   })
 })

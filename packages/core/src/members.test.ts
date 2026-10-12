@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { CommandBus, MemoryStore, createRootUniverse, memberWithLogin, type Command, type CommandSource } from './index'
+import { CommandBus, MemoryStore, createRootUniverse, memberWithLogin, refKey, rowsFrom, type Command, type CommandSource } from './index'
+import { refusal } from './member-commands'
 
 let store: MemoryStore
 let bus: CommandBus
@@ -53,5 +54,37 @@ describe('a universe’s members', () => {
     expect(() => run('record.remove', { refs: [{ kind: 'member', id: bob.id }] }, 'plugin')).toThrow(/in Universe itself/)
     expect(() => run('member.update', { id: bob.id, patch: { name: 'Bobby' } }, 'ai')).toThrow(/in Universe itself/)
     expect(logins()).toEqual(['bob@example.com'])
+  })
+
+  it('have roles: the first to share it owns it, the others edit or only look', () => {
+    run('member.create', { ownerId: rootId, login: 'bob@example.com', invitedBy: { login: 'alice@example.com', name: 'Alice' } })
+    run('member.create', { ownerId: rootId, login: 'carol@example.com', role: 'viewer', invitedBy: { login: 'alice@example.com' } })
+    const members = () => store.records('member').all()
+    expect(Object.fromEntries(members().map((m) => [m.login, m.role]))).toEqual({ 'alice@example.com': 'owner', 'bob@example.com': 'editor', 'carol@example.com': 'viewer' })
+    const bob = memberWithLogin(members(), 'bob@example.com')!
+    expect(() => run('member.update', { id: bob.id, patch: { role: 'owner' } })).toThrow(/one owner/)
+    expect(() => run('member.create', { ownerId: rootId, login: 'dan@example.com', role: 'owner' })).toThrow()
+
+    const invite = { type: 'member.create', payload: { ownerId: rootId, login: 'eve@example.com' } }
+    const edit = { type: 'node.update', payload: { id: rootId, patch: { name: 'V' } } }
+    expect(refusal(members(), 'alice@example.com', invite)).toBeUndefined()
+    expect(refusal(members(), 'bob@example.com', edit)).toBeUndefined()
+    expect(refusal(members(), 'bob@example.com', invite)).toMatch(/Only Alice/)
+    expect(refusal(members(), 'carol@example.com', edit)).toMatch(/to look at/)
+
+    const rows = [{ key: refKey({ t: 'record', kind: 'member', id: bob.id }) }, { key: refKey({ t: 'node', id: rootId }) }]
+    expect(rowsFrom(members(), 'alice@example.com', rows)).toEqual(rows)
+    expect(rowsFrom(members(), 'bob@example.com', rows)).toEqual([rows[1]])
+    expect(rowsFrom(members(), 'carol@example.com', rows)).toEqual([])
+  })
+
+  it('make a member from before roles who invites someone the owner, undone together', () => {
+    run('member.create', { ownerId: rootId, login: 'alice@example.com' })
+    const alice = store.records('member').all()[0]!
+    store.transaction(() => store.records('member').update({ ...alice, role: 'editor' }))
+    run('member.create', { ownerId: rootId, login: 'bob@example.com', invitedBy: { login: 'alice@example.com' } })
+    expect(memberWithLogin(store.records('member').all(), 'alice@example.com')!.role).toBe('owner')
+    bus.undo()
+    expect(store.records('member').all().map((m) => [m.login, m.role])).toEqual([['alice@example.com', 'editor']])
   })
 })

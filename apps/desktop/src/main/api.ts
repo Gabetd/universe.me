@@ -100,6 +100,7 @@ export class ApiController {
     })
     // Every change made here, however it was made: the user's other devices with this universe open are nudged to ask for it.
     session.onChange = () => this.devices.localChange()
+    session.whoAmI = () => this.tailnet()?.me?.login
   }
 
   /** Something the user (or a phone) changed: AI clients following the change feed hear of it. */

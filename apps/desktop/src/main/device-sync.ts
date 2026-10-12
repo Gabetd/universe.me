@@ -45,8 +45,18 @@ const PAGE = 100
 
 const SyncId = z.string().min(1).max(100)
 
+/**
+ * What this version answers beyond the first sync (hello, changes, nudge):
+ * a hello with a visit in it (who's in and where), and rows pushed to it.
+ * Said in each hello, so a device knows how to greet another before it asks
+ * (a device from before saying it is found out by its 404s, as before).
+ */
+const CAN = ['visit', 'push'] as const
+
 const Hello = z.object({
   device: z.string().regex(DEVICE_ID),
+  /** What it answers (CAN), from versions that say. */
+  can: z.array(z.string().max(40)).max(20).optional(),
   project: z.object({ syncId: SyncId, name: z.string().max(200), upTo: z.number().int().min(0) }).nullable(),
   /** Who's in that universe there, but the one asking (from newer versions only). */
   people: z.array(PresenceWire).max(MAX_PEOPLE).optional()
@@ -127,6 +137,8 @@ interface Contact {
   link?: Link
   /** When it last turned down the newer hello (an older version): it's greeted the older way for a while. */
   older?: number
+  /** What it said it answers, in its last hello (undefined: a version from before saying it). */
+  can?: readonly string[]
   /** For another person's device that's no member's: when it's asked again, and how many times in a row it had nothing to share. */
   probe?: { next: number; misses: number }
 }
@@ -228,13 +240,13 @@ export class DeviceSync implements SyncRoutes {
    */
   hello(visitor?: SyncVisitor, body?: unknown): Hello {
     const open = this.o.session.syncInfo()
-    const device = this.o.session.device
-    if (!open || !visitor) return { device, project: null }
+    const me = { device: this.o.session.device, can: [...CAN] }
+    if (!open || !visitor) return { ...me, project: null }
     const visit = Visit.safeParse(body)
-    if (!visit.success || visit.data.syncId !== open.syncId) return { device, project: open }
+    if (!visit.success || visit.data.syncId !== open.syncId) return { ...me, project: open }
     this.presences.hear(open.syncId, [{ ...personOf(visitor.login, visit.data.name), where: visit.data.where ?? null, age: 0 }], this.myLogin())
     this.tell()
-    return { device, project: open, people: this.peopleIn(open.syncId, visitor.login) }
+    return { ...me, project: open, people: this.peopleIn(open.syncId, visitor.login) }
   }
 
   changes(body: unknown, visitor: SyncVisitor): SyncAnswer {
@@ -255,7 +267,7 @@ export class DeviceSync implements SyncRoutes {
     if (!given.success) return { status: 400, body: { error: 'Give a sync id and rows' } }
     const { session } = this.o
     if (session.syncInfo()?.syncId !== given.data.syncId) return notOpen
-    if (session.merge(given.data.rows)) {
+    if (session.merge(given.data.rows, visitor.owner ? undefined : visitor.login)) {
       this.showSoon()
       this.announce('rows', visitor.device)
     }
@@ -407,15 +419,15 @@ export class DeviceSync implements SyncRoutes {
     const link = { device: hello.device, syncId: project.syncId }
     try {
       // Both at once: neither sends the other's own rows, and a row both have is only merged where it's newer.
-      await Promise.all([this.take(peer.host, link, hello.project.upTo), mine ? undefined : this.give(peer.host, link)])
+      await Promise.all([this.take(peer.host, link, hello.project.upTo, mine ? undefined : (peer.login ?? '')), mine ? undefined : this.give(peer.host, link)])
       set({ state: 'same', project, lastSync: Date.now() }, link)
     } catch (err) {
       set({ state: 'same', project, ...(lastSync && { lastSync }), error: (err as Error).message }, link)
     }
   }
 
-  /** Every page of rows `host` got since it was last asked (none if it's got nothing since: `upTo`), merged here; the window is told once. */
-  private async take(host: string, { device, syncId }: Link, upTo = Infinity): Promise<void> {
+  /** Every page of rows `host` got since it was last asked (none if it's got nothing since: `upTo`), merged here (another person's, `from` their login, only as they may write); the window is told once. */
+  private async take(host: string, { device, syncId }: Link, upTo = Infinity, from?: string): Promise<void> {
     const { session } = this.o
     let merged = false
     try {
@@ -423,7 +435,7 @@ export class DeviceSync implements SyncRoutes {
         const page = SyncPage.parse(await this.ask(host, '/sync/changes', { syncId, since }))
         // The universe here changed while asking (another was opened): the rows aren't its.
         if (session.syncInfo()?.syncId !== syncId) return
-        merged = session.merge(page.rows) || merged
+        merged = session.merge(page.rows, from) || merged
         if (page.upTo !== since) session.setSeen(device, (since = page.upTo))
         if (!page.more) return
       }
@@ -440,6 +452,8 @@ export class DeviceSync implements SyncRoutes {
    */
   private async give(host: string, { device, syncId }: Link): Promise<void> {
     const { session } = this.o
+    // It said it doesn't take rows given (none says so yet): it asks for them.
+    if (this.contacts.get(host)?.can?.includes('push') === false) return
     for (let since = session.sent(device); this.gotSince(syncId, since); ) {
       const page = session.changesSince(since, device, PAGE)
       if (page.rows.length) {
@@ -482,20 +496,28 @@ export class DeviceSync implements SyncRoutes {
     return this.o.session.state()
   }
 
-  /** Says hello to a device: with who's here and where, to one that may hear it; to an older version (as it said last time), as it was asked before. */
+  /**
+   * Says hello to a device: with who's here and where, to one that may hear
+   * it and answers a visit (as its last hello said); to an older version
+   * (one from before saying what it answers turned it down, or one that said
+   * it doesn't), as it was asked before. What it answers is kept from each.
+   */
   private async hi(host: string, visit: boolean): Promise<Hello> {
     const contact = this.contact(host)
-    if (contact.older === undefined || Date.now() - contact.older >= OLDER_MS) {
+    const visits = contact.can ? contact.can.includes('visit') : contact.older === undefined || Date.now() - contact.older >= OLDER_MS
+    let hello: Hello | undefined
+    if (visits) {
       try {
-        const hello = Hello.parse(await this.ask(host, '/sync/hello', visit ? this.ownVisit() : {}))
+        hello = Hello.parse(await this.ask(host, '/sync/hello', visit ? this.ownVisit() : {}))
         contact.older = undefined
-        return hello
       } catch (err) {
         if (!isOlderVersion(err)) throw err
         contact.older = Date.now()
       }
     }
-    return Hello.parse(await this.ask(host, '/sync/hello'))
+    hello ??= Hello.parse(await this.ask(host, '/sync/hello'))
+    contact.can = hello.can
+    return hello
   }
 
   /** What this device's hello says of the universe open here and where its person is in it. */

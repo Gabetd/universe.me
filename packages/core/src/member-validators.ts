@@ -7,8 +7,9 @@ import type { Store } from './store'
 /** Checks a member: they belong to the universe itself, and once. */
 function checkMember(store: Store, m: Member, { verified }: Check<'member'>): void {
   if (!verified.has(m.ownerId) && liveNode(store, m.ownerId).kind !== 'universe') throw new CommandError('Members belong to the universe itself')
-  const twin = memberWithLogin(store.records('member').byOwner(m.ownerId), m.login)
-  if (twin && twin.id !== m.id) throw new CommandError(`${m.login} is already a member`)
+  const others = store.records('member').byOwner(m.ownerId).filter((o) => o.id !== m.id)
+  if (memberWithLogin(others, m.login)) throw new CommandError(`${m.login} is already a member`)
+  if (m.role === 'owner' && others.some((o) => o.role === 'owner')) throw new CommandError('A universe has one owner')
 }
 
 export const memberValidators = { member: checkMember }

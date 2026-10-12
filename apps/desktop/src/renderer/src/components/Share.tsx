@@ -1,4 +1,4 @@
-import { Login, memberWithLogin, type Member } from '@universe/core'
+import { Login, ROLE_LABELS, managesMembers, memberWithLogin, onlyViews, ownerOf, type Member, type MemberRole } from '@universe/core'
 import { useState, type CSSProperties, type FormEvent } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { ApiSettingsPatch, ApiStatus, Person, PersonIn, Where } from '../../../shared/api'
@@ -28,11 +28,20 @@ const close = () => useShareDialog.getState().set(false)
 
 /** The top bar's button that opens the Share dialog. */
 export function ShareButton() {
-  const shared = useUi((s) => s.timeline.members.length > 0)
+  const members = useUi((s) => s.timeline.members)
+  const me = useCollaboration((s) => s.me)
+  const viewing = !!me && onlyViews(members, me.login)
   return (
-    <button onClick={() => useShareDialog.getState().set(true)} title={shared ? 'Who this universe is shared with' : 'Share this universe with people on your tailnet'}>
-      👥 Share
-    </button>
+    <>
+      {viewing && (
+        <span className="badge view-only" title={`${ownerOf(members)?.name ?? 'Its owner'} shared this universe with you to look at`}>
+          View only
+        </span>
+      )}
+      <button onClick={() => useShareDialog.getState().set(true)} title={members.length ? 'Who this universe is shared with' : 'Share this universe with people on your tailnet'}>
+        👥 Share
+      </button>
+    </>
   )
 }
 
@@ -97,7 +106,7 @@ function Share() {
       <p className="muted small">
         Invite people by their Tailscale login. Their copy and yours keep each other up to date as you both work, directly over your tailnets (nothing in the cloud), and each of you sees who’s in and where.
       </p>
-      {on && me ? <Invite me={me} people={people} members={members} /> : <SharingOff status={status} set={set} />}
+      {!on || !me ? <SharingOff status={status} set={set} /> : managesMembers(members, me.login) ? <Invite me={me} people={people} members={members} /> : <NotOwner members={members} me={me} />}
       <Members members={members} here={here} me={me} />
       <ChangedAtOnce />
     </Modal>
@@ -132,9 +141,23 @@ function SharingOff({ status, set }: { status: ApiStatus | undefined; set(patch:
   )
 }
 
-/** Inviting someone: one of the people Tailscale knows in a click, or anyone by their login. */
+/** Why someone it's shared with can't invite people: only its owner can, and one who can only look changes nothing. */
+function NotOwner({ members, me }: { members: Member[]; me: Person }) {
+  const owner = ownerOf(members)?.name ?? 'its owner'
+  return (
+    <p className="small share-off" aria-label="Sharing status">
+      {onlyViews(members, me.login) ? `${owner} shared this universe with you to look at: you see their changes as they make them, but can’t change it.` : `Only ${owner}, who shares this universe, can invite people or remove them.`}
+    </p>
+  )
+}
+
+/** The roles someone can be invited with. */
+const INVITED_ROLES = ['editor', 'viewer'] as const
+
+/** Inviting someone, to edit or only look: one of the people Tailscale knows in a click, or anyone by their login. */
 function Invite({ me, people, members }: { me: Person; people: Person[]; members: Member[] }) {
   const [login, setLogin] = useState('')
+  const [role, setRole] = useState<(typeof INVITED_ROLES)[number]>('editor')
   const [error, setError] = useState<string>()
   const suggestions = people.filter((p) => !memberWithLogin(members, p.login))
 
@@ -144,7 +167,7 @@ function Invite({ me, people, members }: { me: Person; people: Person[]; members
     if (memberWithLogin(members, parsed.data)) return setError(`${parsed.data} is in already.`)
     const { project, execute } = useUi.getState()
     const name = person.name ?? people.find((p) => p.login === parsed.data)?.name
-    const done = await execute({ type: 'member.create', payload: { ownerId: project!.rootId, login: parsed.data, ...(name && { name }), invitedBy: me } })
+    const done = await execute({ type: 'member.create', payload: { ownerId: project!.rootId, login: parsed.data, ...(name && { name }), invitedBy: me, role } })
     if (done) {
       setLogin('')
       setError(undefined)
@@ -169,6 +192,13 @@ function Invite({ me, people, members }: { me: Person; people: Person[]; members
       )}
       <form className="share-invite-row" onSubmit={submit}>
         <input aria-label="Their tailnet login" placeholder="their tailnet login, as ana@example.com" value={login} onChange={(e) => setLogin(e.target.value)} />
+        <select aria-label="They can" value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
+          {INVITED_ROLES.map((r) => (
+            <option key={r} value={r}>
+              {ROLE_LABELS[r]}
+            </option>
+          ))}
+        </select>
         <button className="primary" type="submit" disabled={!login.trim()}>
           Invite
         </button>
@@ -193,9 +223,11 @@ function memberLine(member: Member, you: boolean, inNow: PersonIn | undefined, m
   return `${inNow.where ? `in now, on ${inNow.where.label}` : 'in now'}${invited}`
 }
 
-/** Who the universe is shared with, and who's in now: each removed with its button or its right-click menu (but you). */
+/** Who the universe is shared with, what each can do, and who's in now: for its owner, each one's role changed and each removed with its button or its right-click menu (but you). */
 function Members({ members, here, me }: { members: Member[]; here: PersonIn[]; me: Person | null }) {
   const execute = useUi((s) => s.execute)
+  const manages = !!me && managesMembers(members, me.login)
+  const setRole = (m: Member, role: MemberRole) => void execute({ type: 'member.update', payload: { id: m.id, patch: { role } } })
   return (
     <section className="share-people" aria-label="People">
       <h3>People</h3>
@@ -206,7 +238,7 @@ function Members({ members, here, me }: { members: Member[]; here: PersonIn[]; m
           {members.map((m) => {
             const you = m.login === me?.login
             return (
-              <li key={m.id} data-menu={you ? undefined : menuRef('member', m.id)}>
+              <li key={m.id} data-menu={you || !manages ? undefined : menuRef('member', m.id)}>
                 <span className="share-member">
                   <Avatar person={m} />
                   <span>
@@ -214,10 +246,21 @@ function Members({ members, here, me }: { members: Member[]; here: PersonIn[]; m
                     <span className="muted small share-member-where">{memberLine(m, you, here.find((p) => p.login === m.login), members)}</span>
                   </span>
                 </span>
-                {!you && (
-                  <button className="link small" aria-label={`Remove ${m.name}`} onClick={() => void execute({ type: 'member.delete', payload: { id: m.id } })}>
-                    Remove
-                  </button>
+                {manages && !you && m.role !== 'owner' ? (
+                  <span className="share-member-actions">
+                    <select className="small" aria-label={`What ${m.name} can do`} value={m.role} onChange={(e) => setRole(m, e.target.value as MemberRole)}>
+                      {INVITED_ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {ROLE_LABELS[r]}
+                        </option>
+                      ))}
+                    </select>
+                    <button className="link small" aria-label={`Remove ${m.name}`} onClick={() => void execute({ type: 'member.delete', payload: { id: m.id } })}>
+                      Remove
+                    </button>
+                  </span>
+                ) : (
+                  <span className="muted small">{ROLE_LABELS[m.role]}</span>
                 )}
               </li>
             )

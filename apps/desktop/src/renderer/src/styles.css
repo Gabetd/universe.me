@@ -3191,3 +3191,11 @@ button.small {
   overflow-wrap: anywhere;
   font-size: 12px;
 }
+.share-member-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.badge.view-only {
+  align-self: center;
+}

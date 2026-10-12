@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { buildSample, writePrivate } from '@universe/api'
-import { Command as CommandSchema, CommandError, DEVICE_ID, EMPTY_TIMELINE, checkSource, memoize, type Command, type Member, type CommandSource, type ExecuteResult, type SyncPage, type Target } from '@universe/core'
+import { Command as CommandSchema, CommandError, DEVICE_ID, EMPTY_TIMELINE, checkSource, memoize, refusal, rowsFrom, type Command, type Member, type CommandSource, type ExecuteResult, type SyncPage, type Target } from '@universe/core'
 import { Project } from '@universe/db'
 import type { AppState, ProposalSummary, WorldTerrain } from '../shared/api'
 
@@ -14,6 +14,12 @@ const MAX_PROPOSAL_CHARS = 50 * 1024 * 1024
 
 /** The logins of a universe's members, worked out once for each list of them. */
 const loginsOf = memoize((members: Member[]) => new Set(members.map((m) => m.login)))
+
+/** A row's key, as another device sent it ('' if it has none: the merge turns it down). */
+const keyOf = (row: unknown): string => {
+  const key = (row as { key?: unknown } | null)?.key
+  return typeof key === 'string' ? key : ''
+}
 
 /** Owns the currently open project (one per app instance for now) and the recent-files list. */
 export class Session {
@@ -27,6 +33,9 @@ export class Session {
 
   /** Told of every change made here (a command, undo or redo; not rows merged from another device). */
   onChange: (() => void) | undefined
+
+  /** Who's signed in to Tailscale here, if anyone: a universe shared with them to view can't be changed here, and only its owner changes who it's shared with (M20). */
+  whoAmI: () => string | undefined = () => undefined
 
   constructor(private readonly userDataDir: string) {
     this.device = loadDevice(join(userDataDir, 'device.json'))
@@ -94,10 +103,16 @@ export class Session {
     return this.require().changesSince(since, { from, limit })
   }
 
-  /** Rows from another device, checked and merged into the open universe; whether any came. */
-  merge(rows: readonly unknown[]): boolean {
-    if (!rows.length) return false
-    this.require().merge(rows)
+  /**
+   * Rows from another device, checked and merged into the open universe;
+   * whether any came. From another person's device (`from`, their login),
+   * only those they may write: none if they can only look, and changes to
+   * who it's shared with only from its owner.
+   */
+  merge(rows: readonly unknown[], from?: string): boolean {
+    const taken = from === undefined ? rows : rowsFrom(this.members(), from, rows.map((row, i) => ({ key: keyOf(row), i }))).map(({ i }) => rows[i])
+    if (!taken.length) return false
+    this.require().merge(taken)
     return true
   }
 
@@ -151,13 +166,23 @@ export class Session {
 
   /** Applies a command and gives back nothing: for a plugin's many changes, the state is worked out once they're done. */
   apply(command: unknown, source: CommandSource): void {
+    this.mayChange(command)
     this.require().bus.execute(command, source)
   }
 
   /** Applies a command. An AI client's doesn't move the selection: the user may be in the middle of something. */
   execute(command: unknown, source: CommandSource = 'user'): AppState {
+    this.mayChange(command)
     const result = this.require().bus.execute(command, source)
     return source === 'user' ? this.applied(result) : this.state()
+  }
+
+  /** Turns down a change the person signed in here can't make to a universe shared with them (`refusal`). */
+  private mayChange(command: unknown): void {
+    const login = this.whoAmI()
+    const parsed = CommandSchema.safeParse(command)
+    const why = login && parsed.success ? refusal(this.members(), login, parsed.data) : undefined
+    if (why) throw new CommandError(why)
   }
 
   /** A plugin's latest `n` changes made one step, undone and redone together: what it did in one run (only its own, should anything else have come between). */

@@ -1,24 +1,25 @@
 import { z } from 'zod'
 import { batchOf } from './command-kit'
 import type { HandlerMap } from './commands'
-import { Login, Member, memberWithLogin, personOf } from './members'
+import { Login, Member, MemberRole, managesMembers, memberWithLogin, onlyViews, ownerOf, personOf, type Member as MemberRecord } from './members'
 import { NewId, create, recordCrud } from './record-kit'
 import { Id, Name, type CommandSource } from './schema'
 
 /** Inviting people to a universe and removing them (members.ts), through the bus like every record. */
 
-const members = recordCrud('member', Member.pick({ name: true }))
+const members = recordCrud('member', Member.pick({ name: true, role: true }))
 
 /** Someone by their login, with what to call them if it's known. */
 const Person = z.object({ login: Login, name: Name.optional() })
 
 export const MEMBER_COMMANDS = [
   /**
-   * Someone the universe (its root node, `ownerId`) is shared with. The
-   * person inviting (`invitedBy`) is made a member too if they aren't one
-   * yet, so the invitee's devices answer theirs; undone together.
+   * Someone the universe (its root node, `ownerId`) is shared with, to edit
+   * it or only look (`role`). The person inviting (`invitedBy`) is made a
+   * member too if they aren't one yet, so the invitee's devices answer
+   * theirs, and its owner if it has none yet; undone together.
    */
-  z.object({ type: z.literal('member.create'), payload: Person.extend({ ...NewId, ownerId: Id, invitedBy: Person.optional() }) }),
+  z.object({ type: z.literal('member.create'), payload: Person.extend({ ...NewId, ownerId: Id, invitedBy: Person.optional(), role: MemberRole.exclude(['owner']).optional() }) }),
   ...members.commands
 ] as const
 
@@ -41,12 +42,27 @@ export function changesMembers(command: { type: string; payload: unknown }): boo
   return refs.some((ref) => ref.kind === 'member')
 }
 
+/** Why someone (by their tailnet login) can't send a command to a universe with these members, if they can't: one who can only look changes nothing, and only its owner changes who it's shared with. */
+export function refusal(members: readonly MemberRecord[], login: string, command: { type: string; payload: unknown }): string | undefined {
+  const owner = ownerOf(members)
+  if (onlyViews(members, login)) return `${owner?.name ?? 'Its owner'} shared this universe with you to look at, not to change.`
+  if (changesMembers(command) && !managesMembers(members, login)) return `Only ${owner?.name ?? 'its owner'}, who shares this universe, can change who it’s shared with.`
+  return undefined
+}
+
 export const memberHandlers: HandlerMap<MemberCommand> = {
-  'member.create': (store, { id, ownerId, login, name, invitedBy }, ctx) => {
-    const made = create(store, 'member', ctx, ownerId, id, { ...personOf(login, name), invitedBy: invitedBy?.login ?? null })
-    if (!invitedBy || memberWithLogin(store.records('member').byOwner(ownerId), invitedBy.login)) return made
-    const inviter = create(store, 'member', ctx, ownerId, undefined, { ...personOf(invitedBy.login, invitedBy.name), invitedBy: null }, [ownerId])
-    return { ...made, inverse: batchOf([inviter.inverse, made.inverse]) }
+  'member.create': (store, { id, ownerId, login, name, invitedBy, role = 'editor' }, ctx, run) => {
+    const all = store.records('member').byOwner(ownerId)
+    const made = create(store, 'member', ctx, ownerId, id, { ...personOf(login, name), invitedBy: invitedBy?.login ?? null, role })
+    if (!invitedBy) return made
+    const inviter = memberWithLogin(all, invitedBy.login)
+    const owns = ownerOf(all) ? undefined : 'owner'
+    if (inviter && !owns) return made
+    // The person inviting is listed (as its owner, if it has none), or made its owner.
+    const listed = inviter
+      ? run({ type: 'member.update', payload: { id: inviter.id, patch: { role: 'owner' } } })
+      : create(store, 'member', ctx, ownerId, undefined, { ...personOf(invitedBy.login, invitedBy.name), invitedBy: null, role: owns ?? 'editor' }, [ownerId])
+    return { ...made, inverse: batchOf([listed.inverse, made.inverse]) }
   },
   'member.update': members.update,
   'member.delete': members.delete
