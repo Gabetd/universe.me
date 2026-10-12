@@ -1403,7 +1403,11 @@ input[type='color'] {
 .canvas-link.selected path:not(.canvas-link-hit) {
   stroke-width: 3.5;
 }
-.canvas-link .canvas-link-hit {
+.event-link-hits {
+  /* Over the cards (a selected one is lifted to 1), under the selection's bar. */
+  z-index: 3;
+}
+.canvas-link-hit {
   stroke: transparent;
   stroke-width: 12;
   fill: none;

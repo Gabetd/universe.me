@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { align, arrowHead, bounds, connectionCurve, curveAt, facingSide, freeSpot, nearestSide, snapBox } from './board'
+import { align, arrowHead, bounds, connectionCurve, curveAt, curveLength, facingSide, freeSpot, nearestSide, pickedPart, snapBox, subCurve } from './board'
 
 const a = { x: 0, y: 0, w: 100, h: 50 }
 const b = { x: 300, y: 0, w: 100, h: 50 }
@@ -41,5 +41,14 @@ describe('the canvas’s geometry', () => {
     expect(align(boxes, 'right').get('c')).toEqual({ x: 80, y: 200 })
     expect(align(boxes, 'center').get('c')).toEqual({ x: 40, y: 200 })
     expect(align(boxes, 'bottom').get('a')).toEqual({ x: 0, y: 170 })
+  })
+
+  it('picks a line all along but near its ends, where the cards’ handles are', () => {
+    const line = { from: { x: 0, y: 0 }, c1: { x: 100, y: 0 }, c2: { x: 200, y: 0 }, to: { x: 300, y: 0 } }
+    expect(curveLength(line)).toBeCloseTo(300)
+    const part = pickedPart(line, 15)
+    expect(part.from.x).toBeCloseTo(15)
+    expect(part.to.x).toBeCloseTo(285)
+    expect(curveAt(subCurve(line, 0.25, 0.75), 0.5).x).toBeCloseTo(150)
   })
 })

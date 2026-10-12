@@ -8,7 +8,7 @@ import { usePlayhead, useTimelineView } from '../timeline/timelineStore'
 import { nodeDepth, project, type NodeDepth } from './canvasDepth'
 import { goToEvent } from './goToEvent'
 import { menuRef, useContextMenu, type MenuItem } from '../contextMenu'
-import { align, arrowHead, bounds, boxBetween, connectionCurve, curveAt, curvePath, freeSpot, nearestSide, overlaps, SNAP_PX, snapBox, snapToGrid, type Box, type Curve, type Point } from './canvas/board'
+import { align, arrowHead, bounds, boxBetween, connectionCurve, curveAt, curvePath, freeSpot, nearestSide, overlaps, pickedPart, SNAP_PX, snapBox, snapToGrid, type Box, type Curve, type Point } from './canvas/board'
 import { addCard, addCardCommand, CLIPBOARD_TYPE, copyOf, deleteSelected, lastCopy, paste, readPicture, remember, runCommands, tell, toEvent, type Copied, type NewCard, type Selected } from './canvas/actions'
 import { AddPalette, BoardControls, menuItems, SelectionBar, type SelectionActions } from './canvas/CanvasBars'
 import { CardBody, GroupLabel, InlineEditor } from './canvas/CardView'
@@ -567,13 +567,13 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
   }
   const drawn = connections.flatMap((c) => {
     const curve = curveOf(c.fromId, c.toId, c.fromSide, c.toSide)
-    return curve ? [{ c, curve }] : []
+    return curve ? [{ c, curve, d: curvePath(curve), hit: curvePath(pickedPart(curve, HANDLE_GAP)) }] : []
   })
   const links = own.links.flatMap((l) => {
     const curve = curveOf(l.fromId, l.toId, null, null)
     if (!curve) return []
     const depth = Math.max(placed.get(l.fromId)!.depth?.depth ?? 0, placed.get(l.toId)!.depth?.depth ?? 0)
-    return [{ l, curve, depth }]
+    return [{ l, curve, d: curvePath(curve), hit: curvePath(pickedPart(curve, HANDLE_GAP)), depth }]
   })
 
   // Groups at the back, the biggest first; then events (the farthest back first, so nearer ones are drawn and clicked over them) and cards.
@@ -643,29 +643,19 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
         {ordered.filter((i) => i.card?.kind === 'group').map((item) => renderItem(item))}
 
         <svg className="event-links" width={size.w} height={size.h}>
-          {links.map(({ l, curve, depth }) => {
+          {links.map(({ l, curve, d, depth }) => {
             const style = LINK_STYLE[l.type]
-            const d = curvePath(curve)
             return (
               <g key={l.id} className={`canvas-link${edge?.id === l.id ? ' selected' : ''}`} data-link-id={l.id} style={{ opacity: 1 - 0.4 * depth }}>
-                <path d={d} className="canvas-link-hit" data-menu={menuRef('link', l.id)} onPointerDown={(e) => (e.stopPropagation(), selectEdge({ kind: 'link', id: l.id }))} />
                 <path d={d} stroke={style.color} strokeDasharray={style.dash} fill="none" />
                 {style.arrow && <polygon points={arrowHead(curve, true, 10)} fill={style.color} />}
               </g>
             )
           })}
-          {drawn.map(({ c, curve }) => {
+          {drawn.map(({ c, curve, d }) => {
             const color = canvasColor(c.color) ?? '#aab4d0'
-            const d = curvePath(curve)
             return (
-              <g key={c.id} className={`canvas-link canvas-connection${edge?.id === c.id ? ' selected' : ''}`} data-connection-id={c.id}>
-                <path
-                  d={d}
-                  className="canvas-link-hit"
-                  aria-label={c.label || 'Connection'}
-                  onPointerDown={(e) => (e.stopPropagation(), boardRef.current!.focus({ preventScroll: true }), selectEdge({ kind: 'connection', id: c.id }))}
-                  onDoubleClick={(e) => (e.stopPropagation(), !readOnly && setEditing(`label:${c.id}`))}
-                />
+              <g key={c.id} className={`canvas-link canvas-connection${edge?.id === c.id ? ' selected' : ''}`}>
                 <path d={d} stroke={color} fill="none" />
                 {(c.arrows === 'end' || c.arrows === 'both') && <polygon points={arrowHead(curve, true, 12)} fill={color} />}
                 {(c.arrows === 'start' || c.arrows === 'both') && <polygon points={arrowHead(curve, false, 12)} fill={color} />}
@@ -710,6 +700,24 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
         })}
 
         {ordered.filter((i) => i.card?.kind !== 'group').map((item) => renderItem(item))}
+
+        {/* Where links and connections are picked: above the cards, so a line is picked wherever it runs under one, but near its ends, where the cards' handles are. */}
+        <svg className="event-links event-link-hits" width={size.w} height={size.h}>
+          {links.map(({ l, hit }) => (
+            <path key={l.id} d={hit} className="canvas-link-hit" data-link-id={l.id} data-menu={menuRef('link', l.id)} onPointerDown={(e) => (e.stopPropagation(), selectEdge({ kind: 'link', id: l.id }))} />
+          ))}
+          {drawn.map(({ c, hit }) => (
+            <path
+              key={c.id}
+              d={hit}
+              className="canvas-link-hit"
+              data-connection-id={c.id}
+              aria-label={c.label || 'Connection'}
+              onPointerDown={(e) => (e.stopPropagation(), boardRef.current!.focus({ preventScroll: true }), selectEdge({ kind: 'connection', id: c.id }))}
+              onDoubleClick={(e) => (e.stopPropagation(), !readOnly && setEditing(`label:${c.id}`))}
+            />
+          ))}
+        </svg>
 
         {marquee && <div className="canvas-marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />}
         {barAt && !drag && !editing && !capturing && Object.keys(actions).length > 0 && <SelectionBar at={barAt} actions={actions} />}
@@ -821,6 +829,9 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
     )
   }
 }
+
+/** How far from each end a line isn't picked, in px: a card's handles are there. */
+const HANDLE_GAP = 16
 
 /** How much a group's label takes above it at 100%. */
 const GROUP_LABEL_H = 30

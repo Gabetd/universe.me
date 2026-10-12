@@ -99,6 +99,39 @@ export function curveAt({ from, c1, c2, to }: Curve, t: number): Point {
   return { x: a * from.x + b * c1.x + c * c2.x + d * to.x, y: a * from.y + b * c1.y + c * c2.y + d * to.y }
 }
 
+/** The part of a curve from `t0` to `t1` (de Casteljau): a curve of its own. */
+export function subCurve(curve: Curve, t0: number, t1: number): Curve {
+  const split = ({ from, c1, c2, to }: Curve, t: number): [Curve, Curve] => {
+    const mix = (a: Point, b: Point): Point => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })
+    const [ab, bc, cd] = [mix(from, c1), mix(c1, c2), mix(c2, to)]
+    const [abc, bcd] = [mix(ab, bc), mix(bc, cd)]
+    const mid = mix(abc, bcd)
+    return [
+      { from, c1: ab, c2: abc, to: mid },
+      { from: mid, c1: bcd, c2: cd, to }
+    ]
+  }
+  const [, after] = split(curve, t0)
+  return split(after, t0 >= 1 ? 0 : (t1 - t0) / (1 - t0))[0]
+}
+
+/** About how long a curve is: the sum of 16 straight steps along it. */
+export function curveLength(curve: Curve): number {
+  let length = 0
+  for (let k = 1, last = curve.from; k <= 16; k++) {
+    const p = curveAt(curve, k / 16)
+    length += Math.hypot(p.x - last.x, p.y - last.y)
+    last = p
+  }
+  return length
+}
+
+/** Where a line is picked: all of it but `gap` px at each end, where the cards' handles are (a line too short for that, its middle). */
+export function pickedPart(curve: Curve, gap: number): Curve {
+  const t = Math.min(0.4, gap / Math.max(1, curveLength(curve)))
+  return subCurve(curve, t, 1 - t)
+}
+
 /** An arrowhead at the curve's end (`atEnd`) or start, `size` long, as an SVG polygon's points. */
 export function arrowHead(curve: Curve, atEnd: boolean, size: number): string {
   const tip = atEnd ? curve.to : curve.from

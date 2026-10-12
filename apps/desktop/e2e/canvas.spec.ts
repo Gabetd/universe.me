@@ -162,9 +162,16 @@ test('the canvas as Obsidian has it: cards of every kind, connections, selection
   await pickCard('text')
   await dragPoints(page, center((await card('text').locator('.side-handle.right').boundingBox())!), center(elementBox))
   await expect.poll(async () => (await state(page, 'timeline')).connections.length).toBe(1)
-  // Picked by its line (wherever the cards have put it, it may run under one).
-  const line = page.locator('.canvas-connection .canvas-link-hit')
-  const pick = () => line.dispatchEvent('pointerdown', { button: 0, bubbles: true })
+  // Picked by a click on its line, even where it runs under a card (the lines are picked above the cards).
+  const line = page.locator('[data-connection-id]')
+  const pick = async () => {
+    const at = await line.evaluate((path: SVGPathElement) => {
+      const p = path.getPointAtLength(path.getTotalLength() / 2)
+      const box = path.ownerSVGElement!.getBoundingClientRect()
+      return { x: box.left + p.x, y: box.top + p.y }
+    })
+    await page.mouse.click(at.x, at.y)
+  }
   await pick()
   await bar.getByRole('button', { name: 'Edit' }).click()
   await page.getByLabel('Connection label').fill('foretells')
