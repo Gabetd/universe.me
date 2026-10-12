@@ -1,4 +1,4 @@
-import { TERRAIN_RES, findBlueprint, insidePolygon, type Blueprint, type BlueprintPart, type LatLon } from '@universe/core'
+import { TERRAIN_RES, findBlueprint, insidePolygon, type Blueprint, type BlueprintPart, type LatLon, type MapPin } from '@universe/core'
 import {
   CHUNK_M,
   CHUNK_SEGMENTS,
@@ -35,6 +35,8 @@ import { useByValue } from '../useByValue'
 import { useEditor } from './editorStore'
 import { noRaycast, toolPress, usePick, usePickInstances } from './pick'
 import { viewLabels, type ViewLabel } from './labels'
+import { selectMapPin, useMapPins } from './useMapPins'
+import { openSurfaceMenu } from '../contextMenu'
 import { NEAR_ONLY, instanceTint, plantGeometry } from './plants'
 import { WEATHERED_COLOR, blueprintExtent, blueprintMassing, slumpOf, standingParts, weatheringOf } from './structureLook'
 import { BlueprintBatch, BlueprintParts } from './StructureMesh'
@@ -152,7 +154,8 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
   }, [origin, radiusKm, seed, model, change, sites])
 
   const { structures, characters, pins, regions, worldId } = props
-  const items = useMemo(() => groundLabels(structures, characters, pins, ground), [structures, characters, pins, ground])
+  const mapPins = useMapPins(worldId)
+  const items = useMemo(() => groundLabels(structures, characters, pins, mapPins, ground), [structures, characters, pins, mapPins, ground])
   // The regions the middle of the view lies in: their own themes show here.
   const here = useByValue(useMemo(() => regions.flatMap((r) => (insidePolygon(center, r.points) ? [r.id] : [])), [regions, center]))
   // One material for every chunk's ground (its colours are the chunk's), and one for the distant ground, tinted by the theme in force.
@@ -195,23 +198,29 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
       {props.pins.map((p, i) => (
         <Beacon key={`${p.eventId}:${i}`} id={p.eventId} at={p} color={p.color} lit={p.active || p.selected} ground={ground} onClick={props.onPinClick} />
       ))}
+      {mapPins.pins.map((p) => (
+        <Beacon key={p.id} id={p.id} kind="mapPin" at={p} color={p.color} lit ground={ground} selected={p.id === mapPins.selectedId} onClick={selectMapPin} />
+      ))}
     </SurfaceCanvas>
   )
 })
 
 /** Labels over things on the ground, hidden as far out as things are drawn. */
-function groundLabels(structures: PlacedStructure[], characters: PlacedCharacter[], pins: EventPin[], ground: Ground): ViewLabel[] {
+function groundLabels(structures: PlacedStructure[], characters: PlacedCharacter[], pins: EventPin[], mapPins: { pins: MapPin[]; selectedId?: string }, ground: Ground): ViewLabel[] {
   const at = (p: LatLon, lift: number) => {
     const [x, z] = toLocal(ground.frame, p)
     const point: [number, number, number] = [x, ground.standAt(x, z) + lift, z]
     const v = new THREE.Vector3(...point)
     return (camera: THREE.Camera) => (camera.position.distanceTo(v) < DRAW_M ? point : null)
   }
-  return viewLabels(structures, characters, pins, {
-    structure: (s) => at(s.structure, blueprintExtent(s.blueprint) * s.structure.scale * 0.6 + 4),
-    character: (c) => at(c.place, 2.4),
-    pin: (p) => at(p, 46)
-  })
+  return [
+    ...viewLabels(structures, characters, pins, {
+      structure: (s) => at(s.structure, blueprintExtent(s.blueprint) * s.structure.scale * 0.6 + 4),
+      character: (c) => at(c.place, 2.4),
+      pin: (p) => at(p, 46)
+    }),
+    ...mapPins.pins.map((p) => ({ key: `mapPin:${p.id}`, text: p.name, selected: p.id === mapPins.selectedId, at: at(p, 46) }))
+  ]
 }
 
 /**
@@ -506,6 +515,7 @@ function Chunks(
             footprints={footprints}
             onPointerDown={props.onPointerDown}
             onPointerMove={props.onPointerMove}
+            worldId={props.worldId}
           />
         )
       })}
@@ -562,8 +572,10 @@ const ChunkView = memo(function ChunkView({
   plants,
   footprints,
   onPointerDown,
-  onPointerMove
+  onPointerMove,
+  worldId
 }: {
+  worldId: string
   chunk: GroundChunk
   ring: number
   ground: Ground
@@ -594,11 +606,16 @@ const ChunkView = memo(function ChunkView({
       const p = fromLocal(frame, e.point.x, e.point.z)
       return latLonToDir(p.lat, p.lon)
     }
-    return { down: toolPress(dir, onPointerDown), move: (e: ThreeEvent<PointerEvent>) => onPointerMove(dir(e)) }
-  }, [frame, onPointerDown, onPointerMove])
+    // A right-click on the ground (not on a thing of its own, which gives its own menu): a pin can be put there.
+    const menu = (e: ThreeEvent<MouseEvent>) => {
+      e.nativeEvent.preventDefault()
+      openSurfaceMenu(worldId, fromLocal(frame, e.point.x, e.point.z), e.nativeEvent.clientX, e.nativeEvent.clientY)
+    }
+    return { down: toolPress(dir, onPointerDown), move: (e: ThreeEvent<PointerEvent>) => onPointerMove(dir(e)), menu }
+  }, [frame, onPointerDown, onPointerMove, worldId])
   return (
     <group position={[x, 0, z]} scale={[stretch, 1, 1]}>
-      <mesh geometry={geometry} material={material} onPointerDown={handlers.down} onPointerMove={handlers.move} />
+      <mesh geometry={geometry} material={material} onPointerDown={handlers.down} onPointerMove={handlers.move} onContextMenu={handlers.menu} />
       {Object.entries(chunk.plants).map(([plant, list]) =>
         ring > 0 && NEAR_ONLY.includes(plant as Plant) ? null : (
           <PlantInstances key={plant} plant={plant as Plant} list={list} share={RING_SHARE[ring] ?? 0} plants={plants} footprints={local} level={level} />
@@ -865,12 +882,31 @@ function Figure({ id, at, color, selected, ground, onClick }: { id: string; at: 
 const POST = new THREE.CylinderGeometry(0.8, 0.8, 40, 8)
 
 /** Where an event happened: a tall coloured post, seen from afar. */
-function Beacon({ id, at, color, lit, ground, onClick }: { id: string; at: LatLon; color: string; lit: boolean; ground: Ground; onClick(id: string): void }) {
-  const pick = usePick(onClick, id, 'event')
+function Beacon({
+  id,
+  kind = 'event',
+  at,
+  color,
+  lit,
+  selected = false,
+  ground,
+  onClick
+}: {
+  id: string
+  /** An event's place, or a pin of the user's. */
+  kind?: 'event' | 'mapPin'
+  at: LatLon
+  color: string
+  lit: boolean
+  selected?: boolean
+  ground: Ground
+  onClick(id: string): void
+}) {
+  const pick = usePick(onClick, id, kind)
   const [x, z] = toLocal(ground.frame, at)
   if (!inView(x, z)) return null
   return (
-    <mesh position={[x, ground.standAt(x, z) + 20, z]} geometry={POST} {...pick}>
+    <mesh position={[x, ground.standAt(x, z) + 20, z]} geometry={POST} scale={selected ? 1.4 : 1} {...pick}>
       <meshBasicMaterial color={color} transparent opacity={lit ? 0.95 : 0.5} />
     </mesh>
   )

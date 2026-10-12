@@ -1,10 +1,12 @@
-import { CUBE_FACES, TERRAIN_RES, type LatLon } from '@universe/core'
+import { CUBE_FACES, TERRAIN_RES, type LatLon, type MapPin } from '@universe/core'
 import { dirToLatLon, faceToDir, latLonToDir, renderFaceTexture, type TerrainModel, type Vec3 } from '@universe/procgen'
 import { Line, Stars } from '@react-three/drei'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useUi } from '../store'
+import { openSurfaceMenu, type ElementKind } from '../contextMenu'
+import { selectMapPin, useMapPins } from './useMapPins'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor, type EditorTool } from './editorStore'
 import { noRaycast, toolPress, usePick } from './pick'
@@ -19,17 +21,21 @@ import { useViewTheme } from './useThemeLook'
 import { useWater } from './useWater'
 import { RIVER_COLOR, riverWidth, smoothPath } from './waterLook'
 import { firstLook } from './firstLook'
+import { TURN_SPEED, turnSpeed } from './turnSpeed'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
 
 /** Labels just above the surface, hidden on the far side of the planet. */
-function surfaceLabels(pins: EventPin[], structures: PlacedStructure[], characters: PlacedCharacter[], model: TerrainModel, scale: number): ViewLabel[] {
+function surfaceLabels(pins: EventPin[], structures: PlacedStructure[], characters: PlacedCharacter[], mapPins: { pins: MapPin[]; selectedId?: string }, model: TerrainModel, scale: number): ViewLabel[] {
   const at = (place: LatLon) => {
     const p = new THREE.Vector3(...surfacePoint(model, latLonToDir(place.lat, place.lon), scale, 0.006))
     return (camera: THREE.Camera): [number, number, number] | null => (p.dot(camera.position) > p.lengthSq() ? p.toArray() : null)
   }
-  return viewLabels(structures, characters, pins, { structure: (s) => at(s.structure), character: (c) => at(c.place), pin: at })
+  return [
+    ...viewLabels(structures, characters, pins, { structure: (s) => at(s.structure), character: (c) => at(c.place), pin: at }),
+    ...mapPins.pins.map((p) => ({ key: `mapPin:${p.id}`, text: p.name, selected: p.id === mapPins.selectedId, at: at(p) }))
+  ]
 }
 
 /** Vertices per face edge. Heights are sampled from the 256² grid, so 128 keeps the mesh light. */
@@ -49,16 +55,17 @@ function surfacePoint(model: TerrainModel, dir: Vec3, scale: number, lift: numbe
 
 const CAMERA = { position: [0, 0.6, 3] as [number, number, number], fov: 45, near: 0.01, far: 200 }
 // About fifteen notches of the wheel from the farthest to the closest, so going between the planet in its orbit and the ground is a few turns, not dozens.
-const CONTROLS = { enablePan: false, minDistance: MIN_DISTANCE, maxDistance: MAX_DISTANCE, rotateSpeed: 0.5, zoomSpeed: 2.5 }
+const CONTROLS = { enablePan: false, minDistance: MIN_DISTANCE, maxDistance: MAX_DISTANCE, rotateSpeed: TURN_SPEED, zoomSpeed: 2.5 }
 
 /** The planet from orbit. Memoized, like the other views: the world editor re-renders for things they don't show. */
 export const GlobeView = memo(function GlobeView(props: SurfaceViewProps) {
   const exaggeration = useEditor((s) => s.exaggeration)
   const scale = exaggeration / (props.model.settings.radiusKm * 1000)
+  const mapPins = useMapPins(props.worldId)
   const items = useMemo(
-    () => surfaceLabels(props.pins, props.structures, props.characters, props.model, scale),
+    () => surfaceLabels(props.pins, props.structures, props.characters, mapPins, props.model, scale),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` stands for the terrain heights
-    [props.pins, props.structures, props.characters, props.model, scale, props.change]
+    [props.pins, props.structures, props.characters, mapPins, props.model, scale, props.change]
   )
   return (
     <SurfaceCanvas testId="globe" camera={CAMERA} navigate={THREE.MOUSE.ROTATE} controls={CONTROLS} labels={items}>
@@ -68,6 +75,7 @@ export const GlobeView = memo(function GlobeView(props: SurfaceViewProps) {
       <FocusOn focus={props.focus} />
       <StartOver worldId={props.worldId} />
       <ZoomToGround />
+      <TurnByZoom />
     </SurfaceCanvas>
   )
 })
@@ -133,12 +141,13 @@ function Planet({
   const radiusM = model.settings.radiusKm * 1000
   const scale = exaggeration / radiusM
   const seaRadius = 1 + model.settings.seaLevel * scale
+  const mapPins = useMapPins(worldId)
   // Where each thing stands, worked out again only when they move or the terrain does.
   const placed = useMemo(() => {
     const at = (p: LatLon, lift: number) => surfacePoint(model, latLonToDir(p.lat, p.lon), scale, lift)
-    return { pins: pins.map((p) => at(p, 0.006)), structures: structures.map((p) => at(p.structure, 0)), characters: characters.map((c) => at(c.place, 0)) }
+    return { pins: pins.map((p) => at(p, 0.006)), structures: structures.map((p) => at(p.structure, 0)), characters: characters.map((c) => at(c.place, 0)), mapPins: mapPins.pins.map((p) => at(p, 0)) }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` stands for the terrain heights
-  }, [pins, structures, characters, model, scale, change])
+  }, [pins, structures, characters, mapPins.pins, model, scale, change])
 
   useEffect(() => {
     if (colorFaces(model, change, seen.current.colored)) invalidate()
@@ -176,6 +185,14 @@ function Planet({
     [moveCursor, onPointerMove]
   )
   const out = useCallback(() => moveCursor(null), [moveCursor])
+  // A right-click on the land (not on a thing of its own, which gives its own menu): a pin can be put there.
+  const menu = useCallback(
+    (e: ThreeEvent<MouseEvent>) => {
+      e.nativeEvent.preventDefault()
+      openSurfaceMenu(worldId, dirToLatLon(...pointDir(e)), e.nativeEvent.clientX, e.nativeEvent.clientY)
+    },
+    [worldId]
+  )
 
   useFrame(() => {
     const c = cursor.current
@@ -205,6 +222,7 @@ function Planet({
           onPointerMove={move}
           onPointerOut={out}
           onDoubleClick={onDoubleClick}
+          onContextMenu={menu}
         />
       ))}
       <PlanetLook worldId={worldId} seaRadius={seaRadius} water={model.settings.terrain.waterColor} land={land} />
@@ -231,6 +249,9 @@ function Planet({
       ))}
       {characters.map((c, i) => (
         <SurfacePin key={c.character.id} id={c.character.id} at={placed.characters[i]!} color={c.character.color} figure selected={c.selected} onClick={onCharacterClick} />
+      ))}
+      {mapPins.pins.map((p, i) => (
+        <SurfacePin key={p.id} id={p.id} kind="mapPin" at={placed.mapPins[i]!} color={p.color} selected={p.id === mapPins.selectedId} onClick={selectMapPin} />
       ))}
     </group>
   )
@@ -379,7 +400,7 @@ const PIN_STEM = new THREE.ConeGeometry(0.75, 2.6, 12).rotateX(Math.PI).translat
 const FIGURE = new THREE.CapsuleGeometry(0.75, 1.6, 4, 12).translate(0, 1.55, 0)
 
 /**
- * A structure or a character on the globe. Buildings are far too small to see
+ * A structure, a character or a pin of the user's on the globe. Buildings are far too small to see
  * from orbit, so each is a pin (a character a little figure) of a constant
  * size on screen; zooming all the way in shows the real thing.
  */
@@ -391,9 +412,12 @@ function SurfacePin({
   selected,
   hit,
   figure = false,
+  kind = figure ? 'character' : 'structure',
   onClick
 }: {
   id: string
+  /** What it is, for its right-click menu: a structure, a character (`figure`) or a pin of the user's. */
+  kind?: ElementKind
   at: [number, number, number]
   color: string
   faded?: boolean
@@ -403,7 +427,7 @@ function SurfacePin({
   onClick(id: string): void
 }) {
   const group = useRef<THREE.Group>(null)
-  const pick = usePick(onClick, id, figure ? 'character' : 'structure')
+  const pick = usePick(onClick, id, kind)
   const [x, y, z] = at
   const quaternion = useMemo(() => new THREE.Quaternion().setFromUnitVectors(UP, new THREE.Vector3(x, y, z).normalize()), [x, y, z])
   useFrame(({ camera }) => {
@@ -481,6 +505,15 @@ function ZoomToGround() {
     gl.domElement.addEventListener('wheel', onWheel, { passive: true })
     return () => gl.domElement.removeEventListener('wheel', onWheel)
   }, [camera, gl])
+  return null
+}
+
+/** Keeps a drag's turn in step with the zoom: the closer the camera, the less a drag turns the globe (`turnSpeed`). */
+function TurnByZoom() {
+  // Each frame the view draws (a turn or a zoom draws one), before the controls take the next drag.
+  useFrame(({ camera, controls }) => {
+    if (controls) (controls as unknown as { rotateSpeed: number }).rotateSpeed = turnSpeed(camera.position.length())
+  })
   return null
 }
 

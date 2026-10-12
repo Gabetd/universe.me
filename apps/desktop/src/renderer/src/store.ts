@@ -32,7 +32,7 @@ interface UiState extends AppState {
 }
 
 /** Timeline records with an inspector panel of their own: what a timeline selection can be. */
-const PANEL_KINDS = ['event', 'era', 'group', 'link', 'theme', 'themeSpan'] as const
+const PANEL_KINDS = ['event', 'era', 'group', 'link', 'theme', 'themeSpan', 'mapPin'] as const
 
 export interface TimelineSelection {
   kind: (typeof PANEL_KINDS)[number]

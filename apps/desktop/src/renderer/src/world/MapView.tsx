@@ -4,6 +4,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { EdgePush, zoomOut } from '../components/zoom'
 import { distanceToSegment } from '../components/canvasDraw'
 import { useUi } from '../store'
+import { selectMapPin, useMapPins } from './useMapPins'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor } from './editorStore'
 import { showsLabel } from './labels'
@@ -14,7 +15,7 @@ import { useRegionViewThemes, useViewTheme } from './useThemeLook'
 import { useWater } from './useWater'
 import { RIVER_COLOR, riverWidth, smoothPath } from './waterLook'
 import type { SurfaceViewProps, TerrainChange } from './useTerrain'
-import { openElementMenu, useContextMenu, type ElementRef } from '../contextMenu'
+import { openElementMenu, openSurfaceMenu, type ElementRef } from '../contextMenu'
 
 const W = 1024
 const H = 512
@@ -31,6 +32,37 @@ interface View {
 function toMap(p: LatLon, refX?: number): [number, number] {
   const [x, y] = latLonToPixel(p.lat, p.lon, W, H)
   return [refX === undefined ? x : x + Math.round((refX - x) / W) * W, y]
+}
+
+/** A pin's head, in screen pixels: how high above its point, and how big. */
+const PIN_HEAD_PX = 14
+const PIN_HEAD_R = 6
+
+/** A pin on the map: a head on a stem standing on its point, with its name beside it (bigger, outlined in white, while it's selected). */
+function drawMapPin(c: CanvasRenderingContext2D, pin: { name: string; color: string }, [x, y]: [number, number], shift: number, scale: number, selected: boolean): void {
+  const k = (selected ? 1.25 : 1) / scale
+  const [px, top] = [x + shift, y - PIN_HEAD_PX * k]
+  c.beginPath()
+  c.moveTo(px, y)
+  c.lineTo(px - PIN_HEAD_R * 0.7 * k, top + PIN_HEAD_R * 0.5 * k)
+  c.arc(px, top, PIN_HEAD_R * k, Math.PI * 0.8, Math.PI * 0.2)
+  c.closePath()
+  c.fillStyle = pin.color
+  c.fill()
+  c.strokeStyle = selected ? '#ffffff' : '#05070d'
+  c.lineWidth = 1.5 / scale
+  c.stroke()
+  c.beginPath()
+  c.arc(px, top, PIN_HEAD_R * 0.38 * k, 0, Math.PI * 2)
+  c.fillStyle = '#ffffff'
+  c.fill()
+  c.font = `${selected ? 700 : 600} ${12 / scale}px system-ui, sans-serif`
+  c.textAlign = 'left'
+  c.lineWidth = 3 / scale
+  c.strokeStyle = 'rgba(5,7,13,0.85)'
+  c.strokeText(pin.name, px + (PIN_HEAD_R + 4) * k, top + 4 / scale)
+  c.fillStyle = '#ffffff'
+  c.fillText(pin.name, px + (PIN_HEAD_R + 4) * k, top + 4 / scale)
 }
 
 function polygon(points: LatLon[]): [number, number][] {
@@ -170,6 +202,7 @@ export const MapView = memo(function MapView({
   const [ready, setReady] = useState(false)
   const selectedRegionId = useUi((s) => s.selectedRegionId)
   const selectedWaterwayKey = useUi((s) => s.selectedWaterwayKey)
+  const { pins: mapPins, selectedId: selectedPinId } = useMapPins(worldId)
   const draft = useEditor((s) => s.draft)
   const theme = useViewTheme(worldId)
   const water = useWater(worldId)
@@ -188,7 +221,7 @@ export const MapView = memo(function MapView({
 
   useEffect(() => {
     dirty.current = true
-  }, [regions, selectedRegionId, draft, pins, highlightRegionIds, structures, characters, water, selectedWaterwayKey])
+  }, [regions, selectedRegionId, draft, pins, highlightRegionIds, structures, characters, water, selectedWaterwayKey, mapPins, selectedPinId])
 
   // Bring the selected event's place to the middle of the view, on the next frame (the view may not be sized yet).
   const pendingFocus = useRef<LatLon | null>(null)
@@ -386,6 +419,7 @@ export const MapView = memo(function MapView({
           c.fillText(pin.title, x + shift + r + 4 / scale, y + 4 / scale)
         }
       }
+      for (const pin of mapPins) drawMapPin(c, pin, toMap(pin), shift, scale, pin.id === selectedPinId)
       const h = hover.current
       if (h && isBrushTool(tool)) {
         // The brush is a circle on the planet, so it stretches east-west toward the poles.
@@ -402,7 +436,7 @@ export const MapView = memo(function MapView({
 
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [model, regions, pins, highlightRegionIds, structures, characters, shades, rivers])
+  }, [model, regions, pins, highlightRegionIds, structures, characters, shades, rivers, mapPins, selectedPinId])
 
   /** Pointer position in map pixels (x wrapped to [0, W)), or null outside the map vertically. */
   const mapPoint = (e: React.PointerEvent | React.MouseEvent): [number, number] | null => {
@@ -422,6 +456,13 @@ export const MapView = memo(function MapView({
       const [x, y] = toMap(q)
       return [-W, 0, W].some((s) => Math.hypot((x + s - p[0]) * v.scale, (y - p[1]) * v.scale) <= px)
     }
+    const withinHead = (q: LatLon) => {
+      const [x, y] = toMap(q)
+      return [-W, 0, W].some((s) => Math.hypot((x + s - p[0]) * v.scale, (y - p[1]) * v.scale - PIN_HEAD_PX) <= PIN_HEAD_R + 3)
+    }
+    // A pin's head stands above its point: picked there.
+    const mapPin = mapPins.find((mp) => within({ lat: mp.lat, lon: mp.lon }, 10) || withinHead(mp))
+    if (mapPin) return { kind: 'mapPin', id: mapPin.id }
     const pin = pins.find((pn) => within(pn, 8))
     if (pin) return { kind: 'event', id: pin.eventId }
     const character = characters.find((ch) => within(ch.place, 9))
@@ -461,9 +502,11 @@ export const MapView = memo(function MapView({
       onContextMenu={(e) => {
         e.preventDefault()
         const p = mapPoint(e)
-        const hit = p && elementAt(p)
-        if (hit) openElementMenu(hit, e.clientX, e.clientY)
-        else useContextMenu.getState().close()
+        if (!p) return
+        const hit = elementAt(p)
+        // On a thing of its own, its menu; anywhere on the land or sea (a region too), a pin can be put there.
+        if (hit && hit.kind !== 'region') openElementMenu(hit, e.clientX, e.clientY)
+        else openSurfaceMenu(worldId, pixelToLatLon(p[0], p[1], W, H), e.clientX, e.clientY, hit)
       }}
       onPointerDown={(e) => {
         if (e.pointerType === 'touch') fingers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -482,6 +525,7 @@ export const MapView = memo(function MapView({
           if (hit?.kind === 'character') return onCharacterClick(hit.id)
           if (hit?.kind === 'structure') return onStructureClick(hit.id)
           if (hit?.kind === 'waterway') return useUi.getState().selectWaterway(hit.id)
+          if (hit?.kind === 'mapPin') return selectMapPin(hit.id)
           useUi.getState().selectRegion(hit?.id ?? null)
         }
         pan.current = { x: e.clientX, y: e.clientY }

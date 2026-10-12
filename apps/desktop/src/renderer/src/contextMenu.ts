@@ -19,7 +19,7 @@ import { goToEvent } from './world/goToEvent'
  */
 
 /** What can be right-clicked: a node, or a record a world or timeline holds. */
-export type ElementKind = 'node' | 'region' | 'structure' | 'character' | 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan' | 'species' | 'lane' | 'power' | 'faction' | 'relationship' | 'waterway' | 'member'
+export type ElementKind = 'node' | 'region' | 'structure' | 'character' | 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan' | 'species' | 'lane' | 'power' | 'faction' | 'relationship' | 'waterway' | 'member' | 'mapPin'
 
 export interface ElementRef {
   kind: ElementKind
@@ -187,7 +187,8 @@ const KINDS: Record<ElementKind, { label: ByKind; nameField?: ByKind; inspector:
   // Made by the land, so never deleted, only given its generated name back.
   waterway: { label: waterwayLabel, nameField: (id) => `${waterwayLabel(id)} name`, inspector: true, deletable: false },
   // Someone the universe is shared with (in the Share dialog): removing them stops sharing it with them.
-  member: { label: 'Member', inspector: false, deleteVerb: 'Remove' }
+  member: { label: 'Member', inspector: false, deleteVerb: 'Remove' },
+  mapPin: { label: 'Pin', nameField: 'Pin name', inspector: true }
 }
 
 const byKind = (value: ByKind, id: string) => (typeof value === 'string' ? value : value(id))
@@ -243,6 +244,8 @@ export function nameOf({ kind, id }: ElementRef): string | undefined {
       return waterwayOf(id)?.name
     case 'member':
       return find(t.members)?.name
+    case 'mapPin':
+      return find(t.mapPins)?.name
   }
 }
 
@@ -272,6 +275,23 @@ export function openElement({ kind, id }: ElementRef): void {
     const rel = ui.timeline.relationships.find((r) => r.id === id)
     if (rel) openElement(rel.from)
   } else if (kind !== 'species' && kind !== 'lane' && kind !== 'power' && kind !== 'member') ui.selectTimeline({ kind, ids: [id] })
+}
+
+/** Puts a pin at a point of a world's surface and opens it with its name ready to type. */
+export async function addMapPin(worldId: string, at: { lat: number; lon: number }): Promise<void> {
+  const state = await useUi.getState().execute({ type: 'mapPin.create', payload: { ownerId: worldId, name: 'New pin', lat: at.lat, lon: at.lon } })
+  const id = state?.focus?.id
+  if (id) rename(() => openElement({ kind: 'mapPin', id }), KINDS.mapPin.nameField as string)
+}
+
+/**
+ * The menu for a point of a world's surface (right-click on the globe, the
+ * map or the ground): what's there, if anything, with Add a pin here.
+ */
+export function openSurfaceMenu(worldId: string, at: { lat: number; lon: number }, x: number, y: number, hit?: ElementRef): void {
+  const add: MenuItem = { label: 'Add a pin here…', run: () => void addMapPin(worldId, at) }
+  const menu = hit && elementMenu(hit, { extra: [add] })
+  useContextMenu.getState().open(menu ? { ...menu, x, y } : { x, y, title: `${Math.abs(at.lat).toFixed(2)}° ${at.lat < 0 ? 'S' : 'N'}, ${Math.abs(at.lon).toFixed(2)}° ${at.lon < 0 ? 'W' : 'E'}`, items: [add] })
 }
 
 /** Opens a faction on its world's Factions page. */

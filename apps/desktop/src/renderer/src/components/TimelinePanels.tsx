@@ -1,4 +1,4 @@
-import { LINK_TYPES, PRECISIONS, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type Theme, type ThemeSpan, type TimelineEvent } from '@universe/core'
+import { LINK_TYPES, PRECISIONS, type MapPin, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type Theme, type ThemeSpan, type TimelineEvent } from '@universe/core'
 import { useMemo } from 'react'
 import { updater, useEventsById, useOwnRecords, useUi, type TimelineSelection } from '../store'
 import { locationLabel } from '../timeline/labels'
@@ -7,6 +7,7 @@ import { Participants } from './FactionParts'
 import { ColorField, DeleteButton, NotesField, PanelHeader, SwatchList, TagsField, TextField, TimeField } from './fields'
 import { EventEffects } from './EventEffects'
 import { ThemePanel, ThemeSpanPanel } from './ThemePanels'
+import { MapPinPanel } from './MapPinPanel'
 
 const PRECISION_LABELS: Record<Precision, string> = { exact: 'Exact time', day: 'Day', year: 'Year', century: 'Century', approx: 'Approximate' }
 const LINK_LABELS: Record<LinkType, [string, string]> = {
@@ -40,6 +41,8 @@ export function TimelineInspector({ selection }: { selection: TimelineSelection 
       return <ThemePanel key={key} theme={record as Theme} />
     case 'themeSpan':
       return <ThemeSpanPanel key={key} span={record as ThemeSpan} />
+    case 'mapPin':
+      return <MapPinPanel key={key} pin={record as MapPin} />
     default:
       return null
   }
