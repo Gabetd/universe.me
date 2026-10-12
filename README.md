@@ -6,7 +6,7 @@ a local API and MCP server. See [PLAN.md](PLAN.md) for the full design and roadm
 
 **Status:** M0 to M13 are done (v1: up to phone access, sync between your
 devices, and polish), and so are M14 (factions and relationships), M15
-(rivers and erosion), M16 (plugins), M17 (the canvas, as Obsidian has it) and M18 (live collaboration, with people on other tailnets). New here? On the start screen,
+(rivers and erosion), M16 (plugins), M17 (the canvas, as Obsidian has it) M18 (live collaboration, with people on other tailnets) and M20 (collaboration's second part: conflicts kept as notes, notes merged line by line, members who can only look). New here? On the start screen,
 **Explore a sample universe** opens Calder, a world with fifteen centuries of
 history to look around in. Press `?` for the keyboard shortcuts.
 
@@ -208,6 +208,16 @@ for each person in now says where they are ("Bea, on Terra, the map") and
 takes you there with a click, and a smaller one shows on the tree beside what
 they have open. Remove someone in the Share dialog (or with a right-click),
 and your computer stops answering theirs.
+
+Whoever first shares a universe owns it: only they invite people, remove
+them, and choose what each can do: **Can edit**, or **Can view** (they see
+your changes as you make them, with a **View only** mark, but can't change
+anything, and nothing they bring is taken). When two of you change the same
+thing at the same moment, the later change is kept and the other becomes a
+**conflict note** (under **Changed at once**, in the Share dialog and the
+world's Warnings), to put back with **Use this instead** or dismiss. Notes
+changed at once are merged paragraph by paragraph, and terrain sculpted at
+once cell by cell, so only a paragraph you both changed leaves a note.
 
 ## Download and run
 
