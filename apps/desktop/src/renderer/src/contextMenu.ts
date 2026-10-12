@@ -7,6 +7,7 @@ import { contributions, isNameable, usePlugins } from './pluginStore'
 import { useTimelineView } from './timeline/timelineStore'
 import { useEditor } from './world/editorStore'
 import { useWaterOf } from './world/useWater'
+import { latLonLabel } from './world/useMapPins'
 import { viewUpClose, waterwayLabel } from './world/waterLook'
 import { goToEvent } from './world/goToEvent'
 
@@ -291,7 +292,7 @@ export async function addMapPin(worldId: string, at: { lat: number; lon: number 
 export function openSurfaceMenu(worldId: string, at: { lat: number; lon: number }, x: number, y: number, hit?: ElementRef): void {
   const add: MenuItem = { label: 'Add a pin here…', run: () => void addMapPin(worldId, at) }
   const menu = hit && elementMenu(hit, { extra: [add] })
-  useContextMenu.getState().open(menu ? { ...menu, x, y } : { x, y, title: `${Math.abs(at.lat).toFixed(2)}° ${at.lat < 0 ? 'S' : 'N'}, ${Math.abs(at.lon).toFixed(2)}° ${at.lon < 0 ? 'W' : 'E'}`, items: [add] })
+  useContextMenu.getState().open(menu ? { ...menu, x, y } : { x, y, title: latLonLabel(at), items: [add] })
 }
 
 /** Opens a faction on its world's Factions page. */
