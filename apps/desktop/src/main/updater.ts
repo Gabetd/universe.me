@@ -8,6 +8,7 @@ import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { app, net } from 'electron'
 import { CHANNELS, CHANNEL_ORDER, manifestUrl, compareVersions, pickUpdate, type Channel, type ChannelVersion, type InstallKind, type UpdateFile, type UpdateManifest, type UpdateStatus } from '../shared/update'
+import { installDeb } from './deb-install'
 import { UPDATE_PUBLIC_KEY } from './update-key'
 import { UntrustedUpdate, readSignedManifest } from './update-signature'
 
@@ -94,7 +95,7 @@ export class Updater {
       const file = pickUpdate(manifest, '0', kind, process.arch)
       if (!file) return `${CHANNELS[channel].name} has no build for this computer yet.`
       const { dir, downloaded } = await downloadToTemp(this.urlOf(channel), file, () => {})
-      await BESIDE[kind](downloaded, dir, channel)
+      await BESIDE[kind](downloaded, dir, channel, file)
       return null
     } catch (err) {
       return err instanceof Error ? err.message : String(err)
@@ -152,7 +153,7 @@ export class Updater {
       this.set({ state: 'downloading', version, progress: 0 })
       const { dir, downloaded } = await downloadToTemp(this.manifestUrl, file, (progress) => this.set({ state: 'downloading', version, progress }))
       this.set({ state: 'installing', version })
-      await INSTALLERS[kind](downloaded, dir)
+      await INSTALLERS[kind](downloaded, dir, file)
     } catch (err) {
       this.set({ state: 'failed', version, error: err instanceof Error ? err.message : String(err) })
     }
@@ -205,7 +206,7 @@ async function placeExecutable(file: string, target: string): Promise<void> {
  * next to this one's, a .app next to this one's bundle, a .deb), as its own
  * app, which updates from its own release from then on.
  */
-const BESIDE: Record<InstallKind, (file: string, dir: string, channel: Channel) => Promise<void>> = {
+const BESIDE: Record<InstallKind, (file: string, dir: string, channel: Channel, expected: UpdateFile) => Promise<void>> = {
   // Its own app id and install folder: the installer leaves this one alone, and starts the new one when it's done.
   'win-nsis': async (file) => void startApart(file, ['/S', '--force-run']),
 
@@ -232,8 +233,8 @@ const BESIDE: Record<InstallKind, (file: string, dir: string, channel: Channel) 
     startApart(target)
   },
 
-  'linux-deb': async (file, _dir, channel) => {
-    await run('pkexec', ['dpkg', '-i', file])
+  'linux-deb': async (file, _dir, channel, expected) => {
+    await installDeb(file, expected)
     startApart(CHANNELS[channel].command)
   }
 }
@@ -290,7 +291,7 @@ function afterExit(script: string, ...args: string[]): void {
   app.quit()
 }
 
-const INSTALLERS: Record<InstallKind, (file: string, dir: string) => Promise<void>> = {
+const INSTALLERS: Record<InstallKind, (file: string, dir: string, expected: UpdateFile) => Promise<void>> = {
   // The NSIS installer closes the app itself, installs where it was installed before, then starts it.
   'win-nsis': async (file) => {
     startApart(file, ['/S', '--updated', '--force-run'])
@@ -338,8 +339,8 @@ const INSTALLERS: Record<InstallKind, (file: string, dir: string) => Promise<voi
   },
 
   // System packages need root: pkexec asks for the password, then the app restarts.
-  'linux-deb': async (file) => {
-    await run('pkexec', ['dpkg', '-i', file])
+  'linux-deb': async (file, _dir, expected) => {
+    await installDeb(file, expected)
     app.relaunch()
     app.quit()
   }
