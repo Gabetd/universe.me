@@ -22,6 +22,8 @@ export const GROUND_SPEEDS = [
 export type GroundSpeed = (typeof GROUND_SPEEDS)[number]['id']
 
 const SHIFT_FACTOR = 3
+/** How near what the view looks at coming down brings the camera, in metres across, before it comes straight down. */
+const NEAREST_M = 3
 /** Rising and coming down go at this share of the speed. */
 const CLIMB_FACTOR = 0.25
 
@@ -100,12 +102,15 @@ export function WalkKeys() {
     // A long frame (the window hidden a moment) doesn't jump.
     const dt = Math.min(delta, 0.1)
     // Up rises straight up, over what the view looks at (which stays on the ground); down comes down along the line of sight to it,
-    // the view keeping its angle, so it reaches the ground (the controls keep the camera from going under the horizon, and the rig above the ground).
+    // the view keeping its angle, then straight down to the eye's height (the rig keeps it above the ground).
     const climb = Math.sign(u) * mps * CLIMB_FACTOR * dt
     if (climb > 0) camera.position.y += climb
-    else if (climb < 0) {
+    else if (climb < 0 && camera.position.y > target.y) {
       offset.subVectors(camera.position, target)
-      camera.position.copy(target).addScaledVector(offset, offset.y > 0 ? Math.max(0, 1 + climb / offset.y) : 1)
+      const across = Math.hypot(offset.x, offset.z)
+      // Along the line of sight while it's farther than a few steps off; then straight down, to the eye's height, looking out level.
+      if (across > NEAREST_M) camera.position.copy(target).addScaledVector(offset, Math.max(NEAREST_M / across, 1 + climb / offset.y))
+      else camera.position.y = Math.max(target.y, camera.position.y + climb)
     }
     // Along the ground, the way the camera faces.
     forward.subVectors(target, camera.position).setY(0)

@@ -452,3 +452,22 @@ export async function twoComputers(a: TailnetComputer, b: TailnetComputer, run: 
     for (const { proxy } of [toA, toB]) (await proxy).server.close()
   }
 }
+
+/** The mean colour (0–255 a channel) of a patch of a view's canvas, `size` of it across, centred at a fraction of it. */
+export const patch = (page: Page, testId: string, at: Fraction, size = 0.06) =>
+  page.getByTestId(testId).evaluate(
+    (el, [fx, fy, size]) => {
+      const source = el instanceof HTMLCanvasElement ? el : el.querySelector('canvas')!
+      const copy = document.createElement('canvas')
+      copy.width = source.width
+      copy.height = source.height
+      const ctx = copy.getContext('2d')!
+      ctx.drawImage(source, 0, 0)
+      const [w, h] = [Math.max(1, Math.round(source.width * size)), Math.max(1, Math.round(source.height * size))]
+      const data = ctx.getImageData(Math.round(source.width * fx - w / 2), Math.round(source.height * fy - h / 2), w, h).data
+      const sum = [0, 0, 0]
+      for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c++) sum[c]! += data[i + c]!
+      return sum.map((v) => v / (w * h)) as [number, number, number]
+    },
+    [at[0], at[1], size] as const
+  )

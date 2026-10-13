@@ -1,4 +1,4 @@
-import { expect, newWorld, shot, SLOW, test } from './helpers'
+import { expect, newWorld, patch, shot, SLOW, test } from './helpers'
 
 test('on the ground, W A S D move over it at the speed picked, S moves rather than picking Smooth, and Space and Ctrl go up and down', async ({ h }) => {
   const { page } = h
@@ -39,7 +39,7 @@ test('on the ground, W A S D move over it at the speed picked, S moves rather th
   expect(walked).toBeGreaterThan(0)
   expect(walked).toBeLessThan(start[1] - ahead[1])
 
-  // Space rises; Ctrl comes down, as far as standing on the ground (as near as the view comes to what it looks at).
+  // Space rises; Ctrl comes down, as far as standing on the ground (the eye's height over it, looking out level).
   const height = async () => Number(await canvas.getAttribute('data-height'))
   const low = await height()
   await hold('Space', 600)
@@ -50,7 +50,7 @@ test('on the ground, W A S D move over it at the speed picked, S moves rather th
   await page.keyboard.up('Control')
 })
 
-test('on the ground, the planet’s map in the corner shows where you are and which way you face, and a click on it goes there; the ground reaches 12 km', async ({ h }) => {
+test('on the ground, the planet’s map in the corner shows where you are and which way you face, and a click on it goes there; the land reaches the horizon under the sky', async ({ h }) => {
   const { page } = h
   await newWorld(h, 'Far')
   await page.getByRole('button', { name: '🔍 Ground' }).click()
@@ -62,12 +62,19 @@ test('on the ground, the planet’s map in the corner shows where you are and wh
   // The camera starts a little south of where it looks, facing north.
   await expect.poll(at).toEqual([expect.closeTo(-0.004, 2), expect.closeTo(0, 3)])
   expect(await heading()).toBe(0)
-  // Looking out across it, the ground goes on to the haze.
+  // Looking out across it, the land goes on to the horizon, under the sky.
   await page.getByRole('radio', { name: 'Fly' }).click()
+  const view = (await page.locator('[data-testid="ground"] canvas').boundingBox())!
+  await page.mouse.move(view.x + view.width / 2, view.y + view.height / 2)
+  await page.mouse.down({ button: 'right' })
+  await page.mouse.move(view.x + view.width / 2, view.y + view.height / 2 - 400, { steps: 8 })
+  await page.mouse.up({ button: 'right' })
   await shot(page, '65-ground-far', { views: false })
+  const [sky, land] = [await patch(page, 'ground', [0.1, 0.03], 0.02), await patch(page, 'ground', [0.5, 0.9], 0.05)]
+  expect(sky[2]).toBeGreaterThan(sky[0] + 15)
+  expect(land[1]).toBeGreaterThan(land[2])
 
   // Turning the view (right-drag) turns the arrow.
-  const view = (await page.locator('[data-testid="ground"] canvas').boundingBox())!
   const [x, y] = [view.x + view.width / 2, view.y + view.height / 2]
   await page.mouse.move(x, y)
   await page.mouse.down({ button: 'right' })

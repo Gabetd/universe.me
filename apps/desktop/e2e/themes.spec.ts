@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test'
-import { center, dragPoints, drawRegion, expect, inspector, newWorld, openGlobe, openMap, row, setPlayhead, shot, state, test, viewReady, waterReady, type Fraction } from './helpers'
+import { center, dragPoints, drawRegion, expect, inspector, newWorld, openGlobe, openMap, patch, row, setPlayhead, shot, state, test, viewReady, waterReady } from './helpers'
 
 const timeline = (page: Page) => state(page, 'timeline')
 
@@ -9,24 +9,6 @@ async function newTheme(themes: Locator, preset: string): Promise<void> {
   await themes.getByRole('button', { name: 'New theme from the playhead' }).click()
 }
 
-/** The mean colour (0–255 a channel) of a patch of a view's canvas, `size` of it across, centred at a fraction of it. */
-const patch = (page: Page, testId: string, at: Fraction, size = 0.06) =>
-  page.getByTestId(testId).evaluate(
-    (el, [fx, fy, size]) => {
-      const source = el instanceof HTMLCanvasElement ? el : el.querySelector('canvas')!
-      const copy = document.createElement('canvas')
-      copy.width = source.width
-      copy.height = source.height
-      const ctx = copy.getContext('2d')!
-      ctx.drawImage(source, 0, 0)
-      const [w, h] = [Math.max(1, Math.round(source.width * size)), Math.max(1, Math.round(source.height * size))]
-      const data = ctx.getImageData(Math.round(source.width * fx - w / 2), Math.round(source.height * fy - h / 2), w, h).data
-      const sum = [0, 0, 0]
-      for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c++) sum[c]! += data[i + c]!
-      return sum.map((v) => v / (w * h)) as [number, number, number]
-    },
-    [at[0], at[1], size] as const
-  )
 const brightness = ([r, g, b]: [number, number, number]) => (r + g + b) / 3
 const apart = (a: [number, number, number], b: [number, number, number]) => Math.max(...a.map((v, i) => Math.abs(v - b[i]!)))
 /** The theme a view says it shows. */

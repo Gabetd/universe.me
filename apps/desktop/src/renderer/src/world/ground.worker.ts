@@ -5,5 +5,5 @@ import { answerCalls } from '../workerCalls'
 // A chunk takes a few milliseconds to build, and a view needs 25 of them, so they're built here.
 answerCalls<GroundChunkInput, GroundChunk>((input) => {
   const chunk = buildGroundChunk(input)
-  return { reply: chunk, transfer: [chunk.positions, chunk.colors, chunk.indices, ...Object.values(chunk.plants)].map((a) => a.buffer) }
+  return { reply: chunk, transfer: [chunk.positions, chunk.colors, chunk.normals, chunk.indices, ...Object.values(chunk.plants)].map((a) => a.buffer) }
 })

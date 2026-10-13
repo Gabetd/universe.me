@@ -1,20 +1,16 @@
-import { TERRAIN_RES, findBlueprint, insidePolygon, type Blueprint, type BlueprintPart, type LatLon, type MapPin } from '@universe/core'
+import { findBlueprint, insidePolygon, type Blueprint, type BlueprintPart, type LatLon, type MapPin } from '@universe/core'
 import {
   CHUNK_M,
   CHUNK_SEGMENTS,
   FAR_M,
   GroundDetail,
+  HORIZON_M,
   SKIRT_M,
   INSTANCE_STRIDE,
   chunkBounds,
   chunkKey,
   chunkOf,
-  cellCenter,
   chunksAround,
-  cellPlace,
-  faceCellOf,
-  dirToLatLon,
-  faceToDir,
   fromLocal,
   latLonToDir,
   modelSampler,
@@ -24,7 +20,6 @@ import {
   type GroundSheet,
   type LocalFrame,
   type Plant,
-  type River
 } from '@universe/procgen'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -45,9 +40,10 @@ import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
 import { useLandTint, useThemeName } from './ThemeTint'
 import { useViewTheme } from './useThemeLook'
 import { multiply } from './viewTheme'
-import { useFarGround, useGroundChunks } from './useGroundChunks'
-import { useWater } from './useWater'
-import { riverMetres, smoothPath } from './waterLook'
+import { useFarGround, useGroundChunks, useHorizonGround } from './useGroundChunks'
+import { HAZE_M, SUN_POSITION, inTheAir, setCurve, shiftClouds } from './groundAir'
+import { GroundSky } from './groundSky'
+import { GroundWater, useGroundWaters, type AreaWaters } from './groundWater'
 import { GroundMinimap, useGroundPose } from './GroundMinimap'
 import { WalkKeys } from './walk'
 import type { PlacedCharacter } from './useCharacters'
@@ -55,9 +51,9 @@ import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
 import type { SurfaceViewProps } from './useTerrain'
 
-const SKY = '#a9cdea'
-/** Where the fog starts and where it hides everything, in metres, in the usual air: 12 km off, the distant ground's edge. */
-const FOG = [4500, FAR_M] as const
+/** The sky overhead and at the horizon (the haze's colour), before the theme in force. */
+const ZENITH = '#3f7dcc'
+const HORIZON = '#c6dbeb'
 /** The light from the sky and from the ground under it. */
 const HEMISPHERE = ['#dce9f7', '#4a4536'] as const
 /** Chunks drawn around the middle of the view in each direction: a 5 × 5 km square. */
@@ -71,8 +67,13 @@ const inView = (x: number, z: number) => Math.hypot(x, z) <= DRAW_M
 const smooth = (t: number) => t * t * (3 - 2 * t)
 const latLonOf = (p: LatLon): [number, number] => [p.lat, p.lon]
 
-const CAMERA = { position: [0, 400, 600] as [number, number, number], fov: 55, near: 0.5, far: FAR_M * 1.4 }
-const CONTROLS = { screenSpacePanning: false, minDistance: 3, maxDistance: MAX_DISTANCE, maxPolarAngle: Math.PI * 0.47, zoomSpeed: 2.5 }
+const CAMERA = { position: [0, 400, 600] as [number, number, number], fov: 55, near: 0.5, far: HORIZON_M * 1.2 }
+const CONTROLS = { screenSpacePanning: false, minDistance: 3, maxDistance: MAX_DISTANCE, maxPolarAngle: Math.PI * 0.47, zoomSpeed: 2.5, enableDamping: true, dampingFactor: 0.12 }
+/** How high the eye is over the ground: the view looks at a point this high, so up close it looks out level, and a little up at the sky. */
+const EYE_M = 1.7
+/** How far past level the view can tilt up close (radians), and within how far of what it looks at. */
+const LOOK_UP = 0.3
+const LOOK_UP_WITHIN = 400
 
 /** Heights of the ground anywhere: the globe's terrain plus the seeded detail the chunks have. */
 interface Ground {
@@ -122,9 +123,11 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
       [allStructures, blueprints, props.worldId]
     )
   )
+  // The rivers and lakes around, once the world's water is worked out (and not while a stroke is under way: only as the land settles).
+  const waters = useGroundWaters(props.worldId, model, center)
   const ground = useMemo<Ground>(() => {
     const frame = { origin, radiusKm }
-    const detail = new GroundDetail(seed, radiusKm)
+    const detail = new GroundDetail(seed, radiusKm, waters)
     const base = modelSampler(model)
     const raw = (x: number, z: number) => detail.elevation(base, ...latLonOf(fromLocal(frame, x, z)))
     const pads: Pad[] = sites.flatMap(({ at, r }) => {
@@ -145,34 +148,40 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
       return y
     }
     const heightAt = (x: number, z: number) => level(x, z, raw(x, z))
+    // Where something stands: on the land, or on the water over it (the sea's, a river's or a lake's).
+    const stand = (x: number, z: number) => {
+      const y = level(x, z, raw(x, z))
+      const surface = detail.shape.surface
+      return Math.max(0, y, Number.isNaN(surface) ? -Infinity : surface)
+    }
     const heightAtLatLon = (p: LatLon) => {
       const [x, z] = toLocal(frame, p)
       return heightAt(x, z)
     }
-    return { frame, heightAtLatLon, heightAt, standAt: (x, z) => Math.max(0, heightAt(x, z)), level }
+    return { frame, heightAtLatLon, heightAt, standAt: stand, level }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` stands for the terrain heights
-  }, [origin, radiusKm, seed, model, change, sites])
+  }, [origin, radiusKm, seed, model, change, sites, waters])
 
   const { structures, characters, pins, regions, worldId } = props
   const mapPins = useMapPins(worldId)
   const items = useMemo(() => groundLabels(structures, characters, pins, mapPins, ground), [structures, characters, pins, mapPins, ground])
   // The regions the middle of the view lies in: their own themes show here.
   const here = useByValue(useMemo(() => regions.flatMap((r) => (insidePolygon(center, r.points) ? [r.id] : [])), [regions, center]))
-  // One material for every chunk's ground (its colours are the chunk's), and one for the distant ground, tinted by the theme in force.
-  // The chunks mark where they're drawn, and the distant ground is drawn only where they aren't: close by, the chunks always win.
-  const land = useMemo(
-    () => [
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, stencilWrite: true, stencilRef: 1, stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp }),
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc })
-    ],
-    []
-  )
+  // One material for every chunk's ground (its colours are the chunk's), one for the distant ground and one for the land to the horizon, tinted by the theme in force.
+  // Each marks where it's drawn, and the next is drawn only where none before it was: close by, the chunks always win, then the distant ground.
+  const land = useMemo(() => {
+    const ground = (stencilFunc: THREE.StencilFunc) =>
+      inTheAir(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, stencilWrite: true, stencilRef: 1, stencilFunc, stencilZPass: THREE.ReplaceStencilOp }), { grain: true })
+    return [ground(THREE.AlwaysStencilFunc), ground(THREE.NotEqualStencilFunc), ground(THREE.NotEqualStencilFunc)]
+  }, [])
+  useEffect(() => setCurve(radiusKm), [radiusKm])
   useEffect(() => () => land.forEach((m) => m.dispose()), [land])
 
   return (
     <SurfaceCanvas
       testId="ground"
       camera={CAMERA}
+      deep
       // Dragging moves over the ground like a map; right-drag looks around.
       navigate={THREE.MOUSE.PAN}
       controls={CONTROLS}
@@ -186,11 +195,12 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
         </>
       }
     >
-      <GroundLook worldId={worldId} regionIds={here} water={model.settings.terrain.waterColor} land={land} ground={ground} center={center} settled={model.isStroking ? 'stroking' : change} />
+      <GroundLook worldId={worldId} regionIds={here} water={model.settings.terrain.waterColor} land={land} waters={waters} frame={ground.frame} />
       <Rig ground={ground} onRebase={setOrigin} onCenter={setCenter} />
       <WalkKeys />
-      <Chunks {...props} ground={ground} center={center} land={land[0]!} onLoaded={setLoaded} onFailed={setFailed} />
-      <FarGround {...props} ground={ground} center={center} material={land[1]!} />
+      <Chunks {...props} ground={ground} center={center} waters={waters} land={land[0]!} onLoaded={setLoaded} onFailed={setFailed} />
+      <FarGround {...props} ground={ground} center={center} waters={waters} material={land[1]!} />
+      <HorizonGround {...props} ground={ground} center={center} material={land[2]!} />
       <GroundStructures structures={props.structures} ground={ground} onClick={props.onStructureClick} />
       {props.characters.map((c) => (
         <Figure key={c.character.id} id={c.character.id} at={c.place} color={c.character.color} selected={c.selected} ground={ground} onClick={props.onCharacterClick} />
@@ -256,12 +266,15 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
     const { camera, controls, gl } = rig()
     if (!controls) return
     const t = controls.target
-    t.y = ground.standAt(t.x, t.z)
+    t.y = ground.standAt(t.x, t.z) + EYE_M
+    // Close in, the view can look out level and up at the sky; farther out, only down at the land.
+    const near = 1 - smooth(Math.min(1, camera.position.distanceTo(t) / LOOK_UP_WITHIN))
+    ;(controls as unknown as { maxPolarAngle: number }).maxPolarAngle = Math.PI * 0.47 + (Math.PI * 0.03 + LOOK_UP) * near
     // Where the view looks, in metres from the frame's origin (east, south), for tests to read.
     const at = `${Math.round(t.x)},${Math.round(t.z)}`
     if (gl.domElement.dataset.at !== at) gl.domElement.dataset.at = at
     const below = ground.standAt(camera.position.x, camera.position.z)
-    if (camera.position.y < below + 1.7) camera.position.y = below + 1.7
+    if (camera.position.y < below + 1.2) camera.position.y = below + 1.2
     // And how high the camera is over the ground beneath it, in metres.
     const height = String(Math.round(camera.position.y - below))
     if (gl.domElement.dataset.height !== height) gl.domElement.dataset.height = height
@@ -272,8 +285,9 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
       lastChunk.current = key
       onCenter(here)
     }
-    // Far from the origin, the flat frame starts to stretch: start a new one here.
+    // Far from the origin, the flat frame starts to stretch: start a new one here (the clouds stay where they are over the land).
     if (Math.hypot(t.x, t.z) > 2500) {
+      shiftClouds(t.x, t.z)
       camera.position.x -= t.x
       camera.position.z -= t.z
       t.set(0, t.y, 0)
@@ -310,159 +324,67 @@ function GroundLook({
   regionIds,
   water,
   land,
-  ...where
+  waters,
+  frame
 }: {
   worldId: string
   regionIds: readonly string[]
   water: string
   land: readonly THREE.MeshStandardMaterial[]
-  ground: Ground
-  center: LatLon
-  settled: unknown
+  waters: AreaWaters | undefined
+  frame: LocalFrame
 }) {
   const theme = useViewTheme(worldId, regionIds)
   useThemeName(theme.name)
   useLandTint(land, theme.land)
-  const sky = theme.sky(SKY)
-  const background = useMemo(() => new THREE.Color(), [])
-  const invalidate = useThree((s) => s.invalidate)
-  useLayoutEffect(() => {
-    background.set(sky)
-    invalidate()
-  }, [background, sky, invalidate])
+  const horizon = theme.sky(HORIZON)
   return (
     <>
-      <primitive object={background} attach="background" />
-      <fog attach="fog" args={[SKY, ...FOG]} color={sky} near={FOG[0] / theme.haze} far={FOG[1] / theme.haze} />
+      <GroundSky zenith={theme.sky(ZENITH)} horizon={horizon} sun={theme.sun} sunScale={theme.sunScale} />
+      <fogExp2 attach="fog" args={[horizon, 1 / HAZE_M]} color={horizon} density={theme.haze / HAZE_M} />
       <hemisphereLight color={multiply(HEMISPHERE[0], theme.ambient)} groundColor={HEMISPHERE[1]} intensity={0.75 * theme.ambientScale} />
-      <directionalLight position={[700, 650, 250]} color={theme.sun} intensity={1.6 * theme.sunScale} />
+      <directionalLight position={SUN_POSITION as [number, number, number]} color={theme.sun} intensity={1.6 * theme.sunScale} />
       <Water color={theme.water(water)} />
-      <GroundWater worldId={worldId} color={theme.water(water)} {...where} />
+      {waters && <GroundWater waters={waters} color={theme.water(water)} frame={frame} />}
     </>
   )
 }
 
-/** How many pieces a river bends in between two cells on the ground: a kilometre or so each. */
-const RIVER_BENDS = 32
-/** How far apart a river's points are on the ground, so it follows the land's rises and falls. */
-const RIVER_STEP_M = 80
-/** How far out rivers and lakes are drawn: as far as the ground goes, and a cell beyond. */
-const WATER_REACH_M = FAR_M + 40_000
-
-/**
- * Rivers and lakes on the ground: each river a ribbon over the land, as wide
- * as its water, following where it runs (from cell to cell, smoothed); each
- * lake a sheet at its surface over the cells it covers. Laid out again a
- * chunk at a time, and as the land settles (not every dab of a stroke).
- */
-function GroundWater({ worldId, color, ground, center, settled }: { worldId: string; color: string; ground: Ground; center: LatLon; settled: unknown }) {
-  const world = useWater(worldId)
-  const middle = chunkKey(chunkOf(center, ground.frame.radiusKm))
-  const geometry = useMemo(() => {
-    if (!world) return undefined
-    const here = latLonToDir(center.lat, center.lon)
-    const reach = Math.cos(WATER_REACH_M / (ground.frame.radiusKm * 1000))
-    const near = (p: LatLon) => {
-      const d = latLonToDir(p.lat, p.lon)
-      return d[0] * here[0] + d[1] * here[1] + d[2] * here[2] > reach
-    }
-    const positions: number[] = []
-    const quad = (a: number[], b: number[], c: number[], d: number[]) => positions.push(...a, ...b, ...c, ...a, ...c, ...d)
-    for (const river of world.rivers) riverRibbon(river, ground, near, quad)
-    for (const lake of world.lakes) for (const g of lake.cells) if (near(cellPlace(g))) lakeCell(g, lake.level, ground, quad)
-    if (!positions.length) return undefined
-    const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-    g.computeVertexNormals()
-    return g
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `middle` stands for `center`, the frame's origin and `settled` for `ground`
-  }, [world, ground.frame.origin, middle, settled])
-  useEffect(() => () => geometry?.dispose(), [geometry])
-  if (!geometry) return null
-  return (
-    <mesh geometry={geometry} raycast={noRaycast} renderOrder={2}>
-      <meshStandardMaterial color={color} transparent opacity={0.88} roughness={0.15} metalness={0.1} side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-2} />
-    </mesh>
-  )
-}
-
-type Quad = (a: number[], b: number[], c: number[], d: number[]) => void
-
-/** A river's ribbon where it's near enough to see: its stretch there (and two cells either side, so it bends as it does everywhere), curved, densified to follow the land, and its banks joined from point to point. */
-function riverRibbon(river: River, ground: Ground, near: (p: LatLon) => boolean, quad: Quad): void {
-  const first = river.points.findIndex(near)
-  if (first < 0) return
-  const last = river.points.findLastIndex(near)
-  const stretch = river.points.slice(Math.max(0, first - 2), last + 3)
-  const path = smoothPath(
-    stretch.map((p) => toLocal(ground.frame, p)),
-    RIVER_BENDS
-  )
-  const along: [number, number][] = []
-  for (let k = 0; k < path.length - 1; k++) {
-    const [ax, az] = path[k]!
-    const [bx, bz] = path[k + 1]!
-    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / RIVER_STEP_M))
-    for (let i = 0; i < n; i++) along.push([ax + ((bx - ax) * i) / n, az + ((bz - az) * i) / n])
-  }
-  along.push(path.at(-1)!)
-  const half = riverMetres(river) / 2
-  const far = along.map(([x, z]) => Math.hypot(x, z) > WATER_REACH_M)
-  // A point's two banks, square to the river there (the way from the point before to the one after).
-  const banks = (k: number) => {
-    const [x, z] = along[k]!
-    const [px, pz] = along[Math.max(0, k - 1)]!
-    const [qx, qz] = along[Math.min(along.length - 1, k + 1)]!
-    const len = Math.hypot(qx - px, qz - pz) || 1
-    const [nx, nz] = [(-(qz - pz) / len) * half, ((qx - px) / len) * half]
-    const at = (x: number, z: number) => [x, ground.standAt(x, z) + 1, z]
-    return [at(x + nx, z + nz), at(x - nx, z - nz)] as const
-  }
-  let before: ReturnType<typeof banks> | undefined
-  for (let k = 0; k < along.length - 1; k++) {
-    if (far[k] && far[k + 1]) {
-      before = undefined
-      continue
-    }
-    const [a, b] = [before ?? banks(k), banks(k + 1)]
-    quad(a[0], a[1], b[1], b[0])
-    before = b
-  }
-}
-
-/** The corners of a cell, a half cell from its centre each way. */
-const CORNERS = [
-  [-1, -1],
-  [1, -1],
-  [1, 1],
-  [-1, 1]
-] as const
-
-/** A lake's water over one of its cells (a planet-wide number), at its surface. */
-function lakeCell(g: number, level: number, ground: Ground, quad: Quad): void {
-  const [face, cell] = faceCellOf(g)
-  const [i, j] = [cell % TERRAIN_RES, Math.floor(cell / TERRAIN_RES)]
-  const [a, b, c, d] = CORNERS.map(([di, dj]) => {
-    const [x, z] = toLocal(ground.frame, dirToLatLon(...faceToDir(face, cellCenter(i) + di / TERRAIN_RES, cellCenter(j) + dj / TERRAIN_RES)))
-    return [x, level, z]
-  })
-  quad(a!, b!, c!, d!)
-}
-
-/** The sea: a sheet at sea level that follows the view. */
+/** The sea: a disc at sea level around the camera, out to the horizon (finely near, coarsely far), curving down with the planet. */
 function Water({ color }: { color: string }) {
   const mesh = useRef<THREE.Mesh>(null)
-  const controls = useThree((s) => s.controls) as unknown as { target: THREE.Vector3 } | null
-  useFrame(() => {
-    if (mesh.current && controls) mesh.current.position.set(controls.target.x, 0, controls.target.z)
-  })
-  return (
-    <mesh ref={mesh} rotation={[-Math.PI / 2, 0, 0]} raycast={noRaycast}>
-      <planeGeometry args={[DRAW_M * 3, DRAW_M * 3]} />
-      <meshStandardMaterial color={color} transparent opacity={0.82} roughness={0.15} metalness={0.1} depthWrite={false} />
-    </mesh>
-  )
+  const material = useMemo(() => inTheAir(new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.8, roughness: 0.2, metalness: 0, depthWrite: false }), { water: true }), [])
+  useEffect(() => () => material.dispose(), [material])
+  const invalidate = useThree((s) => s.invalidate)
+  useLayoutEffect(() => {
+    material.color.set(color)
+    invalidate()
+  }, [material, color, invalidate])
+  useFrame(({ camera }) => mesh.current?.position.set(camera.position.x, 0, camera.position.z))
+  return <mesh ref={mesh} geometry={SEA} material={material} raycast={noRaycast} frustumCulled={false} />
 }
+
+/** A disc of rings, each wider than the last, from under the camera out past the horizon. */
+const SEA = (() => {
+  const [rings, spokes] = [56, 96]
+  const positions: number[] = [0, 0, 0]
+  for (let k = 0; k < rings; k++) {
+    const r = 4 * Math.pow(HORIZON_M / 4, k / (rings - 1))
+    for (let s = 0; s < spokes; s++) positions.push(Math.cos((s / spokes) * Math.PI * 2) * r, 0, Math.sin((s / spokes) * Math.PI * 2) * r)
+  }
+  const index: number[] = []
+  for (let s = 0; s < spokes; s++) index.push(0, 1 + ((s + 1) % spokes), 1 + s)
+  for (let k = 0; k < rings - 1; k++)
+    for (let s = 0; s < spokes; s++) {
+      const [a, b] = [1 + k * spokes + s, 1 + k * spokes + ((s + 1) % spokes)]
+      index.push(a, b, a + spokes, b, b + spokes, a + spokes)
+    }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(positions.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3))
+  g.setIndex(index)
+  return g
+})()
 
 /** Where standing structures are, in the frame: plants don't grow through them. */
 interface Footprint {
@@ -472,12 +394,20 @@ interface Footprint {
 }
 
 function Chunks(
-  props: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; land: THREE.Material; onLoaded(count: number): void; onFailed(error: string | undefined): void }
+  props: SurfaceViewProps & {
+    seed: number
+    ground: Ground
+    center: LatLon
+    waters: AreaWaters | undefined
+    land: THREE.Material
+    onLoaded(count: number): void
+    onFailed(error: string | undefined): void
+  }
 ) {
   const { model, change, seed, ground, center, structures, land, onLoaded, onFailed } = props
   const radiusKm = model.settings.radiusKm
   const wanted = useMemo(() => chunksAround(center, radiusKm, RING), [center, radiusKm])
-  const { chunks, error } = useGroundChunks(model, change, seed, wanted)
+  const { chunks, error } = useGroundChunks(model, change, seed, wanted, props.waters)
   useEffect(() => onLoaded(chunks.size), [chunks.size, onLoaded])
   useEffect(() => onFailed(error), [error, onFailed])
   useReadyWhenDrawn(chunks.size === wanted.length)
@@ -535,8 +465,16 @@ function placement(id: ChunkId, frame: LocalFrame) {
 const UNDER_CHUNKS_M = (RING - 0.5) * CHUNK_M
 
 /** The ground beyond the chunks, out to 12 km: coarse, without plants, and drawn only where the chunks aren't. */
-function FarGround({ model, change, seed, ground, center, material }: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; material: THREE.Material }) {
-  const far = useFarGround(model, change, seed, chunkOf(center, ground.frame.radiusKm), UNDER_CHUNKS_M)
+function FarGround({
+  model,
+  change,
+  seed,
+  ground,
+  center,
+  waters,
+  material
+}: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; waters: AreaWaters | undefined; material: THREE.Material }) {
+  const far = useFarGround(model, change, seed, chunkOf(center, ground.frame.radiusKm), UNDER_CHUNKS_M, waters)
   const geometry = useMemo(() => far && sheetGeometry(far.sheet), [far])
   useEffect(() => () => geometry?.dispose(), [geometry])
   if (!far || !geometry) return null
@@ -549,8 +487,23 @@ function FarGround({ model, change, seed, ground, center, material }: SurfaceVie
   )
 }
 
-/** A sheet's mesh; its colours are sRGB, like the map's, and the renderer works in linear light. */
-function sheetGeometry(sheet: Pick<GroundSheet, 'positions' | 'colors' | 'indices'>, positions = sheet.positions): THREE.BufferGeometry {
+/** The land beyond the distant ground, to the horizon: drawn only where the nearer ground isn't. */
+function HorizonGround({ model, change, seed, ground, center, material }: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; material: THREE.Material }) {
+  const horizon = useHorizonGround(model, change, seed, chunkOf(center, ground.frame.radiusKm))
+  const geometry = useMemo(() => horizon && sheetGeometry(horizon.sheet), [horizon])
+  useEffect(() => () => geometry?.dispose(), [geometry])
+  if (!horizon || !geometry) return null
+  const [x, z] = toLocal(ground.frame, horizon.middle)
+  return (
+    <group position={[x, 0, z]} scale={[Math.cos(ground.frame.origin.lat * RAD) / Math.cos(horizon.middle.lat * RAD), 1, 1]}>
+      {/* After the distant ground, so it's marked where it is. */}
+      <mesh geometry={geometry} material={material} renderOrder={2} raycast={noRaycast} />
+    </group>
+  )
+}
+
+/** A sheet's mesh; its colours are sRGB, like the map's, and the renderer works in linear light. Its normals are its own if it has them and its heights are as built. */
+function sheetGeometry(sheet: GroundSheet, positions = sheet.positions): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry()
   g.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   const color = new THREE.Color()
@@ -558,7 +511,8 @@ function sheetGeometry(sheet: Pick<GroundSheet, 'positions' | 'colors' | 'indice
   for (let i = 0; i < colors.length; i += 3) color.setRGB(sheet.colors[i]!, sheet.colors[i + 1]!, sheet.colors[i + 2]!, THREE.SRGBColorSpace).toArray(colors, i)
   g.setAttribute('color', new THREE.BufferAttribute(colors, 3))
   g.setIndex(new THREE.BufferAttribute(sheet.indices, 1))
-  g.computeVertexNormals()
+  if (sheet.normals && positions === sheet.positions) g.setAttribute('normal', new THREE.BufferAttribute(sheet.normals, 3))
+  else g.computeVertexNormals()
   g.computeBoundingSphere()
   return g
 }
@@ -591,12 +545,15 @@ const ChunkView = memo(function ChunkView({
   const geometry = useMemo(() => {
     const positions = chunk.positions.slice()
     const grid = (CHUNK_SEGMENTS + 1) ** 2
+    let levelled = false
     for (let i = 0; i < positions.length; i += 3) {
       // Skirt vertices hang a few metres under the edge; they move with it.
       const drop = i / 3 >= grid ? SKIRT_M : 0
       positions[i + 1] = level(positions[i]!, positions[i + 2]!, positions[i + 1]! + drop) - drop
+      levelled ||= Math.abs(positions[i + 1]! - chunk.positions[i + 1]!) > 1e-3
     }
-    return sheetGeometry(chunk, positions)
+    // Where a structure's ground is levelled the chunk's normals no longer fit: worked out again from the mesh.
+    return sheetGeometry(chunk, levelled ? positions : chunk.positions)
   }, [chunk, level])
   useEffect(() => () => geometry.dispose(), [geometry])
   const local = useMemo(() => footprints.map((f) => ({ x: (f.x - x) / stretch, z: f.z - z, r: f.r })).filter((f) => f.x > -f.r && f.x < CHUNK_M * 1.5 + f.r && f.z < f.r && f.z > -CHUNK_M * 1.5 - f.r), [footprints, x, z, stretch])
@@ -631,6 +588,8 @@ const RING_SHARE = [1, 0.55, 0.25]
 /** The plants' shapes in the world's foliage colour, made as they're first needed and let go with the colour or the view. */
 class PlantGeometries {
   private made = new Map<Plant, THREE.BufferGeometry>()
+  /** What every plant is drawn with: its colours are its own, in the clouds' shadows like the ground. */
+  readonly material = inTheAir(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, flatShading: true }))
   constructor(private foliage: THREE.Color) {}
 
   get(plant: Plant): THREE.BufferGeometry {
@@ -641,6 +600,7 @@ class PlantGeometries {
 
   dispose() {
     for (const g of this.made.values()) g.dispose()
+    this.material.dispose()
   }
 }
 
@@ -697,9 +657,7 @@ function PlantInstances({
   }, [kept, list, plant, level, invalidate])
   if (!kept.length) return null
   return (
-    <instancedMesh key={kept.length} ref={mesh} args={[plants.get(plant), undefined, kept.length]} raycast={noRaycast}>
-      <meshStandardMaterial vertexColors roughness={0.95} metalness={0} flatShading />
-    </instancedMesh>
+    <instancedMesh key={kept.length} ref={mesh} args={[plants.get(plant), plants.material, kept.length]} raycast={noRaycast} />
   )
 }
 

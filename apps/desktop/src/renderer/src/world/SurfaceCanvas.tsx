@@ -9,6 +9,8 @@ import { WEBGL } from './webgl'
 /** Kept for screenshots and the zoom's still of the view; antialiasing only with a GPU. */
 // A stencil buffer: the ground's chunks mark where they're drawn, for the distant ground to keep out of.
 const GL = { preserveDrawingBuffer: true, antialias: !WEBGL.software, stencil: true }
+/** For a view that reaches from a metre off to the horizon: depth kept on a logarithmic scale, so far hills still hide the ones behind them. */
+const DEEP_GL = { ...GL, logarithmicDepthBuffer: true }
 /**
  * Sized by its box's layout size, not its size on screen: a view that opens
  * while the zoom between levels is still scaling it in would otherwise keep
@@ -35,6 +37,7 @@ export function SurfaceCanvas({
   labels,
   wrap,
   overlay,
+  deep = false,
   children
 }: {
   testId: string
@@ -47,6 +50,8 @@ export function SurfaceCanvas({
   wrap?: Record<`data-${string}`, string | number>
   /** Over the canvas, outside the scene. */
   overlay?: ReactNode
+  /** Whether it shows things from a metre off to a hundred kilometres (see `DEEP_GL`). */
+  deep?: boolean
   children: ReactNode
 }) {
   const tool = useEditor((s) => s.tool)
@@ -58,7 +63,7 @@ export function SurfaceCanvas({
   )
   return (
     <div className="globe-wrap" {...wrap}>
-      <Canvas camera={camera} data-testid={testId} data-ready={ready} frameloop="demand" gl={GL} resize={LAYOUT_SIZE}>
+      <Canvas camera={camera} data-testid={testId} data-ready={ready} frameloop="demand" gl={deep ? DEEP_GL : GL} resize={LAYOUT_SIZE}>
         <ReadyContext value={setReady}>
           <Scene>{children}</Scene>
         </ReadyContext>
