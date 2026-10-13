@@ -7,8 +7,14 @@ import {
   FAR_M,
   FAR_SEGMENTS,
   INSTANCE_STRIDE,
+  GroundDetail,
+  HORIZON_M,
   buildFarGround,
   buildGroundChunk,
+  buildHorizonGround,
+  horizonBounds,
+  horizonCenter,
+  HORIZON_GRID,
   farBounds,
   chunkBounds,
   chunkOf,
@@ -77,6 +83,37 @@ describe('ground chunks', () => {
     }
   })
 
+  it('shade alike along a row’s shared edge: their normals come from the heights on both sides', () => {
+    const id = chunkOf({ lat: 45, lon: 7 }, R)
+    const hills: BaseSampler = { elevation: (lat, lon) => 400 + 300 * Math.sin(lat * 40) * Math.cos(lon * 30), biome: () => BIOME.grassland }
+    const a = chunk(id, hills)
+    const east = chunk({ ...id, col: id.col + 1 }, hills)
+    const n = CHUNK_SEGMENTS + 1
+    for (let j = 0; j < n; j += 8)
+      for (let k = 0; k < 3; k++) expect(a.normals[(j * n + CHUNK_SEGMENTS) * 3 + k]).toBeCloseTo(east.normals[j * n * 3 + k]!, 2)
+  })
+
+  it('are cut by flat-floored wadis in dry land, and by shallower channels where it is wet', () => {
+    const deepest = (biome: number) => {
+      const detail = new GroundDetail(42, R)
+      const base = flat(biome, 300)
+      let cut = 0
+      let floor = 0
+      for (let i = 0; i < 120; i++)
+        for (let j = 0; j < 120; j++) {
+          const [lat, lon] = [10 + i * 0.0002, 20 + j * 0.0002]
+          const rough = detail.elevation(base, lat, lon, 1, false)
+          cut = Math.max(cut, rough - detail.elevation(base, lat, lon))
+          floor = Math.max(floor, detail.shape.bed)
+        }
+      return { cut, floor }
+    }
+    const desert = deepest(BIOME.desert)
+    expect(desert.cut).toBeGreaterThan(6)
+    expect(desert.floor).toBeGreaterThan(0.9)
+    expect(deepest(BIOME.temperateForest).cut).toBeLessThan(desert.cut)
+  })
+
   it('grow the plants of their biome', () => {
     const id = chunkOf({ lat: 10, lon: 10 }, R)
     const count = (c: ReturnType<typeof chunk>, plant: string) => (c.plants[plant as 'grass']?.length ?? 0) / INSTANCE_STRIDE
@@ -136,5 +173,33 @@ describe('the distant ground', () => {
     const middle = ((FAR_SEGMENTS / 2) * (FAR_SEGMENTS + 1) + FAR_SEGMENTS / 2) * 3 + 1
     expect(sunk[middle]!).toBeLessThan(open[middle]! - 50)
     expect(sunk[1]).toBe(open[1])
+  })
+})
+
+describe('the land to the horizon', () => {
+  const center = chunkOf({ lat: 45.1, lon: 7.4 }, R)
+  const middle = horizonCenter(center, R)
+  const sheet = buildHorizonGround({
+    frame: { origin: middle, radiusKm: R },
+    seed: 42,
+    grid: sampleBaseGrid(flat(BIOME.grassland), horizonBounds(middle, R), HORIZON_GRID),
+    biomeColors: BIOME_RGB.map((c) => [...c]),
+    seabedColor: [40, 60, 80]
+  })
+
+  it('reaches HORIZON_M from its middle, and sinks under the distant ground', () => {
+    const { positions } = sheet
+    let farthest = 0
+    let innerLowest = Infinity
+    let outerLowest = Infinity
+    for (let t = 0; t < positions.length; t += 3) {
+      const r = Math.hypot(positions[t]!, positions[t + 2]!)
+      farthest = Math.max(farthest, r)
+      if (r < 6500) innerLowest = Math.min(innerLowest, positions[t + 1]!)
+      if (r > FAR_M * 2) outerLowest = Math.min(outerLowest, positions[t + 1]!)
+    }
+    expect(farthest).toBeCloseTo(HORIZON_M, -2)
+    expect(innerLowest).toBeLessThan(-200)
+    expect(outerLowest).toBeGreaterThan(50)
   })
 })
