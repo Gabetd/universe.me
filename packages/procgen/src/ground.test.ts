@@ -12,6 +12,8 @@ import {
   buildFarGround,
   buildGroundChunk,
   buildHorizonGround,
+  buildGroundMap,
+  groundMapBounds,
   horizonBounds,
   horizonCenter,
   HORIZON_GRID,
@@ -201,5 +203,21 @@ describe('the land to the horizon', () => {
     expect(farthest).toBeCloseTo(HORIZON_M, -2)
     expect(innerLowest).toBeLessThan(-200)
     expect(outerLowest).toBeGreaterThan(50)
+  })
+})
+
+describe('the map of the ground around', () => {
+  const map = (base: BaseSampler) => {
+    const size = { frame: { origin: { lat: 10, lon: 20 }, radiusKm: R }, width: 40, height: 20, metresPerPixel: 150 }
+    return buildGroundMap({ ...size, seed: 42, grid: sampleBaseGrid(base, groundMapBounds(size), 9), biomeColors: BIOME_RGB.map((c) => [...c]), seabedColor: [40, 60, 80], waterColor: [30, 90, 200] })
+  }
+
+  it('is as big as asked, the sea in the water’s colour and the land in its own', () => {
+    const sea = map(flat(BIOME.grassland, -300))
+    expect(sea).toHaveLength(40 * 20 * 4)
+    expect(sea[2]).toBeGreaterThan(sea[0]! + 40)
+    const land = map(flat(BIOME.grassland, 300))
+    expect(land[1]).toBeGreaterThan(land[2]!)
+    expect(map(flat(BIOME.grassland, 300))).toEqual(land)
   })
 })

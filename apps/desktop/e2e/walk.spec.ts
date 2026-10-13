@@ -50,7 +50,7 @@ test('on the ground, W A S D move over it at the speed picked, S moves rather th
   await page.keyboard.up('Control')
 })
 
-test('on the ground, the planet’s map in the corner shows where you are and which way you face, and a click on it goes there; the land reaches the horizon under the sky', async ({ h }) => {
+test('on the ground, a map of the land around in the corner shows where you are and which way you face, and a click on it goes there; the land reaches the horizon under the sky', async ({ h }) => {
   const { page } = h
   await newWorld(h, 'Far')
   await page.getByRole('button', { name: '🔍 Ground' }).click()
@@ -82,10 +82,13 @@ test('on the ground, the planet’s map in the corner shows where you are and wh
   await page.mouse.up({ button: 'right' })
   await expect.poll(heading).not.toBe(0)
 
-  // The map shows a fiftieth of the planet, 1/√50 of its width: a quarter of the way across is about 12.7° west of the camera.
+  // The map shows the land around, some 500 km² (32 by 16 km), drawn once it's worked out: a quarter of the way across is some 8 km west of the camera.
+  await expect(minimap).toHaveAttribute('data-drawn', 'true', { timeout: SLOW })
   const box = (await minimap.boundingBox())!
-  const [, lon0] = await at()
+  const [lat0, lon0] = await at()
   await page.mouse.click(box.x + box.width / 4, box.y + box.height / 2)
-  await expect.poll(async () => (await at())[1]! - lon0!, { timeout: SLOW }).toBeCloseTo(-12.7, 0)
+  // Degrees of longitude west, as kilometres along the ground (Terra is Earth-sized).
+  const westKm = async () => (((await at())[1]! - lon0!) * Math.PI * 6371 * Math.cos((lat0! * Math.PI) / 180)) / 180
+  await expect.poll(westKm, { timeout: SLOW }).toBeCloseTo(-7.9, 0)
   await expect(page.getByTestId('ground-readout')).toContainText('°W')
 })

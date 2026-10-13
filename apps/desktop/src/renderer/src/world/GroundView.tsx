@@ -191,7 +191,7 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
       overlay={
         <>
           <GroundReadout ground={ground} error={failed} />
-          <GroundMinimap model={model} change={change} />
+          <GroundMinimap model={model} change={change} seed={seed} waters={waters} />
         </>
       }
     >

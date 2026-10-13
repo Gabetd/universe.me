@@ -100,10 +100,10 @@ export function useGroundChunks(
   return { chunks, error }
 }
 
-/** What chunks and the distant ground are built from: the world's colours and its terrain. */
-function sources(model: TerrainModel) {
+/** What chunks, the distant ground and the minimap are built from: the world's colours (and its water's) and its terrain. */
+export function sources(model: TerrainModel) {
   const palette = worldPalette(model.settings.terrain)
-  return { palette: { biomeColors: palette.biomes, seabedColor: palette.shallow.map((c) => c * 0.7) }, base: modelSampler(model) }
+  return { palette: { biomeColors: palette.biomes, seabedColor: palette.shallow.map((c) => c * 0.7) }, water: palette.shallow, base: modelSampler(model) }
 }
 
 /**

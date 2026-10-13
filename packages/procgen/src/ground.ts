@@ -223,6 +223,18 @@ export class GroundDetail {
     this.jitter = (CHUNK_M / metresPerDegLat(radiusKm)) * 0.6
   }
 
+  /** The hills' octaves that show between points `spacing` metres apart: those at least twice as long. */
+  private hillsSeen(spacing: number): number[] {
+    if (spacing <= 0) return this.hillFreqs
+    let seen = this.seenAt.get(spacing)
+    if (!seen) {
+      const most = (this.radiusKm * 1000) / (2 * spacing)
+      this.seenAt.set(spacing, (seen = this.hillFreqs.filter((f) => f <= most)))
+    }
+    return seen
+  }
+  private seenAt = new Map<number, number[]>()
+
   private dirAt(lat: number, lon: number): Vec3 {
     if (lat !== this.dirLat || lon !== this.dirLon) {
       latLonToDir(lat, lon, this.dir)
@@ -239,9 +251,10 @@ export class GroundDetail {
    * flat-floored with steep banks, and where it's high and rough, ravines,
    * deep and V-shaped, with side gullies running into both; and dry or rough
    * land steps into ledges and mesas with cliffs between. What shaped it is
-   * left in `shape`.
+   * left in `shape`. `spacing` (metres) leaves out hills too small to show
+   * between points that far apart, which would only be noise there.
    */
-  elevation(base: BaseSampler, lat: number, lon: number, detail = 1, fine = true): number {
+  elevation(base: BaseSampler, lat: number, lon: number, detail = 1, fine = true, spacing = 0): number {
     const elevation = base.elevation(lat, lon)
     const shape = this.shape
     shape.bed = 0
@@ -250,7 +263,7 @@ export class GroundDetail {
     shape.shore = Infinity
     shape.surface = NaN
     if (detail <= 0) return elevation
-    const y = this.landform(base, lat, lon, elevation, detail, fine)
+    const y = this.landform(base, lat, lon, elevation, detail, fine, spacing)
     if (!this.water || detail < 1) return y
     // Rivers cut their valleys through it, and lakes lie in basins.
     const touch = this.water.shape(lat, lon, y)
@@ -261,11 +274,11 @@ export class GroundDetail {
   }
 
   /** The land before the water: hills, and up close channels and ledges (see `elevation`). */
-  private landform(base: BaseSampler, lat: number, lon: number, elevation: number, detail: number, fine: boolean): number {
+  private landform(base: BaseSampler, lat: number, lon: number, elevation: number, detail: number, fine: boolean, spacing: number): number {
     const shape = this.shape
     const d = this.dirAt(lat, lon)
     const relief = 9 + clamp(Math.abs(elevation) * 0.04, 0, 110)
-    let y = elevation + detail * octaves(this.hills, d[0], d[1], d[2], this.hillFreqs, relief, 0.4)
+    let y = elevation + detail * octaves(this.hills, d[0], d[1], d[2], this.hillsSeen(spacing), relief, 0.4)
     // Under the sea and along the shore the land is as it is.
     const inland = clamp01((elevation - 2) / 30)
     if (!fine || inland <= 0) return y
@@ -402,58 +415,64 @@ export const SKIRT_M = 6
 export const CHUNK_SEGMENTS = 64
 
 /**
- * Heights over a grid of size × size vertices and one more all round (so
- * normals at its edges match its neighbours'), with what shaped each, and
- * each vertex's normal and place in the frame.
+ * Heights over a grid of `cols` × `rows` vertices (`rows` = `cols` unless
+ * given) and one more all round (so normals at its edges match its
+ * neighbours'), with what shaped each, and each vertex's normal and place in
+ * the frame.
  */
 function heightField(
-  size: number,
+  cols: number,
   at: (i: number, j: number) => { lat: number; lon: number },
   frame: LocalFrame,
   height: (lat: number, lon: number) => number,
-  shape: GroundShape
+  shape: GroundShape,
+  rows = cols
 ) {
-  const m = size + 2
-  const heights = new Float64Array(m * m)
-  const xz = new Float64Array(m * m * 2)
-  const beds = new Float32Array(size * size)
-  const arid = new Float32Array(size * size)
-  const wet = new Float32Array(size * size)
-  const shore = new Float32Array(size * size)
-  for (let j = -1, t = 0; j <= size; j++) {
-    for (let i = -1; i <= size; i++, t++) {
+  const m = cols + 2
+  const cells = cols * rows
+  const heights = new Float64Array(m * (rows + 2))
+  const xz = new Float64Array(m * (rows + 2) * 2)
+  const beds = new Float32Array(cells)
+  const arid = new Float32Array(cells)
+  const wet = new Float32Array(cells)
+  const shore = new Float32Array(cells)
+  const surface = new Float32Array(cells)
+  for (let j = -1, t = 0; j <= rows; j++) {
+    for (let i = -1; i <= cols; i++, t++) {
       const { lat, lon } = at(i, j)
       heights[t] = height(lat, lon)
       const [x, z] = toLocal(frame, { lat, lon })
       xz[t * 2] = x
       xz[t * 2 + 1] = z
-      if (i >= 0 && j >= 0 && i < size && j < size) {
-        beds[j * size + i] = shape.bed
-        arid[j * size + i] = shape.arid
-        wet[j * size + i] = shape.wet
-        shore[j * size + i] = shape.shore
+      if (i >= 0 && j >= 0 && i < cols && j < rows) {
+        const k = j * cols + i
+        beds[k] = shape.bed
+        arid[k] = shape.arid
+        wet[k] = shape.wet
+        shore[k] = shape.shore
+        surface[k] = shape.surface
       }
     }
   }
-  const normals = new Float32Array(size * size * 3)
-  for (let j = 0; j < size; j++) {
-    for (let i = 0; i < size; i++) {
+  const normals = new Float32Array(cells * 3)
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
       const c = (j + 1) * m + i + 1
       const [e, w, n, s] = [c + 1, c - 1, c + m, c - m]
       const gx = (heights[e]! - heights[w]!) / (xz[e * 2]! - xz[w * 2]!)
       const gz = (heights[n]! - heights[s]!) / (xz[n * 2 + 1]! - xz[s * 2 + 1]!)
       const len = Math.hypot(gx, 1, gz)
-      normals.set([-gx / len, 1 / len, -gz / len], (j * size + i) * 3)
+      normals.set([-gx / len, 1 / len, -gz / len], (j * cols + i) * 3)
     }
   }
-  /** A vertex of the grid (0 to size − 1 each way): its height and place. */
+  /** A vertex of the grid (0 to cols − 1 across, rows − 1 down): its height and place. */
   const vertex = (i: number, j: number) => {
     const t = (j + 1) * m + i + 1
     return { x: xz[t * 2]!, y: heights[t]!, z: xz[t * 2 + 1]! }
   }
   /** What shaped the land at a vertex, for its colour. */
   const lay = (t: number, up = normals[t * 3 + 1]!): Lay => ({ up, bed: beds[t]!, arid: arid[t]!, wet: wet[t]!, shore: shore[t]! })
-  return { vertex, normals, lay }
+  return { vertex, normals, lay, surface }
 }
 
 /** Builds one chunk's ground mesh and plants. Pure: the same input always gives the same chunk. */
@@ -573,6 +592,86 @@ function groundColor(input: GroundColors, detail: GroundDetail, base: BaseSample
   for (let c = 0; c < 3; c++) out[t * 3 + c] = (rgb[c]! / 255) * light
 }
 
+export interface GroundMapInput extends GroundColors {
+  /** The map's middle is the frame's origin. */
+  frame: LocalFrame
+  seed: number
+  /** The globe's terrain over the map's area (see `groundMapBounds`). */
+  grid: BaseGrid
+  waters?: GroundWaters
+  /** Its size in pixels, and how many metres a pixel is across. */
+  width: number
+  height: number
+  metresPerPixel: number
+  /** RGB (0–255) of the sea, rivers and lakes on it. */
+  waterColor: number[]
+}
+
+/** The lat/lon edges of a map of the ground (see `buildGroundMap`). */
+export function groundMapBounds({ frame, width, height, metresPerPixel }: Pick<GroundMapInput, 'frame' | 'width' | 'height' | 'metresPerPixel'>): ChunkBounds {
+  const [halfX, halfZ] = [((width / 2 + 1) * metresPerPixel), ((height / 2 + 1) * metresPerPixel)]
+  const a = fromLocal(frame, -halfX, halfZ)
+  const b = fromLocal(frame, halfX, -halfZ)
+  return { lat0: a.lat, lat1: b.lat, lon0: a.lon, lon1: a.lon + wrapLon(b.lon - a.lon) }
+}
+
+/**
+ * A map of the ground around a point, seen from straight above: each pixel
+ * the ground's colour there (as the chunks colour it, without what's too
+ * small to see at the map's scale), shaded by its hills as if lit from the
+ * north-west, and the sea, rivers and lakes in the water's colour. Pure, like
+ * a chunk; RGBA, row by row from the north-west corner.
+ */
+export function buildGroundMap(input: GroundMapInput): Uint8ClampedArray {
+  const { frame, width, height, metresPerPixel: mpp, waterColor } = input
+  const detail = new GroundDetail(input.seed, frame.radiusKm, input.waters)
+  const base = gridSampler(input.grid)
+  const place = (i: number, j: number) => fromLocal(frame, (i + 0.5 - width / 2) * mpp, (j + 0.5 - height / 2) * mpp)
+  const field = heightField(width, place, frame, (lat, lon) => detail.elevation(base, lat, lon, 1, false, mpp), detail.shape, height)
+  const land = new Float32Array(width * height * 3)
+  const water = new Uint8Array(width * height)
+  // Light from the north-west and above, as maps are shaded.
+  const [lx, ly, lz] = [-0.5, 0.7, -0.5].map((v) => v / Math.hypot(0.5, 0.7, 0.5)) as [number, number, number]
+  for (let j = 0, t = 0; j < height; j++) {
+    for (let i = 0; i < width; i++, t++) {
+      const { y } = field.vertex(i, j)
+      const { lat, lon } = place(i, j)
+      if (y < 0 || !Number.isNaN(field.surface[t]!)) {
+        // Deeper sea darker.
+        water[t] = 1
+        const depth = y < 0 ? clamp01(-y / 400) : 0
+        for (let c = 0; c < 3; c++) land[t * 3 + c] = (waterColor[c]! / 255) * (1 - 0.45 * depth)
+        continue
+      }
+      groundColor(input, detail, base, lat, lon, y, field.lay(t), land, t)
+      const [nx, ny, nz] = [field.normals[t * 3]!, field.normals[t * 3 + 1]!, field.normals[t * 3 + 2]!]
+      // Exaggerated a little, so gentle hills show at a hundred metres a pixel.
+      const shade = clamp(0.55 + 0.75 * (nx * lx * 3 + ny * ly + nz * lz * 3), 0.35, 1.35)
+      for (let c = 0; c < 3; c++) land[t * 3 + c]! *= shade
+    }
+  }
+  // The land's colours vary over a few pixels at this scale: softened (from the land around, never the water), so they read as country, not grain.
+  const out = new Uint8ClampedArray(width * height * 4)
+  for (let j = 0, t = 0; j < height; j++) {
+    for (let i = 0; i < width; i++, t++) {
+      const sum = [0, 0, 0]
+      let weight = 0
+      if (!water[t])
+        for (let dj = -1; dj <= 1; dj++)
+          for (let di = -1; di <= 1; di++) {
+            const [ni, nj] = [i + di, j + dj]
+            if (ni < 0 || nj < 0 || ni >= width || nj >= height || water[nj * width + ni]) continue
+            const w = di === 0 && dj === 0 ? 4 : di === 0 || dj === 0 ? 2 : 1
+            for (let c = 0; c < 3; c++) sum[c]! += land[(nj * width + ni) * 3 + c]! * w
+            weight += w
+          }
+      for (let c = 0; c < 3; c++) out[t * 4 + c] = (weight ? sum[c]! / weight : land[t * 3 + c]!) * 255
+      out[t * 4 + 3] = 255
+    }
+  }
+  return out
+}
+
 /** How far the distant ground reaches from the middle of the view, in metres. */
 export const FAR_M = 12_000
 /** Vertices along the distant ground's edge, less one: 250 m apart. */
@@ -635,7 +734,7 @@ export function buildFarGround(input: FarGroundInput): GroundSheet {
   const indices = new Uint32Array(FAR_SEGMENTS * FAR_SEGMENTS * 6)
   const place = (i: number, j: number) => ({ lat: b.lat0 + ((b.lat1 - b.lat0) * j) / FAR_SEGMENTS, lon: b.lon0 + ((b.lon1 - b.lon0) * i) / FAR_SEGMENTS })
   // Too coarse for channels and ledges (250 m apart), which would show as pits: the hills alone.
-  const field = heightField(n, place, frame, (lat, lon) => detail.elevation(base, lat, lon, 1, false), detail.shape)
+  const field = heightField(n, place, frame, (lat, lon) => detail.elevation(base, lat, lon, 1, false, FAR_M / (FAR_SEGMENTS / 2)), detail.shape)
   for (let j = 0, t = 0; j < n; j++) {
     for (let i = 0; i < n; i++, t++) {
       const { lat, lon } = place(i, j)
