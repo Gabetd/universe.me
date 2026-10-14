@@ -1,6 +1,7 @@
 import { greatCircleKm, polygonTester } from './geo'
 import type { TimelineData } from './records'
 import { MATERIAL_INFO, STAGES, stageOf, weatherFactor, type Blueprint, type EventEffect, type Exposure, type Material, type Stage, type Structure } from './structures'
+import { SCAR_LOOKS, scarReach, type Scar } from './scars'
 import { DEFAULT_CALENDAR, secondsPerYear, type Time } from './time'
 import type { TimelineEvent } from './timeline'
 import { eventPlace, regionAt, type Warning } from './timeline-queries'
@@ -22,7 +23,7 @@ const FLOOR = 5
 
 /** What the condition engine needs to know about a world. */
 export interface StructureWorld {
-  data: Pick<TimelineData, 'events' | 'effects' | 'maintenances' | 'structures' | 'blueprints' | 'changes'>
+  data: Pick<TimelineData, 'events' | 'effects' | 'maintenances' | 'structures' | 'blueprints' | 'changes'> & Partial<Pick<TimelineData, 'scars'>>
   regions: Region[]
   radiusKm: number
   /** Multiplies every material's decay rate (1 = the defaults). */
@@ -46,6 +47,8 @@ export interface Step {
   /** What caused it, so the UI can say why. */
   eventId?: string
   effectId?: string
+  /** The scar on the land that did it (a blast, war, fire). */
+  scarId?: string
 }
 
 /**
@@ -199,6 +202,24 @@ function findHits(effect: EventEffect, world: StructureWorld, index: WorldIndex)
   })
 }
 
+/** Which structures a scar that harms them reaches as it comes, and how strongly: all of it over its heart, less toward its edge (see `scarReach`); over a region, all of it inside. */
+function scarHits(scar: Scar, world: StructureWorld): EffectHit[] {
+  if (!SCAR_LOOKS[scar.kind].damage || !scar.strength) return []
+  const index = worldIndex(world)
+  const onWorld = index.structures.get(scar.ownerId) ?? []
+  if (scar.regionId) {
+    const region = index.regions.get(scar.regionId)
+    if (!region) return []
+    let inside = index.insideRegion.get(region.id)
+    if (!inside) index.insideRegion.set(region.id, (inside = polygonTester(region.points)))
+    return onWorld.filter((s) => inside(s)).map((s) => ({ structureId: s.id, strength: 1 }))
+  }
+  return onWorld.flatMap((s) => {
+    const strength = scarReach(greatCircleKm(scar, s, world.radiusKm) / scar.radiusKm)
+    return strength > 0 ? [{ structureId: s.id, strength }] : []
+  })
+}
+
 const KIND_ORDER: Record<StepKind, number> = { build: 0, modify: 1, maintenance: 2, damage: 3, destroy: 4, repair: 5 }
 
 /** Every structure's steps on a world, from its build date, its maintenance changes and event effects. */
@@ -218,6 +239,13 @@ export function structureSteps(world: StructureWorld): Map<string, Step[]> {
         : effect.type === 'modify' ? { ...base, kind: 'modify', rename: effect.rename ?? undefined, blueprintId: effect.blueprintId ?? undefined }
         : { ...base, kind: effect.type }
       steps.get(structureId)?.push(step)
+    }
+  }
+  for (const scar of world.data.scars ?? []) {
+    for (const { structureId, strength } of scarHits(scar, world)) {
+      const amount = SCAR_LOOKS[scar.kind].damage * scar.strength * strength
+      const base = { at: scar.start, eventId: scar.eventId ?? undefined, scarId: scar.id }
+      steps.get(structureId)?.push(amount >= 100 ? { ...base, kind: 'destroy' } : { ...base, kind: 'damage', amount })
     }
   }
   for (const list of steps.values()) list.sort((a, b) => a.at - b.at || KIND_ORDER[a.kind] - KIND_ORDER[b.kind])

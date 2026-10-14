@@ -10,6 +10,7 @@ import { FINDING_COMMANDS, findingHandlers } from './finding-commands'
 import { CONFLICT_COMMANDS, conflictHandlers } from './conflict-commands'
 import { MAP_PIN_COMMANDS, mapPinHandlers } from './map-pin-commands'
 import { LANGUAGE_COMMANDS, languageHandlers } from './language-commands'
+import { SCAR_COMMANDS, scarHandlers } from './scar-commands'
 import { POWER_COMMANDS, powerHandlers } from './power-commands'
 import { WATERWAY_COMMANDS, waterwayHandlers } from './waterway-commands'
 import { CANVAS_COMMANDS, canvasHandlers } from './canvas-commands'
@@ -89,6 +90,7 @@ export const Command = z.discriminatedUnion('type', [
   ...CONFLICT_COMMANDS,
   ...MAP_PIN_COMMANDS,
   ...LANGUAGE_COMMANDS,
+  ...SCAR_COMMANDS,
   ...FACTION_COMMANDS,
   ...CANVAS_COMMANDS,
   ...MEMBER_COMMANDS,
@@ -116,6 +118,7 @@ export const handlers: Handlers = {
   ...conflictHandlers,
   ...mapPinHandlers,
   ...languageHandlers,
+  ...scarHandlers,
   ...factionHandlers,
   ...canvasHandlers,
   ...memberHandlers,

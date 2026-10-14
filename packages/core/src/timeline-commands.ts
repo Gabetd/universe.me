@@ -79,12 +79,13 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
       canvasHidden: p.canvasHidden ?? false
     }),
   'event.update': events.update,
-  // Its links and structure effects can't outlive it, so they go (and come back) with it; maintenance changes it caused stay, uncaused.
+  // Its links and structure effects can't outlive it, so they go (and come back) with it; maintenance changes and scars it caused stay, uncaused.
   // Those all share its owner; a character's stops aren't checked, so every character is looked at.
   'event.delete': (store, { id }, ctx, run) =>
     deleteWith(store, ctx, run, { kind: 'event', id }, ({ ownerId }) => ({
       detach: [
         ...clearRefs(store, 'maintenance', ownerId, 'causeEventId', id),
+        ...clearRefs(store, 'scar', ownerId, 'eventId', id),
         ...live(store, 'character')
           .filter((c) => c.stops.some((s) => s.eventId === id))
           .map((c): Command => ({ type: 'character.update', payload: { id: c.id, patch: { stops: c.stops.map((s) => (s.eventId === id ? { ...s, eventId: null } : s)) } } })),
