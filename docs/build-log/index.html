@@ -207,11 +207,25 @@
     peopleIn: ['241-people-in', 'Someone else in the universe: their mark in the top bar says where they are, and another follows the place they’re on in the tree'],
     language: ['170-language', 'A world speaking a desert language: its sounds, and its rules naming rivers “Wadi …” and factions “Banu …”'],
     mapPin: ['243-map-pin', 'A pin put on the map with a right-click: named, with its place and notes'],
+    scarDrought: ['250-scar-drought', 'A drought 2,000 km across left with the 💥 tool: its ring on the map, the land under it parched, and its panel saying how long it lasts and heals'],
+    scarCrater: ['251-scar-crater', 'A crater up close on the ground, in the parched land of the drought around it: its bowl and its raised rim'],
     canvasCards: ['33-canvas-cards', 'The canvas as Obsidian’s: a text card, an element, a picture and a web page beside the events, two of them in a group, connected with a label']
   }
 
   // One entry per published build, newest first.
   const LOG = [
+    {
+      ver: '0.1.108', date: '14 Oct 2026', tag: 'M25 · staging',
+      title: 'Scarred land: craters, war, fire, drought, radiation and poison',
+      points: [
+        'Leave a scar on a world’s land with the new 💥 tool (X), from the right-click menu (Leave a scar here), or from an event’s panel (Leave a scar, over where and when it happened): a crater, war-torn ground, burned land, drought, radiation or poison, from 100 m to 2,000 km across, or over a whole region.',
+        'Scars live on the timeline: each comes at a moment, stays at its worst until its end (a blast or a fire is over in a moment, a war or a drought lasts until you end it), then heals over the years you set; a crater stays unless told to fade. Its panel says how much of it there is at the playhead.',
+        'The land shows it everywhere: on the ground a crater’s bowl with its raised rim and thrown-out earth, shell holes where war was, ash, mud, black, parched, sickly yellow or purplish ground, plants killed and trees left as bare trunks, the distant woods thinned; on the globe and the map, a ring in its colour and the land under it coloured (great craters lowered too).',
+        'Craters, war and fire damage the structures they reach as they come, and a crater destroys what stands at its heart. AI clients can list, add and change scars too (list_scars, add_scar, update_scar).',
+        'In Universe (staging) to try first; it comes to Universe itself after.'
+      ],
+      shots: ['scarDrought', 'scarCrater']
+    },
     {
       ver: '0.1.106', date: '14 Oct 2026', tag: 'M20–M24',
       title: 'The ground under a real sky, rough country, and languages',
@@ -481,6 +495,7 @@
     { title: 'The universe', shots: ['contextMenu', 'universe', 'cluster', 'galaxy', 'galaxyStars', 'systemPlanets', 'claimedPlanet'] },
     { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom', 'mapPin', 'language', 'powers', 'powersShared', 'warnings'] },
     { title: 'Rivers and erosion', shots: ['rivers', 'eroded', 'riverGround'] },
+    { title: 'Scarred land', shots: ['scarDrought', 'scarCrater'] },
     { title: 'Factions and relationships', shots: ['relationships', 'subFactions', 'territory'] },
     { title: 'Plugins', shots: ['plugins'] },
     { title: 'Star systems and sky', shots: ['starSystem', 'planetMoons', 'moonTrack', 'colder', 'orbit'] },
