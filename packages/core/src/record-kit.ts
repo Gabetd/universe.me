@@ -32,6 +32,7 @@ import { themeValidators } from './theme-validators'
 import { worldSimValidators } from './world-sim-validators'
 import { canvasValidators } from './canvas-validators'
 import { memberValidators } from './member-validators'
+import { languageValidators } from './language-validators'
 
 /** Creating, updating and deleting records of any kind (records.ts), with each kind's checks. */
 
@@ -128,7 +129,8 @@ const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>, check
   ...memberValidators,
   // A note on what a merge lost: made by sync alone, about whatever it was, deleted or not.
   conflict: () => {},
-  mapPin: (store, p) => void liveWorld(store, p.ownerId)
+  mapPin: (store, p) => void liveWorld(store, p.ownerId),
+  ...languageValidators
 }
 
 /** A blueprint by id: a built-in one or one in the project's library. */
