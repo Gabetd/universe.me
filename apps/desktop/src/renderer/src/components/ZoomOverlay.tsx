@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
-import { foundDrawn, onStage, useZoom, viewCanvas, zooming, type Spot } from './zoom'
+import { foundDrawn, onStage, useZoom, viewCanvas, zooming, type Spot, type Transition } from './zoom'
 
 const DURATION_MS = 650
 /** Frames sampled along a zoom: the camera's scale grows exponentially, which keyframes' straight lines can't do by themselves. */
@@ -27,41 +27,12 @@ export function ZoomStage({ children }: { children: ReactNode }) {
 
   useLayoutEffect(() => {
     if (!transition) return
-    const { still } = transition
-    const stage = host.current!
-    const el = view.current!
-    stage.appendChild(still)
-    // Hidden until it has drawn a frame or two (and so said where things are in it).
-    el.style.opacity = '0'
-    const playing: Animation[] = []
-    let frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => {
-        el.style.opacity = ''
-        const ends = landing(stage, transition.direction, transition.at)
-        // Going in, the old view is the level the thing is small in; going out, the one it fills.
-        const [stillIs, viewIs] = transition.direction === 'in' ? (['outer', 'inner'] as const) : (['inner', 'outer'] as const)
-        const [stillFrames, viewFrames] = [layer(ends, stillIs, transition.direction), layer(ends, viewIs, transition.direction)]
-        still.style.transformOrigin = `${-parseFloat(still.style.left || '0')}px ${-parseFloat(still.style.top || '0')}px`
-        el.style.transformOrigin = '0 0'
-        // The level shown small has soft edges, so it reads as a place in the other, not a picture laid on it.
-        ;(stillIs === 'inner' ? still : el).classList.add('zoom-inner')
-        // Held at their ends until the zoom is put away, so neither jumps back first.
-        playing.push(still.animate(stillFrames, { duration: DURATION_MS, fill: 'forwards' }), el.animate(viewFrames, { duration: DURATION_MS, fill: 'forwards' }))
-        playing[1]!.finished.then(
-          () => useZoom.getState().set(null),
-          () => {}
-        )
-      })
-    })
+    const zoom = play(transition, host.current!, view.current!)
     // Should frames not come (a hidden window), the zoom still ends.
     const timer = setTimeout(() => useZoom.getState().transition === transition && useZoom.getState().set(null), DURATION_MS + 1000)
     return () => {
-      cancelAnimationFrame(frame)
       clearTimeout(timer)
-      for (const a of playing) a.cancel()
-      still.remove()
-      el.style.opacity = ''
-      el.classList.remove('zoom-inner')
+      zoom.stop()
     }
   }, [transition])
 
@@ -77,6 +48,44 @@ export function ZoomStage({ children }: { children: ReactNode }) {
       </div>
     </div>
   )
+}
+
+/**
+ * Plays `transition` on the stage: the still over the new view, which is
+ * hidden until it has drawn a frame or two (and so said where things are in
+ * it), then both played as one zoom, held at their ends until it's put away.
+ */
+function play(transition: Transition, stage: HTMLElement, view: HTMLElement): { stop(): void } {
+  const { still, direction } = transition
+  stage.appendChild(still)
+  view.style.opacity = '0'
+  const playing: Animation[] = []
+  let frame = requestAnimationFrame(() => {
+    frame = requestAnimationFrame(() => {
+      view.style.opacity = ''
+      view.style.transformOrigin = '0 0'
+      const ends = landing(stage, direction, transition.at)
+      // Going in, the old view is the level the thing is small in; going out, the one it fills.
+      const [stillIs, viewIs] = direction === 'in' ? (['outer', 'inner'] as const) : (['inner', 'outer'] as const)
+      // The level shown small has soft edges, so it reads as a place in the other, not a picture laid on it.
+      ;(stillIs === 'inner' ? still : view).classList.add('zoom-inner')
+      const timing = { duration: DURATION_MS, fill: 'forwards' } as const
+      playing.push(still.animate(layer(ends, stillIs, direction), timing), view.animate(layer(ends, viewIs, direction), timing))
+      playing[1]!.finished.then(
+        () => useZoom.getState().set(null),
+        () => {}
+      )
+    })
+  })
+  return {
+    stop() {
+      cancelAnimationFrame(frame)
+      for (const a of playing) a.cancel()
+      still.remove()
+      view.style.opacity = ''
+      view.classList.remove('zoom-inner')
+    }
+  }
 }
 
 /** A thing as drawn in the level it's small in (`outer`) and in the level it fills (`inner`), on the stage. */

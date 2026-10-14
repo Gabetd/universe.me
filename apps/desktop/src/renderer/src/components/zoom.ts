@@ -20,7 +20,7 @@ export interface Spot {
   r?: number
 }
 
-interface Transition {
+export interface Transition {
   /** A still of the view being left, placed where its canvas was on the stage. */
   still: HTMLCanvasElement
   direction: 'in' | 'out'
@@ -65,7 +65,8 @@ function arm(canvas: HTMLCanvasElement | null | undefined, at?: Spot) {
   still.height = source.height
   still.getContext('2d')!.drawImage(source, 0, 0)
   const box = onStage(source)
-  Object.assign(still.style, { left: `${box.x}px`, top: `${box.y}px`, width: `${box.width}px`, height: `${box.height}px` })
+  // Where its canvas was; scaled about the stage's top left, as the view under it is.
+  Object.assign(still.style, { left: `${box.x}px`, top: `${box.y}px`, width: `${box.width}px`, height: `${box.height}px`, transformOrigin: `${-box.x}px ${-box.y}px` })
   armed = { still, at: { x: box.x + (at?.x ?? box.width / 2), y: box.y + (at?.y ?? box.height / 2), r: at?.r } }
 }
 
