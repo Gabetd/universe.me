@@ -1,10 +1,10 @@
-import { FACTION_KIND_LABELS, eventPlace, languageAtPoint, nameIn, waterwayKind, type Command, type FactionKind, type Language, type Party } from '@universe/core'
+import { FACTION_KIND_LABELS, eventPlace, languageAtPoint, nameIn, SCAR_LOOKS, scarName, waterwayKind, type Command, type FactionKind, type ScarKind, type Language, type Party } from '@universe/core'
 import { waterwayIndex, waterwayPlace } from '@universe/procgen'
 import { create } from 'zustand'
 import { addChildCommand, addOptions, canDelete, kindLabel } from './kinds'
 import { deleteCommand, useUi, type DeleteKind } from './store'
 import { contributions, isNameable, usePlugins } from './pluginStore'
-import { useTimelineView } from './timeline/timelineStore'
+import { playheadOf, useTimelineView } from './timeline/timelineStore'
 import { useEditor } from './world/editorStore'
 import { useWaterOf } from './world/useWater'
 import { languageNow, nameInPlace, waterInLanguages } from './languages'
@@ -21,7 +21,7 @@ import { goToEvent } from './world/goToEvent'
  */
 
 /** What can be right-clicked: a node, or a record a world or timeline holds. */
-export type ElementKind = 'node' | 'region' | 'structure' | 'character' | 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan' | 'species' | 'lane' | 'power' | 'faction' | 'relationship' | 'waterway' | 'member' | 'mapPin'
+export type ElementKind = 'node' | 'region' | 'structure' | 'character' | 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan' | 'species' | 'lane' | 'power' | 'faction' | 'relationship' | 'waterway' | 'member' | 'mapPin' | 'scar'
 
 export interface ElementRef {
   kind: ElementKind
@@ -190,7 +190,8 @@ const KINDS: Record<ElementKind, { label: ByKind; nameField?: ByKind; inspector:
   waterway: { label: waterwayLabel, nameField: (id) => `${waterwayLabel(id)} name`, inspector: true, deletable: false },
   // Someone the universe is shared with (in the Share dialog): removing them stops sharing it with them.
   member: { label: 'Member', inspector: false, deleteVerb: 'Remove' },
-  mapPin: { label: 'Pin', nameField: 'Pin name', inspector: true }
+  mapPin: { label: 'Pin', nameField: 'Pin name', inspector: true },
+  scar: { label: 'Scar', nameField: 'Scar name', inspector: true }
 }
 
 const byKind = (value: ByKind, id: string) => (typeof value === 'string' ? value : value(id))
@@ -248,6 +249,10 @@ export function nameOf({ kind, id }: ElementRef): string | undefined {
       return find(t.members)?.name
     case 'mapPin':
       return find(t.mapPins)?.name
+    case 'scar': {
+      const scar = find(t.scars)
+      return scar && scarName(scar)
+    }
   }
 }
 
@@ -287,14 +292,23 @@ export async function addMapPin(worldId: string, at: { lat: number; lon: number 
   if (id) rename(() => openElement({ kind: 'mapPin', id }), KINDS.mapPin.nameField as string)
 }
 
+/** Leaves a scar of a kind at a point of a world's surface, coming at the playhead, and opens it. */
+async function leaveScar(worldId: string, at: { lat: number; lon: number }, kind: ScarKind, radiusKm: number): Promise<void> {
+  const state = await useUi.getState().execute({ type: 'scar.create', payload: { ownerId: worldId, kind, radiusKm, lat: at.lat, lon: at.lon, start: playheadOf(worldId) } })
+  const id = state?.focus?.id
+  if (id) openElement({ kind: 'scar', id })
+}
+
 /**
  * The menu for a point of a world's surface (right-click on the globe, the
  * map or the ground): what's there, if anything, with Add a pin here.
  */
 export function openSurfaceMenu(worldId: string, at: { lat: number; lon: number }, x: number, y: number, hit?: ElementRef): void {
   const add: MenuItem = { label: 'Add a pin here…', run: () => void addMapPin(worldId, at) }
-  const menu = hit && elementMenu(hit, { extra: [add] })
-  useContextMenu.getState().open(menu ? { ...menu, x, y } : { x, y, title: latLonLabel(at), items: [add] })
+  const { scarKind, scarRadiusKm } = useEditor.getState()
+  const scar: MenuItem = { label: `Leave a scar here (${SCAR_LOOKS[scarKind].label.toLowerCase()})…`, run: () => void leaveScar(worldId, at, scarKind, scarRadiusKm) }
+  const menu = hit && elementMenu(hit, { extra: [add, scar] })
+  useContextMenu.getState().open(menu ? { ...menu, x, y } : { x, y, title: latLonLabel(at), items: [add, scar] })
 }
 
 /** Opens a faction on its world's Factions page. */

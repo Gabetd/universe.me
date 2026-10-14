@@ -127,7 +127,7 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
   const waters = useGroundWaters(props.worldId, model, center)
   const ground = useMemo<Ground>(() => {
     const frame = { origin, radiusKm }
-    const detail = new GroundDetail(seed, radiusKm, waters)
+    const detail = new GroundDetail(seed, radiusKm, waters, model.landScars)
     const base = modelSampler(model)
     const raw = (x: number, z: number) => detail.elevation(base, ...latLonOf(fromLocal(frame, x, z)))
     const pads: Pad[] = sites.flatMap(({ at, r }) => {

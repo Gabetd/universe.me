@@ -1,4 +1,4 @@
-import { LINK_TYPES, PRECISIONS, type Language, type MapPin, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type Theme, type ThemeSpan, type TimelineEvent } from '@universe/core'
+import { LINK_TYPES, PRECISIONS, type Language, type MapPin, type Scar, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type Theme, type ThemeSpan, type TimelineEvent } from '@universe/core'
 import { useMemo } from 'react'
 import { updater, useEventsById, useOwnRecords, useUi, type TimelineSelection } from '../store'
 import { locationLabel } from '../timeline/labels'
@@ -9,6 +9,7 @@ import { EventEffects } from './EventEffects'
 import { ThemePanel, ThemeSpanPanel } from './ThemePanels'
 import { MapPinPanel } from './MapPinPanel'
 import { LanguagePanel } from './LanguagePanels'
+import { EventScars, ScarPanel } from './ScarPanels'
 
 const PRECISION_LABELS: Record<Precision, string> = { exact: 'Exact time', day: 'Day', year: 'Year', century: 'Century', approx: 'Approximate' }
 const LINK_LABELS: Record<LinkType, [string, string]> = {
@@ -46,6 +47,8 @@ export function TimelineInspector({ selection }: { selection: TimelineSelection 
       return <MapPinPanel key={key} pin={record as MapPin} />
     case 'language':
       return <LanguagePanel key={key} language={record as Language} />
+    case 'scar':
+      return <ScarPanel key={key} scar={record as Scar} />
     default:
       return null
   }
@@ -167,6 +170,7 @@ function EventPanel({ event }: { event: TimelineEvent }) {
 
       {onWorld && <Participants worldId={event.ownerId} participants={event.participants ?? []} onCommit={(participants) => update({ participants })} />}
       {onWorld && <EventEffects event={event} />}
+      {onWorld && <EventScars event={event} />}
 
       <div className="field">
         <span>Causes and effects</span>

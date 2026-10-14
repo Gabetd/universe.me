@@ -1,10 +1,11 @@
-import type { LatLon } from '@universe/core'
-import { brushRows, latLonToDir, latLonToPixel, pixelToLatLon, planetCell, renderEquirect, type River, type TerrainModel, type Vec3 } from '@universe/procgen'
+import { SCAR_LOOKS, type LatLon } from '@universe/core'
+import { brushRows, latLonToDir, latLonToPixel, pixelToLatLon, planetCell, renderEquirect, type LandScar, type River, type TerrainModel, type Vec3 } from '@universe/procgen'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { EdgePush, zoomOut } from '../components/zoom'
 import { distanceToSegment } from '../components/canvasDraw'
 import { useUi } from '../store'
 import { selectMapPin, useMapPins } from './useMapPins'
+import { selectScar, useSelectedScarId } from './useScars'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor } from './editorStore'
 import { showsLabel } from './labels'
@@ -32,6 +33,37 @@ interface View {
 function toMap(p: LatLon, refX?: number): [number, number] {
   const [x, y] = latLonToPixel(p.lat, p.lon, W, H)
   return [refX === undefined ? x : x + Math.round((refX - x) / W) * W, y]
+}
+
+/** A scar's ring on the map: a circle on the planet, so stretched east-west toward the poles (half its width and its height, in map pixels). */
+function scarRing(scar: LandScar, model: TerrainModel): [number, number] {
+  const ry = (model.angularRadius(scar.radiusKm) / Math.PI) * H
+  return [Math.min(W / 2, ry / Math.max(0.05, Math.cos((scar.lat * Math.PI) / 180))), ry]
+}
+
+/** Marks where a scar is: its ring (a region's is its outline, drawn already), lightly filled in its colour as much as there is of it, and its icon in the middle. */
+function drawScar(c: CanvasRenderingContext2D, scar: LandScar, model: TerrainModel, shift: number, scale: number, selected: boolean): void {
+  const [x, y] = toMap(scar)
+  const look = SCAR_LOOKS[scar.kind]
+  if (!scar.polygon) {
+    const [rx, ry] = scarRing(scar, model)
+    c.beginPath()
+    c.ellipse(x + shift, y, rx, ry, 0, 0, Math.PI * 2)
+    c.globalAlpha = 0.25 * scar.weight
+    c.fillStyle = look.color
+    c.fill()
+    c.globalAlpha = 1
+    c.setLineDash(selected ? [] : [5 / scale, 3 / scale])
+    c.strokeStyle = selected ? '#ffffff' : look.color
+    c.lineWidth = (selected ? 2.5 : 1.5) / scale
+    c.stroke()
+    c.setLineDash([])
+  }
+  c.font = `${14 / scale}px system-ui, sans-serif`
+  c.textAlign = 'center'
+  c.textBaseline = 'middle'
+  c.fillText(look.icon, x + shift, y)
+  c.textBaseline = 'alphabetic'
 }
 
 /** A pin's head, in screen pixels: how high above its point, and how big. */
@@ -155,6 +187,7 @@ export const MapView = memo(function MapView({
   onStructureClick,
   characters,
   onCharacterClick,
+  scars,
   onPointerDown,
   onPointerMove,
   onDoubleClick
@@ -197,6 +230,7 @@ export const MapView = memo(function MapView({
   const selectedRegionId = useUi((s) => s.selectedRegionId)
   const selectedWaterwayKey = useUi((s) => s.selectedWaterwayKey)
   const { pins: mapPins, selectedId: selectedPinId } = useMapPins(worldId)
+  const selectedScarId = useSelectedScarId()
   const draft = useEditor((s) => s.draft)
   const theme = useViewTheme(worldId)
   const water = useWater(worldId)
@@ -215,7 +249,7 @@ export const MapView = memo(function MapView({
 
   useEffect(() => {
     dirty.current = true
-  }, [regions, selectedRegionId, draft, pins, highlightRegionIds, structures, characters, water, selectedWaterwayKey, mapPins, selectedPinId])
+  }, [regions, selectedRegionId, draft, pins, highlightRegionIds, structures, characters, water, selectedWaterwayKey, mapPins, selectedPinId, scars, selectedScarId])
 
   // Bring the selected event's place to the middle of the view, on the next frame (the view may not be sized yet).
   const pendingFocus = useRef<LatLon | null>(null)
@@ -337,6 +371,7 @@ export const MapView = memo(function MapView({
         c.fillStyle = '#ffffff'
         c.fillText(region.name, cx + shift, cy)
       }
+      for (const scar of scars) drawScar(c, scar, model, shift, scale, scar.id === selectedScarId)
       if (points.length) {
         const poly = polygon(points)
         tracePath(c, poly, shift)
@@ -430,7 +465,7 @@ export const MapView = memo(function MapView({
 
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [model, regions, pins, highlightRegionIds, structures, characters, shades, rivers, mapPins, selectedPinId])
+  }, [model, regions, pins, highlightRegionIds, structures, characters, shades, rivers, mapPins, selectedPinId, scars, selectedScarId])
 
   /** Pointer position in map pixels (x wrapped to [0, W)), or null outside the map vertically. */
   const mapPoint = (e: React.PointerEvent | React.MouseEvent): [number, number] | null => {
@@ -465,6 +500,15 @@ export const MapView = memo(function MapView({
     if (structure) return { kind: 'structure', id: structure.structure.id }
     const water = waterAt(p)
     if (water) return { kind: 'waterway', id: water }
+    // A scar where its icon is, or anywhere in its ring; one over a region by its icon (inside, it's the region's).
+    const scar = scars.find((sc) => {
+      if (within(sc, 10)) return true
+      if (sc.polygon) return false
+      const [x, y] = toMap(sc)
+      const [rx, ry] = scarRing(sc, model)
+      return [-W, 0, W].some((s) => ((p[0] - x - s) / rx) ** 2 + ((p[1] - y) / ry) ** 2 <= 1)
+    })
+    if (scar) return { kind: 'scar', id: scar.id }
     const region = regions.find((r) => [-W, 0, W].some((s) => insidePolygon(p[0] + s, p[1], polygon(r.points))))
     return region && { kind: 'region', id: region.id }
   }
@@ -498,8 +542,8 @@ export const MapView = memo(function MapView({
         const p = mapPoint(e)
         if (!p) return
         const hit = elementAt(p)
-        // On a thing of its own, its menu; anywhere on the land or sea (a region too), a pin can be put there.
-        if (hit && hit.kind !== 'region') openElementMenu(hit, e.clientX, e.clientY)
+        // On a thing of its own, its menu; anywhere on the land or sea (a region or a scar too), a pin or a scar can be put there.
+        if (hit && hit.kind !== 'region' && hit.kind !== 'scar') openElementMenu(hit, e.clientX, e.clientY)
         else openSurfaceMenu(worldId, pixelToLatLon(p[0], p[1], W, H), e.clientX, e.clientY, hit)
       }}
       onPointerDown={(e) => {
@@ -520,6 +564,7 @@ export const MapView = memo(function MapView({
           if (hit?.kind === 'structure') return onStructureClick(hit.id)
           if (hit?.kind === 'waterway') return useUi.getState().selectWaterway(hit.id)
           if (hit?.kind === 'mapPin') return selectMapPin(hit.id)
+          if (hit?.kind === 'scar') return selectScar(hit.id)
           useUi.getState().selectRegion(hit?.id ?? null)
         }
         pan.current = { x: e.clientX, y: e.clientY }

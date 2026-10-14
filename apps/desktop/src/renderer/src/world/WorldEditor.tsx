@@ -1,4 +1,4 @@
-import { characterAt, eventPlace, findBlueprint, type Faction, type LatLon, type SpatialNode } from '@universe/core'
+import { SCAR_KINDS, SCAR_LOOKS, characterAt, eventPlace, findBlueprint, type Faction, type LatLon, type SpatialNode } from '@universe/core'
 import { viewingDistance } from './structureLook'
 import { playheadOf } from '../timeline/timelineStore'
 import { BIOMES } from '@universe/procgen'
@@ -17,6 +17,7 @@ import { MapView } from './MapView'
 import { useSurfaceTools } from './useSurfaceTools'
 import { useTerrain, type SurfaceViewProps } from './useTerrain'
 import { useWaterIn } from './useWater'
+import { useScarsIn } from './useScars'
 import { firstLook } from './firstLook'
 import { useShortcuts, withKey } from '../shortcuts'
 import { GROUND_SPEEDS } from './walk'
@@ -39,6 +40,7 @@ const TOOLS: { tool: EditorTool; label: string; icon: string; hint: string }[] =
   { tool: 'erase', label: 'Erase biome', icon: '⌫', hint: 'Drag to return painted cells to the automatic biome.' },
   { tool: 'region', label: 'Draw region', icon: '⬠', hint: 'Click to add points. Enter or double-click saves, Backspace removes a point, Esc cancels.' },
   { tool: 'place', label: 'Place structure', icon: '🏰', hint: 'Click to place the chosen blueprint, built at the playhead. Esc stops placing.' },
+  { tool: 'scar', label: 'Scar the land', icon: '💥', hint: 'Click to leave the chosen scar there at the playhead: a crater, war, fire, drought, radiation or poison. Esc stops.' },
   { tool: 'locate', label: 'Place event', icon: '📍', hint: 'Click where the selected event happens. Esc cancels.' },
   { tool: 'move', label: 'Move structure', icon: '✥', hint: 'Click the structure’s new spot. Esc cancels.' },
   { tool: 'travel', label: 'Send character', icon: '🧭', hint: 'Click where the character goes; they arrive at the playhead. Esc cancels.' }
@@ -90,6 +92,7 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
   const warnings = useWarningCount(world.id)
   const { model, change, error, bump, commit } = useTerrain(world.id, world.seed, info)
   useWaterIn(world.id, world.seed, info, model, change, bump)
+  const scars = useScarsIn(world.id, allRegions, model, bump)
   const { pointerDown, pointerMove, finishRegion } = useSurfaceTools(world.id, model, bump, commit)
   // Without WebGL the 3D views fall back to the map.
   const activeView = hasWebGL || !showsSurface(view) ? view : 'map'
@@ -117,11 +120,12 @@ export function WorldEditor({ world }: { world: SpatialNode }) {
         onStructureClick: selectStructure,
         characters,
         onCharacterClick: selectCharacter,
+        scars,
         onPointerDown: pointerDown,
         onPointerMove: pointerMove,
         onDoubleClick
       },
-    [world.id, model, change, regions, pins, highlightRegionIds, focus, structures, characters, pointerDown, pointerMove, onDoubleClick]
+    [world.id, model, change, regions, pins, highlightRegionIds, focus, structures, characters, scars, pointerDown, pointerMove, onDoubleClick]
   )
 
   return (
@@ -201,6 +205,9 @@ function groundTarget(worldId: string): [LatLon, number?] {
   const structure = timeline.structures.find((s) => s.id === selectedStructureId)
   const blueprint = structure && findBlueprint(timeline.blueprints, structure.blueprintId)
   if (structure) return [structure, blueprint && viewingDistance(blueprint, structure.scale)]
+  // A scar from far enough off to take it in (a crater's whole bowl), but no farther than the ground's near land reaches.
+  const scar = timelineSelection?.kind === 'scar' ? timeline.scars.find((s) => s.id === timelineSelection.ids[0]) : undefined
+  if (scar) return [scar, Math.min(2500, Math.max(400, scar.radiusKm * 2000))]
   const event = timelineSelection?.kind === 'event' ? timeline.events.find((e) => e.id === timelineSelection.ids[0]) : undefined
   const place = event && eventPlace(event, regions)
   return [place ?? firstLook(worldId) ?? { lat: 0, lon: 0 }]
@@ -240,17 +247,39 @@ function TerritoryLegend({ holders }: { holders: Map<string, Faction> }) {
 
 /** Over the view rather than in the toolbar, so picking a tool never moves the map. */
 function ToolOptions({ view }: { view: EditorView }) {
-  const { tool, radiusKm, strength, biome, exaggeration, placeBlueprintId, set } = useEditor(
-    useShallow((s) => ({ tool: s.tool, radiusKm: s.radiusKm, strength: s.strength, biome: s.biome, exaggeration: s.exaggeration, placeBlueprintId: s.placeBlueprintId, set: s.set }))
+  const { tool, radiusKm, strength, biome, exaggeration, placeBlueprintId, scarKind, scarRadiusKm, set } = useEditor(
+    useShallow((s) => ({
+      tool: s.tool,
+      radiusKm: s.radiusKm,
+      strength: s.strength,
+      biome: s.biome,
+      exaggeration: s.exaggeration,
+      placeBlueprintId: s.placeBlueprintId,
+      scarKind: s.scarKind,
+      scarRadiusKm: s.scarRadiusKm,
+      set: s.set
+    }))
   )
   const onSurface = showsSurface(view)
-  if (!((onSurface && (tool === 'place' || isBrushTool(tool))) || view === 'globe')) return null
+  if (!((onSurface && (tool === 'place' || tool === 'scar' || isBrushTool(tool))) || view === 'globe')) return null
   return (
     <aside className="tool-options view-control" aria-label="Tool options">
       {onSurface && tool === 'place' && (
         <select aria-label="Blueprint to place" value={placeBlueprintId} onChange={(e) => set({ placeBlueprintId: e.target.value })}>
           <BlueprintOptions />
         </select>
+      )}
+      {onSurface && tool === 'scar' && (
+        <>
+          <div className="biome-palette" role="radiogroup" aria-label="Scar">
+            {SCAR_KINDS.map((kind) => (
+              <button key={kind} role="radio" aria-checked={scarKind === kind} aria-label={SCAR_LOOKS[kind].label} title={SCAR_LOOKS[kind].label} onClick={() => set({ scarKind: kind, scarRadiusKm: SCAR_LOOKS[kind].radiusKm })}>
+                {SCAR_LOOKS[kind].icon}
+              </button>
+            ))}
+          </div>
+          <ScarSize value={scarRadiusKm} onChange={(v) => set({ scarRadiusKm: v })} />
+        </>
       )}
       {onSurface && isBrushTool(tool) && (
         <>
@@ -273,6 +302,21 @@ function ToolOptions({ view }: { view: EditorView }) {
         </div>
       )}
     </aside>
+  )
+}
+
+/** Scar sizes to choose from, in km across its radius: from a single blast to a country's drought. */
+const SCAR_SIZES = [0.1, 0.25, 0.5, 1, 2, 4, 8, 15, 30, 60, 120, 250, 500, 1000, 2000]
+
+/** The scar tool's size: a slider over `SCAR_SIZES`, so small and great ones are both easy to pick. */
+function ScarSize({ value, onChange }: { value: number; onChange(v: number): void }) {
+  const step = SCAR_SIZES.reduce((best, v, i) => (Math.abs(Math.log(v / value)) < Math.abs(Math.log(SCAR_SIZES[best]! / value)) ? i : best), 0)
+  return (
+    <label className="toolbar-slider">
+      <span>Size</span>
+      <input type="range" aria-label="Scar size" min={0} max={SCAR_SIZES.length - 1} step={1} value={step} onChange={(e) => onChange(SCAR_SIZES[Number(e.target.value)]!)} />
+      <span className="toolbar-value">{value < 1 ? `${value * 1000} m` : `${value} km`}</span>
+    </label>
   )
 }
 

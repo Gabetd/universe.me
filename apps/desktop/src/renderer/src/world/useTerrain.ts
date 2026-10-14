@@ -2,7 +2,7 @@ import type { Command, LatLon, Region, WorldInfo } from '@universe/core'
 import type { PlacedCharacter } from './useCharacters'
 import type { PlacedStructure } from './useStructures'
 import type { EventPin } from './useWorldAtTime'
-import { TerrainModel, shapeKey, skyKey, type Vec3 } from '@universe/procgen'
+import { TerrainModel, shapeKey, skyKey, type LandScar, type Vec3 } from '@universe/procgen'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUi } from '../store'
 import { failure, fetchLayers, generateBase } from './terrainSource'
@@ -35,6 +35,8 @@ export interface SurfaceViewProps {
   /** Characters alive at the playhead, where they are then. */
   characters: PlacedCharacter[]
   onCharacterClick(characterId: string): void
+  /** The scars on the land at the playhead, to mark where they are. */
+  scars: LandScar[]
   onPointerDown(dir: Vec3): boolean
   onPointerMove(dir: Vec3): void
   onDoubleClick(): void

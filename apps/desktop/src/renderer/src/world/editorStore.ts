@@ -1,4 +1,4 @@
-import type { LatLon } from '@universe/core'
+import { SCAR_LOOKS, type LatLon, type ScarKind } from '@universe/core'
 import { BIOME, type BrushTool } from '@universe/procgen'
 import { create } from 'zustand'
 import type { GroundSpeed } from './walk'
@@ -8,7 +8,7 @@ import type { GroundSpeed } from './walk'
  * puts down a structure (`placeBlueprintId`), `move` picks a new spot for one
  * (`moveStructureId`), `travel` sends a character there (`travelCharacterId`).
  */
-export type EditorTool = 'navigate' | BrushTool | 'region' | 'locate' | 'place' | 'move' | 'travel'
+export type EditorTool = 'navigate' | BrushTool | 'region' | 'locate' | 'place' | 'move' | 'travel' | 'scar'
 export type SurfaceView = 'globe' | 'map'
 /** The canvas shows the world's events as cards, `species` its food web, `powers` its power systems, `factions` its factions and who's related to whom, and `warnings` what doesn't fit, rather than its surface; the ground is the surface up close. */
 export type EditorView = SurfaceView | 'canvas' | 'ground' | 'species' | 'powers' | 'factions' | 'warnings'
@@ -30,6 +30,9 @@ interface EditorState {
   /** The event the `locate` tool adds a location to. */
   locateEventId: string | null
   placeBlueprintId: string
+  /** What the `scar` tool leaves where it's clicked, and how far it reaches (km). */
+  scarKind: ScarKind
+  scarRadiusKm: number
   moveStructureId: string | null
   /** The character the `travel` tool sends somewhere. */
   travelCharacterId: string | null
@@ -69,6 +72,8 @@ export const useEditor = create<EditorState>((set) => ({
   draft: [],
   locateEventId: null,
   placeBlueprintId: 'builtin:castle',
+  scarKind: 'crater',
+  scarRadiusKm: SCAR_LOOKS.crater.radiusKm,
   moveStructureId: null,
   travelCharacterId: null,
   factionId: null,
@@ -84,7 +89,7 @@ export const useEditor = create<EditorState>((set) => ({
   set: (patch) => set(patch)
 }))
 
-export const isBrushTool = (tool: EditorTool): tool is BrushTool => !['navigate', 'region', 'locate', 'place', 'move', 'travel'].includes(tool)
+export const isBrushTool = (tool: EditorTool): tool is BrushTool => !['navigate', 'region', 'locate', 'place', 'move', 'travel', 'scar'].includes(tool)
 
 /** Whether a view shows the world's surface (the canvas and species views don't). */
 export const showsSurface = (view: EditorView) => view === 'globe' || view === 'map' || view === 'ground'

@@ -49,6 +49,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'tool-erase', keys: 'E', key: 'e', label: 'Erase biome', group: 'World tools' },
   { id: 'tool-region', keys: 'G', key: 'g', label: 'Draw region', group: 'World tools' },
   { id: 'tool-place', keys: 'P', key: 'p', label: 'Place structure', group: 'World tools' },
+  { id: 'tool-scar', keys: 'X', key: 'x', label: 'Scar the land', group: 'World tools' },
 
   { id: 'walk', keys: 'W A S D', label: 'Move forward, left, back and right (or the arrow keys)', group: 'On the ground' },
   { id: 'climb', keys: 'Space / Ctrl', label: 'Rise, or come down to the ground', group: 'On the ground' },

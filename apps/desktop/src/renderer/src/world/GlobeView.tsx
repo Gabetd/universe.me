@@ -1,4 +1,4 @@
-import { CUBE_FACES, TERRAIN_RES, type LatLon, type MapPin } from '@universe/core'
+import { CUBE_FACES, SCAR_LOOKS, TERRAIN_RES, type LatLon, type MapPin } from '@universe/core'
 import { dirToLatLon, faceToDir, latLonToDir, renderFaceTexture, type TerrainModel, type Vec3 } from '@universe/procgen'
 import { Line, Stars } from '@react-three/drei'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import { useUi } from '../store'
 import { openSurfaceMenu, type ElementKind } from '../contextMenu'
 import { selectMapPin, useMapPins } from './useMapPins'
+import { useSelectedScarId } from './useScars'
 import { SPACE_BG } from '../theme'
 import { isBrushTool, useEditor, type EditorTool } from './editorStore'
 import { noRaycast, toolPress, usePick } from './pick'
@@ -129,7 +130,8 @@ function Planet({
   structures,
   onStructureClick,
   characters,
-  onCharacterClick
+  onCharacterClick,
+  scars
 }: SurfaceViewProps) {
   const exaggeration = useEditor((s) => s.exaggeration)
   const invalidate = useThree((s) => s.invalidate)
@@ -232,6 +234,7 @@ function Planet({
       </mesh>
       <RiverLines worldId={worldId} model={model} change={change} scale={scale} />
       <RegionLines model={model} change={change} regions={regions} highlight={highlightRegionIds} scale={scale} />
+      <ScarRings model={model} change={change} scars={scars} scale={scale} />
       {pins.map((p, i) => (
         <Pin key={`${p.eventId}:${i}`} pin={p} position={placed.pins[i]!} onClick={onPinClick} />
       ))}
@@ -336,6 +339,46 @@ function RegionLines({
       {draft.length > 0 && (
         <Line points={arcPoints(draft).map((d) => surfacePoint(model, d, scale, 0.003))} color="#ffffff" lineWidth={2} dashed dashSize={0.01} gapSize={0.006} />
       )}
+    </>
+  )
+}
+
+/** A circle on the planet `km` around a point, as directions (closed). */
+function circleDirs(at: LatLon, km: number, radiusKm: number, n = 64): Vec3[] {
+  const c = latLonToDir(at.lat, at.lon)
+  // Two directions across the surface there: east and north.
+  const east = new THREE.Vector3(c[2], 0, -c[0]).normalize()
+  if (east.lengthSq() < 0.5) east.set(1, 0, 0)
+  const north = new THREE.Vector3(...c).cross(east)
+  const a = km / radiusKm
+  return Array.from({ length: n + 1 }, (_, k) => {
+    const t = (k / n) * Math.PI * 2
+    const [x, y] = [Math.cos(t) * Math.sin(a), Math.sin(t) * Math.sin(a)]
+    return [c[0] * Math.cos(a) + east.x * x + north.x * y, c[1] * Math.cos(a) + east.y * x + north.y * y, c[2] * Math.cos(a) + east.z * x + north.z * y] as Vec3
+  })
+}
+
+/** Where the scars on the land are: a dashed ring in each one's colour (the selected one's white); one over a region is its outline. */
+function ScarRings({ model, change, scars, scale }: Pick<SurfaceViewProps, 'model' | 'change' | 'scars'> & { scale: number }) {
+  const selectedId = useSelectedScarId()
+  const rings = useMemo(
+    () => scars.flatMap((s) => (s.polygon ? [] : [{ scar: s, points: circleDirs(s, s.radiusKm, model.settings.radiusKm).map((d) => surfacePoint(model, d, scale, 0.003)) }])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` stands for the terrain heights
+    [scars, model, scale, change]
+  )
+  return (
+    <>
+      {rings.map(({ scar, points }) => (
+        <Line
+          key={scar.id}
+          points={points}
+          color={scar.id === selectedId ? '#ffffff' : SCAR_LOOKS[scar.kind].color}
+          lineWidth={scar.id === selectedId ? 3 : 2}
+          dashed={scar.id !== selectedId}
+          dashSize={0.006}
+          gapSize={0.004}
+        />
+      ))}
     </>
   )
 }

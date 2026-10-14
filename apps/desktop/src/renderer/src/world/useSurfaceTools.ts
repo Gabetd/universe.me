@@ -6,6 +6,7 @@ import { useUi } from '../store'
 import { playheadOf } from '../timeline/timelineStore'
 import { isBrushTool, useEditor } from './editorStore'
 import { sendCharacter } from './sendCharacter'
+import { selectScar } from './useScars'
 
 type Commit = (command: Extract<Command, { type: 'terrain.patch' }>) => Promise<void>
 
@@ -41,11 +42,19 @@ export function useSurfaceTools(worldId: string, model: TerrainModel | undefined
   /** Returns true if the press was used by a tool (so the view shouldn't rotate or pan). */
   const pointerDown = useCallback(
     (dir: Vec3): boolean => {
-      const { tool, radiusKm, strength, biome, draft, locateEventId, placeBlueprintId, moveStructureId, travelCharacterId, set } = useEditor.getState()
+      const { tool, radiusKm, strength, biome, draft, locateEventId, placeBlueprintId, moveStructureId, travelCharacterId, scarKind, scarRadiusKm, set } = useEditor.getState()
       const { execute } = useUi.getState()
       if (tool === 'place') {
         // Built at the playhead's moment; the tool stays on for placing more.
         void execute({ type: 'structure.create', payload: { ownerId: worldId, blueprintId: placeBlueprintId, ...roundLatLon(dir), builtAt: playheadOf(worldId) } })
+        return true
+      }
+      if (tool === 'scar') {
+        // Comes at the playhead, and opens in the inspector to say how long it lasts; the tool stays on for more.
+        void execute({ type: 'scar.create', payload: { ownerId: worldId, kind: scarKind, radiusKm: scarRadiusKm, ...roundLatLon(dir), start: playheadOf(worldId) } }).then((state) => {
+          const id = state?.focus?.id
+          if (id) selectScar(id)
+        })
         return true
       }
       if (tool === 'move') {
@@ -101,7 +110,7 @@ export function useSurfaceTools(worldId: string, model: TerrainModel | undefined
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const { tool, draft, set } = useEditor.getState()
-      if ((tool === 'locate' || tool === 'place' || tool === 'move' || tool === 'travel') && e.key === 'Escape') {
+      if ((tool === 'locate' || tool === 'place' || tool === 'move' || tool === 'travel' || tool === 'scar') && e.key === 'Escape') {
         set({ tool: 'navigate', locateEventId: null, moveStructureId: null, travelCharacterId: null })
         e.preventDefault()
         return

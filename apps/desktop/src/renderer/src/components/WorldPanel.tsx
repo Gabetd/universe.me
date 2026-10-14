@@ -12,6 +12,7 @@ import { CalendarPanel, ClimatePanel } from './SkyPanels'
 import { WORLD_HINTS, WorldGenPanel } from './WorldGenPanel'
 import { RegionTheme, WorldThemes } from './ThemePanels'
 import { RegionLanguage } from './LanguagePanels'
+import { ScarList } from './ScarPanels'
 import { EROSION_SPEED, isAlive, stateAt } from '@universe/core'
 import { STAGE_COLORS } from '../world/structureLook'
 import { useConditionCurves } from '../world/useStructures'
@@ -60,6 +61,7 @@ export function WorldPanel({ world }: { world: SpatialNode }) {
 
       <RegionList worldId={world.id} regions={regions} selectedId={selectedRegion?.id} onPick={selectRegion} />
       <WaterwayList worldId={world.id} />
+      <ScarList worldId={world.id} />
       <WorldPlugins worldId={world.id} />
       {/* Saved where the user picks, on the computer. */}
       {!isPhoneApp() && <ExportBible worldId={world.id} />}
