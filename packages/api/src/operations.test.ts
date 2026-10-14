@@ -257,6 +257,26 @@ describe('the operations', () => {
     expect(bytes[3]).toBe(255)
   })
 
+  it('make languages, speak them on a world, and name its rivers and new things in them', async () => {
+    type Listed = { id: string; name: string }
+    const before = await p.call<{ riverList: Listed[] }>('list_waterways', { worldId: p.worldId, limit: 3 })
+    const { languageId } = await p.call<{ languageId: string }>('add_language', { preset: 'Desert', name: 'Sandspeech' })
+    await p.call('update_language', { languageId, rules: { river: 'Oued {name}' } })
+    await p.call('speak_language', { nodeId: p.worldId, languageId })
+    // Its rivers now have names by the language's rule; the same ones, as the same rivers.
+    const after = await p.call<{ riverList: Listed[] }>('list_waterways', { worldId: p.worldId, limit: 3 })
+    expect(after.riverList.map((r) => r.id)).toEqual(before.riverList.map((r) => r.id))
+    for (const r of after.riverList) expect(r.name).toMatch(/^Oued \S+$/)
+    const { languages } = await p.call<{ languages: { name: string; rules: { river: string; lake: string }; spokenAt: { nodeId: string }[] }[] }>('list_languages', {})
+    expect(languages).toEqual([expect.objectContaining({ name: 'Sandspeech', rules: expect.objectContaining({ river: 'Oued {name}', lake: 'Bahr {name}' }), spokenAt: [{ nodeId: p.worldId, node: expect.any(String) }] })])
+    const { names } = await p.call<{ names: string[] }>('name_in_language', { nodeId: p.worldId, kind: 'faction', count: 4 })
+    expect(names).toHaveLength(4)
+    for (const n of names) expect(n).toMatch(/^Banu \S+$/)
+    // Spoken no more: the rivers are as they were made.
+    await p.call('speak_language', { nodeId: p.worldId, languageId: null })
+    expect((await p.call<{ riverList: Listed[] }>('list_waterways', { worldId: p.worldId, limit: 3 })).riverList).toEqual(before.riverList)
+  })
+
   it('pin places on a world, rename and move them, and list them', async () => {
     const { pinId } = await p.call<{ pinId: string }>('add_map_pin', { worldId: p.worldId, name: 'Old well', lat: 10, lon: 20, notes: 'Dry since the war.' })
     await p.call('update_map_pin', { worldId: p.worldId, pinId, name: 'The old well', lat: 11 })

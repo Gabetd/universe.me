@@ -10,6 +10,7 @@ import {
   timelineOf,
   byId,
   powersOn,
+  languageAtPoint,
   type Calendar,
   type ConditionCurve,
   type Exposure,
@@ -22,7 +23,7 @@ import {
   type TimelineData,
   type WorldInfo
 } from '@universe/core'
-import { TerrainModel, generateBase, shapeKey, worldWater, type BaseTerrain, type WorldWater } from '@universe/procgen'
+import { TerrainModel, generateBase, namedWater, shapeKey, worldWater, type BaseTerrain, type WorldWater } from '@universe/procgen'
 import { exposureAt, systemIdOf, systemModel, worldCalendar, worldClimateOf, type SystemModel, type WorldClimate } from '@universe/sim'
 import { ApiError, findOr404, type ApiHost, type ProjectData } from './host'
 
@@ -124,9 +125,16 @@ export class ProjectModels {
     const node = data.nodes.find((n) => n.id === worldId && n.kind === 'world')
     const info = data.worlds.find((w) => w.id === worldId)
     if (!node || !info) throw new ApiError(404, `There is no world ${worldId}`)
-    // Blueprints and themes are the project's; power systems the universe's, those that hold here.
+    // Blueprints, themes and languages are the project's (and where each language is spoken, for what's spoken here or above); power systems the universe's, those that hold here.
     const powers = powersOn(data.timeline.powers, data.timeline.powerAges, byId(data.nodes), worldId)
-    let timeline: TimelineData = { ...timelineOf(data.timeline, worldId), blueprints: data.timeline.blueprints, themes: data.timeline.themes, powers }
+    let timeline: TimelineData = {
+      ...timelineOf(data.timeline, worldId),
+      blueprints: data.timeline.blueprints,
+      themes: data.timeline.themes,
+      languages: data.timeline.languages,
+      languageUses: data.timeline.languageUses,
+      powers
+    }
     let regions = data.regions.filter((r) => r.worldId === worldId)
     // A change elsewhere in the project leaves this world's view as it was, so what's worked out from it (condition curves) is kept.
     const last = this.lastViews.get(worldId)
@@ -273,7 +281,7 @@ export class ProjectModels {
     return (await this.terrain(worldId)).model
   }
 
-  /** A world's rivers and lakes as its terrain is now (as the app works them out, so with the same ids and names). */
+  /** A world's rivers and lakes as its terrain is now (as the app works them out, so with the same ids and names: in the languages spoken where they are). */
   async water(worldId: string): Promise<WorldWater> {
     const { node } = this.world(worldId)
     const terrain = await this.terrain(worldId)
@@ -284,7 +292,22 @@ export class ProjectModels {
       // Asked again next time rather than failing for good.
       water.catch(() => terrain.water === water && (terrain.water = undefined))
     }
-    return terrain.water
+    return this.namedWater(worldId, await terrain.water)
+  }
+
+  /** What water named in its languages is kept for: the water as worked out, and what its names follow. */
+  private named = new WeakMap<WorldWater, { from: unknown[]; water: WorldWater }>()
+
+  private namedWater(worldId: string, water: WorldWater): WorldWater {
+    const { nodes } = this.data()
+    const { timeline, regions } = this.world(worldId)
+    const from = [timeline.languages, timeline.languageUses, regions, nodes]
+    const kept = this.named.get(water)
+    if (kept && kept.from.every((k, i) => k === from[i])) return kept.water
+    const parents = new Map(nodes.map((n) => [n.id, n.parentId]))
+    const named = namedWater(water, (p) => languageAtPoint(worldId, p, regions, timeline.languageUses, timeline.languages, (id) => parents.get(id)))
+    this.named.set(water, { from, water: named })
+    return named
   }
 
   /** Every structure's condition curve on a world, with the weather where each stands (as the app works them out). */
