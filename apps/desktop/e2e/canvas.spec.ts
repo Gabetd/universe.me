@@ -167,12 +167,18 @@ test('the canvas as Obsidian has it: cards of every kind, connections, selection
   const pick = async () => {
     const at = await line.evaluate((path: SVGPathElement) => {
       const box = path.ownerSVGElement!.getBoundingClientRect()
-      for (const f of [0.5, 0.35, 0.65, 0.25, 0.75]) {
+      // From the middle out, every twentieth of the way: its label covers the middle, the cards' handles its ends.
+      for (const f of Array.from({ length: 19 }, (_, k) => 0.05 * (k + 1)).sort((a, b) => Math.abs(a - 0.5) - Math.abs(b - 0.5))) {
         const p = path.getPointAtLength(path.getTotalLength() * f)
         const [x, y] = [box.left + p.x, box.top + p.y]
         if (document.elementFromPoint(x, y) === path) return { x, y }
       }
-      throw new Error('The line is covered all along')
+      const over = [0.25, 0.5, 0.75].map((f) => {
+        const p = path.getPointAtLength(path.getTotalLength() * f)
+        const e = document.elementFromPoint(box.left + p.x, box.top + p.y)
+        return `${f}: ${e?.tagName}.${e?.getAttribute('class')}`
+      })
+      throw new Error(`The line (${Math.round(path.getTotalLength())} px) is covered all along: ${over.join(', ')}`)
     })
     await page.mouse.click(at.x, at.y)
   }
