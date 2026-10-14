@@ -196,7 +196,7 @@
     territory: ['221-territory', 'The map coloured by the faction holding each region at the playhead'],
     spelling: ['230-spelling', 'Right-clicking a misspelled word: its corrections, Add to the dictionary, and cut, copy and paste'],
     groundWalk: ['64-ground-walk', 'Walking the ground with W A S D, at the speed picked in the toolbar'],
-    groundFar: ['65-ground-far', 'The ground reaching 12 km, and the map in the corner: the fiftieth of the planet around you, with an arrow the way you face'],
+    groundFar: ['65-ground-far', 'The land to the horizon under the sky and its clouds, and the map in the corner: some 500 km² of the ground around you, with an arrow the way you face'],
     powersShared: ['151-powers-shared', 'A power system pinned to a star system: any place lists the systems that hold there'],
     rivers: ['150-rivers-map', 'Rivers that run downhill to the sea and join on the way, and lakes in the basins, each named'],
     riverGround: ['151-river-ground', 'Down on the ground by a river: its water as wide as it runs'],
@@ -205,11 +205,28 @@
     subFactions: ['75-sub-factions', 'Sub-factions as deep as they go: a kingdom, its house, the house’s branch and its own part'],
     share: ['240-share', 'Share this universe: invite someone by their Tailscale login, and see who it’s shared with, who’s in now and where'],
     peopleIn: ['241-people-in', 'Someone else in the universe: their mark in the top bar says where they are, and another follows the place they’re on in the tree'],
+    language: ['170-language', 'A world speaking a desert language: its sounds, and its rules naming rivers “Wadi …” and factions “Banu …”'],
+    mapPin: ['243-map-pin', 'A pin put on the map with a right-click: named, with its place and notes'],
     canvasCards: ['33-canvas-cards', 'The canvas as Obsidian’s: a text card, an element, a picture and a web page beside the events, two of them in a group, connected with a label']
   }
 
   // One entry per published build, newest first.
   const LOG = [
+    {
+      ver: '0.1.106', date: '14 Oct 2026', tag: 'M20–M24',
+      title: 'The ground under a real sky, rough country, and languages',
+      points: [
+        'The ground up close has a sky: the sun, and clouds that drift on the wind and shade the land as they pass. Land and sea go on to a horizon 160 km off, curving down with the planet into a haze, as real air does, rather than stopping in fog; mountains 50 km away still show, paler.',
+        'Land shaped by water and weather: wadis with flat gravel floors in dry country, deep ravines in high rough land, ledges and mesas, snow where it can lie. Rivers run in their valleys and fall over waterfalls with foam and spray; lakes lie in basins; water ripples and reflects the sky.',
+        'Rough country: plains that swell, hill country, extreme hills and mountains more than a kilometre over their valleys; rough ground and sudden cliffs a few feet high, or scarps of tens of metres in rough land; woods nearly twice as thick, and forests on the far hills. Holding Space while flying rises without tipping the view down.',
+        'The map in the ground view’s corner shows the land around you, some 500 km² of it, and goes where it’s clicked.',
+        'Languages: give a world, a planet, a star system or a region a language from five presets (or your own sounds), and its rivers, lakes, new species, factions and planets are named in it, by naming rules you can change (“Wadi {name}”, “House {name}”). Name it in… gives anything a new name in its place’s language.',
+        'Pins: right-click any point of the globe, the map or the ground, Add a pin here, and name it. And the globe turns less the closer you are to the ground.',
+        'Working together: what a merge couldn’t keep is kept as a note to look at, notes are merged line by line and terrain cell by cell, and the people a universe is shared with can be viewers, editors or owners.',
+        'Sturdier underneath: undo takes back each person’s own changes, sync works off the main thread, records are checked as they load, and dialogs and menus stack properly.'
+      ],
+      shots: ['groundFar', 'groundClose', 'language', 'mapPin']
+    },
     {
       ver: '0.1.90', date: '12 Oct 2026', tag: 'M19',
       title: 'Ready to be signed, and locked to its own code',
@@ -462,7 +479,7 @@
 
   const AREAS = [
     { title: 'The universe', shots: ['contextMenu', 'universe', 'cluster', 'galaxy', 'galaxyStars', 'systemPlanets', 'claimedPlanet'] },
-    { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom', 'powers', 'powersShared', 'warnings'] },
+    { title: 'Worlds', shots: ['seeded', 'globe', 'map', 'sculpt', 'custom', 'mapPin', 'language', 'powers', 'powersShared', 'warnings'] },
     { title: 'Rivers and erosion', shots: ['rivers', 'eroded', 'riverGround'] },
     { title: 'Factions and relationships', shots: ['relationships', 'subFactions', 'territory'] },
     { title: 'Plugins', shots: ['plugins'] },
