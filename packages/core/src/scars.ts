@@ -44,7 +44,7 @@ export const SCAR_LOOKS: Record<ScarKind, ScarLook> = {
   war: { label: 'War-torn', icon: '⚔️', color: '#a33b32', ground: [92, 78, 62], tint: 0.7, kills: 0.75, snags: 0.7, damage: 45, radiusKm: 4, recoverYears: 40, lasting: true },
   burned: { label: 'Burned', icon: '🔥', color: '#5a4a40', ground: [40, 36, 33], tint: 0.85, kills: 0.95, snags: 0.75, damage: 55, radiusKm: 3, recoverYears: 25, lasting: false },
   drought: { label: 'Drought', icon: '☀️', color: '#c9a043', ground: [196, 172, 118], tint: 0.6, kills: 0.4, snags: 0.35, damage: 0, radiusKm: 30, recoverYears: 3, lasting: true },
-  irradiated: { label: 'Irradiated', icon: '☢️', color: '#9db53a', ground: [150, 160, 66], tint: 0.6, kills: 0.8, snags: 0.85, damage: 0, radiusKm: 6, recoverYears: 300, lasting: true },
+  irradiated: { label: 'Irradiated', icon: '☢️', color: '#9db53a', ground: [178, 180, 52], tint: 0.75, kills: 0.8, snags: 0.85, damage: 0, radiusKm: 6, recoverYears: 300, lasting: true },
   poisoned: { label: 'Poisoned', icon: '☠️', color: '#7d4f86', ground: [96, 72, 90], tint: 0.65, kills: 0.9, snags: 0.5, damage: 0, radiusKm: 2, recoverYears: 80, lasting: true }
 }
 
