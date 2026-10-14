@@ -25,6 +25,8 @@ const BENDS = 32
 export const FALL_M = 14
 /** How steep the land must be (rise over run) for a river to step down in falls rather than run down rapids. */
 const STEEP = [0.004, 0.014] as const
+/** How far out from its banks a river's levees reach, where the land around is lower than its water. */
+const LEVEE_M = 120
 /** How far a river's valley reaches to either side of its banks, and how steeply its sides rise (rise over run). */
 const VALLEY_M = 500
 const VALLEY_SLOPE = 0.28
@@ -291,8 +293,13 @@ export class WaterShaper {
     if (best >= VALLEY_M) return
     // Its bed, a little deeper in the middle of wider rivers, and its valley's sides rising from its banks.
     const bed = level - 1.2 - half * 0.015
-    const valley = bed + 1.4 + Math.max(0, best) * VALLEY_SLOPE
-    let y = Math.min(touch.y, valley)
+    const out = Math.max(0, best)
+    // The valley's sides steepen away from the river, so they meet whatever rises around it (mountains too) before the valley's edge.
+    const valley = bed + 1.4 + out * VALLEY_SLOPE + out * out * 0.004
+    let y = touch.y
+    // Where the land around lies lower than the water, banks (levees) hold the river in.
+    if (best < LEVEE_M) y += (Math.max(y, level + 0.5 + out * 0.05) - y) * smoothstep(LEVEE_M, LEVEE_M * 0.4, best)
+    y = Math.min(y, valley)
     // Under the water and just past its banks the land is the bed and the bank, built up if it was lower.
     if (best < 12) y += (Math.min(bed + Math.max(0, best) * 0.15, valley) - y) * smoothstep(12, -2, best)
     touch.y = y

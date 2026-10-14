@@ -116,6 +116,27 @@ describe('ground chunks', () => {
     expect(deepest(BIOME.temperateForest).cut).toBeLessThan(desert.cut)
   })
 
+  it('are never flat: plains swell, high land rises into mountains, and cliffs drop the ground suddenly', () => {
+    const detail = new GroundDetail(42, R)
+    const m = (R * 1000 * Math.PI) / 180
+    /** Heights along 6 km due east from a point, 2 m apart. */
+    const along = (lat: number, lon: number, elevation: number) =>
+      Array.from({ length: 3000 }, (_, k) => detail.elevation(flat(BIOME.grassland, elevation), lat, lon + (k * 2) / (m * Math.cos((lat * Math.PI) / 180))))
+    const span = (ys: number[]) => Math.max(...ys) - Math.min(...ys)
+    // Lowland: hills and dips of tens of metres, never under the sea.
+    const plains = [along(10, 20, 150), along(-35, 140, 150), along(50, -100, 150)]
+    for (const ys of plains) {
+      expect(span(ys)).toBeGreaterThan(15)
+      expect(Math.min(...ys)).toBeGreaterThan(0)
+    }
+    // High land: mountains, hundreds of metres from valley to peak somewhere along the way.
+    const high = [10, 25, 40, 55].map((lat) => span(along(lat, 70, 2500)))
+    expect(Math.max(...high)).toBeGreaterThan(300)
+    // Somewhere, a step of more than a metre between points 2 m apart: a cliff.
+    const steps = plains.flatMap((ys) => ys.slice(1).map((y, k) => Math.abs(y - ys[k]!)))
+    expect(Math.max(...steps)).toBeGreaterThan(1)
+  })
+
   it('grow the plants of their biome', () => {
     const id = chunkOf({ lat: 10, lon: 10 }, R)
     const count = (c: ReturnType<typeof chunk>, plant: string) => (c.plants[plant as 'grass']?.length ?? 0) / INSTANCE_STRIDE
@@ -202,7 +223,8 @@ describe('the land to the horizon', () => {
     }
     expect(farthest).toBeCloseTo(HORIZON_M, -2)
     expect(innerLowest).toBeLessThan(-200)
-    expect(outerLowest).toBeGreaterThan(50)
+    // Out there it isn't sunk: land, above the sea.
+    expect(outerLowest).toBeGreaterThan(0)
   })
 })
 

@@ -311,6 +311,6 @@ describe('outputs stay the same', () => {
       biomeColors: worldPalette(settings.terrain).biomes,
       seabedColor: [40, 60, 80]
     })
-    expect(hash([chunk.positions, chunk.colors, chunk.normals, chunk.indices, ...Object.values(chunk.plants)])).toBe('92a1d238')
+    expect(hash([chunk.positions, chunk.colors, chunk.normals, chunk.indices, ...Object.values(chunk.plants)])).toBe('4f4d4bfb')
   })
 })

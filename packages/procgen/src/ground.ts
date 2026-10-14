@@ -3,7 +3,7 @@ import type { NoiseFunction3D } from 'simplex-noise'
 import { BIOME } from './biomes'
 import { latLonToDir, type Vec3 } from './cubesphere'
 import { RAD, TAU, bilerp, clamp, clamp01, smoothstep, wrapLon } from './math'
-import { octaves, seededNoise } from './noise'
+import { seededNoise } from './noise'
 import { cellSeed, rng, subSeed } from './random'
 import { WaterShaper, type GroundWaters } from './ground-water'
 import type { TerrainModel } from './terrain-model'
@@ -185,6 +185,12 @@ export class GroundDetail {
   private patches: NoiseFunction3D
   private channels: NoiseFunction3D
   private warp: NoiseFunction3D
+  /** The kinds of land over tens of kilometres, mountains' ridges, steep hills, rough ground and cliffs. */
+  private regions: NoiseFunction3D
+  private mountains: NoiseFunction3D
+  private steep: NoiseFunction3D
+  private bumps: NoiseFunction3D
+  private scarps: NoiseFunction3D
   /** The channels' network: the main ones some 2 km apart, their side gullies some 600 m, wandering (warped over about 3 km). */
   private channelFreq: number
   private gullyFreq: number
@@ -193,8 +199,6 @@ export class GroundDetail {
   readonly shape: GroundShape = { bed: 0, arid: 0, wet: 0, shore: Infinity, surface: NaN }
   /** The rivers and lakes the land is shaped around, if any. */
   private water?: WaterShaper
-  /** The hills' octaves, as multiples of a direction: wavelengths from 1800 m down, each 3.2 times shorter. */
-  private hillFreqs: number[] = []
   /** Patches vary over about 380 m. */
   private patchFreq: number
   /** How far biome edges are pushed about, in degrees. */
@@ -214,26 +218,67 @@ export class GroundDetail {
     this.patches = seededNoise(seed, 0x9a7c)
     this.channels = seededNoise(seed, 0x3c1d)
     this.warp = seededNoise(seed, 0x51f2)
+    this.regions = seededNoise(seed, 0x2e61)
+    this.mountains = seededNoise(seed, 0x7a3b)
+    this.steep = seededNoise(seed, 0x45c9)
+    this.bumps = seededNoise(seed, 0x18d4)
+    this.scarps = seededNoise(seed, 0x6f0e)
     const metres = radiusKm * 1000
     this.channelFreq = metres / 2100
     this.gullyFreq = metres / 620
     this.warpFreq = metres / 3200
-    for (let o = 0, wavelength = 1800; o < 4; o++, wavelength /= 3.2) this.hillFreqs.push(metres / wavelength)
     this.patchFreq = metres / 380
     this.jitter = (CHUNK_M / metresPerDegLat(radiusKm)) * 0.6
   }
 
-  /** The hills' octaves that show between points `spacing` metres apart: those at least twice as long. */
-  private hillsSeen(spacing: number): number[] {
-    if (spacing <= 0) return this.hillFreqs
-    let seen = this.seenAt.get(spacing)
-    if (!seen) {
-      const most = (this.radiusKm * 1000) / (2 * spacing)
-      this.seenAt.set(spacing, (seen = this.hillFreqs.filter((f) => f <= most)))
-    }
-    return seen
+  /** -1 to 1, varying over `wavelength` metres: one octave of `noise`, offset by `salt`. */
+  private wave(noise: NoiseFunction3D, d: Vec3, wavelength: number, salt: number): number {
+    const f = (this.radiusKm * 1000) / wavelength
+    return noise(d[0] * f + salt, d[1] * f, d[2] * f - salt)
   }
-  private seenAt = new Map<number, number[]>()
+
+  /** `count` octaves of `noise` from `wavelength` metres down, each half as long and `gain` as strong, the first of strength 1; those shorter than twice `spacing` left out. */
+  private layers(noise: NoiseFunction3D, d: Vec3, wavelength: number, count: number, gain: number, spacing: number): number {
+    let [sum, amp, length] = [0, 1, wavelength]
+    for (let o = 0; o < count && length >= 2 * spacing; o++, length /= 2.03, amp *= gain) sum += amp * this.wave(noise, d, length, o * 7.31)
+    return sum
+  }
+
+  /** Ridged mountains, 0 to about 1: sharp crests where the noise crosses zero, each octave sharper where the last was high (a ridged multifractal, warped so ranges wind). */
+  private ridges(d: Vec3, spacing: number): number {
+    // Pushed about by up to 4 km, so ranges wind rather than run straight.
+    const warp = (this.wave(this.warp, d, 30_000, 5.5) * 4000) / (this.radiusKm * 1000)
+    const w: Vec3 = [d[0] + warp, d[1] - warp, d[2] + warp * 0.5]
+    let [sum, weight, amp, length, total] = [0, 1, 1, 9000, 0]
+    for (let o = 0; o < 5 && length >= 2 * spacing; o++, length /= 2.1, amp *= 0.4) {
+      // Crests rounded, the small ones more, so they're ridges rather than rows of knife edges.
+      const n = this.wave(this.mountains, w, length, o * 3.7)
+      let v = 1 - Math.sqrt(n * n + 0.004 + 0.012 * o)
+      v *= v * weight
+      weight = clamp01(v * 1.8)
+      sum += v * amp
+      total += amp
+    }
+    return total > 0 ? sum / 1.6 : 0.3
+  }
+
+  /**
+   * Sudden cliffs: the ground stepping down a couple of metres across lines
+   * a few hundred metres apart (a few feet in the plains, more in hill
+   * country), and in rough land, scarps of tens of metres between ledges.
+   */
+  private cliffs(d: Vec3, rough: number, hills: number): number {
+    // Some country is cut by cliffs and some isn't: patches a few kilometres across.
+    const cut = smoothstep(0.05, 0.4, this.wave(this.regions, d, 6000, 13.3))
+    if (cut <= 0) return 0
+    const bend = this.wave(this.warp, d, 2600, 8.8) * 0.35
+    const small = this.wave(this.scarps, [d[0] + bend * 0.0004, d[1], d[2] - bend * 0.0004], 1100, 1.3)
+    let lift = smoothstep(-0.025, 0.025, small) * (1.2 + 3 * hills + 5 * rough)
+    const big = this.wave(this.scarps, d, 3200, 4.9) + bend * 0.3
+    lift += smoothstep(-0.02, 0.02, big) * (20 + 35 * rough) * rough
+    return lift * cut
+  }
+
 
   private dirAt(lat: number, lon: number): Vec3 {
     if (lat !== this.dirLat || lon !== this.dirLon) {
@@ -277,16 +322,36 @@ export class GroundDetail {
   private landform(base: BaseSampler, lat: number, lon: number, elevation: number, detail: number, fine: boolean, spacing: number): number {
     const shape = this.shape
     const d = this.dirAt(lat, lon)
-    const relief = 9 + clamp(Math.abs(elevation) * 0.04, 0, 110)
-    let y = elevation + detail * octaves(this.hills, d[0], d[1], d[2], this.hillsSeen(spacing), relief, 0.4)
-    // Under the sea and along the shore the land is as it is.
+    // What kind of land this is, over tens of kilometres: plains, hills, extreme hills or mountains; the higher the globe has it, the more mountainous.
+    const high = clamp01(elevation / 2500)
+    const mountains = smoothstep(0.2, 0.6, this.wave(this.regions, d, 41_000, 3.1) * 0.6 + high * 0.9 - 0.2)
+    const hilly = this.wave(this.regions, d, 23_000, 9.7)
+    const hills = smoothstep(-0.6, 0.15, hilly) * (1 - mountains * 0.5)
+    const extreme = smoothstep(0.3, 0.7, hilly) * (1 - mountains)
+    // Into the sea the land's shapes fade, so the sea bed stays gentle and the coast is where the globe has it.
+    const coast = smoothstep(-40, 30, elevation) * detail
+    let lift = 0
+    // Rolling land everywhere (even the plains swell and dip), hills in hill country.
+    lift += this.layers(this.hills, d, 2400, 4, 0.45, spacing) * (25 + 70 * hills + 30 * mountains + clamp(Math.abs(elevation) * 0.03, 0, 60))
+    // Extreme hills: steep-sided, close together.
+    if (extreme > 0) lift += this.layers(this.steep, d, 1300, 3, 0.5, spacing) * 170 * extreme
+    // Mountains: ridges and peaks hundreds of metres to a kilometre and more over their valleys.
+    if (mountains > 0) lift += (this.ridges(d, spacing) - 0.3) * (450 + 1400 * high) * mountains
+    let y = elevation + coast * lift
+    // Land stays land: what the globe has above the sea doesn't sink under it.
+    if (elevation > 0) y = Math.max(y, Math.min(elevation, 2) * 0.5 + 0.3)
+    const rough = clamp01(mountains + extreme * 0.7 + hills * 0.3)
+    // Up close: rough ground, and sudden cliffs.
+    if (fine && coast > 0) {
+      y += this.layers(this.bumps, d, 150, 3, 0.5, spacing) * (0.8 + 2 * hills + 5 * rough) * coast
+      y += this.cliffs(d, rough, hills) * coast
+    }
     const inland = clamp01((elevation - 2) / 30)
     if (!fine || inland <= 0) return y
     const arid = (shape.arid = ARIDITY[this.biome(base, lat, lon)] ?? 0)
-    const rough = clamp01((relief - 25) / 70)
 
-    // Ledges: the hills' slopes step into flats and cliffs, mostly in dry land (mesas and buttes), a little in rough.
-    const ledges = (clamp01(arid * 0.9 - 0.1) * (0.6 + 0.4 * rough) + 0.2 * rough * (1 - arid)) * inland * detail
+    // Ledges: dry land's slopes step into flats and cliffs (mesas and buttes).
+    const ledges = clamp01(arid * 0.9 - 0.1) * (0.6 + 0.4 * rough) * inland * detail
     if (ledges > 0) {
       const step = 12 + 18 * rough
       const f = y / step
@@ -307,8 +372,9 @@ export class GroundDetail {
       const ravine = Math.pow(1 - Math.min(1, v / width), 1.6)
       return wadi * arid + ravine * (1 - arid)
     }
-    const deep = (4 + 6 * arid + 60 * rough * (1 - arid * 0.5)) * inland * detail
-    const cut = Math.max(profile(main, 0.09 + 0.04 * arid) * deep, profile(gully, 0.08) * deep * 0.35)
+    // Ravines deep in rough land, and side gullies shallow: the mountains and hills already give the land its shape.
+    const deep = (4 + 6 * arid + 22 * rough * (1 - arid * 0.5)) * inland * detail
+    const cut = Math.max(profile(main, 0.09 + 0.04 * arid) * deep, profile(gully, 0.07) * Math.min(deep, 8) * 0.4)
     if (cut > 0) {
       y -= cut
       shape.bed = smoothstep(0.5, 0.95, cut / Math.max(deep, 1e-6))
@@ -340,16 +406,38 @@ export const INSTANCE_STRIDE = 6
 const FLORA: Partial<Record<number, Partial<Record<Plant, [count: number, clump: number]>>>> = {
   [BIOME.ice]: { rock: [40, 0.3] },
   [BIOME.tundra]: { bush: [160, 0.6], grass: [1400, 0.4], rock: [140, 0.3], flower: [120, 0.8] },
-  [BIOME.taiga]: { conifer: [1600, 0.5], bush: [160, 0.5], grass: [600, 0.5], rock: [50, 0.2] },
-  [BIOME.temperateForest]: { broadleaf: [1300, 0.55], conifer: [160, 0.6], bush: [420, 0.5], grass: [1600, 0.4], flower: [160, 0.8] },
-  [BIOME.grassland]: { broadleaf: [30, 0.8], bush: [110, 0.6], grass: [4200, 0.2], flower: [700, 0.8] },
+  [BIOME.taiga]: { conifer: [2800, 0.55], bush: [200, 0.5], grass: [600, 0.5], rock: [80, 0.2] },
+  [BIOME.temperateForest]: { broadleaf: [2400, 0.6], conifer: [360, 0.6], bush: [520, 0.5], grass: [1600, 0.4], flower: [160, 0.8] },
+  [BIOME.grassland]: { broadleaf: [90, 0.85], bush: [160, 0.6], grass: [4200, 0.2], flower: [700, 0.8] },
   [BIOME.shrubland]: { bush: [750, 0.4], broadleaf: [30, 0.7], grass: [1300, 0.4], rock: [70, 0.3] },
   [BIOME.desert]: { cactus: [55, 0.4], rock: [170, 0.4], snag: [15, 0.5], bush: [45, 0.5] },
   [BIOME.savanna]: { acacia: [80, 0.6], grass: [3200, 0.25], bush: [160, 0.5] },
-  [BIOME.rainforest]: { broadleaf: [2200, 0.25], palm: [320, 0.5], bush: [950, 0.3], grass: [600, 0.4] },
-  [BIOME.swamp]: { broadleaf: [520, 0.6], reed: [2600, 0.5], bush: [300, 0.5], snag: [70, 0.5] },
+  [BIOME.rainforest]: { broadleaf: [3600, 0.25], palm: [520, 0.5], bush: [1200, 0.3], grass: [600, 0.4] },
+  [BIOME.swamp]: { broadleaf: [800, 0.6], reed: [2600, 0.5], bush: [300, 0.5], snag: [70, 0.5] },
   [BIOME.rock]: { rock: [650, 0.3], bush: [40, 0.6] },
   [BIOME.beach]: { palm: [45, 0.7], rock: [45, 0.4], grass: [300, 0.6] }
+}
+
+/** The trees among the plants. */
+const TREES: Plant[] = ['broadleaf', 'conifer', 'palm', 'acacia']
+
+/** How thick the woods are at a point, 0 to 1 (as the chunks' trees grow there): what the distant ground shows as canopy, its trees too far off to draw. */
+function canopy(detail: GroundDetail, base: BaseSampler, lat: number, lon: number): number {
+  const flora = FLORA[detail.biome(base, lat, lon)]
+  const trees = TREES.reduce((sum, t) => sum + (flora?.[t]?.[0] ?? 0), 0)
+  return clamp01(trees / 2400) * clamp01(0.5 + detail.patch(lat, lon, PLANTS.indexOf('broadleaf') + 4) * 1.4)
+}
+
+/** How tall the woods stand, seen from afar, and how much darker their canopy is than the ground. */
+const CANOPY_M = 16
+const CANOPY_SHADE = 0.4
+
+/** Raises a far vertex by the woods there and darkens it to their canopy (its colour at `t`); returns its height. */
+function withCanopy(detail: GroundDetail, base: BaseSampler, lat: number, lon: number, y: number, colors: Float32Array, t: number): number {
+  if (y < 1.5) return y
+  const woods = canopy(detail, base, lat, lon)
+  for (let c = 0; c < 3; c++) colors[t * 3 + c]! *= 1 - CANOPY_SHADE * woods
+  return y + CANOPY_M * woods
 }
 
 /** Metres tall (or across, for rocks) at scale 1, before each one's random size. */
@@ -411,8 +499,8 @@ const SNOWLINE = 2400
 /** How far chunk skirts hang below their edges. */
 export const SKIRT_M = 6
 
-/** Vertices along a chunk edge, less one: about 16 m apart. */
-export const CHUNK_SEGMENTS = 64
+/** Vertices along a chunk edge, less one: about 10 m apart, so a cliff of a few metres is a cliff. */
+export const CHUNK_SEGMENTS = 96
 
 /**
  * Heights over a grid of `cols` × `rows` vertices (`rows` = `cols` unless
@@ -741,8 +829,10 @@ export function buildFarGround(input: FarGroundInput): GroundSheet {
       const { x, y, z } = field.vertex(i, j)
       // The middle of the centre chunk is (CHUNK_M / 2, −CHUNK_M / 2) in its corner's frame.
       const under = Math.max(Math.abs(x - CHUNK_M / 2), Math.abs(z + CHUNK_M / 2)) < input.sinkWithin
-      positions.set([x, under ? y - SUNK_M : y, z], t * 3)
       groundColor(input, detail, base, lat, lon, y, { ...field.lay(t), arid: ARIDITY[detail.biome(base, lat, lon)] ?? 0 }, colors, t)
+      // Its trees, too far off to draw one by one, as the woods' canopy.
+      const top = withCanopy(detail, base, lat, lon, y, colors, t)
+      positions.set([x, under ? y - SUNK_M : top, z], t * 3)
     }
   }
   for (let j = 0, index = 0; j < FAR_SEGMENTS; j++) {
@@ -806,17 +896,18 @@ export function buildHorizonGround(input: HorizonGroundInput): GroundSheet {
   const grow = Math.pow(HORIZON_M / HORIZON_INNER_M, 1 / (HORIZON_RINGS - 1))
   for (let k = 0, t = 0; k < HORIZON_RINGS; k++) {
     const r = HORIZON_INNER_M * Math.pow(grow, k)
-    // The hills fade out as the rings grow too coarse to show them.
-    const hills = 1 - clamp01((r - 14_000) / 26_000)
+    // What's too small to show between the ring's points is left out: far off, the mountains and the biggest hills.
+    const spacing = (r * TAU) / HORIZON_SPOKES
     for (let s = 0; s < HORIZON_SPOKES; s++, t++) {
       const a = (s / HORIZON_SPOKES) * TAU
       const [x, z] = [Math.cos(a) * r, Math.sin(a) * r]
       const { lat, lon } = fromLocal(frame, x, z)
-      const y = detail.elevation(base, lat, lon, hills, false)
+      const y = detail.elevation(base, lat, lon, 1, false, spacing)
       // Under the distant ground (FAR_M each way from wherever the view's middle is in this block), sunk well out of the way.
       const under = Math.max(Math.abs(x), Math.abs(z)) < FAR_M - (HORIZON_STEP / 2 + 1) * CHUNK_M
-      positions.set([x, under ? y - 400 : y, z], t * 3)
       groundColor(input, detail, base, lat, lon, y, { up: 1, bed: 0, arid: ARIDITY[detail.biome(base, lat, lon)] ?? 0, wet: 0, shore: Infinity }, colors, t)
+      const top = withCanopy(detail, base, lat, lon, y, colors, t)
+      positions.set([x, under ? y - 400 : top, z], t * 3)
     }
   }
   for (let k = 0, index = 0; k < HORIZON_RINGS - 1; k++) {
