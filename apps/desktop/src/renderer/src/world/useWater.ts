@@ -6,6 +6,7 @@ import { usePlayhead } from '../timeline/timelineStore'
 import { workerCalls } from '../workerCalls'
 import type { TerrainChange } from './useTerrain'
 import { useCalendar } from './useSky'
+import { useWaterInLanguages } from '../languages'
 import type { Water } from './water.worker'
 import WaterWorker from './water.worker?worker'
 
@@ -17,8 +18,8 @@ export const useWaterOf = create<{ byWorld: Record<string, Water>; set(worldId: 
   set: (worldId, water) => set((s) => ({ byWorld: { ...s.byWorld, [worldId]: water } }))
 }))
 
-/** A world's rivers and lakes, when they've been worked out. */
-export const useWater = (worldId: string): Water | undefined => useWaterOf((s) => s.byWorld[worldId])
+/** A world's rivers and lakes, when they've been worked out: named in the languages spoken where they are. */
+export const useWater = (worldId: string): Water | undefined => useWaterInLanguages(worldId, useWaterOf((s) => s.byWorld[worldId]))
 
 const ids = new WeakMap<object, number>()
 let nextId = 0

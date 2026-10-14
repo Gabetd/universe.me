@@ -8,6 +8,7 @@ import { WorldPanel } from './WorldPanel'
 import { OrbitPanel, StarPanel } from './SkyPanels'
 import { PlanetsToClaim } from './ClaimPlanets'
 import { PowersHere } from './PowerPins'
+import { NodeLanguage } from './LanguagePanels'
 import { useSteadyScroll } from '../useSteadyScroll'
 
 export function Inspector() {
@@ -82,6 +83,7 @@ function NodeForm({ node }: { node: SpatialNode }) {
       )}
       {node.kind === 'star_system' && <PlanetsToClaim node={node} />}
       <PowersHere node={node} />
+      <NodeLanguage node={node} />
 
       {canDelete(node) && (
         <DeleteButton kind="node" ids={[node.id]}>

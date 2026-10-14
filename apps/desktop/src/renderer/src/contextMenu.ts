@@ -1,5 +1,5 @@
-import { FACTION_KIND_LABELS, eventPlace, type FactionKind, type Party } from '@universe/core'
-import { waterwayIndex } from '@universe/procgen'
+import { FACTION_KIND_LABELS, eventPlace, languageAtPoint, nameIn, waterwayKind, type Command, type FactionKind, type Language, type Party } from '@universe/core'
+import { waterwayIndex, waterwayPlace } from '@universe/procgen'
 import { create } from 'zustand'
 import { addChildCommand, addOptions, canDelete, kindLabel } from './kinds'
 import { deleteCommand, useUi, type DeleteKind } from './store'
@@ -7,6 +7,7 @@ import { contributions, isNameable, usePlugins } from './pluginStore'
 import { useTimelineView } from './timeline/timelineStore'
 import { useEditor } from './world/editorStore'
 import { useWaterOf } from './world/useWater'
+import { languageNow, nameInPlace, waterInLanguages } from './languages'
 import { latLonLabel } from './world/useMapPins'
 import { viewUpClose, waterwayLabel } from './world/waterLook'
 import { goToEvent } from './world/goToEvent'
@@ -253,8 +254,9 @@ export function nameOf({ kind, id }: ElementRef): string | undefined {
 /** A river or lake (by its hydrology id) on the selected world, with what it's called there. */
 function waterwayOf(key: string) {
   const { selectedId: worldId, timeline } = useUi.getState()
-  const water = worldId ? useWaterOf.getState().byWorld[worldId] : undefined
-  if (!water || !worldId) return undefined
+  const made = worldId ? useWaterOf.getState().byWorld[worldId] : undefined
+  if (!made || !worldId) return undefined
+  const water = waterInLanguages(worldId, made, useUi.getState().regions)
   const index = waterwayIndex(
     water,
     timeline.waterways.filter((w) => w.ownerId === worldId)
@@ -300,7 +302,10 @@ export const showFaction = (id: string) => useEditor.getState().set({ view: 'fac
 
 /** Starts a faction on a world (a part of another, if `parentId` is given, at any depth) and opens it. */
 export async function addFaction(worldId: string, kind: FactionKind, parentId?: string): Promise<void> {
-  const name = kind === 'other' ? (parentId ? 'New sub-faction' : 'New faction') : `New ${FACTION_KIND_LABELS[kind].toLowerCase()}`
+  // In the world's language if it speaks one, else after what it is.
+  const name =
+    nameInPlace('faction', { nodeId: worldId }, kind === 'other' ? '' : FACTION_KIND_LABELS[kind]) ??
+    (kind === 'other' ? (parentId ? 'New sub-faction' : 'New faction') : `New ${FACTION_KIND_LABELS[kind].toLowerCase()}`)
   const state = await useUi.getState().execute({ type: 'faction.create', payload: { ownerId: worldId, kind, name, ...(parentId && { parentId }) } })
   if (state?.focus?.id) showFaction(state.focus.id)
 }
@@ -369,6 +374,35 @@ function kindItems({ kind, id }: ElementRef): MenuItem[] {
   return []
 }
 
+/** A new name in the language spoken where it is (core languages.ts), by that language's rule for its kind: planets and other nodes, species, factions, rivers and lakes. */
+function languageItems({ kind, id }: ElementRef): MenuItem[] {
+  const s = useUi.getState()
+  const named = (language: Language | undefined, rename: (language: Language) => Command): MenuItem[] =>
+    language ? ['separator', { label: `Name it in ${language.name}`, run: () => execute(rename(language)) }] : []
+  const fresh = () => crypto.randomUUID()
+  if (kind === 'node') {
+    const node = s.nodes.find((n) => n.id === id)
+    return node && node.parentId ? named(languageNow({ nodeId: node.id }), (l) => ({ type: 'node.update', payload: { id, patch: { name: nameIn(l, 'planet', fresh()) } } })) : []
+  }
+  if (kind === 'species') {
+    const species = s.timeline.lifeforms.find((x) => x.id === id)
+    return species ? named(languageNow({ nodeId: species.ownerId }), (l) => ({ type: 'species.update', payload: { id, patch: { name: nameIn(l, 'species', fresh()) } } })) : []
+  }
+  if (kind === 'faction') {
+    const faction = s.timeline.factions.find((f) => f.id === id)
+    if (!faction) return []
+    const kindWord = faction.kind === 'other' ? '' : FACTION_KIND_LABELS[faction.kind]
+    return named(languageNow({ nodeId: faction.ownerId }), (l) => ({ type: 'faction.update', payload: { id, patch: { name: nameIn(l, 'faction', fresh(), kindWord) } } }))
+  }
+  if (kind === 'waterway') {
+    const w = waterwayOf(id)
+    if (!w) return []
+    const language = languageAtPoint(w.worldId, waterwayPlace(w.found), s.regions, s.timeline.languageUses, s.timeline.languages, (n) => s.nodes.find((x) => x.id === n)?.parentId)
+    return named(language, (l) => ({ type: 'waterway.set', payload: { worldId: w.worldId, key: id, patch: { name: nameIn(l, waterwayKind(id) === 'lake' ? 'lake' : 'river', fresh()) } } }))
+  }
+  return []
+}
+
 /** Names for it from the name generators that name its kind (PLAN.md §9, M16). */
 function nameItems({ kind, id }: ElementRef): MenuItem[] {
   if (!isNameable(kind)) return []
@@ -395,6 +429,7 @@ export function elementMenu(ref: ElementRef, { open, extra = [] }: MenuOptions =
     ...(show && spec.nameField ? [{ label: 'Rename…', run: () => rename(show, byKind(spec.nameField!, ref.id)) }] : []),
     ...extra,
     ...kindItems(ref),
+    ...languageItems(ref),
     ...nameItems(ref)
   ]
   const { kind } = ref

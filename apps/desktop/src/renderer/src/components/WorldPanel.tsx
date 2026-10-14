@@ -11,6 +11,7 @@ import { WorldPlugins } from './Plugins'
 import { CalendarPanel, ClimatePanel } from './SkyPanels'
 import { WORLD_HINTS, WorldGenPanel } from './WorldGenPanel'
 import { RegionTheme, WorldThemes } from './ThemePanels'
+import { RegionLanguage } from './LanguagePanels'
 import { EROSION_SPEED, isAlive, stateAt } from '@universe/core'
 import { STAGE_COLORS } from '../world/structureLook'
 import { useConditionCurves } from '../world/useStructures'
@@ -113,6 +114,7 @@ function RegionForm({ region }: { region: Region }) {
       <TextField label="Region name" value={region.name} required onCommit={(name) => update({ name })} />
       <ColorField label="Region color" value={region.color} onCommit={(color) => update({ color })} />
       <RegionTheme worldId={region.worldId} regionId={region.id} />
+      <RegionLanguage worldId={region.worldId} regionId={region.id} />
       <RegionHistory region={region} />
       <NotesField label="Region notes" value={region.notes} onCommit={(notes) => update({ notes })} />
       <DeleteButton kind="region" ids={[region.id]}>

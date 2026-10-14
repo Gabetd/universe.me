@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { ColorField, TagsField, TextField } from '../components/fields'
 import { NotesEditor } from '../components/NotesEditor'
 import { useUi } from '../store'
+import { nameInPlace } from '../languages'
 import { openElementMenu } from '../contextMenu'
 import { flagClass, useFlaggedIds } from '../flags'
 
@@ -40,6 +41,9 @@ function biomeShares(model: TerrainModel | undefined): Map<number, number> {
   return new Map([...counts].map(([b, n]) => [b, n / Math.max(1, land)]))
 }
 
+/** A new species' name: in its world's language if it speaks one, else just that. */
+const newSpeciesName = (worldId: string) => nameInPlace('species', { nodeId: worldId }) ?? 'New species'
+
 export function EcosystemView({ worldId, model, change, error }: { worldId: string; model: TerrainModel | undefined; change: unknown; error?: string }) {
   const all = useUi((s) => s.timeline.lifeforms)
   const allLinks = useUi((s) => s.timeline.ecolinks)
@@ -60,7 +64,7 @@ export function EcosystemView({ worldId, model, change, error }: { worldId: stri
   }
 
   const add = async () => {
-    const state = await execute({ type: 'species.create', payload: { ownerId: worldId, name: 'New species', biomes: presentBiomes.slice(0, 1).map(([b]) => b) } })
+    const state = await execute({ type: 'species.create', payload: { ownerId: worldId, name: newSpeciesName(worldId), biomes: presentBiomes.slice(0, 1).map(([b]) => b) } })
     if (state?.focus?.id) setSelectedId(state.focus.id)
   }
 
@@ -136,7 +140,7 @@ function SpeciesEditor({ species, all, links, biomes, onClose }: { species: Spec
       type: 'batch',
       payload: {
         commands: [
-          { type: 'species.create', payload: { id, ownerId: species.ownerId, name: 'New species', biomes: species.biomes } },
+          { type: 'species.create', payload: { id, ownerId: species.ownerId, name: newSpeciesName(species.ownerId), biomes: species.biomes } },
           { type: 'ecolink.create', payload: { fromId: species.id, toId: id, type: linkType } }
         ]
       }
