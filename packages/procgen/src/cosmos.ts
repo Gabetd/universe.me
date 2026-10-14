@@ -237,10 +237,11 @@ export function galaxyGlowPixels(shape: GalaxyShape, seed: number, size: number,
       let light: number
       let young: number
       if (shape.type === 'elliptical') {
-        light = core * 0.9 + Math.exp(-rr * 2.4) * 0.55
-        young = 0
+        // Bright in the middle and fading smoothly out to nothing, as old swarms of stars do, with no edge.
+        light = (Math.exp(-rr / 0.16) * 1.4 + Math.exp(-rr / 0.42) * 0.55) * (1 - smoothstep(0.75, 1.15, rr))
+        young = smoothstep(0.1, 0.8, rr) * 0.5
       } else if (shape.type === 'irregular') {
-        light = density(x, y) * 0.9
+        light = density(x, y) * 0.9 * (1 - smoothstep(0.75, 1.15, rr))
         young = 0.7
       } else {
         // Sharp arms (sharper than where stars are counted), a bar across a barred spiral's middle, and the faint disc between.
@@ -281,7 +282,8 @@ export function galaxyGlowPixels(shape: GalaxyShape, seed: number, size: number,
   const spot = size >= 512 ? 1 : 0
   for (let n = 0, tries = 0; n < count / 4 && tries < count * 8; tries++) {
     const p = tryStarPoint(shape, density, r, 1.05)
-    if (!p) continue
+    // Thinning out toward the edge, so no outline shows.
+    if (!p || r() < smoothstep(0.65, 1.05, frame(p.x, p.y).r)) continue
     n++
     const px = Math.floor(half + p.x * k)
     const py = Math.floor(half + p.y * k)
