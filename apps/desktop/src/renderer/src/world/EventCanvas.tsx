@@ -607,8 +607,13 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
 
         {ordered.filter((i) => i.card?.kind !== 'group').map((item) => renderItem(item))}
 
-        {/* Where links and connections are picked: above the cards, so a line is picked wherever it runs under one, but near its ends, where the cards' handles are. */}
-        <svg className="event-links event-link-hits" width={size.w} height={size.h}>
+        {/* Where links and connections are picked: above the cards, so a line is picked wherever it runs under one, but near its ends and over the handles of the cards selected, which are theirs. */}
+        <svg className="event-links event-link-hits" width={size.w} height={size.h} clipPath={selectedItems.length ? 'url(#canvas-hits-clip)' : undefined}>
+          {selectedItems.length > 0 && (
+            <clipPath id="canvas-hits-clip">
+              <path clipRule="evenodd" d={`M0 0H${size.w}V${size.h}H0Z ${selectedItems.flatMap((i) => handleSpots(i.screen).map(([x, y]) => `M${x! - HANDLE_PAD} ${y! - HANDLE_PAD}h${2 * HANDLE_PAD}v${2 * HANDLE_PAD}h${-2 * HANDLE_PAD}Z`)).join(' ')}`} />
+            </clipPath>
+          )}
           {links.map(({ l, hit }) => (
             <path key={l.id} d={hit} className="canvas-link-hit" data-link-id={l.id} data-menu={menuRef('link', l.id)} onPointerDown={(e) => (e.stopPropagation(), selectEdge({ kind: 'link', id: l.id }))} />
           ))}
@@ -738,6 +743,17 @@ export function EventCanvas({ worldId, regions }: { worldId: string; regions: Re
 
 /** How far from each end a line isn't picked, in px: a card's handles are there. */
 const HANDLE_GAP = 16
+/** Half the size of the spot around each handle of a selected card where lines aren't picked, in px (the handles are 12 and 14 px). */
+const HANDLE_PAD = 9
+
+/** Where a card on screen has its handles: the middle of each side (to connect) and inside its bottom-right corner (to resize). */
+const handleSpots = (r: { x: number; y: number; w: number; h: number }) => [
+  [r.x + r.w / 2, r.y],
+  [r.x + r.w / 2, r.y + r.h],
+  [r.x, r.y + r.h / 2],
+  [r.x + r.w, r.y + r.h / 2],
+  [r.x + r.w - 7, r.y + r.h - 7]
+]
 
 /** How much a group's label takes above it at 100%. */
 const GROUP_LABEL_H = 30

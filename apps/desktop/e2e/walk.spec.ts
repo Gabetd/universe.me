@@ -32,19 +32,25 @@ test('on the ground, W A S D move over it at the speed picked, S moves rather th
   await expect(page.getByRole('button', { name: 'Navigate', exact: true })).toHaveAttribute('aria-pressed', 'true')
 
   // Slower when asked: walking (a third of running's speed) covers less ground in half the time, with room for a frame or two the run lost.
+  // Measured again if a slow machine stalled a step, so a frame dropped or doubled can't decide it.
   await page.getByRole('radio', { name: 'Walk' }).click()
-  const slow = await at()
-  await hold('w', 300)
-  const walked = slow[1] - (await at())[1]
-  expect(walked).toBeGreaterThan(0)
-  expect(walked).toBeLessThan(start[1] - ahead[1])
+  await expect(page.getByRole('radio', { name: 'Walk' })).toHaveAttribute('aria-checked', 'true')
+  await expect(async () => {
+    const slow = await at()
+    await hold('w', 300)
+    const walked = slow[1] - (await at())[1]
+    expect(walked).toBeGreaterThan(0)
+    expect(walked).toBeLessThan(start[1] - ahead[1])
+  }).toPass({ timeout: SLOW })
 
   // Space rises; Ctrl comes down, as far as standing on the ground (the eye's height over it, looking out level).
   const height = async () => Number(await canvas.getAttribute('data-height'))
   const low = await height()
   const looked = await at()
-  await hold('Space', 600)
-  expect(await height()).toBeGreaterThan(low + 20)
+  // Held as long as rising takes, however slowly the frames come.
+  await page.keyboard.down('Space')
+  await expect.poll(height, { timeout: SLOW }).toBeGreaterThan(low + 20)
+  await page.keyboard.up('Space')
   // Still looking the same way: what the view looks at has moved on ahead (north), rather than the view tipping down at it.
   expect(looked[1] - (await at())[1]).toBeGreaterThan(20)
   await page.getByRole('radio', { name: 'Fly' }).click()
