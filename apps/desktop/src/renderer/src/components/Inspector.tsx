@@ -1,6 +1,6 @@
 import type { SpatialNode } from '@universe/core'
 import { useRef } from 'react'
-import { KIND_ICONS, addChildCommand, addOptions, canDelete, kindLabel } from '../kinds'
+import { KIND_ICONS, addChildCommand, addOptions, canDelete, kindLabel, renameCommand, shownAs } from '../kinds'
 import { selectNode, updater, useUi } from '../store'
 import { DeleteButton, NotesField, NumberInput, TagsField, TextField, randomSeed } from './fields'
 import { TimelineInspector } from './TimelinePanels'
@@ -37,19 +37,21 @@ function NodeForm({ node }: { node: SpatialNode }) {
   const nodes = useUi((s) => s.nodes)
   const execute = useUi((s) => s.execute)
   const update = updater('node', node.id)
-  const options = addOptions(node, nodes)
+  // A surface is shown as its planet or moon: their one name, its orbit, its moons to add, and deleting it.
+  const item = shownAs(node, nodes)
+  const options = addOptions(item, nodes)
 
   return (
     <>
       {node.kind === 'world' && <WorldPanel world={node} />}
       {node.kind === 'star_system' && <StarPanel system={node} />}
-      {node.kind === 'body' && <OrbitPanel body={node} />}
+      {item.kind === 'body' && <OrbitPanel body={item} withSurface={item !== node} />}
 
       <section className="inspector-section">
         <div className="inspector-kind">
-          <span>{KIND_ICONS[node.kind]}</span> {kindLabel(node, nodes)}
+          <span>{KIND_ICONS[node.kind]}</span> {kindLabel(item, nodes)}
         </div>
-        <TextField label="Name" value={node.name} required onCommit={(name) => update({ name })} />
+        <TextField label="Name" value={item.name} required onCommit={(name) => void execute(renameCommand(item, nodes, name))} />
         <TagsField label="Tags" tags={node.tags} onCommit={(tags) => update({ tags })} />
         {/* A world's seed lives with its generation options. */}
         {node.kind !== 'world' && (
@@ -68,12 +70,12 @@ function NodeForm({ node }: { node: SpatialNode }) {
 
       {options.length > 0 && (
         <div className="field">
-          <span>Add inside {node.name}</span>
+          <span>Add inside {item.name}</span>
           <div className="add-buttons">
             {options.map((o) => (
               <button
                 key={o.kind}
-                onClick={() => void execute(addChildCommand(node, o.kind, o.label))}
+                onClick={() => void execute(addChildCommand(item, o.kind, o.label))}
               >
                 + {o.label}
               </button>
@@ -85,9 +87,9 @@ function NodeForm({ node }: { node: SpatialNode }) {
       <PowersHere node={node} />
       <NodeLanguage node={node} />
 
-      {canDelete(node) && (
-        <DeleteButton kind="node" ids={[node.id]}>
-          Delete {node.name}
+      {canDelete(item) && (
+        <DeleteButton kind="node" ids={[item.id]}>
+          Delete {item.name}
         </DeleteButton>
       )}
     </>

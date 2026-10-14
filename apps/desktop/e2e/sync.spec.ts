@@ -21,7 +21,7 @@ test('sync: a universe copied from one computer to another, then kept in step bo
     await expect(devices.getByRole('list', { name: 'Devices' })).toContainText('studio · has “Aerth” open', { timeout: SLOW })
     await stubSaveDialog(laptop.app, join(laptop.dir, 'Aerth copy.universe'))
     await devices.getByRole('button', { name: 'Copy “Aerth” here' }).click()
-    await expect(row(laptop.page, 'Terra Surface')).toBeVisible()
+    await expect(row(laptop.page, 'Terra')).toBeVisible()
 
     // A change on either shows on the other.
     await row(studio.page, 'Sol').click()

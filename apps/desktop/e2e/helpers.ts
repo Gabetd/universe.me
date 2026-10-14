@@ -173,7 +173,7 @@ export async function newProject({ app, page, dir }: AppHandle, name: string): P
 
 /**
  * A new project with a planet in it: a galaxy cluster, a galaxy, a star system, the planet and,
- * unless `surface` is false, its world surface ("<planet> Surface"), which ends up selected.
+ * unless `surface` is false, its surface (by the planet's name, and one row with it in the tree), which ends up selected.
  */
 export async function newWorld(h: AppHandle, project: string, { cluster = 'Virgo', planet = 'Terra', surface = true } = {}): Promise<void> {
   const { page } = h
@@ -182,7 +182,7 @@ export async function newWorld(h: AppHandle, project: string, { cluster = 'Virgo
   await addChild(page, '+ Galaxy', 'Milky Way')
   await addChild(page, '+ Star System', 'Sol')
   await addChild(page, '+ Planet', planet)
-  if (surface) await addChild(page, '+ World surface', `${planet} Surface`)
+  if (surface) await addChild(page, '+ Surface', planet)
 }
 
 /** Part of the app's state, read from the main process. */
@@ -194,6 +194,14 @@ export const row = (page: Page, name: string) =>
   page.locator('.tree-row').filter({ has: page.locator('.tree-name').getByText(name, { exact: true }) })
 
 export const inspector = (page: Page) => page.locator('.inspector')
+
+/** A planet or moon with a surface seen from its orbit, with what goes round it: its row opens the surface, and the orbit is one zoom out. */
+export async function orbitOf(page: Page, name: string): Promise<void> {
+  await row(page, name).click()
+  await expect(page.locator('.world-editor')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.viewport-overlay.top')).toContainText(/(Planet|Moon) view/)
+}
 
 /** Adds a child to the selected node via the inspector and renames it. */
 export async function addChild(page: Page, button: string, name: string): Promise<void> {

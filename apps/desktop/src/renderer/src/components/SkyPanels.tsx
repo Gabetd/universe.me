@@ -1,6 +1,7 @@
 import { AU_KM, daysPerYear, planetSize, radiusOfSize, type OrbitFields, type SpatialNode, type WorldSettings } from '@universe/core'
 import { surfaceTemperature, withSky } from '@universe/procgen'
 import { deriveCalendar, formatPeriod, massCommand, orbitFields, worldOrbit, luminosityOf, moonsOf, planetOf, worldClimate, type BodyOrbit, type SystemModel } from '@universe/sim'
+import { surfaceOf } from '../kinds'
 import { useUi } from '../store'
 import { useSystem, useWorldClimate } from '../world/useSky'
 import { NumberInput, Swatch, TextField } from './fields'
@@ -51,14 +52,14 @@ export function StarPanel({ system: node }: { system: SpatialNode }) {
 const HOURS_PER_DAY = 24
 
 /** Inspector for a planet or moon: its orbit and spin, and what follows from them. */
-export function OrbitPanel({ body }: { body: SpatialNode }) {
+export function OrbitPanel({ body, withSurface = false }: { body: SpatialNode; withSurface?: boolean }) {
   const system = useSystem(body.id)
   const execute = useUi((s) => s.execute)
   const nodes = useUi((s) => s.nodes)
   const orbit = system?.bodies.get(body.id)
   if (!system || !orbit) return null
   const isMoon = !!orbit.parentBodyId
-  const world = nodes.find((n) => n.parentId === body.id && n.kind === 'world')
+  const world = surfaceOf(nodes, body.id)
   const set = (patch: Partial<OrbitFields>) => setOrbit(body.id, orbit, patch)
   const distance = isMoon ? orbit.semiMajorAxisKm : orbit.semiMajorAxisKm / AU_KM
 
@@ -82,7 +83,8 @@ export function OrbitPanel({ body }: { body: SpatialNode }) {
           </>
         )}
       </div>
-      <MassLink bodyId={body.id} />
+      {/* Shown with the surface, it's by the planet's size in the surface's settings. */}
+      {!withSurface && <MassLink bodyId={body.id} />}
       <Derived system={system} orbit={orbit} hasWorld={!!world} />
       {!orbit.isDefault && (
         <button className="link" onClick={() => void execute({ type: 'orbit.reset', payload: { bodyId: body.id } })}>

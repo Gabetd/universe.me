@@ -5,7 +5,7 @@ test('keyboard shortcuts: the sheet lists them, and views, tools and the timelin
   const { app, page, dir } = h
   await stubSaveDialog(app, join(dir, 'Calder (sample).universe'))
   await page.getByRole('button', { name: 'Explore a sample universe' }).click()
-  await expect(page.locator('.tree-row.selected')).toHaveText(/Calder Surface/)
+  await expect(page.locator('.tree-row.selected')).toHaveText(/Calder/)
 
   // ? shows them all; Esc closes it (and nothing else happens: the world stays selected).
   await page.keyboard.press('?')
@@ -14,7 +14,7 @@ test('keyboard shortcuts: the sheet lists them, and views, tools and the timelin
   await shot(page, '200-shortcuts', { views: false })
   await page.keyboard.press('Escape')
   await expect(sheet).toBeHidden()
-  await expect(page.locator('.tree-row.selected')).toHaveText(/Calder Surface/)
+  await expect(page.locator('.tree-row.selected')).toHaveText(/Calder/)
   // The button says its key.
   await expect(page.getByRole('button', { name: '🗺 Map' })).toHaveAttribute('title', /\(2\)$/)
 

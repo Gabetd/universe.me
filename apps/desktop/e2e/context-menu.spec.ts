@@ -49,7 +49,7 @@ test('right-clicking anything gives its options: in the tree, on the timeline, o
   await expect(row(page, 'Marrs')).toHaveCount(1)
 
   // An event on the timeline.
-  await row(page, 'Terra Surface').click()
+  await row(page, 'Terra').click()
   await page.getByRole('button', { name: '+ Event' }).click()
   const event = page.locator('.tl-event').first()
   await event.click({ button: 'right' })

@@ -49,7 +49,7 @@ test('plugins: one from the template generates villages (undone as one), exports
   await stubOpenDialog(app, wikiDir)
   await mine.getByRole('group', { name: 'Wiki pages' }).getByRole('button', { name: 'Export…' }).click()
   await expect(note).toContainText(/saved \d+ files/, { timeout: 60_000 })
-  expect(readFileSync(join(wikiDir, 'index.md'), 'utf8')).toMatch(/^# Terra Surface/)
+  expect(readFileSync(join(wikiDir, 'index.md'), 'utf8')).toMatch(/^# Terra$/m)
   await stubSaveDialog(app, join(dir, 'map.png'))
   const map = mine.getByRole('group', { name: 'Map image' })
   await map.getByLabel('Width (pixels)').selectOption('512')
@@ -60,7 +60,7 @@ test('plugins: one from the template generates villages (undone as one), exports
 
   // The world's inspector runs them too; its name generator names the world from its right-click menu.
   await expect(inspector(page).getByRole('region', { name: 'Plugins' }).getByRole('group', { name: 'Scatter villages' })).toBeVisible()
-  await row(page, 'Terra Surface').click({ button: 'right' })
+  await row(page, 'Terra').click({ button: 'right' })
   await page.getByRole('menu').getByRole('menuitem', { name: 'Name it: Names from the example plugin…' }).click()
   const names = page.getByRole('dialog', { name: 'Names from the example plugin' })
   const first = (await names.getByRole('button').filter({ hasNotText: '✕' }).first().textContent())!.trim()

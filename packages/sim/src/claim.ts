@@ -33,7 +33,7 @@ export function claimPlanet(systemId: string, planet: GeneratedPlanet, withWorld
   if (withWorld) {
     const worldId = newId()
     commands.push(
-      { type: 'node.create', payload: { id: worldId, parentId: id, kind: 'world', name: `${planet.name} Surface`, seed: subSeed(planet.seed, 1) } },
+      { type: 'node.create', payload: { id: worldId, parentId: id, kind: 'world', name: planet.name, seed: subSeed(planet.seed, 1) } },
       { type: 'world.update', payload: { id: worldId, patch: { radiusKm: worldRadius(planet.orbit.radiusKm) } } }
     )
   }

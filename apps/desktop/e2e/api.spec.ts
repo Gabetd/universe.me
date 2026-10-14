@@ -29,7 +29,7 @@ test('an AI client over MCP: its changes show at once and undo in one click, or 
   const init = await mcp('initialize', INIT)
   expect(init.result.serverInfo).toMatchObject({ name: 'universe' })
   const worlds = await tool(mcp, 'list_worlds', {})
-  expect(worlds.worlds[0].name).toBe('Terra Surface')
+  expect(worlds.worlds[0].name).toBe('Terra')
 
   // A change from the AI shows in the app at once, with a note, and the topbar offers to undo it.
   const comet = await tool(mcp, 'create_event', { worldId: id, title: 'The comet', start: '1204', notes: 'It burned for a month.' })
@@ -68,7 +68,7 @@ test('an AI client over MCP: its changes show at once and undo in one click, or 
   expect((await fetch(`http://127.0.0.1:${port}/v1/worlds`)).status).toBe(401)
 
   // The world bible, from the world's inspector.
-  await row(page, 'Terra Surface').click()
+  await row(page, 'Terra').click()
   const bible = join(h.dir, 'Terra.md')
   await stubSaveDialog(h.app, bible)
   await inspector(page).getByRole('button', { name: 'Export world bible…' }).click()

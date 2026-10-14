@@ -50,15 +50,19 @@ interface RowProps {
 
 /** Memoized: selecting something re-renders only the rows on the old and new paths to the selection. */
 const Row = memo(function Row({ node, parentKind, depth, collapsed, path, toggle }: RowProps) {
-  const selected = useUi((s) => s.selectedId === node.id)
-  const flagged = useFlagged(node.id)
+  // A planet or moon and its surface are one row: picking it opens the surface; its moons are under it.
+  const surface = node.children.find((c) => c.kind === 'world')
+  const children = surface ? node.children.filter((c) => c !== surface) : node.children
+  const target = surface ?? node
+  const selected = useUi((s) => s.selectedId === node.id || s.selectedId === surface?.id)
+  const flagged = useFlagged(target.id)
   const select = useUi((s) => s.select)
-  const hasChildren = node.children.length > 0
+  const hasChildren = children.length > 0
   const open = hasChildren && (!collapsed.has(node.id) || (!!path && !selected))
 
   return (
     <li role="treeitem" aria-selected={selected} aria-expanded={hasChildren ? open : undefined}>
-      <div className={`tree-row${selected ? ' selected' : ''}${flagClass(flagged)}`} style={{ paddingLeft: 8 + depth * 14 }} title={levelLabel(node.kind, parentKind)} data-menu={menuRef('node', node.id)} onClick={() => select(node.id)}>
+      <div className={`tree-row${selected ? ' selected' : ''}${flagClass(flagged)}`} style={{ paddingLeft: 8 + depth * 14 }} title={levelLabel(node.kind, parentKind)} data-menu={menuRef('node', node.id)} onClick={() => select(target.id)}>
         <button
           className="tree-caret link"
           style={{ visibility: hasChildren ? 'visible' : 'hidden' }}
@@ -70,13 +74,13 @@ const Row = memo(function Row({ node, parentKind, depth, collapsed, path, toggle
         >
           {open ? '▾' : '▸'}
         </button>
-        <span className="tree-icon">{KIND_ICONS[node.kind]}</span>
+        <span className="tree-icon">{KIND_ICONS[target.kind]}</span>
         <span className="tree-name">{node.name}</span>
-        <PeopleOn nodeId={node.id} />
+        <PeopleOn nodeId={target.id} />
       </div>
       {open && (
         <ul role="group">
-          {node.children.map((c) => (
+          {children.map((c) => (
             <Row key={c.id} node={c} parentKind={node.kind} depth={depth + 1} collapsed={collapsed} path={pathFor(path, c.id)} toggle={toggle} />
           ))}
         </ul>

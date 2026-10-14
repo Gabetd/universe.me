@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { addChild, expect, inspector, newWorld, openGlobe, openMap, row, setPlayhead, shot, SLOW, test, wheel } from './helpers'
+import { addChild, expect, inspector, newWorld, openGlobe, orbitOf, openMap, row, setPlayhead, shot, SLOW, test, wheel } from './helpers'
 
 /** A spot of green land on the map near its middle, in CSS pixels from the map's corner. */
 function landNear(page: Page): Promise<[number, number]> {
@@ -31,15 +31,15 @@ test('planets show their surface, structures are pins from afar, and the ground 
   const { page } = h
   await newWorld(h, 'Close', { surface: false })
   await addChild(page, '+ Moon', 'Luna')
-  await addChild(page, '+ World surface', 'Luna Surface')
+  await addChild(page, '+ Surface', 'Luna')
   await row(page, 'Terra').click()
-  await addChild(page, '+ World surface', 'Terra Surface')
+  await addChild(page, '+ Surface', 'Terra')
 
   // From orbit, Terra and its moon show their real surfaces.
-  await row(page, 'Terra').click()
+  await orbitOf(page, 'Terra')
   await shot(page, '60-orbit-surfaces', { wait: 2500 })
 
-  await row(page, 'Terra Surface').click()
+  await row(page, 'Terra').click()
   await openMap(page)
   await setPlayhead(page, '1000')
   await page.getByRole('button', { name: 'Place structure' }).click()

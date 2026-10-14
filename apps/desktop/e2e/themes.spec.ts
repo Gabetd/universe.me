@@ -33,7 +33,7 @@ test('themes: a library from presets, spans on the timeline that crossfade at th
   expect(golden.blendIn).toBeGreaterThan(0)
 
   // Then the Plague Years from year 80, overlapping the Golden Age's last twenty years.
-  await row(page, 'Terra Surface').click()
+  await row(page, 'Terra').click()
   await setPlayhead(page, '80')
   await newTheme(themes, 'Plague Years')
   await expect(band.getByRole('button', { name: /^Theme span Plague Years/ })).toBeVisible()
@@ -41,7 +41,7 @@ test('themes: a library from presets, spans on the timeline that crossfade at th
   expect(tl.themeSpans).toHaveLength(2)
 
   // The playhead decides what's in force: one theme, both crossfading, then the other.
-  await row(page, 'Terra Surface').click()
+  await row(page, 'Terra').click()
   const now = themes.locator('.theme-now')
   const accent = () => page.locator('.workspace').evaluate((el) => (el as HTMLElement).style.getPropertyValue('--theme-accent'))
   // The playhead line is drawn in the interface's accent.
@@ -84,7 +84,7 @@ test('themes: a library from presets, spans on the timeline that crossfade at th
   await expect.poll(async () => (await timeline(page)).themeSpans.find((s) => s.id === golden.id)!.start).toBeGreaterThan(golden.start)
 
   // Deleting a theme (opened from the world's library) takes its spans; undo brings them back.
-  await row(page, 'Terra Surface').click()
+  await row(page, 'Terra').click()
   await themes.getByRole('button', { name: 'The Long Winter', exact: true }).click()
   await editor.getByRole('button', { name: /^Delete theme/ }).click()
   await expect.poll(async () => (await timeline(page)).themeSpans.length).toBe(1)
@@ -126,7 +126,7 @@ test('the views take on the theme in force: its light and colours on the globe, 
   // An Ice Age over it from year 50, first over the whole world, then only in a region.
   await drawRegion(page)
   await expect.poll(async () => (await state(page, 'regions')).length).toBe(1)
-  await row(page, 'Terra Surface').click()
+  await row(page, 'Terra').click()
   await newTheme(themes, 'Ice Age')
   await setPlayhead(page, '80')
   await expect.poll(() => shows(page, 'map')).toBe('Ice Age')

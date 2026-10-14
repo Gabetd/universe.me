@@ -1,4 +1,4 @@
-import { addChild, closeProject, expect, inspector, menu, newProject, row, shot, state, test, writeNotes } from './helpers'
+import { addChild, closeProject, expect, inspector, menu, newProject, orbitOf, row, shot, state, test, writeNotes } from './helpers'
 
 test('create a universe, build a hierarchy, undo/redo, and reopen it', async ({ h }) => {
   const { app, page } = h
@@ -23,8 +23,8 @@ test('create a universe, build a hierarchy, undo/redo, and reopen it', async ({ 
   await row(page, 'Aerth').click()
   await addChild(page, '+ Moon', 'Luna')
   await row(page, 'Aerth').click()
-  await inspector(page).getByRole('button', { name: '+ World surface' }).click()
-  await expect(inspector(page).getByRole('button', { name: '+ World surface' })).toHaveCount(0)
+  await inspector(page).getByRole('button', { name: '+ Surface' }).click()
+  await expect(inspector(page).getByRole('button', { name: '+ Surface' })).toHaveCount(0)
 
   await row(page, 'Sol').click()
   await shot(page, '02-star-system', { wait: 300 })
@@ -40,7 +40,7 @@ test('create a universe, build a hierarchy, undo/redo, and reopen it', async ({ 
   await expect(row(page, 'Marrs')).toHaveCount(0)
 
   await page.locator('.crumb button', { hasText: 'Sol' }).click()
-  await row(page, 'Aerth').click()
+  await orbitOf(page, 'Aerth')
   await shot(page, '03-planet', { wait: 300 })
 
   // Everything was written to disk: close and reopen from the recent list.

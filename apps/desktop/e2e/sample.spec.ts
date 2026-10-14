@@ -8,7 +8,7 @@ test('the sample universe: from the start screen, a world with a history to look
   await page.getByRole('button', { name: 'Explore a sample universe' }).click()
 
   // Opened on its world, with what the sample holds.
-  await expect(page.locator('.tree-row.selected')).toHaveText(/Calder Surface/)
+  await expect(page.locator('.tree-row.selected')).toHaveText(/Calder/)
   await expect(row(page, 'The Spindle')).toBeVisible()
   await expect(inspector(page).getByText('A sample world to look around in.', { exact: false })).toBeVisible()
   const timeline = await state(page, 'timeline')

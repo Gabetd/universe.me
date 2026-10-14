@@ -1,7 +1,7 @@
 import { versionLabel } from '../../../shared/update'
 import { ancestry } from '@universe/core'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { KIND_ICONS } from '../kinds'
+import { KIND_ICONS, opened, shownAs } from '../kinds'
 import { isEditingText } from '../input'
 import { deleteCommand, redo, selectNode, undo, useUi } from '../store'
 import { ErrorBanner } from './ErrorBanner'
@@ -52,7 +52,8 @@ export function Workspace() {
     // Tools with their own keys (region drawing) handle them in the capture phase and preventDefault.
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || isEditingText()) return
-      const { selectedId, selectedRegionId, selectedStructureId, selectedCharacterId, timelineSelection: tl, project: p, execute } = useUi.getState()
+      const { selectedId, selectedRegionId, selectedStructureId, selectedCharacterId, timelineSelection: tl, project: p, execute, nodes } = useUi.getState()
+      const selected = nodes.find((n) => n.id === selectedId)
       if (e.key === 'Delete' || e.key === 'Backspace') {
         // Most specific first: timeline records, then a region, structure or character, then the node it's all on.
         const command =
@@ -63,8 +64,9 @@ export function Workspace() {
               ? deleteCommand('structure', [selectedStructureId])
               : selectedCharacterId
                 ? deleteCommand('character', [selectedCharacterId])
-                : selectedId && selectedId !== p?.rootId
-                  ? deleteCommand('node', [selectedId])
+                : selected && selected.id !== p?.rootId
+                  ? // A surface goes with its planet or moon, as they're one thing.
+                    deleteCommand('node', [shownAs(selected, nodes).id])
                   : undefined)
         if (command) {
           e.preventDefault()
@@ -143,14 +145,15 @@ export function Workspace() {
 function Breadcrumb() {
   const nodes = useUi((s) => s.nodes)
   const selectedId = useUi((s) => s.selectedId)
-  const path = useMemo(() => (selectedId ? ancestry(nodes, selectedId) : []), [nodes, selectedId])
+  // A surface is its planet's or moon's crumb, as in the tree.
+  const path = useMemo(() => (selectedId ? ancestry(nodes, selectedId).filter((n) => n.kind !== 'world') : []), [nodes, selectedId])
   return (
     <nav className="breadcrumb" aria-label="Location">
       {path.map((n, i) => (
         <span key={n.id} className="crumb">
           {i > 0 && <span className="crumb-sep">›</span>}
-          <button className="link" onClick={() => zoomTo(n.id)} aria-current={i === path.length - 1}>
-            <span className="crumb-icon">{KIND_ICONS[n.kind]}</span>
+          <button className="link" onClick={() => zoomTo(i === path.length - 1 ? selectedId! : opened(n, nodes).id)} aria-current={i === path.length - 1}>
+            <span className="crumb-icon">{KIND_ICONS[opened(n, nodes).kind]}</span>
             {n.name}
           </button>
         </span>

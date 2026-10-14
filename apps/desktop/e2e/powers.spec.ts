@@ -80,7 +80,7 @@ test('power systems are the universe’s: pinned to a star system, one holds on 
   await page.getByRole('button', { name: '✨ Powers' }).click()
   await page.getByRole('region', { name: 'Start a power system' }).getByRole('button', { name: /^Divine/ }).click()
   const pinned = powers(page).getByRole('list', { name: 'Pinned to' })
-  await expect(pinned).toContainText('Terra Surface')
+  await expect(pinned).toContainText('Terra')
 
   // Pinned to the star system as well, from the system itself.
   const pinTo = powers(page).getByLabel('Pin to')

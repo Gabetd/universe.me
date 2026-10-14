@@ -1,4 +1,4 @@
-import { expect, fill, inspector, newWorld, row, state, test } from './helpers'
+import { expect, fill, inspector, newWorld, orbitOf, row, state, test } from './helpers'
 
 test('a planet’s size on the Earth scale (10 is Earth), its mass following it until unlinked', async ({ h }) => {
   const { page } = h
@@ -21,10 +21,10 @@ test('a planet’s size on the Earth scale (10 is Earth), its mass following it 
   await expect(panel.getByText(/· 0\.0834 Earth masses/)).toBeVisible()
 
   // On the planet's orbit: linked again, setting its mass sets its size.
-  await row(page, 'Terra').click()
+  await orbitOf(page, 'Terra')
   await panel.getByLabel(/Mass follows size/).check()
   await fill(page, 'Mass (Earths)', '1')
   await expect.poll(radius).toBe(6371)
-  await row(page, 'Terra Surface').click()
+  await row(page, 'Terra').click()
   await expect(panel.getByLabel('Size (Earth = 10)', { exact: true })).toHaveValue('10')
 })

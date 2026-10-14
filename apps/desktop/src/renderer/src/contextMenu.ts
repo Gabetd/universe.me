@@ -1,7 +1,7 @@
 import { FACTION_KIND_LABELS, eventPlace, languageAtPoint, nameIn, SCAR_LOOKS, scarName, waterwayKind, type Command, type FactionKind, type ScarKind, type Language, type Party } from '@universe/core'
 import { waterwayIndex, waterwayPlace } from '@universe/procgen'
 import { create } from 'zustand'
-import { addChildCommand, addOptions, canDelete, kindLabel } from './kinds'
+import { addChildCommand, addOptions, canDelete, kindLabel, opened } from './kinds'
 import { deleteCommand, useUi, type DeleteKind } from './store'
 import { contributions, isNameable, usePlugins } from './pluginStore'
 import { playheadOf, useTimelineView } from './timeline/timelineStore'
@@ -273,8 +273,11 @@ function waterwayOf(key: string) {
 /** Shows an element in the inspector (where `KINDS` says it has a panel), as clicking it does; a faction on the Factions page, a relationship with its first side. */
 export function openElement({ kind, id }: ElementRef): void {
   const ui = useUi.getState()
-  if (kind === 'node') ui.select(id)
-  else if (kind === 'region') ui.selectRegion(id)
+  if (kind === 'node') {
+    // A planet or moon opens on its surface, as its row in the tree does.
+    const node = ui.nodes.find((n) => n.id === id)
+    ui.select(node ? opened(node, ui.nodes).id : id)
+  } else if (kind === 'region') ui.selectRegion(id)
   else if (kind === 'structure') ui.selectStructure(id)
   else if (kind === 'character') ui.selectCharacter(id)
   else if (kind === 'waterway') ui.selectWaterway(id)

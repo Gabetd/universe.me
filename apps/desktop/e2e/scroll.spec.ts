@@ -133,8 +133,8 @@ test('a settings panel stays where it is when a setting changes', async ({ h }) 
     async () => (await theme()).typography
   )
 
-  // A planet's orbit.
-  await row(page, 'Terra').click()
+  // The planet's orbit, beside its surface's settings (renamed with it above: they're one thing).
+  await row(page, 'Aerth Below').click()
   const day = ins.getByRole('textbox', { name: 'Day (hours)' })
   await stays(
     page,
@@ -146,7 +146,7 @@ test('a settings panel stays where it is when a setting changes', async ({ h }) 
     () =>
       page.evaluate(async () => {
         const s = await window.universe.getState()
-        const terra = s.nodes.find((n) => n.name === 'Terra')!
+        const terra = s.nodes.find((n) => n.kind === 'body')!
         return s.timeline.orbits.find((o) => o.ownerId === terra.id)?.rotationHours
       })
   )

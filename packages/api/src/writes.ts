@@ -899,7 +899,7 @@ export const WRITES = [
       const seeded = p.seed ? readSeed(p.seed) : undefined
       const commands: Command[] = [
         { type: 'node.create', payload: { id: bodyId, parentId: p.systemId, kind: 'body', name: p.name } },
-        { type: 'node.create', payload: { id: worldId, parentId: bodyId, kind: 'world', name: `${p.name} Surface`, ...(seeded && { seed: seeded.seed }) } }
+        { type: 'node.create', payload: { id: worldId, parentId: bodyId, kind: 'world', name: p.name, ...(seeded && { seed: seeded.seed }) } }
       ]
       // The size asked for over the seed's.
       const radiusKm = p.size ? radiusOfSize(p.size) : seeded?.radiusKm

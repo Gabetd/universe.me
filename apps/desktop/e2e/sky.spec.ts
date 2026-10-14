@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { addChild, expect, fill, inspector, newWorld, playhead, row, setPlayhead, shot, test, wheel } from './helpers'
+import { addChild, expect, fill, inspector, newWorld, orbitOf, playhead, row, setPlayhead, shot, test, wheel } from './helpers'
 
 /**
  * Where the system view points at something along the line through its star (a pointer cursor):
@@ -33,7 +33,7 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await addChild(page, '+ Planet', 'Terra')
   await addChild(page, '+ Moon', 'Luna')
   await row(page, 'Terra').click()
-  await addChild(page, '+ World surface', 'Terra Surface')
+  await addChild(page, '+ Surface', 'Terra')
   await row(page, 'Sol').click()
   await addChild(page, '+ Planet', 'Jove')
 
@@ -65,7 +65,7 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await expect(card).toHaveCount(0)
 
   // Terra's orbit: made up until changed; a 30-hour day changes its calendar.
-  await row(page, 'Terra').click()
+  await orbitOf(page, 'Terra')
   await expect(inspector(page).getByLabel('Orbit', { exact: true })).toContainText('Made up from the seed')
   await expect(inspector(page).getByLabel('Worked out from the orbit')).toContainText('365 days in 12 months')
   await fill(page, 'Day (hours)', '30')
@@ -76,7 +76,7 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await expect(page.getByTestId('viewport')).toHaveAttribute('data-overlaps', '0')
 
   // The timeline has a track of the moon's phases and the eclipses; an eclipse becomes an event with a click.
-  await row(page, 'Terra Surface').click()
+  await row(page, 'Terra').click()
   await expect(page.getByLabel('Moons and eclipses')).toContainText('Zoom in')
   // About two and a half years: room for the phases, and always a few eclipses.
   await wheel(page, page.locator('.tl-ruler'), -500, 5)
@@ -89,7 +89,7 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await expect(inspector(page).getByLabel('Event title')).toHaveValue(new RegExp(name.split(' ').slice(0, 2).join(' ')))
 
   // The world's calendar follows: its months can be renamed, and dates are written with them.
-  await row(page, 'Terra Surface').click()
+  await row(page, 'Terra').click()
   const calendar = inspector(page).getByLabel('Calendar', { exact: true })
   await expect(calendar).toContainText('days of 30.')
   await fill(page, 'Month 1 name', 'Frostmoon')
@@ -101,7 +101,7 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await expect(inspector(page).getByLabel('Climate', { exact: true })).toContainText('against Earth')
   await row(page, 'Terra').click()
   await fill(page, 'Distance (AU)', '1.25')
-  await row(page, 'Terra Surface').click()
+  await row(page, 'Terra').click()
   await expect(inspector(page).getByLabel('Climate', { exact: true })).toContainText('−')
   await shot(page, '83-colder-world', { wait: 1500 })
   await page.getByRole('button', { name: /Undo/ }).click()

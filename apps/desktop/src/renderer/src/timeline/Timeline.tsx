@@ -28,6 +28,7 @@ import { LivesTrack } from './LivesTrack'
 import { useFlagged } from '../flags'
 import { menuRef, openElementMenu } from '../contextMenu'
 import { useShortcuts, withKey } from '../shortcuts'
+import { shownAs } from '../kinds'
 
 const LABELS_W = 132
 
@@ -262,12 +263,14 @@ function OwnerTimeline({ owner }: { owner: SpatialNode }) {
     if (next.start < range.t0 || next.start > range.t1) setRange(panRange(range, next.start - (range.t0 + range.t1) / 2))
   }
   useShortcuts({ 'new-event': newEvent, fit, 'prev-event': () => jump(-1), 'next-event': () => jump(1) })
+  // A surface's timeline goes by its planet's or moon's name.
+  const ownerName = useUi((s) => shownAs(owner, s.nodes).name)
 
   return (
     <div className="timeline" onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
       <div className="timeline-toolbar" role="toolbar" aria-label="Timeline">
-        <span className="timeline-title" title={owner.name}>
-          Timeline · {owner.name}
+        <span className="timeline-title" title={ownerName}>
+          Timeline · {ownerName}
         </span>
         <button onClick={newEvent} title={withKey('A new event at the playhead', 'new-event')}>
           + Event

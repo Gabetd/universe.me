@@ -147,7 +147,7 @@ test('place events on the world and watch regions come and go with the playhead'
   // The history survives a reopen.
   await closeProject(app)
   await page.getByRole('button', { name: /Atlas/ }).click()
-  await row(page, 'Terra Surface').click()
+  await row(page, 'Terra').click()
   const t = await timeline(page)
   expect(t.events).toHaveLength(1)
   expect(t.changes.map((c) => c.change).sort()).toEqual(['appear', 'update'])

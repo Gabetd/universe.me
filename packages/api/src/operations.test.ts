@@ -109,7 +109,7 @@ describe('the operations', () => {
     await p.call('update_note', { id: worldId, text: 'A cold world.' })
     await p.call('update_note', { id: worldId, text: 'Its people live underground.', mode: 'append' })
     const md = await p.call<string>('export_world_bible', { worldId })
-    expect(md).toContain('# Arda Surface')
+    expect(md).toContain('# Arda')
     expect(md).toContain('A cold world.\n\nIts people live underground.')
     expect(md).toContain('### 1: First light')
     await p.call('create_event', { worldId, title: 'The *star*\nfalls', start: '2' })

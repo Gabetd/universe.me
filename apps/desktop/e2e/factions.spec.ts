@@ -6,7 +6,7 @@ test('factions: founded, part of one another, with members and land over time; p
   const { app, page, dir } = h
   await stubSaveDialog(app, join(dir, 'Calder (sample).universe'))
   await page.getByRole('button', { name: 'Explore a sample universe' }).click()
-  await expect(page.locator('.tree-row.selected')).toHaveText(/Calder Surface/)
+  await expect(page.locator('.tree-row.selected')).toHaveText(/Calder/)
 
   // The Factions page (7): the sample's factions, a house under its kingdom.
   await page.keyboard.press('7')

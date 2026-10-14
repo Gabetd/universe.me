@@ -97,7 +97,8 @@ test('edit a world: sculpt, paint, undo, draw a region, and keep it after reopen
   // Reopen: region, notes and terrain edits are all in the file.
   await closeProject(app)
   await page.getByRole('button', { name: /Terra/ }).click()
-  await row(page, 'Terra Surface').click()
+  // The planet's row, not the universe's (the project is named Terra too).
+  await row(page, 'Terra').last().click()
   await page.locator('.region-row', { hasText: 'The Dry Reaches' }).click()
   await expect(page.getByRole('textbox', { name: 'Region notes' })).toHaveText('Nomads cross here in winter.')
   expect(await worldState(page)).toMatchObject({ revision: 4, seaLevel: 300 })

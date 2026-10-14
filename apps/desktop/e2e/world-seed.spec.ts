@@ -2,11 +2,11 @@ import type { Page } from '@playwright/test'
 import { DEFAULT_TERRAIN } from '@universe/core'
 import { addChild, expect, fill, inspector, newWorld, row, shot, SLOW, test } from './helpers'
 
-/** A world's node seed and generation settings, by world name. */
+/** A world's node seed and generation settings, by world name (its planet's). */
 const world = (page: Page, name: string) =>
   page.evaluate(async (n) => {
     const s = await window.universe.getState()
-    const node = s.nodes.find((x) => x.name === n)!
+    const node = s.nodes.find((x) => x.name === n && x.kind === 'world')!
     const { settings } = s.worlds.find((w) => w.id === node.id)!
     return { seed: node.seed, settings }
   }, name)
@@ -28,7 +28,7 @@ test('a seed decides the whole world and locks its options; a world code recreat
   await fill(page, 'Seed', 'Avalon')
   await expect(inspector(page).getByText('Generated from')).toBeVisible()
   await expect(water).toBeDisabled()
-  const seeded = await world(page, 'First Surface')
+  const seeded = await world(page, 'First')
   expect(seeded.settings.seedText).toBe('Avalon')
   const code = (await page.getByTestId('world-code').textContent())!
   expect(code).toMatch(/^W1-/)
@@ -38,10 +38,10 @@ test('a seed decides the whole world and locks its options; a world code recreat
   // The same seed on another planet grows the same world.
   await row(page, 'Sol').click()
   await addChild(page, '+ Planet', 'Second')
-  await addChild(page, '+ World surface', 'Second Surface')
+  await addChild(page, '+ Surface', 'Second')
   await fill(page, 'Seed', code)
-  await expect.poll(async () => (await world(page, 'Second Surface')).seed).toBe(seeded.seed)
-  expect((await world(page, 'Second Surface')).settings).toEqual({ ...seeded.settings, seedText: code })
+  await expect.poll(async () => (await world(page, 'Second')).seed).toBe(seeded.seed)
+  expect((await world(page, 'Second')).settings).toEqual({ ...seeded.settings, seedText: code })
   await expect(page.getByTestId('world-code')).toHaveText(code)
 
   // Customize unlocks the options, starting from the seeded world; changing one changes the code.
@@ -50,15 +50,15 @@ test('a seed decides the whole world and locks its options; a world code recreat
   await water.focus()
   for (let i = 0; i < 5; i++) await water.press('ArrowRight')
   await page.locator('.panel-title').click()
-  await expect.poll(async () => (await world(page, 'Second Surface')).settings.terrain.water).toBeCloseTo(seeded.settings.terrain.water + 0.05, 5)
+  await expect.poll(async () => (await world(page, 'Second')).settings.terrain.water).toBeCloseTo(seeded.settings.terrain.water + 0.05, 5)
   await expect(page.getByTestId('world-code')).not.toHaveText(code)
 
   // Presets and colors are custom options too.
   await inspector(page).getByLabel('Start from preset').selectOption('Ice world')
-  await expect.poll(async () => (await world(page, 'Second Surface')).settings.terrain.temperature).toBe(-30)
+  await expect.poll(async () => (await world(page, 'Second')).settings.terrain.temperature).toBe(-30)
   // Each recolours the world, so going from Alien back to Earth-like leaves no purple.
   const colors = async () => {
-    const { vegetationColor, sandColor, waterColor } = (await world(page, 'Second Surface')).settings.terrain
+    const { vegetationColor, sandColor, waterColor } = (await world(page, 'Second')).settings.terrain
     return { vegetationColor, sandColor, waterColor }
   }
   await inspector(page).getByLabel('Start from preset').selectOption('Alien')
@@ -66,6 +66,6 @@ test('a seed decides the whole world and locks its options; a world code recreat
   await inspector(page).getByLabel('Start from preset').selectOption('Earth-like')
   await expect.poll(colors).toEqual({ vegetationColor: DEFAULT_TERRAIN.vegetationColor, sandColor: DEFAULT_TERRAIN.sandColor, waterColor: DEFAULT_TERRAIN.waterColor })
   await inspector(page).getByLabel('Vegetation').fill('#7a3fa0')
-  await expect.poll(async () => (await world(page, 'Second Surface')).settings.terrain.vegetationColor).toBe('#7a3fa0')
+  await expect.poll(async () => (await world(page, 'Second')).settings.terrain.vegetationColor).toBe('#7a3fa0')
   await shot(page, '31-custom-world', { wait: 800 })
 })
