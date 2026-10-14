@@ -46,6 +46,9 @@ const EJECTA = 1.8
 /** War's shell holes: one may lie in each square this many metres across, from 3 to 9 m across. */
 const SHELL_CELL_M = 22
 
+/** How far out a point is, in radii, its edge frayed by `ragged` (−1 to 1). */
+const frayed = (x: number, ragged: number) => x * (1 + 0.14 * ragged)
+
 const hash = (a: number, b: number, c: number) => {
   let h = Math.imul(a | 0, 0x27d4eb2d) ^ Math.imul(b | 0, 0x165667b1) ^ Math.imul(c | 0, 0x9e3779b1)
   h = Math.imul(h ^ (h >>> 15), 0x85ebca6b)
@@ -110,19 +113,12 @@ export class ScarShaper {
     t.kills = 0
     t.snags = 0
     for (const s of this.scars) {
-      const dy = lat - s.lat
-      const dx = wrapLon(lon - s.lon)
-      if (Math.abs(dy) > s.dLat || Math.abs(dx) > s.dLon) continue
+      if (!this.locate(s, lat, lon)) continue
       const look = SCAR_LOOKS[s.kind]
-      // How far out it is, in radii (over a region: inside or not), its edge frayed.
-      const yM = dy * s.metresPerDeg
-      const xM = dx * s.metresPerDeg * Math.cos(lat * RAD)
-      const radiusM = s.radiusKm * 1000
-      const x = s.inside ? (s.inside({ lat, lon }) ? 0.5 : 1) : Math.hypot(xM, yM) / radiusM
-      const frayed = s.kind === 'crater' ? x : x * (1 + 0.14 * ragged)
-      let reach = scarReach(frayed)
+      const { x } = this.spot
+      let reach = scarReach(s.kind === 'crater' ? x : frayed(x, ragged))
       if (s.kind === 'crater') {
-        const depth = Math.min(radiusM * CRATER_DEPTH, CRATER_DEEPEST_M) * s.weight
+        const depth = Math.min(s.radiusKm * 1000 * CRATER_DEPTH, CRATER_DEEPEST_M) * s.weight
         t.dh += (x < 1 ? -depth * (1 - x * x) : 0) + depth * RIM * Math.exp(-(((x - 1) / RIM_WIDTH) ** 2))
         // The bowl ashen, the earth thrown out around it paler and thinning out.
         reach = x < 1 ? 1 : smoothstep(EJECTA, 1, x) * 0.55
@@ -138,6 +134,21 @@ export class ScarShaper {
     return t
   }
 
+  /** Where the last point `locate`d is from a scar's middle: metres east and north, and how far out in its radii (over a region, half way in or all the way out). */
+  private spot = { xM: 0, yM: 0, x: 0 }
+
+  /** Whether a point is within a scar's reach, and if so where (into `spot`). */
+  private locate(s: Prepared, lat: number, lon: number): boolean {
+    const dy = lat - s.lat
+    const dx = wrapLon(lon - s.lon)
+    if (Math.abs(dy) > s.dLat || Math.abs(dx) > s.dLon) return false
+    const spot = this.spot
+    spot.yM = dy * s.metresPerDeg
+    spot.xM = dx * s.metresPerDeg * Math.cos(lat * RAD)
+    spot.x = s.inside ? (s.inside({ lat, lon }) ? 0.5 : 1) : Math.hypot(spot.xM, spot.yM) / (s.radiusKm * 1000)
+    return true
+  }
+
   /** Mixes another scar's colour in: what's there is kept in proportion to how much of it there is. */
   private mix(rgb: readonly number[], k: number): void {
     const t = this.touch
@@ -151,14 +162,9 @@ export class ScarShaper {
   pocks(lat: number, lon: number, ragged: number): number {
     let dh = 0
     for (const s of this.scars) {
-      if (s.kind !== 'war') continue
-      const dy = lat - s.lat
-      const dx = wrapLon(lon - s.lon)
-      if (Math.abs(dy) > s.dLat || Math.abs(dx) > s.dLon) continue
-      const yM = dy * s.metresPerDeg
-      const xM = dx * s.metresPerDeg * Math.cos(lat * RAD)
-      const x = s.inside ? (s.inside({ lat, lon }) ? 0.5 : 1) : (Math.hypot(xM, yM) / (s.radiusKm * 1000)) * (1 + 0.14 * ragged)
-      const reach = scarReach(x)
+      if (s.kind !== 'war' || !this.locate(s, lat, lon)) continue
+      const { x, xM, yM } = this.spot
+      const reach = scarReach(frayed(x, ragged))
       if (reach > 0) dh += this.shellHoles(s, xM, yM, reach * s.weight)
     }
     return dh

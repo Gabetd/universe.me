@@ -35,10 +35,10 @@ function toMap(p: LatLon, refX?: number): [number, number] {
   return [refX === undefined ? x : x + Math.round((refX - x) / W) * W, y]
 }
 
-/** A scar's ring on the map: a circle on the planet, so stretched east-west toward the poles (half its width and its height, in map pixels). */
-function scarRing(scar: LandScar, model: TerrainModel): [number, number] {
-  const ry = (model.angularRadius(scar.radiusKm) / Math.PI) * H
-  return [Math.min(W / 2, ry / Math.max(0.05, Math.cos((scar.lat * Math.PI) / 180))), ry]
+/** A circle on the planet `km` around a point at `lat`, on the map: stretched east-west toward the poles (half its width and its height, in map pixels). */
+function circleOnMap(lat: number, km: number, model: TerrainModel): [number, number] {
+  const ry = (model.angularRadius(km) / Math.PI) * H
+  return [Math.min(W / 2, ry / Math.max(0.05, Math.cos((lat * Math.PI) / 180))), ry]
 }
 
 /** Marks where a scar is: its ring (a region's is its outline, drawn already), lightly filled in its colour as much as there is of it, and its icon in the middle. */
@@ -46,7 +46,7 @@ function drawScar(c: CanvasRenderingContext2D, scar: LandScar, model: TerrainMod
   const [x, y] = toMap(scar)
   const look = SCAR_LOOKS[scar.kind]
   if (!scar.polygon) {
-    const [rx, ry] = scarRing(scar, model)
+    const [rx, ry] = circleOnMap(scar.lat, scar.radiusKm, model)
     c.beginPath()
     c.ellipse(x + shift, y, rx, ry, 0, 0, Math.PI * 2)
     c.globalAlpha = 0.25 * scar.weight
@@ -452,9 +452,7 @@ export const MapView = memo(function MapView({
       const h = hover.current
       if (h && isBrushTool(tool)) {
         // The brush is a circle on the planet, so it stretches east-west toward the poles.
-        const lat = pixelToLatLon(h[0], h[1], W, H).lat
-        const ry = (model.angularRadius(radiusKm) / Math.PI) * H
-        const rx = Math.min(W / 2, ry / Math.max(0.05, Math.cos((lat * Math.PI) / 180)))
+        const [rx, ry] = circleOnMap(pixelToLatLon(h[0], h[1], W, H).lat, radiusKm, model)
         c.beginPath()
         c.ellipse(h[0] + shift, h[1], rx, ry, 0, 0, Math.PI * 2)
         c.strokeStyle = 'rgba(255,255,255,0.9)'
@@ -505,7 +503,7 @@ export const MapView = memo(function MapView({
       if (within(sc, 10)) return true
       if (sc.polygon) return false
       const [x, y] = toMap(sc)
-      const [rx, ry] = scarRing(sc, model)
+      const [rx, ry] = circleOnMap(sc.lat, sc.radiusKm, model)
       return [-W, 0, W].some((s) => ((p[0] - x - s) / rx) ** 2 + ((p[1] - y) / ry) ** 2 <= 1)
     })
     if (scar) return { kind: 'scar', id: scar.id }

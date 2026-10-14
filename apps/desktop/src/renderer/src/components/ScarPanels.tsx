@@ -5,7 +5,6 @@ import { usePlayhead } from '../timeline/timelineStore'
 import { latLonLabel } from '../world/useMapPins'
 import { selectScar, useSelectedScarId } from '../world/useScars'
 import { useCalendar } from '../world/useSky'
-import { useEditor } from '../world/editorStore'
 import { CommitSlider, DeleteButton, NotesField, NumberInput, PanelHeader, SelectField, SwatchList, TextField, TimeField } from './fields'
 
 /**
@@ -147,8 +146,7 @@ export function EventScars({ event }: { event: TimelineEvent }) {
         regionId: region?.kind === 'region' ? region.regionId : null,
         eventId: event.id,
         start: event.start,
-        end: event.end ?? (look.lasting ? null : event.start),
-        radiusKm: useEditor.getState().scarKind === kind ? useEditor.getState().scarRadiusKm : look.radiusKm
+        end: event.end ?? (look.lasting ? null : event.start)
       }
     })
     const id = state?.focus?.id
