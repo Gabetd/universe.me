@@ -7,7 +7,7 @@ test('languages: a world speaks one, and its rivers, lakes and new factions are 
 
   // On the world: a new language from the Desert preset, spoken here at once, and its panel open.
   const language = inspector(page).getByRole('region', { name: 'Language' })
-  await language.getByLabel('Start a language from').first().selectOption('Desert')
+  await language.getByLabel('Preset for a new language').first().selectOption('Desert')
   await language.getByRole('button', { name: 'New language spoken here' }).first().click()
   const panel = inspector(page).getByRole('region', { name: 'Language' }).first()
   await expect(panel.getByLabel('Language name')).toHaveValue('Desert')
@@ -33,7 +33,7 @@ test('languages: a world speaks one, and its rivers, lakes and new factions are 
   // A star system speaking Elvish: a planet added there is named in it, not "New Planet".
   await row(page, 'Sol').click()
   const sol = inspector(page).getByRole('region', { name: 'Language' })
-  await sol.getByLabel('Start a language from').selectOption('Elvish')
+  await sol.getByLabel('Preset for a new language').selectOption('Elvish')
   await sol.getByRole('button', { name: 'New language spoken here' }).click()
   await inspector(page).getByRole('button', { name: '+ Planet', exact: true }).click()
   const nodes = await state(page, 'nodes')

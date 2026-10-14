@@ -77,7 +77,7 @@ function LanguageLibrary({ ownerId }: { ownerId: string }) {
         </div>
       )}
       <div className="field-row">
-        <select aria-label="Start a language from" value={preset} onChange={(e) => setPreset(e.target.value)}>
+        <select aria-label="Preset for a new language" value={preset} onChange={(e) => setPreset(e.target.value)}>
           {Object.keys(LANGUAGE_PRESETS).map((p) => (
             <option key={p} value={p}>
               {p}
