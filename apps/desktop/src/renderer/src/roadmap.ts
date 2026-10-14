@@ -35,5 +35,6 @@ export const ROADMAP: Milestone[] = [
   { id: 'M23', title: 'Rough country', status: 'done', summary: 'Mountains, extreme hills and plains that swell, rough ground and sudden cliffs, denser woods to the horizon, and rising while looking the same way' },
   { id: 'M24', title: 'Languages', status: 'done', summary: 'Languages spoken by worlds, planets, star systems and regions, each with its sounds and naming rules for rivers, lakes, species, factions and planets' },
   { id: 'M25', title: 'Scarred land', status: 'done', summary: 'Craters, war, fire, drought, radiation and poison left on a world’s land at a time, healing over years, shown on the globe, the map and the ground and damaging what’s built' },
-  { id: 'M26', title: 'Worlds up close', status: 'planned', summary: 'Reshape regions by their corners, seamless lighting on the globe, finer terrain close up' }
+  { id: 'M26', title: 'Space, beautiful', status: 'done', summary: 'Galaxies painted from their shapes with dust lanes, nebulae, supernova remnants and named constellations, no web of lines, and nothing in space drawn over anything else' },
+  { id: 'M27', title: 'Worlds up close', status: 'planned', summary: 'Reshape regions by their corners, seamless lighting on the globe, finer terrain close up' }
 ]
