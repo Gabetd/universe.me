@@ -32,5 +32,6 @@ export const ROADMAP: Milestone[] = [
   { id: 'M20', title: 'Collaboration, part two', status: 'active', summary: 'Conflicts kept as notes, notes merged line by line and terrain cell by cell, an owner and members who can only look; next, tried on two real tailnets' },
   { id: 'M21', title: 'Sturdier underneath', status: 'done', summary: 'Undo per person for every change, sync’s work off the main thread, projects checked as they load, one stack for dialogs and menus, the canvas’s lines and exported pictures' },
   { id: 'M22', title: 'The ground, beautiful', status: 'done', summary: 'A sky with drifting clouds, land and sea to the horizon in a haze, wadis, ravines and ledges, rivers in valleys with waterfalls, lakes in basins' },
-  { id: 'M23', title: 'Worlds up close', status: 'planned', summary: 'Reshape regions by their corners, seamless lighting on the globe, finer terrain close up' }
+  { id: 'M23', title: 'Rough country', status: 'done', summary: 'Mountains, extreme hills and plains that swell, rough ground and sudden cliffs, denser woods to the horizon, and rising while looking the same way' },
+  { id: 'M24', title: 'Worlds up close', status: 'planned', summary: 'Reshape regions by their corners, seamless lighting on the globe, finer terrain close up' }
 ]

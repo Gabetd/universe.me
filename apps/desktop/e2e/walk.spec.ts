@@ -1,6 +1,6 @@
 import { expect, newWorld, patch, shot, SLOW, test } from './helpers'
 
-test('on the ground, W A S D move over it at the speed picked, S moves rather than picking Smooth, and Space and Ctrl go up and down', async ({ h }) => {
+test('on the ground, W A S D move over it at the speed picked, S moves rather than picking Smooth, and Space and Ctrl go up and down, Space looking the same way', async ({ h }) => {
   const { page } = h
   await newWorld(h, 'Walking')
   await page.getByRole('button', { name: '🔍 Ground' }).click()
@@ -42,8 +42,11 @@ test('on the ground, W A S D move over it at the speed picked, S moves rather th
   // Space rises; Ctrl comes down, as far as standing on the ground (the eye's height over it, looking out level).
   const height = async () => Number(await canvas.getAttribute('data-height'))
   const low = await height()
+  const looked = await at()
   await hold('Space', 600)
   expect(await height()).toBeGreaterThan(low + 20)
+  // Still looking the same way: what the view looks at has moved on ahead (north), rather than the view tipping down at it.
+  expect(looked[1] - (await at())[1]).toBeGreaterThan(20)
   await page.getByRole('radio', { name: 'Fly' }).click()
   await page.keyboard.down('Control')
   await expect.poll(height).toBeLessThanOrEqual(3)

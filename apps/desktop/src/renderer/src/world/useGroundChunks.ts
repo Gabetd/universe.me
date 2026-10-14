@@ -18,14 +18,15 @@ import {
 } from '@universe/procgen'
 import type { LatLon } from '@universe/core'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { workerCalls } from '../workerCalls'
+import { workerCalls, workerPool } from '../workerCalls'
 import type { DistanceInput } from './far-ground.worker'
 import type { AreaWaters } from './groundWater'
 import FarGroundWorker from './far-ground.worker?worker'
 import GroundWorker from './ground.worker?worker'
 import { failure } from './terrainSource'
 
-const build = workerCalls<GroundChunkInput, GroundChunk>(() => new GroundWorker())
+/** Chunks are built two at a time: a view needs 25 of them at once. */
+const build = workerPool<GroundChunkInput, GroundChunk>(() => new GroundWorker(), 2)
 const buildDistance = workerCalls<DistanceInput, GroundSheet>(() => new FarGroundWorker())
 
 /** Chunks kept around after leaving their area, so walking back is instant. */

@@ -269,7 +269,9 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
     t.y = ground.standAt(t.x, t.z) + EYE_M
     // Close in, the view can look out level and up at the sky; farther out, only down at the land.
     const near = 1 - smooth(Math.min(1, camera.position.distanceTo(t) / LOOK_UP_WITHIN))
-    ;(controls as unknown as { maxPolarAngle: number }).maxPolarAngle = Math.PI * 0.47 + (Math.PI * 0.03 + LOOK_UP) * near
+    // Risen high looking far ahead (Space keeps the view's angle), the view may be nearer level than that: it stays as it is.
+    const tilt = Math.acos(THREE.MathUtils.clamp((camera.position.y - t.y) / Math.max(1e-6, camera.position.distanceTo(t)), -1, 1))
+    ;(controls as unknown as { maxPolarAngle: number }).maxPolarAngle = Math.max(Math.PI * 0.47 + (Math.PI * 0.03 + LOOK_UP) * near, Math.min(tilt, Math.PI * 0.5))
     // Where the view looks, in metres from the frame's origin (east, south), for tests to read.
     const at = `${Math.round(t.x)},${Math.round(t.z)}`
     if (gl.domElement.dataset.at !== at) gl.domElement.dataset.at = at
@@ -302,7 +304,9 @@ function Rig({ ground, onRebase, onCenter }: { ground: Ground; onRebase(origin: 
     const onWheel = (e: WheelEvent) => {
       const { camera, controls } = rig()
       if (!controls) return
-      if (edge.push(e.deltaY > 0 && camera.position.distanceTo(controls.target) >= MAX_DISTANCE - 1 ? 1 : 0)) {
+      // As far out as the view goes: the usual farthest, or farther if it has risen there.
+      const farthest = (controls as unknown as { maxDistance: number }).maxDistance
+      if (edge.push(e.deltaY > 0 && camera.position.distanceTo(controls.target) >= farthest - 1 ? 1 : 0)) {
         useEditor.getState().leaveGround(fromLocal(ground.frame, controls.target.x, controls.target.z))
       }
     }
@@ -583,7 +587,7 @@ const ChunkView = memo(function ChunkView({
 })
 
 /** How much of a chunk's plants are drawn, by its distance in chunks from the middle of the view: the far ones are thinned. */
-const RING_SHARE = [1, 0.55, 0.25]
+const RING_SHARE = [1, 0.75, 0.45]
 
 /** The plants' shapes in the world's foliage colour, made as they're first needed and let go with the colour or the view. */
 class PlantGeometries {

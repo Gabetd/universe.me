@@ -33,6 +33,13 @@ export function workerCalls<Request, Reply>(start: () => Worker): (request: Requ
   }
 }
 
+/** Calls shared out among `size` workers in turn (see `workerCalls`): work that comes in many independent pieces, done side by side. */
+export function workerPool<Request, Reply>(start: () => Worker, size: number): (request: Request) => Promise<Reply> {
+  const workers = Array.from({ length: size }, () => workerCalls<Request, Reply>(start))
+  let turn = 0
+  return (request) => workers[turn++ % size]!(request)
+}
+
 /** Inside a worker: answers each call with `handle`, handing over (not copying) the buffers it lists; a throw rejects just that call. */
 export function answerCalls<Request, Reply>(handle: (request: Request) => { reply: Reply; transfer: ArrayBufferLike[] }) {
   const scope = self as unknown as Worker
