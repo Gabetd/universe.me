@@ -5,7 +5,7 @@ const nodes = (page: Page) => state(page, 'nodes')
 
 /** The viewport's box once any zoom between levels has played out (the arriving view is scaled until then). */
 async function viewportBox(page: Page) {
-  await expect(page.locator('.zoom-arrive')).toHaveCount(0)
+  await expect(page.locator('.zoom-view.zooming')).toHaveCount(0)
   return (await page.getByTestId('viewport').boundingBox())!
 }
 

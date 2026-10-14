@@ -5,24 +5,27 @@ import { useUi } from '../store'
 
 /**
  * Moving between levels of the universe (PLAN.md §5.2) as one continuous
- * zoom: the view being left is frozen, then grows past the camera (going in)
- * or shrinks away (going out) while the next level comes in from the same
- * point. A gesture in the view arms the zoom; the selection changing plays
- * it, in the same update, so the next level mounts once, already arriving.
+ * zoom: the view being left is frozen, then grows until what was gone into
+ * fills the view (going in), or shrinks into where the level above draws it
+ * (going out), while the next level comes in matched to it, so the one
+ * camera seems to fly through both (ZoomStage). A gesture in the view arms
+ * the zoom; the selection changing plays it, in the same update, so the next
+ * level mounts once, already arriving.
  */
 
-interface Transition {
-  /** A still of the view being left. */
-  still: HTMLCanvasElement
-  direction: 'in' | 'out'
-  /** Where on screen the zoom centres, px from the viewport's top left. */
+/** A spot on screen, px from the top left of what it's on, and how big what's there is drawn (a radius), where that's known. */
+export interface Spot {
   x: number
   y: number
+  r?: number
 }
 
-interface Point {
-  x: number
-  y: number
+interface Transition {
+  /** A still of the view being left, placed where its canvas was on the stage. */
+  still: HTMLCanvasElement
+  direction: 'in' | 'out'
+  /** On the stage: going in, what's gone into, where it was drawn; going out, the middle of the view being left. */
+  at: Spot
 }
 
 /**
@@ -39,14 +42,21 @@ export const useZoom = create<{ transition: Transition | null; count: number; se
 /** A zoom is still playing (the wheel is ignored meanwhile, so one push doesn't carry on through the next level too). */
 export const zooming = () => useZoom.getState().transition !== null
 
-/** The view's canvas, to freeze for a zoom (the first one in the view). */
-const viewCanvas = () => document.querySelector<HTMLCanvasElement>('.zoom-view canvas')
+/** The view's canvas, to freeze for a zoom and to find the middle of (the first one in the view). */
+export const viewCanvas = () => document.querySelector<HTMLCanvasElement>('.zoom-view canvas')
 
-/** The still and centre the next change of level zooms with. */
-let armed: { still: HTMLCanvasElement; at: Point } | null = null
+/** Where an element is, px from the zoom stage's top left. */
+export function onStage(el: Element): DOMRect {
+  const box = el.getBoundingClientRect()
+  const stage = el.closest('.zoom-stage')?.getBoundingClientRect()
+  return new DOMRect(box.left - (stage?.left ?? 0), box.top - (stage?.top ?? 0), box.width, box.height)
+}
 
-/** Freezes `canvas` (the view's own by default) as it is now, for the next change of level to zoom at `at` (its middle by default). */
-function arm(canvas: HTMLCanvasElement | null | undefined, at?: Point) {
+/** The still and the spot the next change of level zooms with. */
+let armed: { still: HTMLCanvasElement; at: Spot } | null = null
+
+/** Freezes `canvas` (the view's own by default) as it is now, for the next change of level to zoom at `at` on it (its middle by default). */
+function arm(canvas: HTMLCanvasElement | null | undefined, at?: Spot) {
   const source = canvas ?? viewCanvas()
   // A view with no size (hidden, as behind another panel on a phone) has nothing to show.
   if (!source?.width || !source.height || matchMedia('(prefers-reduced-motion: reduce)').matches) return
@@ -54,8 +64,24 @@ function arm(canvas: HTMLCanvasElement | null | undefined, at?: Point) {
   still.width = source.width
   still.height = source.height
   still.getContext('2d')!.drawImage(source, 0, 0)
-  armed = { still, at: at ?? { x: source.clientWidth / 2, y: source.clientHeight / 2 } }
+  const box = onStage(source)
+  Object.assign(still.style, { left: `${box.x}px`, top: `${box.y}px`, width: `${box.width}px`, height: `${box.height}px` })
+  armed = { still, at: { x: box.x + (at?.x ?? box.width / 2), y: box.y + (at?.y ?? box.height / 2), r: at?.r } }
 }
+
+/**
+ * Where the level being zoomed to draws the node the zoom comes from (going
+ * out): the views say, as they draw, by `noteDrawn`.
+ */
+const sought: { id: string | null; found: Spot | null } = { id: null, found: null }
+
+/** A view drew node `id` at (x, y) on its canvas, `r` across: if a zoom out is landing on it, that's where. */
+export function noteDrawn(id: string | null | undefined, x: number, y: number, r: number): void {
+  if (id && id === sought.id) sought.found = { x, y, r }
+}
+
+/** Where the node a zoom out is looking for was drawn, on its view's canvas, if it has been. */
+export const foundDrawn = () => sought.found
 
 /**
  * Coming up a level: the child it came up through, for the level above to look
@@ -70,16 +96,17 @@ useUi.subscribe((s, prev) => {
   arrival.fromId = up >= 0 ? (path[up + 1]?.id ?? null) : null
   const shot = armed
   armed = null
-  if (!shot) return
-  // Up to an ancestor zooms out; anything else (into a child) zooms in.
-  const direction = up >= 0 ? 'out' : 'in'
-  shot.still.className = `zoom-still ${direction}`
-  shot.still.style.transformOrigin = `${shot.at.x}px ${shot.at.y}px`
-  useZoom.getState().set({ still: shot.still, direction, ...shot.at })
+  // Up to an ancestor zooms out, down into something in it zooms in; going sideways (to a sibling, say) just goes.
+  const down = !!s.selectedId && !!prev.selectedId && ancestry(s.nodes, s.selectedId).some((n) => n.id === prev.selectedId)
+  if (!shot || (up < 0 && !down)) return
+  shot.still.className = 'zoom-still'
+  sought.id = up >= 0 ? arrival.fromId : null
+  sought.found = null
+  useZoom.getState().set({ still: shot.still, direction: up >= 0 ? 'out' : 'in', at: shot.at })
 })
 
-/** Goes to `nodeId`, zooming at `at` on `canvas` (the view's, its middle, by default): in to a child, out to an ancestor. */
-export function zoomTo(nodeId: string, canvas?: HTMLCanvasElement | null, at?: Point) {
+/** Goes to `nodeId`, zooming at `at` on `canvas` (the view's, its middle, by default): in to what's in it, out to what it's in. */
+export function zoomTo(nodeId: string, canvas?: HTMLCanvasElement | null, at?: Spot) {
   arm(canvas, at)
   useUi.getState().select(nodeId)
   armed = null
@@ -93,7 +120,7 @@ export function zoomOut(canvas?: HTMLCanvasElement | null, toId?: string) {
 }
 
 /** Claims something generated and goes into it, zooming at where it was on `canvas`. */
-export async function claimInto(claim: Claim, canvas?: HTMLCanvasElement | null, at?: Point) {
+export async function claimInto(claim: Claim, canvas?: HTMLCanvasElement | null, at?: Spot) {
   arm(canvas, at)
   // The batch lands on what it made, which plays the zoom.
   await useUi.getState().execute(claim.command)

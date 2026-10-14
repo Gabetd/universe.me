@@ -2459,49 +2459,16 @@ kbd {
   position: absolute;
   inset: 0;
 }
+/* Placed and played by ZoomStage; with reduced motion there are no zooms at all. */
 .zoom-still {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
   pointer-events: none;
 }
-/* --zoom-ms is set by ZoomStage; with reduced motion there are no zooms at all. */
-.zoom-still.in {
-  animation: zoom-past var(--zoom-ms) ease-in forwards;
-}
-.zoom-still.out {
-  animation: zoom-away var(--zoom-ms) ease-out forwards;
-}
-.zoom-arrive.in {
-  animation: arrive-from-far var(--zoom-ms) ease-out;
-}
-.zoom-arrive.out {
-  animation: arrive-from-near var(--zoom-ms) ease-out;
-}
-@keyframes zoom-past {
-  to {
-    transform: scale(5);
-    opacity: 0;
-  }
-}
-@keyframes zoom-away {
-  to {
-    transform: scale(0.2);
-    opacity: 0;
-  }
-}
-@keyframes arrive-from-far {
-  from {
-    transform: scale(0.35);
-    opacity: 0;
-  }
-}
-@keyframes arrive-from-near {
-  from {
-    transform: scale(2.6);
-    opacity: 0;
-  }
+/* The level drawn small during a zoom: soft-edged (its mask's size is played with it). */
+.zoom-inner {
+  mask-image: radial-gradient(closest-side, #000 70%, transparent);
+  mask-position: center;
+  mask-repeat: no-repeat;
 }
 
 .cosmos-card {

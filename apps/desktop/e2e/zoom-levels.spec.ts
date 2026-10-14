@@ -8,7 +8,7 @@ import { expect, newProject, SLOW, state, test, wheel } from './helpers'
  */
 async function wheelUntil(page: Page, target: Locator, dy: number, done: (timeout?: number) => Promise<void>) {
   await expect(async () => {
-    await expect(page.locator('.zoom-arrive')).toHaveCount(0)
+    await expect(page.locator('.zoom-view.zooming')).toHaveCount(0)
     if (await done(100).then(() => true, () => false)) return
     await wheel(page, target, dy, 3)
     await done()

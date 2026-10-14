@@ -1,7 +1,7 @@
 import { bodyLabel, type SpatialNode } from '@universe/core'
 import { useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react'
 import { hueOf } from '@universe/procgen'
-import { kindLabel } from '../kinds'
+import { kindLabel, surfaceOf } from '../kinds'
 import { selectNode, useTimelineOwner, useUi } from '../store'
 import { playheadOf } from '../timeline/timelineStore'
 import { useSystem } from '../world/useSky'
@@ -10,7 +10,7 @@ import { drawOrbits, orbitAt, targetSummary, type OrbitTarget } from './orbitVie
 import { label, targetAt, useCanvasLoop } from './canvasDraw'
 import { spaceBackdrop } from './spaceArt'
 import { CosmosView, isCosmos } from './CosmosView'
-import { EdgePush, zoomOut, zoomTo } from './zoom'
+import { EdgePush, noteDrawn, zoomOut, zoomTo } from './zoom'
 import { ClaimCard, claimPlanetInto, describePlanet, useUnclaimedPlanets } from './ClaimPlanets'
 import { SkyControls } from './SkyControls'
 import { usePlanetTextures } from './planetSprite'
@@ -40,7 +40,7 @@ function OrbitViewport({ node }: { node: SpatialNode }) {
     const children = nodes.filter((n) => n.parentId === node.id)
     const worlds = new Map<string, SpatialNode>()
     for (const body of [node, ...children]) {
-      const world = nodes.find((n) => n.parentId === body.id && n.kind === 'world')
+      const world = surfaceOf(nodes, body.id)
       if (world) worlds.set(body.id, world)
     }
     return { children, worlds }
@@ -79,15 +79,16 @@ function OrbitViewport({ node }: { node: SpatialNode }) {
           hoverId: hover.current
         })
       : []
+    for (const t of targets.current) noteDrawn(t.id, t.x, t.y, t.r)
     const middle = !isSystem && world && targets.current.find((x) => x.id === world.id)
-    if (middle) label(ctx, `World: ${world.name}`, middle.x, middle.y + middle.r + 14, middle.id === hover.current)
+    if (middle) label(ctx, `Land on ${node.name}`, middle.x, middle.y + middle.r + 14, middle.id === hover.current)
     const shown = hover.current && targets.current.find((x) => x.id === hover.current)
     if (shown) card.current?.place(shown)
     if (children.length === 0 && !unclaimed.length) {
       ctx.fillStyle = 'rgba(200,210,240,0.55)'
       ctx.font = '14px system-ui, sans-serif'
       ctx.textAlign = 'center'
-      ctx.fillText(`Nothing here yet. Use “Add inside” in the inspector to create a ${isSystem ? 'planet' : 'moon or world'}.`, w / 2, h - 70)
+      ctx.fillText(`Nothing here yet. Use “Add inside” in the inspector to create a ${isSystem ? 'planet' : 'moon'}.`, w / 2, h - 70)
     }
   })
 

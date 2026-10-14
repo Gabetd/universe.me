@@ -32,7 +32,7 @@ import { countOverlaps, declutter, labelRoom } from './declutter'
 import { ClaimCard, newId } from './ClaimPlanets'
 import type { GlowRequest } from './galaxy.worker'
 import GalaxyWorker from './galaxy.worker?worker'
-import { EdgePush, arrival, cameras, claimInto, zoomOut, zoomTo, type Camera } from './zoom'
+import { EdgePush, arrival, cameras, claimInto, noteDrawn, zoomOut, zoomTo, type Camera } from './zoom'
 import { openElementMenu, useContextMenu, type MenuItem } from '../contextMenu'
 
 /**
@@ -478,6 +478,7 @@ function drawLevel(ctx: CanvasRenderingContext2D, w: number, h: number, d: DrawI
     // Your own things are named, and generated ones big enough to matter or under the cursor, where the name has room.
     if ((m.item.node || hovered || p.r > 30) && room(p.x, p.y + p.r + 15, ctx.measureText(m.item.name).width + 8, 14)) label(ctx, m.item.name, p.x, p.y + p.r + 15, hovered || !!m.item.node)
     hits.push({ item: m.item, x: p.x, y: p.y, r: p.r + 4 })
+    noteDrawn(m.item.node?.id, p.x, p.y, p.r)
   }
   return hits
 }
