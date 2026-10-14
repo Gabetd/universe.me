@@ -2,6 +2,7 @@ import { AU_KM, EARTH_RADIUS_KM } from '@universe/core'
 import { hueOf } from '@universe/procgen'
 import { formatPeriod, moonPhase, moonsOf, orbitPath, orbitPosition, positionFromStar, type BodyOrbit, type GeneratedPlanet, type SystemModel, type Vec3 } from '@universe/sim'
 import { distanceToSegment, label, ring, starGlow, sublabel, type CanvasTarget } from './canvasDraw'
+import { countOverlaps, declutter, labelRoom } from './declutter'
 import { drawAtmosphere, drawSun, hslRgb } from './spaceArt'
 import { drawTexturedPlanet, type PlanetTexture } from './planetSprite'
 
@@ -93,35 +94,54 @@ export function drawOrbits(ctx: CanvasRenderingContext2D, w: number, h: number, 
     ctx.strokeStyle = 'rgba(130, 225, 160, 0.22)'
     ctx.lineWidth = 1
     ctx.stroke()
-    drawSun(ctx, cx, cy, size * 0.024 * system.star.radiusSun ** 0.4, system.star.color, d.spin)
+  }
+  // The sun (or the planet in the middle) stays put; what goes round it is kept clear of it and of each other, however close their orbits bring them on screen.
+  const middleR = center ? bodyPx(center.radiusKm, size, 0.12) : size * 0.024 * system.star.radiusSun ** 0.4
+  const around = [
+    ...orbiting.map((o) => ({ o, path: strokeOrbit(ctx, project, o, o.bodyId === d.hoverId ? 'rgba(170,190,255,0.55)' : 'rgba(140,160,220,0.2)'), unclaimed: undefined, r: bodyPx(o.radiusKm, size, centerId ? 0.035 : 0.02) })),
+    ...unclaimed.map((g) => {
+      ctx.setLineDash([3, 5])
+      const path = strokeOrbit(ctx, project, g.orbit, g.orbit.bodyId === d.hoverId ? 'rgba(170,190,255,0.45)' : 'rgba(140,160,220,0.13)')
+      ctx.setLineDash([])
+      return { o: g.orbit, path, unclaimed: g, r: bodyPx(g.orbit.radiusKm, size, 0.02) }
+    })
+  ]
+  const placed = declutter(
+    [
+      // The sun's glow reaches past its disc.
+      { x: cx, y: cy, r: center ? middleR : middleR * 1.6, priority: Infinity, keep: true },
+      ...around.map(({ o, r, unclaimed: u }) => {
+        const [x, y] = project(orbitPosition(o, t))
+        return { x, y, r, priority: u ? 0 : 1 + o.radiusKm, keep: true }
+      })
+    ],
+    { minR: 3, gap: 3 }
+  )
+  // For tests: no body drawn over another, or over the sun.
+  ctx.canvas.dataset.overlaps = String(countOverlaps(placed))
+  placed.shift()
+
+  if (!center) {
+    drawSun(ctx, cx, cy, middleR, system.star.color, d.spin)
   } else {
     // A small sun at the edge shows which way the light comes from.
     const angle = Math.atan2(starDir[1] - cy, starDir[0] - cx)
     const edge = Math.min(w, h) * 0.47
     starGlow(ctx, cx + Math.cos(angle) * edge, cy + Math.sin(angle) * edge * 0.8, 6, system.star.color)
-    drawBody(ctx, d, center, cx, cy, bodyPx(center.radiusKm, size, 0.12), lightAt(cx, cy), targets, { id: d.centerTargetId ?? center.bodyId, labelled: false })
+    drawBody(ctx, d, center, cx, cy, middleR, lightAt(cx, cy), targets, { id: d.centerTargetId ?? center.bodyId, labelled: false })
   }
 
-  for (const o of orbiting) {
-    const path = strokeOrbit(ctx, project, o, o.bodyId === d.hoverId ? 'rgba(170,190,255,0.55)' : 'rgba(140,160,220,0.2)')
-    const [x, y] = project(orbitPosition(o, t))
-    const r = bodyPx(o.radiusKm, size, centerId ? 0.035 : 0.02)
-    drawBody(ctx, d, o, x, y, r, lightAt(x, y), targets, { id: o.bodyId, path, labelled: true })
-  }
-
-  // Generated planets: dashed orbits and faint bodies, named when pointed at.
-  for (const { orbit: o, seed, name } of unclaimed) {
-    const hover = o.bodyId === d.hoverId
-    ctx.setLineDash([3, 5])
-    const path = strokeOrbit(ctx, project, o, hover ? 'rgba(170,190,255,0.45)' : 'rgba(140,160,220,0.13)')
-    ctx.setLineDash([])
-    const [x, y] = project(orbitPosition(o, t))
-    const r = bodyPx(o.radiusKm, size, 0.02)
-    ctx.globalAlpha = hover ? 0.9 : 0.45
-    plainBody(ctx, x, y, r, hueOf(seed), lightAt(x, y))
-    ctx.globalAlpha = 1
-    pointable(ctx, d, targets, { id: o.bodyId, x, y, r, path, orbit: o, name, unclaimed: true })
-  }
+  // Generated planets faint and named when pointed at; the rest named under them where there's room.
+  const room = labelRoom()
+  around.forEach(({ o, path, unclaimed: u }, i) => {
+    const { x, y, r } = placed[i]!
+    if (u) {
+      ctx.globalAlpha = o.bodyId === d.hoverId ? 0.9 : 0.45
+      plainBody(ctx, x, y, r, hueOf(u.seed), lightAt(x, y))
+      ctx.globalAlpha = 1
+      pointable(ctx, d, targets, { id: o.bodyId, x, y, r, path, orbit: o, name: u.name, unclaimed: true })
+    } else drawBody(ctx, d, o, x, y, r, lightAt(x, y), targets, { id: o.bodyId, path, labelled: room(x, y + r + 28, 120, 30) })
+  })
   return targets
 }
 

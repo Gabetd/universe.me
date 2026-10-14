@@ -1,4 +1,4 @@
-import { rng } from '@universe/procgen'
+import { rng, type GalaxyFeatureKind } from '@universe/procgen'
 
 /**
  * How space looks above the ground (PLAN.md §5.2, §5.5): the sky behind
@@ -321,59 +321,113 @@ export function clusterSprite(seed: number): HTMLCanvasElement {
   return sprite
 }
 
+/** Sprites of what lies in a galaxy besides its stars, by kind and seed, each drawn once. */
+const featureSprites = new Map<string, HTMLCanvasElement>()
+const FEATURE_PX = 256
+
+/** A gaussian-ish draw from a random source, mostly within ±1. */
+const spread = (r: () => number) => (r() + r() + r() - 1.5) / 1.5
+
 /**
- * The cosmic web's filaments, glowing: each a wide faint haze, a brighter
- * strand and a thin bright core, dusted with faint galaxies, with a glow
- * where they meet. In screen px (`width` is the core's).
+ * What lies among a galaxy's stars (procgen's GalaxyFeature), as a sprite
+ * FEATURE_PX square, its edge at the feature's radius: a glowing nebula of
+ * red hydrogen with a teal heart, a blue reflection nebula round a bright
+ * star, dark dust, a supernova's shell of torn filaments, a planetary
+ * nebula's ring round its dying star, or a young cluster of blue stars. The
+ * glowing ones are drawn with 'lighter', dark dust over what's behind it.
  */
-export function drawFilaments(ctx: CanvasRenderingContext2D, segments: [number, number, number, number][], width: number, seed: number): void {
-  ctx.save()
-  ctx.globalCompositeOperation = 'lighter'
-  ctx.lineCap = 'round'
-  const layers: [number, Rgb, Rgb, number][] = [
-    [width * 9, [90, 70, 220], [40, 120, 210], 0.05],
-    [width * 3.5, [140, 110, 255], [80, 170, 240], 0.09],
-    [width, [205, 190, 255], [170, 225, 255], 0.3]
-  ]
-  for (const [x0, y0, x1, y1] of segments) {
-    for (const [lw, from, to, alpha] of layers) {
-      const g = ctx.createLinearGradient(x0, y0, x1, y1)
-      g.addColorStop(0, rgba(from, alpha))
-      g.addColorStop(0.5, rgba(to, alpha * 0.8))
-      g.addColorStop(1, rgba(from, alpha))
-      ctx.strokeStyle = g
-      ctx.lineWidth = Math.max(1, lw)
-      ctx.beginPath()
-      ctx.moveTo(x0, y0)
-      ctx.lineTo(x1, y1)
-      ctx.stroke()
+export function galaxyFeatureSprite(kind: GalaxyFeatureKind, seed: number): HTMLCanvasElement {
+  const key = `${kind}:${seed}`
+  let sprite = featureSprites.get(key)
+  if (sprite) return sprite
+  sprite = document.createElement('canvas')
+  sprite.width = sprite.height = FEATURE_PX
+  const c = sprite.getContext('2d')!
+  const half = FEATURE_PX / 2
+  const r = rng(seed ^ 0x5eed)
+  c.globalCompositeOperation = kind === 'dark' ? 'source-over' : 'lighter'
+  /** Soft puffs scattered round the middle, `n` of them up to `size` of the radius, in a colour. */
+  const puffs = (n: number, size: number, colour: () => Rgb, alpha: number, reach = 0.55) => {
+    for (let i = 0; i < n; i++) {
+      const x = half + spread(r) * half * reach
+      const y = half + spread(r) * half * reach
+      const rad = half * size * (0.3 + r() * 0.7)
+      const col = colour()
+      glow(c, x, y, rad, [
+        [0, rgba(col, alpha)],
+        [0.5, rgba(col, alpha * 0.4)],
+        [1, rgba(col, 0)]
+      ])
     }
   }
-  // Faint galaxies strewn along each one, thickest on the strand.
-  const r = rng(seed ^ 0xf11a)
-  segments.forEach(([x0, y0, x1, y1]) => {
-    const len = Math.hypot(x1 - x0, y1 - y0)
-    const [nx, ny] = len ? [-(y1 - y0) / len, (x1 - x0) / len] : [0, 0]
-    for (let i = 0; i < 140; i++) {
-      const t = r()
-      const off = (r() + r() + r() - 1.5) * width * 7
-      ctx.fillStyle = rgba(r() < 0.5 ? [220, 210, 255] : [190, 230, 255], 0.15 + r() * 0.4)
-      const s = 0.6 + r() * 1.1
-      ctx.fillRect(x0 + (x1 - x0) * t + nx * off, y0 + (y1 - y0) * t + ny * off, s, s)
+  const stars = (n: number, reach: number, colour: Rgb) => {
+    for (let i = 0; i < n; i++) {
+      const x = half + spread(r) * half * reach
+      const y = half + spread(r) * half * reach
+      const rad = 1 + r() * r() * 3
+      glow(c, x, y, rad * 3, [
+        [0, 'rgba(255,255,255,0.95)'],
+        [0.3, rgba(colour, 0.6)],
+        [1, rgba(colour, 0)]
+      ])
     }
-  })
-  // Where filaments meet: a knot of light.
-  const knots = new Set<string>()
-  for (const [x0, y0, x1, y1] of segments) for (const [x, y] of [[x0, y0], [x1, y1]] as const) knots.add(`${x},${y}`)
-  for (const k of knots) {
-    const [x, y] = k.split(',').map(Number) as [number, number]
-    glow(ctx, x, y, Math.max(8, width * 12), [
-      [0, 'rgba(235,220,255,0.35)'],
-      [0.4, 'rgba(150,120,255,0.12)'],
-      [1, 'rgba(150,120,255,0)']
+  }
+  if (kind === 'emission') {
+    // Hydrogen's red-pink, a heart of teal oxygen in some, lit by the young stars inside.
+    const teal = r() < 0.6
+    puffs(46, 0.42, () => (r() < 0.75 ? [255, 70 + r() * 40, 120 + r() * 50] : [255, 150, 120]), 0.13)
+    if (teal) puffs(14, 0.22, () => [70, 220, 210], 0.12, 0.25)
+    stars(6, 0.35, [180, 210, 255])
+    // Dark lanes of dust cut through it.
+    c.globalCompositeOperation = 'destination-out'
+    puffs(10, 0.2, () => [0, 0, 0], 0.5, 0.6)
+  } else if (kind === 'reflection') {
+    puffs(26, 0.45, () => [90 + r() * 40, 150 + r() * 40, 255], 0.12, 0.4)
+    stars(2, 0.1, [200, 220, 255])
+  } else if (kind === 'dark') {
+    puffs(30, 0.4, () => [8 + r() * 10, 6 + r() * 6, 10 + r() * 8], 0.42, 0.5)
+  } else if (kind === 'supernova') {
+    // A shell of torn filaments, red outside and blue-white within, round a faint glow and a pulsar.
+    glow(c, half, half, half * 0.7, [
+      [0, 'rgba(120,170,255,0.18)'],
+      [1, 'rgba(120,170,255,0)']
     ])
+    c.lineCap = 'round'
+    for (let i = 0; i < 140; i++) {
+      const a = r() * Math.PI * 2
+      const rad = half * (0.62 + spread(r) * 0.12)
+      const len = 0.05 + r() * 0.18
+      const outer = r() < 0.6
+      c.strokeStyle = outer ? rgba([255, 90 + r() * 60, 90], 0.22 + r() * 0.3) : rgba([140, 200, 255], 0.2 + r() * 0.3)
+      c.lineWidth = 0.6 + r() * 1.8
+      c.beginPath()
+      c.arc(half, half, rad * (outer ? 1 : 0.9), a, a + len)
+      c.stroke()
+    }
+    stars(1, 0, [200, 230, 255])
+  } else if (kind === 'planetary') {
+    // A ring of glowing gas, teal inside and red at its rim, round the white dwarf it came from.
+    const g = c.createRadialGradient(half, half, half * 0.2, half, half, half * 0.85)
+    g.addColorStop(0, 'rgba(80,230,220,0.05)')
+    g.addColorStop(0.55, 'rgba(80,230,220,0.55)')
+    g.addColorStop(0.8, 'rgba(255,90,110,0.45)')
+    g.addColorStop(1, 'rgba(255,90,110,0)')
+    c.fillStyle = g
+    c.beginPath()
+    c.ellipse(half, half, half * 0.85, half * (0.6 + r() * 0.25), r() * Math.PI, 0, Math.PI * 2)
+    c.fill()
+    stars(1, 0, [220, 240, 255])
+  } else {
+    // A young open cluster: blue-white stars crowding to its middle, in a faint glow.
+    glow(c, half, half, half * 0.8, [
+      [0, 'rgba(160,190,255,0.16)'],
+      [1, 'rgba(160,190,255,0)']
+    ])
+    stars(55, 0.45, [170, 200, 255])
   }
-  ctx.restore()
+  if (featureSprites.size > 600) featureSprites.delete(featureSprites.keys().next().value!)
+  featureSprites.set(key, sprite)
+  return sprite
 }
 
 /**

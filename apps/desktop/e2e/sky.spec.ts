@@ -42,6 +42,8 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await expect(inspector(page).getByLabel('Star')).toContainText('5,772 K')
   await page.getByRole('button', { name: '▶ 1 month/s' }).click()
   await shot(page, '80-star-system', { wait: 1500 })
+  // However close their orbits bring them on screen, no planet is drawn over another or over the sun.
+  await expect(page.getByTestId('viewport')).toHaveAttribute('data-overlaps', '0')
   await page.getByRole('button', { name: 'Pause' }).click()
 
   // Pointing at a planet, or anywhere on its orbit's line, outlines it and shows its card: its level, its name and how it goes round.
@@ -71,6 +73,7 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
   await expect(inspector(page).getByLabel('Worked out from the orbit')).toContainText('days in')
   await expect(page.getByTestId('sky-readout')).toContainText('Luna:')
   await shot(page, '81-planet-moons')
+  await expect(page.getByTestId('viewport')).toHaveAttribute('data-overlaps', '0')
 
   // The timeline has a track of the moon's phases and the eclipses; an eclipse becomes an event with a click.
   await row(page, 'Terra Surface').click()

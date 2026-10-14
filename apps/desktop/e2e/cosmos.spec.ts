@@ -79,6 +79,8 @@ test('scale navigation: claim a cluster, a galaxy and a star from what the seeds
   // The universe: clusters strung along the cosmic web, all generated.
   await expect(page.getByTestId('viewport')).toBeVisible()
   await shot(page, '100-universe', { wait: 500 })
+  // No web of lines; clusters drawn clear of each other.
+  await expect(page.getByTestId('viewport')).toHaveAttribute('data-overlaps', '0')
 
   // Claim a cluster and go there; its card says what level it is, as each level's does.
   const level = page.locator('.cosmos-card .card-level')
@@ -88,6 +90,7 @@ test('scale navigation: claim a cluster, a galaxy and a star from what the seeds
   await expect.poll(async () => (await nodes(page)).filter((n) => n.kind === 'galaxy_cluster').length).toBe(1)
   await expect(page.locator('.viewport-overlay.top')).toContainText('Galaxy Cluster view')
   await shot(page, '101-cluster', { wait: 600 })
+  await expect(page.getByTestId('viewport')).toHaveAttribute('data-overlaps', '0')
 
   // A galaxy in it.
   await clickNearestGenerated(page)
@@ -95,10 +98,15 @@ test('scale navigation: claim a cluster, a galaxy and a star from what the seeds
   await page.getByRole('button', { name: 'Claim and go there' }).click()
   await expect(page.locator('.viewport-overlay.top')).toContainText('Galaxy view')
   await shot(page, '102-galaxy', { wait: 600 })
+  // Its constellations drawn among its bright stars, and nothing drawn over anything else, here or close in.
+  const viewport = page.getByTestId('viewport')
+  await expect(viewport).not.toHaveAttribute('data-constellations', '0')
+  await expect(viewport).toHaveAttribute('data-overlaps', '0')
 
   // Zoomed in, single stars appear; claiming one makes a star system with that star's mass.
   await scroll(page, -400, 7)
   await shot(page, '103-galaxy-stars', { wait: 300 })
+  await expect(viewport).toHaveAttribute('data-overlaps', '0')
   await clickNearestGenerated(page)
   await expect(level).toHaveText(/^star system$/i)
   const name = (await page.locator('.cosmos-card b').textContent())!
