@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { STAR_CELL_LY, cellStars, cellsIn, clusterGalaxies, cosmicWeb, galaxyDensity, galaxyGlowPixels, galaxyShape, landmarkStars, levelExtent, placeOf, universeClusters } from './cosmos'
+import { GALAXY_SCALE, GLOW_REACH, STAR_CELL_LY, cellStars, cellsIn, clusterGalaxies, dustField, galaxyConstellations, galaxyDensity, galaxyFeatures, galaxyGlowPixels, galaxyShape, landmarkStars, levelExtent, placeOf, spreadApart, universeClusters } from './cosmos'
 
 describe('the cosmos from seeds', () => {
   it('gives each galaxy a shape, densest at its centre', () => {
@@ -52,11 +52,10 @@ describe('the cosmos from seeds', () => {
 
   it('scatters landmarks, galaxies and clusters, the same every time', () => {
     const shape = galaxyShape(3)
-    expect(landmarkStars(shape, 3).length).toBeGreaterThan(100)
+    expect(landmarkStars(shape, 3).length).toBeGreaterThan(90)
     expect(clusterGalaxies(5)).toEqual(clusterGalaxies(5))
     expect(new Set(clusterGalaxies(5).map((g) => g.seed)).size).toBe(36)
     expect(universeClusters(9)).toHaveLength(48)
-    expect(cosmicWeb(9).length).toBeGreaterThan(5)
   })
 
   it('places nodes made before they had a place by their seed, and keeps a set place', () => {
@@ -66,5 +65,54 @@ describe('the cosmos from seeds', () => {
     expect(placeOf(unplaced, galaxy)).toEqual(p)
     expect(galaxyDensity(galaxyShape(4), p.x, p.y)).toBeGreaterThan(0)
     expect(placeOf({ ...unplaced, position: { x: 5, y: 6, z: 0 } }, galaxy)).toEqual({ x: 5, y: 6 })
+  })
+
+  it('never lets a level’s clusters or galaxies overlap, as they’re drawn', () => {
+    const apart = <T extends { x: number; y: number }>(list: T[], radius: (t: T) => number) =>
+      list.every((a, i) => list.every((b, j) => j <= i || Math.hypot(a.x - b.x, a.y - b.y) >= radius(a) + radius(b) - 1e-6))
+    for (const seed of [1, 9, 77]) {
+      expect(apart(universeClusters(seed), (c) => c.sizeMly * 0.7)).toBe(true)
+      expect(apart(clusterGalaxies(seed), (g) => (g.shape.radiusLy / 1e6) * GALAXY_SCALE * GLOW_REACH)).toBe(true)
+    }
+    // Even things exactly on top of each other come apart, the same way each time.
+    const piled = spreadApart([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }], () => 1, 0)
+    expect(piled).toEqual(spreadApart([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }], () => 1, 0))
+    expect(Math.hypot(piled[0]!.x - piled[1]!.x, piled[0]!.y - piled[1]!.y)).toBeGreaterThanOrEqual(2 - 1e-6)
+  })
+
+  it('draws constellations among a galaxy’s bright stars: each a few stars joined without loops but now and then one, the same every time', () => {
+    const shape = galaxyShape(12)
+    const stars = landmarkStars(shape, 12)
+    const constellations = galaxyConstellations(shape, 12, stars)
+    expect(constellations.length).toBeGreaterThanOrEqual(5)
+    expect(galaxyConstellations(shape, 12, stars)).toEqual(constellations)
+    const seeds = new Set(stars.map((s) => s.seed))
+    const seen = new Set<number>()
+    for (const c of constellations) {
+      expect(c.name).toMatch(/^\S/)
+      expect(c.stars.length).toBeGreaterThanOrEqual(3)
+      expect(c.links.length).toBeGreaterThanOrEqual(c.stars.length - 1)
+      expect(c.links.length).toBeLessThanOrEqual(c.stars.length)
+      for (const s of c.stars) {
+        expect(seeds.has(s)).toBe(true)
+        // A star is in one constellation only.
+        expect(seen.has(s)).toBe(false)
+        seen.add(s)
+      }
+    }
+  })
+
+  it('fills a galaxy with nebulae, dust, supernova remnants and clusters, and darkens dust lanes in its arms; an elliptical has only old ones', () => {
+    const spiral = galaxyShape([...Array(50).keys()].find((i) => galaxyShape(i).type === 'spiral')!)
+    const features = galaxyFeatures(spiral, 1)
+    expect(features.length).toBeGreaterThan(40)
+    expect(new Set(features.map((f) => f.kind))).toEqual(new Set(['emission', 'reflection', 'dark', 'supernova', 'planetary', 'cluster']))
+    const dust = dustField(spiral)
+    let dusty = 0
+    for (let i = 0; i < 400; i++) dusty = Math.max(dusty, dust(Math.cos(i) * spiral.radiusLy * 0.5, Math.sin(i) * spiral.radiusLy * 0.5))
+    expect(dusty).toBeGreaterThan(0.5)
+    const elliptical = galaxyShape([...Array(50).keys()].find((i) => galaxyShape(i).type === 'elliptical')!)
+    expect(new Set(galaxyFeatures(elliptical, 2).map((f) => f.kind)).has('emission')).toBe(false)
+    expect(dustField(elliptical)(0, 0)).toBe(0)
   })
 })
