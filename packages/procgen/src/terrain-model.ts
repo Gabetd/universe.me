@@ -15,6 +15,7 @@ import { LATITUDE_TWIN, angleBetween, cellDirections, dirToFace, faceToDir, near
 import { DEG, bilerp, clamp } from './math'
 import type { BaseTerrain } from './generate'
 import type { WaterInput } from './water'
+import type { ScarField } from './scars'
 
 /** What a star and orbit do to a world's climate: degrees warmer than Earth, and how strongly it cools toward the poles. */
 export interface SkyClimate {
@@ -137,7 +138,7 @@ export class TerrainModel {
   /** Each face's colours once asked for, and what they were made from. */
   private faceColorCache: (FaceColors | undefined)[] = []
   private colorsFor:
-    | { settings: WorldSettings; base: BaseTerrain; sky: SkyClimate | undefined; heights: Int16Array[]; biomes: Uint8Array[]; worn: TerrainModel['worn']; lakes: TerrainModel['lakes'] }
+    | { settings: WorldSettings; base: BaseTerrain; sky: SkyClimate | undefined; heights: Int16Array[]; biomes: Uint8Array[]; worn: TerrainModel['worn']; lakes: TerrainModel['lakes']; scars: TerrainModel['scars'] }
     | undefined
   /** What `locate` fills in. */
   private located: FacePoint = { face: 0, s: 0, t: 0 }
@@ -145,6 +146,8 @@ export class TerrainModel {
   private worn: { field: Float32Array[]; amount: number } | undefined
   /** The surface of the lake over each cell (metres above sea level), planet-wide and per face; NaN where there's none. */
   private lakes: { level: Float32Array; faces: Float32Array[] } | undefined
+  /** What the scars on the land do to each cell at the playhead, if there are any (see scarField). */
+  private scars: ScarField | undefined
 
   constructor(
     public settings: WorldSettings,
@@ -175,10 +178,11 @@ export class TerrainModel {
     return this.stroke !== undefined
   }
 
-  /** A cell's height in metres: generated, sculpted, and worn down by erosion as of the playhead. */
-  height(face: number, cell: number): number {
+  /** A cell's height in metres: generated, sculpted, worn down by erosion and (`scarred`) blasted by craters, as of the playhead. */
+  height(face: number, cell: number, scarred = true): number {
     const worn = this.worn
-    return this.base.height[face]![cell]! + this.heightEdits[face]![cell]! - (worn ? worn.field[face]![cell]! * worn.amount : 0)
+    const scars = scarred ? this.scars : undefined
+    return this.base.height[face]![cell]! + this.heightEdits[face]![cell]! - (worn ? worn.field[face]![cell]! * worn.amount : 0) + (scars ? scars.height[face]![cell]! : 0)
   }
 
   /** What the world's water is worked out from (see worldWater): the land as generated and sculpted, not worn. */
@@ -205,6 +209,13 @@ export class TerrainModel {
     const now = field && amount > 0 ? { field, amount } : undefined
     if (now?.field === this.worn?.field && now?.amount === this.worn?.amount) return false
     this.worn = now
+    return true
+  }
+
+  /** Sets what the scars on the land do at the playhead (see scarField); true if that changes anything, and then every face needs redrawing. */
+  setScars(field: ScarField | undefined): boolean {
+    if (field === this.scars) return false
+    this.scars = field
     return true
   }
 
@@ -264,8 +275,8 @@ export class TerrainModel {
     return nearestCell(s, t)
   }
 
-  /** Bilinearly interpolated height in meters at a located point. */
-  heightOf({ face, s, t }: FacePoint): number {
+  /** Bilinearly interpolated height in meters at a located point; `scarred: false` leaves craters out (the ground view shapes its own, finer). */
+  heightOf({ face, s, t }: FacePoint, scarred = true): number {
     const gx = clamp(toGrid(s), 0, TERRAIN_RES - 1)
     const gy = clamp(toGrid(t), 0, TERRAIN_RES - 1)
     const i0 = Math.floor(gx)
@@ -273,7 +284,7 @@ export class TerrainModel {
     const i1 = Math.min(i0 + 1, TERRAIN_RES - 1)
     const r0 = j0 * TERRAIN_RES
     const r1 = Math.min(j0 + 1, TERRAIN_RES - 1) * TERRAIN_RES
-    return bilerp(this.height(face, r0 + i0), this.height(face, r0 + i1), this.height(face, r1 + i0), this.height(face, r1 + i1), gx - i0, gy - j0)
+    return bilerp(this.height(face, r0 + i0, scarred), this.height(face, r0 + i1, scarred), this.height(face, r1 + i0, scarred), this.height(face, r1 + i1, scarred), gx - i0, gy - j0)
   }
 
   /** Nearest cell to a direction. */
@@ -338,8 +349,8 @@ export class TerrainModel {
   /** Marks every face's colours out of date if the settings, base, sky or edit layers they were made from have been replaced. */
   private checkColors(): void {
     const made = this.colorsFor
-    if (made?.settings === this.settings && made.base === this.base && made.sky === this.sky && made.heights === this.heightEdits && made.biomes === this.biomeEdits && made.worn === this.worn && made.lakes === this.lakes) return
-    this.colorsFor = { settings: this.settings, base: this.base, sky: this.sky, heights: this.heightEdits, biomes: this.biomeEdits, worn: this.worn, lakes: this.lakes }
+    if (made?.settings === this.settings && made.base === this.base && made.sky === this.sky && made.heights === this.heightEdits && made.biomes === this.biomeEdits && made.worn === this.worn && made.lakes === this.lakes && made.scars === this.scars) return
+    this.colorsFor = { settings: this.settings, base: this.base, sky: this.sky, heights: this.heightEdits, biomes: this.biomeEdits, worn: this.worn, lakes: this.lakes, scars: this.scars }
     for (const colors of this.faceColorCache) {
       if (!colors) continue
       colors.colored.fill(0)
@@ -365,11 +376,13 @@ export class TerrainModel {
     const worn = this.worn?.field[face]
     const wear = this.worn?.amount ?? 0
     const lake = this.lakes?.faces[face]
+    const scarHeight = this.scars?.height[face]
+    const scarTint = this.scars?.tint[face]
     const { polar, band } = latitudeTerms()[face]!
     for (let k = 0; k < cells.length; k++) {
       const c = cells[k]!
       if (colored[c] && !again) continue
-      const elevation = height[c]! + edits[c]! - (worn ? worn[c]! * wear : 0) - sea
+      const elevation = height[c]! + edits[c]! - (worn ? worn[c]! * wear : 0) + (scarHeight ? scarHeight[c]! : 0) - sea
       let r: number, g: number, b: number
       const lakeDepth = lake ? lake[c]! - elevation : NaN
       // Water, from shallow (0) to deep (1): a lake shallow-ish, darker where it's deep; the sea by its depth.
@@ -387,6 +400,13 @@ export class TerrainModel {
         r = Math.min(255, rgb[0] * lift)
         g = Math.min(255, rgb[1] * lift)
         b = Math.min(255, rgb[2] * lift)
+        // Scarred land turns ashen, muddy, parched or sickly.
+        const k = scarTint ? scarTint[c * 4 + 3]! : 0
+        if (k > 0) {
+          r += (scarTint![c * 4]! - r) * k
+          g += (scarTint![c * 4 + 1]! - g) * k
+          b += (scarTint![c * 4 + 2]! - b) * k
+        }
       }
       const o = c * 4
       truncated[o] = r

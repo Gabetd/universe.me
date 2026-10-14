@@ -6,6 +6,7 @@ import { RAD, TAU, bilerp, clamp, clamp01, smoothstep, wrapLon } from './math'
 import { seededNoise } from './noise'
 import { cellSeed, rng, subSeed } from './random'
 import { WaterShaper, type GroundWaters } from './ground-water'
+import { ScarShaper, type LandScar, type ScarTouch } from './scars'
 import type { TerrainModel } from './terrain-model'
 
 /**
@@ -101,7 +102,8 @@ export function modelSampler(model: TerrainModel): BaseSampler {
     return model.locate(dir[0], dir[1], dir[2])
   }
   return {
-    elevation: (lat, lon) => model.heightOf(at(lat, lon)) - model.settings.seaLevel,
+    // Without the globe's craters: the ground shapes its own, finer.
+    elevation: (lat, lon) => model.heightOf(at(lat, lon), false) - model.settings.seaLevel,
     biome: (lat, lon) => {
       const p = at(lat, lon)
       return model.biome(p.face, model.cellOf(p))
@@ -199,6 +201,8 @@ export class GroundDetail {
   readonly shape: GroundShape = { bed: 0, arid: 0, wet: 0, shore: Infinity, surface: NaN }
   /** The rivers and lakes the land is shaped around, if any. */
   private water?: WaterShaper
+  /** The scars on the land at the moment shown, if any (see scars.ts). */
+  private scars?: ScarShaper
   /** Patches vary over about 380 m. */
   private patchFreq: number
   /** How far biome edges are pushed about, in degrees. */
@@ -211,9 +215,12 @@ export class GroundDetail {
   constructor(
     seed: number,
     readonly radiusKm: number,
-    waters?: GroundWaters
+    waters?: GroundWaters,
+    scars?: readonly LandScar[]
   ) {
     if (waters && (waters.courses.length || waters.lakes.length)) this.water = new WaterShaper(waters, radiusKm)
+    const shaper = scars && new ScarShaper(scars, radiusKm)
+    if (shaper?.any) this.scars = shaper
     this.hills = seededNoise(seed, 0x6a0d)
     this.patches = seededNoise(seed, 0x9a7c)
     this.channels = seededNoise(seed, 0x3c1d)
@@ -309,13 +316,25 @@ export class GroundDetail {
     shape.surface = NaN
     if (detail <= 0) return elevation
     const y = this.landform(base, lat, lon, elevation, detail, fine, spacing)
-    if (!this.water || detail < 1) return y
+    if (!this.water || detail < 1) return this.scarred(lat, lon, y, fine)
     // Rivers cut their valleys through it, and lakes lie in basins.
     const touch = this.water.shape(lat, lon, y)
     shape.wet = touch.wet
     shape.shore = touch.shore
     shape.surface = touch.surface
-    return touch.y
+    return this.scarred(lat, lon, touch.y, fine)
+  }
+
+  /** A height with the scars' craters, and up close war's shell holes, in it. */
+  private scarred(lat: number, lon: number, y: number, fine: boolean): number {
+    if (!this.scars) return y
+    const ragged = this.patch(lat, lon, 11)
+    return y + this.scars.touchAt(lat, lon, ragged).dh + (fine ? this.scars.pocks(lat, lon, ragged) : 0)
+  }
+
+  /** What the scars do at a point (its colour, the plants that die there), if there are any. */
+  scarAt(lat: number, lon: number): ScarTouch | undefined {
+    return this.scars?.touchAt(lat, lon, this.patch(lat, lon, 11))
   }
 
   /** The land before the water: hills, and up close channels and ledges (see `elevation`). */
@@ -425,7 +444,7 @@ const TREES: Plant[] = ['broadleaf', 'conifer', 'palm', 'acacia']
 function canopy(detail: GroundDetail, base: BaseSampler, lat: number, lon: number): number {
   const flora = FLORA[detail.biome(base, lat, lon)]
   const trees = TREES.reduce((sum, t) => sum + (flora?.[t]?.[0] ?? 0), 0)
-  return clamp01(trees / 2400) * clamp01(0.5 + detail.patch(lat, lon, PLANTS.indexOf('broadleaf') + 4) * 1.4)
+  return clamp01(trees / 2400) * clamp01(0.5 + detail.patch(lat, lon, PLANTS.indexOf('broadleaf') + 4) * 1.4) * (1 - (detail.scarAt(lat, lon)?.kills ?? 0))
 }
 
 /** How tall the woods stand, seen from afar, and how much darker their canopy is than the ground. */
@@ -566,7 +585,7 @@ function heightField(
 /** Builds one chunk's ground mesh and plants. Pure: the same input always gives the same chunk. */
 export function buildGroundChunk(input: GroundChunkInput): GroundChunk {
   const { id, frame, seed, grid } = input
-  const detail = new GroundDetail(seed, frame.radiusKm, input.waters)
+  const detail = new GroundDetail(seed, frame.radiusKm, input.waters, input.scars)
   const base = gridSampler(grid)
   const b = grid.bounds
   const n = CHUNK_SEGMENTS + 1
@@ -673,6 +692,9 @@ function groundColor(input: GroundColors, detail: GroundDetail, base: BaseSample
     blend(rgb, SHORE_SAND, smoothstep(45, 5, lay.shore) * (1 - lay.wet) * 0.5)
     // Steep: soil can't hold, and the rock shows (a cliff, a ravine's walls).
     blend(rgb, lay.arid > 0.4 ? SANDSTONE : ROCK, smoothstep(0.86, 0.62, lay.up))
+    // Scarred: ash, churned mud, parched or sickly ground.
+    const scar = detail.scarAt(lat, lon)
+    if (scar) blend(rgb, scar.rgb, scar.tint)
     // Snow where it can lie, in drifts and patches near the snowline.
     blend(rgb, SNOW, smoothstep(SNOWLINE, SNOWLINE + 500, y + detail.patch(lat, lon, 8) * 350) * smoothstep(0.78, 0.92, lay.up))
   }
@@ -712,7 +734,7 @@ export function groundMapBounds({ frame, width, height, metresPerPixel }: Pick<G
  */
 export function buildGroundMap(input: GroundMapInput): Uint8ClampedArray {
   const { frame, width, height, metresPerPixel: mpp, waterColor } = input
-  const detail = new GroundDetail(input.seed, frame.radiusKm, input.waters)
+  const detail = new GroundDetail(input.seed, frame.radiusKm, input.waters, input.scars)
   const base = gridSampler(input.grid)
   const place = (i: number, j: number) => fromLocal(frame, (i + 0.5 - width / 2) * mpp, (j + 0.5 - height / 2) * mpp)
   const field = heightField(width, place, frame, (lat, lon) => detail.elevation(base, lat, lon, 1, false, mpp), detail.shape, height)
@@ -780,6 +802,8 @@ interface GroundColors {
   /** RGB (0–255) per biome id, and for the sea bed. */
   biomeColors: number[][]
   seabedColor: number[]
+  /** The scars on the land at the moment shown, which colour it too. */
+  scars?: LandScar[]
 }
 
 export interface FarGroundInput extends GroundColors {
@@ -813,7 +837,7 @@ export interface GroundSheet {
  */
 export function buildFarGround(input: FarGroundInput): GroundSheet {
   const { frame, grid } = input
-  const detail = new GroundDetail(input.seed, frame.radiusKm, input.waters)
+  const detail = new GroundDetail(input.seed, frame.radiusKm, input.waters, input.scars)
   const base = gridSampler(grid)
   const b = grid.bounds
   const n = FAR_SEGMENTS + 1
@@ -887,7 +911,7 @@ export interface HorizonGroundInput extends GroundColors {
  */
 export function buildHorizonGround(input: HorizonGroundInput): GroundSheet {
   const { frame, grid } = input
-  const detail = new GroundDetail(input.seed, frame.radiusKm)
+  const detail = new GroundDetail(input.seed, frame.radiusKm, undefined, input.scars)
   const base = gridSampler(grid)
   const vertices = HORIZON_RINGS * HORIZON_SPOKES
   const positions = new Float32Array(vertices * 3)
@@ -921,6 +945,12 @@ export function buildHorizonGround(input: HorizonGroundInput): GroundSheet {
   return { positions, colors, indices }
 }
 
+/** 0 to 1, the same for a plant at the same spot every time: whether a scar kills it. */
+const scatterHash = (x: number, z: number, salt: number) => {
+  const v = Math.sin(x * 12.9898 + z * 78.233 + salt * 37.719) * 43758.5453
+  return v - Math.floor(v)
+}
+
 /** Plants and rocks for a chunk, by its biomes; none in the sea, reeds only at the water's edge. */
 function scatterPlants(input: GroundChunkInput, detail: GroundDetail, base: BaseSampler): GroundChunk['plants'] {
   const b = input.grid.bounds
@@ -932,7 +962,6 @@ function scatterPlants(input: GroundChunkInput, detail: GroundDetail, base: Base
     if (!kinds.has(plant)) continue
     const random = rng(subSeed(cellSeed(input.seed, input.id.row, input.id.col), PLANTS.indexOf(plant) + 1))
     const most = Math.max(...[...new Set(input.grid.biome)].map((biome) => FLORA[biome]?.[plant]?.[0] ?? 0))
-    const list: number[] = []
     for (let k = 0; k < most; k++) {
       const lat = b.lat0 + random() * (b.lat1 - b.lat0)
       const lon = b.lon0 + random() * (b.lon1 - b.lon0)
@@ -951,10 +980,18 @@ function scatterPlants(input: GroundChunkInput, detail: GroundDetail, base: Base
       const { wet, shore } = detail.shape
       if (WET.includes(plant) ? !(y > -0.6 && y < 2.5) && !(shore < 25 && wet < 0.9) : y < 0.4 || wet > 0.2) continue
       const [x, z] = toLocal(input.frame, { lat, lon })
+      // Where the land is scarred, some die: gone, or for trees maybe a bare trunk left standing.
+      const scar = plant === 'rock' ? undefined : detail.scarAt(lat, lon)
+      if (scar && scar.kills > 0) {
+        const fate = scatterHash(x, z, PLANTS.indexOf(plant))
+        if (fate < scar.kills) {
+          if (TREES.includes(plant) && fate < scar.kills * scar.snags) (out.snag ??= []).push(x, y, z, SIZE.snag[0] + (SIZE.snag[1] - SIZE.snag[0]) * size, turn, tint)
+          continue
+        }
+      }
       const [lo, hi] = SIZE[plant]
-      list.push(x, y, z, lo + (hi - lo) * size * size, turn, tint)
+      ;(out[plant] ??= []).push(x, y, z, lo + (hi - lo) * size * size, turn, tint)
     }
-    if (list.length) out[plant] = list
   }
   return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, Float32Array.from(v)]))
 }
