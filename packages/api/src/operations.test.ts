@@ -285,6 +285,22 @@ describe('the operations', () => {
     await expect(p.call('update_map_pin', { worldId: p.worldId, pinId: 'nope', name: 'X' })).rejects.toThrow()
   })
 
+  it('scar a world’s land: a crater for good, a war that heals after it ends, listed with how much is left at a date', async () => {
+    const { scarId: crater } = await p.call<{ scarId: string }>('add_scar', { worldId: p.worldId, kind: 'crater', lat: 10, lon: 20, from: '1204', radiusKm: 3 })
+    const { scarId: war } = await p.call<{ scarId: string }>('add_scar', { worldId: p.worldId, kind: 'war', lat: 11, lon: 20, from: '1200', until: '1210', notes: 'The long siege.' })
+    await p.call('update_scar', { worldId: p.worldId, scarId: war, name: 'The Siege Fields' })
+    type Listed = { id: string; kind: string; name: string; now: number; worstUntil: string; recoverYears: number; radiusKm?: number; notes?: string }
+    const at = async (date: string) => (await p.call<{ scars: Listed[] }>('list_scars', { worldId: p.worldId, at: date })).scars
+    expect(await at('1205')).toEqual([
+      expect.objectContaining({ id: crater, kind: 'crater', name: 'Crater', now: 1, radiusKm: 3, worstUntil: expect.stringContaining('1204') }),
+      expect.objectContaining({ id: war, kind: 'war', name: 'The Siege Fields', now: 1, recoverYears: 40, notes: 'The long siege.' })
+    ])
+    const later = await at('1260')
+    expect(later.map((s) => s.now)).toEqual([1, 0])
+    await expect(p.call('add_scar', { worldId: p.worldId, kind: 'flood', lat: 0, lon: 0, from: '1200' })).rejects.toThrow()
+    await expect(p.call('update_scar', { worldId: p.worldId, scarId: 'nope', name: 'X' })).rejects.toThrow()
+  })
+
   it('lay out a world’s canvas: text, an element, a web page and a group, connected, moved and read back', async () => {
     const { eventId } = await p.call<{ eventId: string }>('create_event', { worldId: p.worldId, title: 'The comet', start: '1204' })
     const note = await p.call<{ cardId: string }>('add_canvas_card', { worldId: p.worldId, kind: 'text', text: '# Omens\nIt came **red**.', x: 0, y: 0 })

@@ -71,12 +71,14 @@ describe('scars on the ground', () => {
     const { face, cell } = model.cellAt(...dir)
     const [before, colour] = [model.height(face, cell), model.faceColors(face).slice(cell * 4, cell * 4 + 3)]
     expect(scarField([scar('crater', { weight: 0 })], R)).toBeUndefined()
-    expect(model.setScars(scarField([scar('crater', { radiusKm: 150 })], R))).toBe(true)
+    const scars = [scar('crater', { radiusKm: 150 })]
+    expect(model.setScars(scars)).toBe(true)
+    expect(model.setScars(scars)).toBe(false)
     expect(model.height(face, cell)).toBeLessThan(before - 1000)
     expect(model.height(face, cell, false)).toBe(before)
     const after = model.faceColors(face).slice(cell * 4, cell * 4 + 3)
     expect([...after]).not.toEqual([...colour])
-    expect(model.setScars(undefined)).toBe(true)
+    expect(model.setScars([])).toBe(true)
     expect(model.height(face, cell)).toBe(before)
   })
 })

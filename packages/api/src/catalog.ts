@@ -5,10 +5,11 @@ import { READS } from './reads'
 import { WRITES } from './writes'
 import { CANVAS_OPERATIONS } from './canvas'
 import { MAP_PIN_OPERATIONS } from './map-pins'
+import { SCAR_OPERATIONS } from './scars'
 import { LANGUAGE_OPERATIONS } from './languages'
 
 /** Every operation the API serves, reads first. */
-export const OPERATIONS: readonly Operation[] = [...READS, ...WRITES, ...CANVAS_OPERATIONS, ...MAP_PIN_OPERATIONS, ...LANGUAGE_OPERATIONS]
+export const OPERATIONS: readonly Operation[] = [...READS, ...WRITES, ...CANVAS_OPERATIONS, ...MAP_PIN_OPERATIONS, ...LANGUAGE_OPERATIONS, ...SCAR_OPERATIONS]
 
 /** The operation with this name, if there is one. */
 export const operationNamed = (name: string) => OPERATIONS.find((o) => o.name === name)

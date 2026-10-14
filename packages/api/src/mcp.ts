@@ -27,6 +27,7 @@ const VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05']
 const INSTRUCTIONS = `Universe is a worldbuilding app: a universe of galaxies, star systems and worlds, each world with a timeline of events, regions, structures that weather over time, characters, factions (who belongs, what they hold) and their relationships, species and themes (the look and tone of an age).
 Start with list_worlds, then get_world for its calendar: every date is written in that world's calendar ("1204", "15 Mar 1204", "c. 1200"). get_world_snapshot shows a world at a moment; get_theme_at gives the tone and prose style guide to write in.
 Names follow the languages spoken where things are (list_languages): name what you make with name_in_language, so it fits its place.
+What's been done to the land (list_scars, add_scar): craters, war, fire, drought, radiation and poison mark it, from a date until they heal; craters, war and fire damage what's built where they reach.
 Every change you make is tagged as yours in the app and can be undone in one click; with review mode on, changes wait for the user to accept them.`
 
 class RpcError extends Error {

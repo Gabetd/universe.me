@@ -15,7 +15,7 @@ import { LATITUDE_TWIN, angleBetween, cellDirections, dirToFace, faceToDir, near
 import { DEG, bilerp, clamp } from './math'
 import type { BaseTerrain } from './generate'
 import type { WaterInput } from './water'
-import type { ScarField } from './scars'
+import { scarField, type LandScar, type ScarField } from './scars'
 
 /** What a star and orbit do to a world's climate: degrees warmer than Earth, and how strongly it cools toward the poles. */
 export interface SkyClimate {
@@ -148,6 +148,8 @@ export class TerrainModel {
   private lakes: { level: Float32Array; faces: Float32Array[] } | undefined
   /** What the scars on the land do to each cell at the playhead, if there are any (see scarField). */
   private scars: ScarField | undefined
+  /** The scars on the land at the playhead, as the ground shapes itself by them. */
+  landScars: readonly LandScar[] = []
 
   constructor(
     public settings: WorldSettings,
@@ -212,10 +214,11 @@ export class TerrainModel {
     return true
   }
 
-  /** Sets what the scars on the land do at the playhead (see scarField); true if that changes anything, and then every face needs redrawing. */
-  setScars(field: ScarField | undefined): boolean {
-    if (field === this.scars) return false
-    this.scars = field
+  /** Sets the scars on the land at the playhead (a new list only when they've changed); true if that changes anything, and then every face needs redrawing. */
+  setScars(scars: readonly LandScar[]): boolean {
+    if (scars === this.landScars) return false
+    this.landScars = scars
+    this.scars = scarField(scars, this.settings.radiusKm)
     return true
   }
 
