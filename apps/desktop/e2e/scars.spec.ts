@@ -71,7 +71,7 @@ test('scars on the land: a drought left with the tool parches the map where it r
   await expect(panel.getByLabel('Scar now')).toHaveText(/^Healing, at the playhead: \d+% of it left\.$/)
   await expect(inspector(page).getByRole('region', { name: 'Scars on the land' })).toContainText('The Long Thirst')
 
-  // From the menu: a crater, where the land is right-clicked.
+  // From the menu: a crater, where the land is right-clicked (on the drought's icon, which says what's there).
   await page.keyboard.press('Escape')
   await page.getByRole('toolbar', { name: 'World tools' }).getByRole('button', { name: 'Scar the land' }).click()
   await options.getByRole('radio', { name: 'Crater' }).click()

@@ -108,6 +108,14 @@ test('Claude on a phone: phone access through Tailscale Funnel, a sign-in with t
   // Off again: Funnel is turned off and the public address turned away.
   await phone.getByLabel('Let Claude on my phone connect').uncheck()
   await expect(phone.getByLabel('Phone access status')).toHaveText(`Off. Tailscale is ready on ${HOST}.`)
-  await expect.poll(() => JSON.parse(readFileSync(join(h.dir, 'tailscale.json'), 'utf8'))).toEqual({})
+  // The stand-in tailscale writes its state as it goes: read part way through, it's asked again.
+  const funnel = () => {
+    try {
+      return JSON.parse(readFileSync(join(h.dir, 'tailscale.json'), 'utf8')) as unknown
+    } catch {
+      return undefined
+    }
+  }
+  await expect.poll(funnel).toEqual({})
   expect((await viaFunnel(h, 'GET', '/.well-known/oauth-protected-resource/mcp')).status).toBe(403)
 })

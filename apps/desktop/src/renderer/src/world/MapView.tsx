@@ -496,11 +496,13 @@ export const MapView = memo(function MapView({
     if (character) return { kind: 'character', id: character.character.id }
     const structure = structures.find((st) => within(st.structure, 9))
     if (structure) return { kind: 'structure', id: structure.structure.id }
+    // A scar's icon is small, like a pin: it wins over a river under it.
+    const icon = scars.find((sc) => within(sc, 10))
+    if (icon) return { kind: 'scar', id: icon.id }
     const water = waterAt(p)
     if (water) return { kind: 'waterway', id: water }
-    // A scar where its icon is, or anywhere in its ring; one over a region by its icon (inside, it's the region's).
+    // Anywhere else in a scar's ring (one over a region is picked by its icon: inside, it's the region's).
     const scar = scars.find((sc) => {
-      if (within(sc, 10)) return true
       if (sc.polygon) return false
       const [x, y] = toMap(sc)
       const [rx, ry] = circleOnMap(sc.lat, sc.radiusKm, model)
