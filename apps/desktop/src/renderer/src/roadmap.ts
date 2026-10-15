@@ -38,5 +38,6 @@ export const ROADMAP: Milestone[] = [
   { id: 'M26', title: 'Space, beautiful', status: 'done', summary: 'Galaxies painted from their shapes with dust lanes, nebulae, supernova remnants and named constellations, no web of lines, and nothing in space drawn over anything else' },
   { id: 'M27', title: 'One zoom through space', status: 'done', summary: 'A planet and its surface one row in the tree with its moons under it, the levels of space zooming into each other as one camera, and values that say what they change when the pointer rests on them' },
   { id: 'M28', title: 'The land far and wide', status: 'done', summary: 'The ground in three rings around the view: finely within 20 km with its trees, at medium quality to 40 km, coarsely to 80 km' },
-  { id: 'M29', title: 'Worlds up close', status: 'planned', summary: 'Reshape regions by their corners, seamless lighting on the globe, finer terrain close up' }
+  { id: 'M29', title: 'Pictures and models', status: 'done', summary: 'Characters and events keep pictures and Blender scenes, seen large or turned in 3D when they’re selected' },
+  { id: 'M30', title: 'Worlds up close', status: 'planned', summary: 'Reshape regions by their corners, seamless lighting on the globe, finer terrain close up' }
 ]
