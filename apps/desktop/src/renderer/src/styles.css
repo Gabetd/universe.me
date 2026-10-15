@@ -2471,6 +2471,22 @@ kbd {
   mask-repeat: no-repeat;
 }
 
+/* What a value changes, beside it once the pointer has rested on it (Hint.tsx). */
+.hint-bubble {
+  position: fixed;
+  z-index: 1000;
+  max-width: 280px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(14, 18, 32, 0.96);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
 .cosmos-card {
   position: absolute;
   /* Beside the point it's placed at. */

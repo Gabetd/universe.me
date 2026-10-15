@@ -5,10 +5,12 @@ import { useCalendar } from '../world/useSky'
 import { NotesEditor } from './NotesEditor'
 import { menuRef, takeFocusRequest, useContextMenu, type ElementKind } from '../contextMenu'
 import { flagClass, useFlaggedIds } from '../flags'
+import { hinted } from './Hint'
 
 /**
  * Inputs that save once when editing finishes (blur, Enter, slider release),
- * not on every keystroke: each save is one undo step.
+ * not on every keystroke: each save is one undo step. A `hint` says what the
+ * value changes when the pointer rests on it (Hint.tsx).
  */
 /** Text being edited, replaced by each new stored value (a save, undo, an edit elsewhere). */
 function useDraft(value: string): [string, (text: string) => void] {
@@ -37,7 +39,7 @@ export function TextField(props: { label: string; value: string; placeholder?: s
     else if (v !== props.value) props.onCommit(v)
   }
   return (
-    <label className="field" title={props.hint}>
+    <label className="field" {...hinted(props.hint)}>
       <span>{props.label}</span>
       <input ref={input} value={text} placeholder={props.placeholder} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={blurOnEnter} />
     </label>
@@ -45,14 +47,14 @@ export function TextField(props: { label: string; value: string; placeholder?: s
 }
 
 /** Several lines of plain text, saved when the field is left (Enter makes a new line). */
-export function TextAreaField(props: { label: string; value: string; placeholder?: string; rows?: number; onCommit(v: string): void }) {
+export function TextAreaField(props: { label: string; value: string; placeholder?: string; rows?: number; hint?: string; onCommit(v: string): void }) {
   const [text, setText] = useDraft(props.value)
   const commit = () => {
     const v = text.trim()
     if (v !== props.value) props.onCommit(v)
   }
   return (
-    <label className="field">
+    <label className="field" {...hinted(props.hint)}>
       <span>{props.label}</span>
       {/* Named on its own too: a label's text includes a textarea's, which would rename it as it's typed in. */}
       <textarea aria-label={props.label} value={text} placeholder={props.placeholder} rows={props.rows ?? 3} onChange={(e) => setText(e.target.value)} onBlur={commit} />
@@ -74,7 +76,7 @@ export function ColorField(props: { label: string; value: string; hint?: string;
     return () => el.removeEventListener('change', onChange)
   }, [value, onCommit])
   return (
-    <label className="field" title={props.hint}>
+    <label className="field" {...hinted(props.hint)}>
       <span>{props.label}</span>
       {/* Uncontrolled, re-created when the stored color changes (e.g. undo). */}
       <input key={value} ref={ref} type="color" aria-label={props.label} defaultValue={value} />
@@ -187,9 +189,9 @@ export function SwatchList({ rows, onPick, menu }: { rows: SwatchRow[]; onPick(i
 }
 
 /** A choice from a fixed list (its values and their labels), saved as it's picked. */
-export function SelectField<T extends string>({ label, value, options, onCommit }: { label: string; value: T; options: Record<T, string>; onCommit(v: T): void }) {
+export function SelectField<T extends string>({ label, value, options, hint, onCommit }: { label: string; value: T; options: Record<T, string>; hint?: string; onCommit(v: T): void }) {
   return (
-    <label className="field">
+    <label className="field" {...hinted(hint)}>
       <span>{label}</span>
       <select value={value} onChange={(e) => onCommit(e.target.value as T)}>
         {(Object.keys(options) as T[]).map((o) => (
@@ -203,7 +205,6 @@ export function SelectField<T extends string>({ label, value, options, onCommit 
 }
 
 /** A range slider that saves once on release, not on every pixel of a drag (each save is an undo step). */
-/** `hint`, if given, says what it does when the pointer rests on it. */
 export function CommitSlider(props: { label: string; unit?: string; min: number; max: number; step: number; value: number; hint?: string; onCommit(v: number): void }) {
   const [draft, setDraft] = useState<number | null>(null)
   const shown = draft ?? props.value
@@ -212,7 +213,7 @@ export function CommitSlider(props: { label: string; unit?: string; min: number;
     setDraft(null)
   }
   return (
-    <label className="field" title={props.hint}>
+    <label className="field" {...hinted(props.hint)}>
       <span className="field-label-row">
         {props.label}
         <span className="muted">
@@ -263,6 +264,7 @@ export function TimeField(props: {
   precision: Precision
   allowEmpty?: boolean
   placeholder?: string
+  hint?: string
   onCommit(value: { t: number; precision: Precision } | null): void
 }) {
   const cal = useCalendar(useTimelineOwner()?.id)
@@ -288,6 +290,7 @@ export function TimeField(props: {
       value={draft ?? shown}
       placeholder={props.placeholder}
       title={invalid ? 'Not a date. Try 1204, 15 Mar 1204, c. 1200 or 4.5 billion years ago' : undefined}
+      {...hinted(props.hint)}
       onChange={(e) => (setDraft(e.target.value), setInvalid(false))}
       onBlur={commit}
       onKeyDown={(e) => {

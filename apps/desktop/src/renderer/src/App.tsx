@@ -7,6 +7,7 @@ import { ShortcutsSheet } from './components/ShortcutsSheet'
 import { UpdateBanner } from './components/UpdateBanner'
 import { Welcome } from './components/Welcome'
 import { Workspace } from './components/Workspace'
+import { HintLayer } from './components/Hint'
 import { routeHistory } from './input'
 import { onShortcutKey, useShortcutSheet, useShortcuts } from './shortcuts'
 import { isPhoneApp } from './webBridge'
@@ -54,6 +55,7 @@ export function App() {
       {!isPhoneApp() && <DictionaryDialog />}
       {!isPhoneApp() && <PluginsDialog />}
       <NamePicker />
+      <HintLayer />
       {/* On a phone the phone's browser checks spelling; this computer's dictionary is for its own window. */}
       {!isPhoneApp() && <SpellingNames />}
     </div>

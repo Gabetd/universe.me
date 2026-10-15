@@ -6,11 +6,24 @@ import { latLonLabel } from '../world/useMapPins'
 import { selectScar, useSelectedScarId } from '../world/useScars'
 import { useCalendar } from '../world/useSky'
 import { CommitSlider, DeleteButton, NotesField, NumberInput, PanelHeader, SelectField, SwatchList, TextField, TimeField } from './fields'
+import { hinted } from './Hint'
 
 /**
  * Scars on a world's land (core scars.ts) in the inspector: a scar's own
  * panel, the world's list of them, and an event's (the scars it left).
  */
+
+/** What each of a scar's values changes, said when the pointer rests on it. */
+const SCAR_HINTS = {
+  kind: 'What happened to the land: a crater, war, fire, drought, radiation or poison. Each colours the ground its own way, kills its own share of the plants, and some damage what’s built.',
+  over: 'Where it is: a circle round a point, or the whole of a region. Over a region it follows the region’s outline.',
+  reach: 'How far out from its middle it reaches, in km. Past this the land is untouched; near the edge it fades, frayed.',
+  comes: 'When it happens. Before this, the land is as it was; from this moment, it’s at its worst.',
+  until: 'How long it stays at its worst. Empty, it never ends; after this date the land starts to heal.',
+  heals: 'How many years the land takes to recover after it ends, fading away over them. 0, it never heals.',
+  strength: 'How bad it is: how deep a crater is dug, how far the ground is discoloured, how many plants die, and how hard what’s built is hit.',
+  event: 'The event that left it on the land. Deleting the event leaves the scar but forgets where it came from.'
+}
 
 const KIND_OPTIONS = Object.fromEntries(SCAR_KINDS.map((k) => [k, `${SCAR_LOOKS[k].icon} ${SCAR_LOOKS[k].label}`])) as Record<ScarKind, string>
 
@@ -40,11 +53,11 @@ export function ScarPanel({ scar }: { scar: Scar }) {
     <section className="inspector-section" aria-label="Scar">
       <PanelHeader icon={look.icon} label="Scar" onClose={() => useUi.getState().selectTimeline(null)} />
       <TextField label="Scar name" value={scar.name} placeholder={look.label} onCommit={(name) => update({ name })} />
-      <SelectField label="Kind of scar" value={scar.kind} options={KIND_OPTIONS} onCommit={(kind) => update({ kind })} />
+      <SelectField label="Kind of scar" value={scar.kind} options={KIND_OPTIONS} hint={SCAR_HINTS.kind} onCommit={(kind) => update({ kind })} />
       <p className="muted small" aria-label="Scar now">
         {now}
       </p>
-      <label className="field">
+      <label className="field" {...hinted(SCAR_HINTS.over)}>
         <span>Where</span>
         <select aria-label="Scar over" value={scar.regionId ?? ''} onChange={(e) => overRegion(e.target.value)}>
           <option value="">Around {latLonLabel(scar)}</option>
@@ -56,22 +69,22 @@ export function ScarPanel({ scar }: { scar: Scar }) {
         </select>
       </label>
       {!scar.regionId && (
-        <label className="field">
+        <label className="field" {...hinted(SCAR_HINTS.reach)}>
           <span>Reaches (km around)</span>
           <NumberInput value={scar.radiusKm} min={0.01} max={20_000} onCommit={(radiusKm) => update({ radiusKm })} />
         </label>
       )}
       <div className="field-row">
-        <TimeField label="Comes" value={scar.start} precision="year" onCommit={(v) => v && update({ start: v.t, ...(scar.end !== null && scar.end < v.t ? { end: v.t } : {}) })} />
-        <TimeField label="Worst until" value={scar.end} precision="year" allowEmpty placeholder="— for good" onCommit={(v) => update({ end: v ? Math.max(v.t, scar.start) : null })} />
+        <TimeField label="Comes" value={scar.start} precision="year" hint={SCAR_HINTS.comes} onCommit={(v) => v && update({ start: v.t, ...(scar.end !== null && scar.end < v.t ? { end: v.t } : {}) })} />
+        <TimeField label="Worst until" value={scar.end} precision="year" allowEmpty placeholder="— for good" hint={SCAR_HINTS.until} onCommit={(v) => update({ end: v ? Math.max(v.t, scar.start) : null })} />
       </div>
-      <label className="field">
+      <label className="field" {...hinted(SCAR_HINTS.heals)}>
         <span>Heals over (years; 0 never)</span>
         <NumberInput value={scar.recoverYears} min={0} max={10_000_000} onCommit={(recoverYears) => update({ recoverYears })} />
       </label>
-      <CommitSlider label="How bad" unit="%" min={5} max={100} step={5} value={Math.round(scar.strength * 100)} onCommit={(v) => update({ strength: v / 100 })} />
+      <CommitSlider label="How bad" unit="%" min={5} max={100} step={5} value={Math.round(scar.strength * 100)} hint={SCAR_HINTS.strength} onCommit={(v) => update({ strength: v / 100 })} />
       {look.damage > 0 && <p className="muted small">It damages what’s built where it reaches as it comes{scar.kind === 'crater' ? ', and destroys what’s at its heart' : ''}.</p>}
-      <label className="field">
+      <label className="field" {...hinted(SCAR_HINTS.event)}>
         <span>Made by</span>
         <select aria-label="Made by event" value={scar.eventId ?? ''} onChange={(e) => update({ eventId: e.target.value || null })}>
           <option value="">No event</option>

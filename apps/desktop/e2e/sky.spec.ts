@@ -66,6 +66,16 @@ test('star systems: real orbits at the playhead, an editable star and orbits, de
 
   // Terra's orbit: made up until changed; a 30-hour day changes its calendar.
   await orbitOf(page, 'Terra')
+
+  // Resting the pointer on a value says what it changes, after a second (not at once).
+  const hint = page.getByRole('tooltip')
+  await inspector(page).locator('label', { has: page.getByText('Inclination (°)', { exact: true }) }).hover()
+  await page.waitForTimeout(500)
+  await expect(hint).toHaveCount(0)
+  await expect(hint).toContainText('eclipses are rarer')
+  await shot(page, '84-value-hint')
+  await page.mouse.move(2, 2)
+  await expect(hint).toHaveCount(0)
   await expect(inspector(page).getByLabel('Orbit', { exact: true })).toContainText('Made up from the seed')
   await expect(inspector(page).getByLabel('Worked out from the orbit')).toContainText('365 days in 12 months')
   await fill(page, 'Day (hours)', '30')

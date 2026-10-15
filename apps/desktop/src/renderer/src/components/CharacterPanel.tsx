@@ -7,6 +7,7 @@ import { useCalendar } from '../world/useSky'
 import { sendCharacter } from '../world/sendCharacter'
 import { LaneToggle, MembershipList, RelationshipList } from './FactionParts'
 import { ColorField, DeleteButton, NotesField, PanelHeader, Swatch, TagsField, TextField, TimeField } from './fields'
+import { hinted } from './Hint'
 
 const latLon = (p: { lat: number; lon: number }) => `${Math.abs(p.lat).toFixed(3)}°${p.lat >= 0 ? 'N' : 'S'} ${Math.abs(p.lon).toFixed(3)}°${p.lon >= 0 ? 'E' : 'W'}`
 
@@ -41,11 +42,11 @@ export function CharacterPanel({ character }: { character: Character }) {
       <PanelHeader icon={<Swatch color={character.color} />} label="Character" onClose={() => selectCharacter(null)} />
       <TextField label="Character name" value={character.name} required onCommit={(name) => update({ name })} />
       <div className="field-pair">
-        <label className="field">
+        <label className="field" {...hinted('When they’re born: before this they aren’t on the world, and their age is counted from it.')}>
           <span>Born</span>
           <TimeField label="Born" value={character.born} precision="year" onCommit={(v) => v && update({ born: v.t })} />
         </label>
-        <label className="field">
+        <label className="field" {...hinted('When they die: after this they’re gone from the world and travel no more. Empty, they’re still alive.')}>
           <span>Died</span>
           <TimeField label="Died" value={character.died} precision="year" allowEmpty placeholder="Still alive" onCommit={(v) => update({ died: v?.t ?? null })} />
         </label>
@@ -113,7 +114,7 @@ export function CharacterPanel({ character }: { character: Character }) {
       <LaneToggle worldId={character.ownerId} id={character.id} />
       <MembershipList worldId={character.ownerId} characterId={character.id} />
       <RelationshipList worldId={character.ownerId} self={self} label="Relationships" />
-      <ColorField label="Character color" value={character.color} onCommit={(color) => update({ color })} />
+      <ColorField label="Character color" hint="The colour of their marker on the globe, the map and the timeline." value={character.color} onCommit={(color) => update({ color })} />
       <TagsField label="Character tags" tags={character.tags} onCommit={(tags) => update({ tags })} />
       <NotesField label="Character notes" value={character.notes} onCommit={(notes) => update({ notes })} />
       <DeleteButton kind="character" ids={[character.id]}>

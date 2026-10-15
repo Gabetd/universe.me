@@ -9,6 +9,7 @@ import { useThemeLook, useWorldThemes } from '../world/useThemeLook'
 import { ColorField, CommitSlider, DeleteButton, NotesField, NumberInput, PanelHeader, SelectField, Swatch, SwatchList, TagsField, TextField, TimeField } from './fields'
 import { FONT_STACKS } from './ThemedWorkspace'
 import { menuRef } from '../contextMenu'
+import { hinted } from './Hint'
 
 /**
  * Themes in the inspector (PLAN.md §4.5): the editor for a theme (its look,
@@ -19,6 +20,24 @@ import { menuRef } from '../contextMenu'
 
 const LIGHTING_LABELS: Record<LightingPreset, string> = { day: 'Clear day', golden: 'Golden hour', overcast: 'Overcast', dusk: 'Dusk', night: 'Night', storm: 'Storm' }
 const TYPE_LABELS: Record<Typography, string> = { serif: 'Serif (book)', sans: 'Sans (modern)', mono: 'Monospace (records)' }
+
+/** What each of a theme's (and a theme span's) values changes, said when the pointer rests on it. */
+const THEME_HINTS = {
+  sky: 'The colour the sky over the world is pulled toward while the theme holds.',
+  water: 'The colour the sea and lakes are pulled toward while the theme holds.',
+  land: 'The tint the land takes while the theme holds (the light still shades it).',
+  accent: 'The colour of the app’s buttons, highlights and selections while the theme holds.',
+  lighting: 'The light over the world: its sun’s colour and strength, and the light in the shadows. Night and storm darken the views; golden hour warms them.',
+  haze: 'How thick the air is: how quickly the distance fades into haze on the ground and the globe.',
+  type: 'The typeface of the app’s text while the theme is the strongest one at the playhead.',
+  theme: 'Which theme holds over this span of time.',
+  start: 'When the theme starts to hold on this world.',
+  end: 'When the theme stops holding on this world.',
+  fadeIn: 'How many years it takes to come in fully from its start, blending from whatever held before.',
+  fadeOut: 'How many years it takes to fade out before its end.',
+  where: 'Where it holds: the whole world, or only one region (seen there and on what’s in it).',
+  priority: 'Where spans overlap, the one with the higher priority shows on top.'
+}
 
 const execute = (command: Command | undefined) => void (command && useUi.getState().execute(command))
 
@@ -58,16 +77,16 @@ export function ThemePanel({ theme }: { theme: Theme }) {
       <ThemePreview theme={theme} />
       <TextField label="Theme name" value={theme.name} required onCommit={(name) => update({ name })} />
       <div className="field-pair">
-        <ColorField label="Sky" value={theme.palette.sky} onCommit={setColour('sky')} />
-        <ColorField label="Water" value={theme.palette.water} onCommit={setColour('water')} />
+        <ColorField label="Sky" hint={THEME_HINTS.sky} value={theme.palette.sky} onCommit={setColour('sky')} />
+        <ColorField label="Water" hint={THEME_HINTS.water} value={theme.palette.water} onCommit={setColour('water')} />
       </div>
       <div className="field-pair">
-        <ColorField label="Land" value={theme.palette.land} onCommit={setColour('land')} />
-        <ColorField label="Accent" value={theme.palette.accent} onCommit={setColour('accent')} />
+        <ColorField label="Land" hint={THEME_HINTS.land} value={theme.palette.land} onCommit={setColour('land')} />
+        <ColorField label="Accent" hint={THEME_HINTS.accent} value={theme.palette.accent} onCommit={setColour('accent')} />
       </div>
-      <SelectField label="Lighting" value={theme.lighting} options={LIGHTING_LABELS} onCommit={(lighting) => update({ lighting })} />
-      <CommitSlider label="Haze" min={0} max={1} step={0.05} value={theme.atmosphere} onCommit={(atmosphere) => update({ atmosphere })} />
-      <SelectField label="Type" value={theme.typography} options={TYPE_LABELS} onCommit={(typography) => update({ typography })} />
+      <SelectField label="Lighting" value={theme.lighting} options={LIGHTING_LABELS} hint={THEME_HINTS.lighting} onCommit={(lighting) => update({ lighting })} />
+      <CommitSlider label="Haze" hint={THEME_HINTS.haze} min={0} max={1} step={0.05} value={theme.atmosphere} onCommit={(atmosphere) => update({ atmosphere })} />
+      <SelectField label="Type" value={theme.typography} options={TYPE_LABELS} hint={THEME_HINTS.type} onCommit={(typography) => update({ typography })} />
       <TagsField label="Mood" tags={theme.mood} onCommit={(mood) => update({ mood })} />
       <TextAreaField
         label="Prose style guide"
@@ -107,7 +126,7 @@ export function ThemeSpanPanel({ span }: { span: ThemeSpan }) {
   return (
     <section className="inspector-section" aria-label="Theme span">
       <PanelHeader icon="▬" label="Theme span" onClose={closePanel} />
-      <label className="field">
+      <label className="field" {...hinted(THEME_HINTS.theme)}>
         <span>Theme</span>
         <select value={span.themeId} onChange={(e) => update({ themeId: e.target.value })}>
           {themes.map((t) => (
@@ -123,26 +142,26 @@ export function ThemeSpanPanel({ span }: { span: ThemeSpan }) {
         </button>
       )}
       <div className="field-pair">
-        <label className="field">
+        <label className="field" {...hinted(THEME_HINTS.start)}>
           <span>From</span>
           <TimeField label="Theme span start" value={span.start} precision="year" onCommit={(v) => v && update({ start: Math.min(v.t, span.end) })} />
         </label>
-        <label className="field">
+        <label className="field" {...hinted(THEME_HINTS.end)}>
           <span>To</span>
           <TimeField label="Theme span end" value={span.end} precision="year" onCommit={(v) => v && update({ end: Math.max(v.t, span.start) })} />
         </label>
       </div>
       <div className="field-pair">
-        <label className="field">
+        <label className="field" {...hinted(THEME_HINTS.fadeIn)}>
           <span>Fades in over (years)</span>
           <NumberInput value={round(span.blendIn / year)} min={0} max={Math.max(0, length)} onCommit={(v) => update({ blendIn: v * year })} />
         </label>
-        <label className="field">
+        <label className="field" {...hinted(THEME_HINTS.fadeOut)}>
           <span>Fades out over (years)</span>
           <NumberInput value={round(span.blendOut / year)} min={0} max={Math.max(0, length)} onCommit={(v) => update({ blendOut: v * year })} />
         </label>
       </div>
-      <label className="field">
+      <label className="field" {...hinted(THEME_HINTS.where)}>
         <span>Where</span>
         <select aria-label="Where" value={span.regionId ?? ''} onChange={(e) => update({ regionId: e.target.value || null })}>
           <option value="">The whole world</option>
@@ -154,7 +173,7 @@ export function ThemeSpanPanel({ span }: { span: ThemeSpan }) {
           {span.regionId && !regions.some((r) => r.id === span.regionId) && <option value={span.regionId}>A deleted region</option>}
         </select>
       </label>
-      <label className="field">
+      <label className="field" {...hinted(THEME_HINTS.priority)}>
         <span>Priority (higher shows on top where spans overlap)</span>
         <NumberInput value={span.priority} min={-100} max={100} integer onCommit={(priority) => update({ priority })} />
       </label>

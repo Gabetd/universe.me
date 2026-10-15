@@ -114,7 +114,7 @@ function RegionForm({ region }: { region: Region }) {
     <section className="inspector-section region-form" aria-label="Region">
       <PanelHeader icon={<Swatch color={region.color} />} label="Region" onClose={() => selectRegion(null)} />
       <TextField label="Region name" value={region.name} required onCommit={(name) => update({ name })} />
-      <ColorField label="Region color" value={region.color} onCommit={(color) => update({ color })} />
+      <ColorField label="Region color" hint="The colour the region is outlined and shaded in on the globe and the map." value={region.color} onCommit={(color) => update({ color })} />
       <RegionTheme worldId={region.worldId} regionId={region.id} />
       <RegionLanguage worldId={region.worldId} regionId={region.id} />
       <RegionHistory region={region} />

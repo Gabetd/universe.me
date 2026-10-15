@@ -5,6 +5,28 @@ import { surfaceOf } from '../kinds'
 import { useUi } from '../store'
 import { useSystem, useWorldClimate } from '../world/useSky'
 import { NumberInput, Swatch, TextField } from './fields'
+import { hinted } from './Hint'
+
+/** What each of a star's values changes, said when the pointer rests on it. */
+const STAR_HINTS = {
+  mass: 'How heavy the star is, in Suns. Heavier stars burn brighter, hotter and bluer, and their planets go round faster: years get shorter at the same distance.',
+  brightness: 'How much light the star gives, in Suns (by default, what its mass gives). Brighter stars warm their planets more and push the habitable zone farther out.'
+}
+
+/** What each of a planet's or moon's orbit and spin values changes. */
+const ORBIT_HINTS = {
+  distanceAu: 'How far the planet is from its star, on average (1 AU is Earth’s distance). Farther out, the year is longer and the world colder; closer in, shorter and hotter.',
+  distanceKm: 'How far the moon is from its planet, on average. Farther out, it goes round more slowly (a longer month, which the calendar follows) and looks smaller in the sky.',
+  eccentricity: 'How stretched the orbit is: 0 is a circle, near 1 a long thin oval. The more stretched, the more its distance from what it goes round changes through the year (and its warmth with it).',
+  day: 'How long it takes to turn once, in hours: the length of a day. The calendar counts its days in these.',
+  tilt: 'How far its axis leans from upright. More tilt, stronger seasons (hotter summers and colder winters); 0, no seasons; past 90, it turns backwards.',
+  inclination: 'How far its orbit is tipped against the plane the others go round in. Tipped further, it passes above and below them; a tipped moon lines up with its sun less often, so eclipses are rarer.',
+  startAngle: 'Where along its orbit it is at the start of the timeline (0 to 360°). It moves on from there as time passes; only its starting place changes.',
+  mass: 'How heavy it is, in Earths. With “Mass follows size” it sets its size too; heavier bodies hold their moons faster.',
+  size: 'How big it is: Earth is 10. Sets its radius (and its mass, while mass follows size).',
+  radius: 'Its radius in kilometres: how big it is drawn, and (while mass follows size) how heavy it is.',
+  massFollowsSize: 'Linked, a planet weighs what a planet its size does (and setting its mass sets its size); unlinked, its mass is its own.'
+}
 
 /** Inspector for a star system: its star. Without edits it's Sun-like. */
 export function StarPanel({ system: node }: { system: SpatialNode }) {
@@ -19,11 +41,11 @@ export function StarPanel({ system: node }: { system: SpatialNode }) {
     <section className="inspector-section" aria-label="Star">
       <h3>Star</h3>
       <div className="field-pair" key={`${star.massSun}:${star.luminositySun}`}>
-        <label className="field">
+        <label className="field" {...hinted(STAR_HINTS.mass)}>
           <span>Mass (Suns)</span>
           <NumberInput value={star.massSun} min={0.08} max={150} onCommit={(massSun) => set({ massSun })} />
         </label>
-        <label className="field">
+        <label className="field" {...hinted(STAR_HINTS.brightness)}>
           <span>Brightness (Suns)</span>
           <NumberInput value={Number(star.luminositySun.toPrecision(3))} min={0.0001} max={1e7} onCommit={(l) => set({ luminositySun: Math.abs(l - luminosityOf(star.massSun)) < 1e-9 ? null : l })} />
         </label>
@@ -69,17 +91,17 @@ export function OrbitPanel({ body, withSurface = false }: { body: SpatialNode; w
       {orbit.isDefault && <p className="muted small">Made up from the seed. Change anything to set it{world ? '; the world’s calendar and climate then follow it' : ''}.</p>}
       {/* The boxes show new stored values themselves (after an undo, say). */}
       <div className="field-pair">
-        <Num label={isMoon ? 'Distance (km)' : 'Distance (AU)'} value={round(distance, isMoon ? 0 : 3)} min={isMoon ? 1000 : 0.01} max={isMoon ? 1e8 : 1e4} onCommit={(v) => set({ semiMajorAxisKm: isMoon ? v : v * AU_KM })} />
-        <Num label="Eccentricity" value={round(orbit.eccentricity, 4)} min={0} max={0.95} onCommit={(eccentricity) => set({ eccentricity })} />
-        <Num label="Day (hours)" value={round(orbit.rotationHours, 3)} min={0.1} max={1e6} onCommit={(rotationHours) => set({ rotationHours })} />
-        <Num label="Axial tilt (°)" value={round(orbit.axialTiltDeg, 2)} min={0} max={180} onCommit={(axialTiltDeg) => set({ axialTiltDeg })} />
-        <Num label="Inclination (°)" value={round(orbit.inclinationDeg, 2)} min={0} max={180} onCommit={(inclinationDeg) => set({ inclinationDeg })} />
-        <Num label="Start angle (°)" value={round(((orbit.phaseDeg % 360) + 360) % 360, 1)} min={0} max={360} onCommit={(phaseDeg) => set({ phaseDeg })} />
-        <Num label="Mass (Earths)" value={round(orbit.massEarth, 4)} min={0.0001} max={1e5} onCommit={(massEarth) => void execute(massCommand(body.id, orbit, world?.id, massEarth))} />
+        <Num label={isMoon ? 'Distance (km)' : 'Distance (AU)'} value={round(distance, isMoon ? 0 : 3)} min={isMoon ? 1000 : 0.01} max={isMoon ? 1e8 : 1e4} hint={isMoon ? ORBIT_HINTS.distanceKm : ORBIT_HINTS.distanceAu} onCommit={(v) => set({ semiMajorAxisKm: isMoon ? v : v * AU_KM })} />
+        <Num label="Eccentricity" value={round(orbit.eccentricity, 4)} min={0} max={0.95} hint={ORBIT_HINTS.eccentricity} onCommit={(eccentricity) => set({ eccentricity })} />
+        <Num label="Day (hours)" value={round(orbit.rotationHours, 3)} min={0.1} max={1e6} hint={ORBIT_HINTS.day} onCommit={(rotationHours) => set({ rotationHours })} />
+        <Num label="Axial tilt (°)" value={round(orbit.axialTiltDeg, 2)} min={0} max={180} hint={ORBIT_HINTS.tilt} onCommit={(axialTiltDeg) => set({ axialTiltDeg })} />
+        <Num label="Inclination (°)" value={round(orbit.inclinationDeg, 2)} min={0} max={180} hint={ORBIT_HINTS.inclination} onCommit={(inclinationDeg) => set({ inclinationDeg })} />
+        <Num label="Start angle (°)" value={round(((orbit.phaseDeg % 360) + 360) % 360, 1)} min={0} max={360} hint={ORBIT_HINTS.startAngle} onCommit={(phaseDeg) => set({ phaseDeg })} />
+        <Num label="Mass (Earths)" value={round(orbit.massEarth, 4)} min={0.0001} max={1e5} hint={ORBIT_HINTS.mass} onCommit={(massEarth) => void execute(massCommand(body.id, orbit, world?.id, massEarth))} />
         {!world && (
           <>
-            <Num label="Size (Earth = 10)" value={planetSize(orbit.radiusKm)} min={0.01} max={1600} onCommit={(size) => set({ radiusKm: radiusOfSize(size) })} />
-            <Num label="Radius (km)" value={Math.round(orbit.radiusKm)} min={1} max={1e6} onCommit={(radiusKm) => set({ radiusKm })} />
+            <Num label="Size (Earth = 10)" value={planetSize(orbit.radiusKm)} min={0.01} max={1600} hint={ORBIT_HINTS.size} onCommit={(size) => set({ radiusKm: radiusOfSize(size) })} />
+            <Num label="Radius (km)" value={Math.round(orbit.radiusKm)} min={1} max={1e6} hint={ORBIT_HINTS.radius} onCommit={(radiusKm) => set({ radiusKm })} />
           </>
         )}
       </div>
@@ -106,7 +128,7 @@ export function MassLink({ bodyId }: { bodyId: string }) {
   if (!orbit) return null
   const linked = orbit.massFollowsSize !== false
   return (
-    <label className="checkbox small" title="Linked, a planet weighs what a planet its size does (and setting its mass sets its size); unlinked, its mass is its own.">
+    <label className="checkbox small" {...hinted(ORBIT_HINTS.massFollowsSize)}>
       <input type="checkbox" checked={linked} onChange={(e) => setOrbit(bodyId, orbit, { massFollowsSize: e.target.checked })} /> Mass follows size
       <span className="muted"> · {round(orbit.massEarth, orbit.massEarth < 0.1 ? 4 : 2)} Earth masses</span>
     </label>
@@ -159,9 +181,9 @@ const round = (v: number, digits: number) => Number(v.toFixed(digits))
 /** "−12 °C", with a real minus sign. */
 const degrees = (c: number, digits = 0) => `${c.toFixed(digits).replace('-', '−')} °C`
 
-function Num(props: { label: string; value: number; min: number; max: number; onCommit(v: number): void }) {
+function Num(props: { label: string; value: number; min: number; max: number; hint?: string; onCommit(v: number): void }) {
   return (
-    <label className="field">
+    <label className="field" {...hinted(props.hint)}>
       <span>{props.label}</span>
       <NumberInput value={props.value} min={props.min} max={props.max} onCommit={props.onCommit} />
     </label>

@@ -29,6 +29,7 @@ import { useWorldAtTime } from './useWorldAtTime'
 import { WEBGL } from './webgl'
 import { BlueprintOptions } from '../components/BlueprintOptions'
 import { Swatch } from '../components/fields'
+import { hinted } from '../components/Hint'
 
 const TOOLS: { tool: EditorTool; label: string; icon: string; hint: string }[] = [
   { tool: 'navigate', label: 'Navigate', icon: '✋', hint: 'Drag to rotate or pan, scroll to zoom. Click a region to select it.' },
@@ -283,13 +284,13 @@ function ToolOptions({ view }: { view: EditorView }) {
       )}
       {onSurface && isBrushTool(tool) && (
         <>
-          <Slider label="Size" value={radiusKm} min={30} max={2500} step={10} unit="km" onChange={(v) => set({ radiusKm: v })} />
+          <Slider label="Size" hint="How wide the brush is, in km across its radius: how much land one stroke changes." value={radiusKm} min={30} max={2500} step={10} unit="km" onChange={(v) => set({ radiusKm: v })} />
           {tool !== 'paint' && tool !== 'erase' && (
-            <Slider label="Strength" value={Math.round(strength * 100)} min={5} max={100} step={5} unit="%" onChange={(v) => set({ strength: v / 100 })} />
+            <Slider label="Strength" hint="How much one stroke raises, lowers or smooths the land under the brush." value={Math.round(strength * 100)} min={5} max={100} step={5} unit="%" onChange={(v) => set({ strength: v / 100 })} />
           )}
         </>
       )}
-      {view === 'globe' && <Slider label="Relief" value={exaggeration} min={1} max={80} step={1} unit="×" onChange={(v) => set({ exaggeration: v })} />}
+      {view === 'globe' && <Slider label="Relief" hint="How much the globe’s heights are stretched so they show from space: only how it’s drawn, never the land itself." value={exaggeration} min={1} max={80} step={1} unit="×" onChange={(v) => set({ exaggeration: v })} />}
       {onSurface && tool === 'paint' && <span className="small muted">{BIOMES.find((b) => b.id === biome)?.name}</span>}
       {onSurface && tool === 'paint' && (
         <div className="biome-palette" role="radiogroup" aria-label="Biome">
@@ -312,7 +313,7 @@ const SCAR_SIZES = [0.1, 0.25, 0.5, 1, 2, 4, 8, 15, 30, 60, 120, 250, 500, 1000,
 function ScarSize({ value, onChange }: { value: number; onChange(v: number): void }) {
   const step = SCAR_SIZES.reduce((best, v, i) => (Math.abs(Math.log(v / value)) < Math.abs(Math.log(SCAR_SIZES[best]! / value)) ? i : best), 0)
   return (
-    <label className="toolbar-slider">
+    <label className="toolbar-slider" {...hinted('How far the next scar reaches round where you click, from a single blast to a country’s drought.')}>
       <span>Size</span>
       <input type="range" aria-label="Scar size" min={0} max={SCAR_SIZES.length - 1} step={1} value={step} onChange={(e) => onChange(SCAR_SIZES[Number(e.target.value)]!)} />
       <span className="toolbar-value">{value < 1 ? `${value * 1000} m` : `${value} km`}</span>
@@ -320,9 +321,9 @@ function ScarSize({ value, onChange }: { value: number; onChange(v: number): voi
   )
 }
 
-function Slider(props: { label: string; value: number; min: number; max: number; step: number; unit: string; onChange(v: number): void }) {
+function Slider(props: { label: string; value: number; min: number; max: number; step: number; unit: string; hint?: string; onChange(v: number): void }) {
   return (
-    <label className="toolbar-slider">
+    <label className="toolbar-slider" {...hinted(props.hint)}>
       <span>{props.label}</span>
       <input type="range" min={props.min} max={props.max} step={props.step} value={props.value} onChange={(e) => props.onChange(Number(e.target.value))} />
       <span className="toolbar-value">

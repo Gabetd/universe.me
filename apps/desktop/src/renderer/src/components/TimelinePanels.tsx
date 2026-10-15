@@ -10,6 +10,7 @@ import { ThemePanel, ThemeSpanPanel } from './ThemePanels'
 import { MapPinPanel } from './MapPinPanel'
 import { LanguagePanel } from './LanguagePanels'
 import { EventScars, ScarPanel } from './ScarPanels'
+import { hinted } from './Hint'
 
 const PRECISION_LABELS: Record<Precision, string> = { exact: 'Exact time', day: 'Day', year: 'Year', century: 'Century', approx: 'Approximate' }
 const LINK_LABELS: Record<LinkType, [string, string]> = {
@@ -56,6 +57,21 @@ export function TimelineInspector({ selection }: { selection: TimelineSelection 
 
 const closePanel = () => useUi.getState().selectTimeline(null)
 
+/** What each of an event's (and an era's, a group's, a link's) values changes, said when the pointer rests on it. */
+const EVENT_HINTS = {
+  starts: 'When it happens: where it sits on the timeline, and what the world shows from then on (places it changes, structures it builds or damages, scars it leaves).',
+  ends: 'When it’s over. Empty, it’s a single moment; with an end it’s a span, drawn as a bar.',
+  precision: 'How exactly its date is known: to the minute, the day, the year, the century, or only roughly. Its dates are written that way, and a rough one is drawn with soft edges.',
+  lane: 'Which row of the timeline it’s drawn in. Lanes keep kinds of events apart (wars, reigns, discoveries).',
+  color: 'The colour of its marker on the timeline and of its place on the globe and map.',
+  eraColor: 'The colour of the era’s band across the timeline.',
+  groupColor: 'The colour of the group’s outline round its events on the timeline.',
+  eraStart: 'When the era begins: where its band starts on the timeline.',
+  eraEnd: 'When the era ends: where its band stops on the timeline.',
+  linkType: 'How the first event bears on the second: it causes it, leads to it, prevents it… Drawn as an arrow between them on the timeline.',
+  linkNote: 'A note on the link, shown with it: how or why one led to the other.'
+}
+
 function EventPanel({ event }: { event: TimelineEvent }) {
   const { execute } = useUi.getState()
   const ownLanes = useOwnRecords('lanes', event.ownerId)
@@ -89,17 +105,17 @@ function EventPanel({ event }: { event: TimelineEvent }) {
       <PanelHeader icon="◆" label="Event" onClose={closePanel} />
       <TextField label="Event title" value={event.title} required onCommit={(t) => update({ title: t })} />
       <div className="field-pair">
-        <label className="field">
+        <label className="field" {...hinted(EVENT_HINTS.starts)}>
           <span>Starts</span>
           <TimeField label="Starts" value={event.start} precision={event.precision} onCommit={(v) => v && update({ start: v.t, precision: v.precision, ...(event.end !== null && event.end < v.t ? { end: v.t } : {}) })} />
         </label>
-        <label className="field">
+        <label className="field" {...hinted(EVENT_HINTS.ends)}>
           <span>Ends</span>
           <TimeField label="Ends" value={event.end} precision={event.precision} allowEmpty placeholder="— a moment" onCommit={(v) => update({ end: v ? Math.max(v.t, event.start) : null })} />
         </label>
       </div>
       <div className="field-pair">
-        <label className="field">
+        <label className="field" {...hinted(EVENT_HINTS.precision)}>
           <span>Precision</span>
           <select value={event.precision} onChange={(e) => update({ precision: e.target.value as Precision })}>
             {PRECISIONS.map((p) => (
@@ -109,7 +125,7 @@ function EventPanel({ event }: { event: TimelineEvent }) {
             ))}
           </select>
         </label>
-        <label className="field">
+        <label className="field" {...hinted(EVENT_HINTS.lane)}>
           <span>Lane</span>
           <select value={event.laneId ?? ''} onChange={(e) => update({ laneId: e.target.value || null })}>
             <option value="">Events</option>
@@ -121,7 +137,7 @@ function EventPanel({ event }: { event: TimelineEvent }) {
           </select>
         </label>
       </div>
-      <ColorField label="Event color" value={event.color} onCommit={(color) => update({ color })} />
+      <ColorField label="Event color" hint={EVENT_HINTS.color} value={event.color} onCommit={(color) => update({ color })} />
 
       {onWorld && (
         <div className="field">
@@ -253,16 +269,16 @@ function EraPanel({ era }: { era: Era }) {
       <PanelHeader icon="▭" label="Era" onClose={closePanel} />
       <TextField label="Era name" value={era.name} required onCommit={(name) => update({ name })} />
       <div className="field-pair">
-        <label className="field">
+        <label className="field" {...hinted(EVENT_HINTS.eraStart)}>
           <span>From</span>
           <TimeField label="Era start" value={era.start} precision="year" onCommit={(v) => v && update({ start: Math.min(v.t, era.end) })} />
         </label>
-        <label className="field">
+        <label className="field" {...hinted(EVENT_HINTS.eraEnd)}>
           <span>To</span>
           <TimeField label="Era end" value={era.end} precision="year" onCommit={(v) => v && update({ end: Math.max(v.t, era.start) })} />
         </label>
       </div>
-      <ColorField label="Era color" value={era.color} onCommit={(color) => update({ color })} />
+      <ColorField label="Era color" hint={EVENT_HINTS.eraColor} value={era.color} onCommit={(color) => update({ color })} />
       <NotesField label="Era notes" value={era.notes} onCommit={(notes) => update({ notes })} />
       <DeleteButton kind="era" ids={[era.id]}>
         Delete era
@@ -280,7 +296,7 @@ function GroupPanel({ group }: { group: EventGroup }) {
     <section className="inspector-section" aria-label="Group">
       <PanelHeader icon="▤" label="Group" onClose={closePanel} />
       <TextField label="Group title" value={group.title} required onCommit={(title) => update({ title })} />
-      <ColorField label="Group color" value={group.color} onCommit={(color) => update({ color })} />
+      <ColorField label="Group color" hint={EVENT_HINTS.groupColor} value={group.color} onCommit={(color) => update({ color })} />
       <label className="checkbox">
         <input type="checkbox" checked={group.collapsed} onChange={(e) => update({ collapsed: e.target.checked })} /> Collapsed into one bar
       </label>
@@ -307,7 +323,7 @@ function LinkPanel({ link }: { link: EventLink }) {
         <button className="link" onClick={() => selectTimeline({ kind: 'event', ids: [link.fromId] })}>
           {title(link.fromId)}
         </button>{' '}
-        <select aria-label="Link type" value={link.type} onChange={(e) => void execute({ type: 'link.update', payload: { id: link.id, patch: { type: e.target.value as LinkType } } })}>
+        <select aria-label="Link type" {...hinted(EVENT_HINTS.linkType)} value={link.type} onChange={(e) => void execute({ type: 'link.update', payload: { id: link.id, patch: { type: e.target.value as LinkType } } })}>
           {LINK_TYPES.map((t) => (
             <option key={t} value={t}>
               {LINK_LABELS[t][0]}
@@ -318,7 +334,7 @@ function LinkPanel({ link }: { link: EventLink }) {
           {title(link.toId)}
         </button>
       </p>
-      <TextField label="Link note" value={link.note} onCommit={(note) => void execute({ type: 'link.update', payload: { id: link.id, patch: { note } } })} />
+      <TextField label="Link note" hint={EVENT_HINTS.linkNote} value={link.note} onCommit={(note) => void execute({ type: 'link.update', payload: { id: link.id, patch: { note } } })} />
       <DeleteButton kind="link" ids={[link.id]}>
         Delete link
       </DeleteButton>

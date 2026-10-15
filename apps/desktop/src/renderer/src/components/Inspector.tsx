@@ -10,6 +10,7 @@ import { PlanetsToClaim } from './ClaimPlanets'
 import { PowersHere } from './PowerPins'
 import { NodeLanguage } from './LanguagePanels'
 import { useSteadyScroll } from '../useSteadyScroll'
+import { hinted } from './Hint'
 
 export function Inspector() {
   const node = useUi(selectNode)
@@ -55,7 +56,7 @@ function NodeForm({ node }: { node: SpatialNode }) {
         <TagsField label="Tags" tags={node.tags} onCommit={(tags) => update({ tags })} />
         {/* A world's seed lives with its generation options. */}
         {node.kind !== 'world' && (
-          <label className="field">
+          <label className="field" {...hinted('The number everything here is made from: what it generates (clusters, galaxies, stars or planets) and how it looks. The same seed always makes the same; a new one makes it all anew.')}>
             <span>Seed</span>
             <div className="field-row">
               <NumberInput value={node.seed} min={0} max={0xffffffff} integer onCommit={(seed) => update({ seed })} />

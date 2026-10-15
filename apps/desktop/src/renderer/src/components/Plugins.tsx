@@ -4,6 +4,7 @@ import type { PluginInfo, Result } from '../../../shared/api'
 import { contributions, usePlugins } from '../pluginStore'
 import { selectNode, undo, updater, useUi } from '../store'
 import { Modal, dialogStore } from './Modal'
+import { hinted } from './Hint'
 
 /**
  * Plugins in the app (PLAN.md §9, M16): the plugin manager (Tools →
@@ -142,7 +143,7 @@ function OptionFields({ options, values, onChange }: { options: readonly PluginO
   return (
     <div className="plugin-options">
       {options.map((o) => (
-        <label key={o.id} className={o.type === 'flag' ? 'checkbox' : 'field'} title={o.description}>
+        <label key={o.id} className={o.type === 'flag' ? 'checkbox' : 'field'} {...hinted(o.description)}>
           {o.type === 'flag' ? (
             <>
               <input type="checkbox" checked={!!values[o.id]} onChange={(e) => onChange(o.id, e.target.checked)} /> {o.label}

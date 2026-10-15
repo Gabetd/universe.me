@@ -9,6 +9,7 @@ import { goToEvent } from '../world/goToEvent'
 import { CommitSlider, DeleteButton, NotesField, PanelHeader, Swatch, TagsField, TextField, TimeField } from './fields'
 import { BlueprintOptions } from './BlueprintOptions'
 import { ConditionChart, MaterialConditions } from './ConditionChart'
+import { hinted } from './Hint'
 
 const STEP_LABELS: Record<Step['kind'], string> = {
   build: 'built',
@@ -20,6 +21,14 @@ const STEP_LABELS: Record<Step['kind'], string> = {
 }
 
 /** Inspector for a structure: what it is, where, and its condition at the playhead and why. */
+
+/** What each of a structure's values changes, said when the pointer rests on it. */
+const STRUCTURE_HINTS = {
+  blueprint: 'What it’s built to: its parts and materials, how big it is, and how it weathers. Its model on the ground and its condition both follow it.',
+  built: 'When it was built. Before this it isn’t there; from then on it weathers, unless it’s maintained.',
+  rotation: 'Which way it faces, in degrees round from north.',
+  size: 'How big it’s built against its blueprint: 2× is twice as long, wide and tall.'
+}
 export function StructurePanel({ structure }: { structure: Structure }) {
   const { execute, selectStructure } = useUi.getState()
   const eventsById = useEventsById()
@@ -40,13 +49,13 @@ export function StructurePanel({ structure }: { structure: Structure }) {
     <section className="inspector-section region-form" aria-label="Structure">
       <PanelHeader icon={<Swatch color={state ? STAGE_COLORS[state.stage] : undefined} />} label="Structure" onClose={() => selectStructure(null)} />
       <TextField label="Structure name" value={structure.name} required onCommit={(name) => update({ name })} />
-      <label className="field">
+      <label className="field" {...hinted(STRUCTURE_HINTS.blueprint)}>
         <span>Blueprint</span>
         <select value={structure.blueprintId} onChange={(e) => update({ blueprintId: e.target.value })}>
           <BlueprintOptions />
         </select>
       </label>
-      <label className="field">
+      <label className="field" {...hinted(STRUCTURE_HINTS.built)}>
         <span>Built</span>
         <TimeField label="Built" value={structure.builtAt} precision="year" onCommit={(v) => v && update({ builtAt: v.t })} />
       </label>
@@ -135,8 +144,8 @@ export function StructurePanel({ structure }: { structure: Structure }) {
           {blueprint && <button onClick={() => useEditor.getState().enterGround(structure, viewingDistance(blueprint, structure.scale))}>🔍 View up close</button>}
         </div>
       </div>
-      <CommitSlider label="Rotation" unit="°" min={0} max={359} step={1} value={((structure.rotation % 360) + 360) % 360} onCommit={(rotation) => update({ rotation })} />
-      <CommitSlider label="Size" unit="×" min={0.25} max={4} step={0.25} value={structure.scale} onCommit={(scale) => update({ scale })} />
+      <CommitSlider label="Rotation" hint={STRUCTURE_HINTS.rotation} unit="°" min={0} max={359} step={1} value={((structure.rotation % 360) + 360) % 360} onCommit={(rotation) => update({ rotation })} />
+      <CommitSlider label="Size" hint={STRUCTURE_HINTS.size} unit="×" min={0.25} max={4} step={0.25} value={structure.scale} onCommit={(scale) => update({ scale })} />
       <TagsField label="Structure tags" tags={structure.tags} onCommit={(tags) => update({ tags })} />
       <NotesField label="Structure notes" value={structure.notes} onCommit={(notes) => update({ notes })} />
       <DeleteButton kind="structure" ids={[structure.id]}>

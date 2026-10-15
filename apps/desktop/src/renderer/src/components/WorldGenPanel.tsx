@@ -3,6 +3,7 @@ import { WORLD_PRESETS, encodeWorldCode, randomSeedName, readSeed } from '@unive
 import { updater, useUi } from '../store'
 import { ColorField, CommitSlider, CopyButton, NumberInput, TextField, randomSeed } from './fields'
 import { MassLink } from './SkyPanels'
+import { hinted } from './Hint'
 
 const LANDFORM_LABELS: Record<Landform, string> = { continents: 'Continents', supercontinent: 'Supercontinent', archipelago: 'Archipelago' }
 
@@ -80,7 +81,7 @@ export function WorldGenPanel({ world, settings }: { world: SpatialNode; setting
       <div className="add-buttons">
         <button onClick={() => applySeed(randomSeedName())}>🎲 Random seed</button>
         {!locked && (
-          <select aria-label="Start from preset" title={WORLD_HINTS.preset} value="" onChange={(e) => e.target.value && setTerrain(WORLD_PRESETS.find((p) => p.name === e.target.value)!.terrain)}>
+          <select aria-label="Start from preset" {...hinted(WORLD_HINTS.preset)} value="" onChange={(e) => e.target.value && setTerrain(WORLD_PRESETS.find((p) => p.name === e.target.value)!.terrain)}>
             <option value="">Start from preset…</option>
             {WORLD_PRESETS.map((p) => (
               <option key={p.name}>{p.name}</option>
@@ -99,7 +100,7 @@ export function WorldGenPanel({ world, settings }: { world: SpatialNode; setting
         <p className="muted small">Custom world: set the options below, or type a seed to generate one.</p>
       )}
 
-      <div className="field" title={WORLD_HINTS.code}>
+      <div className="field" {...hinted(WORLD_HINTS.code)}>
         <span>World code</span>
         <div className="field-row">
           <code className="world-code" data-testid="world-code">
@@ -110,7 +111,7 @@ export function WorldGenPanel({ world, settings }: { world: SpatialNode; setting
       </div>
 
       <fieldset className="gen-options" disabled={locked}>
-        <div className="field" title={WORLD_HINTS.land}>
+        <div className="field" {...hinted(WORLD_HINTS.land)}>
           <span>Land</span>
           <div className="segmented" role="group" aria-label="Land type">
             {LANDFORMS.map((l) => (
@@ -154,17 +155,17 @@ export function WorldGenPanel({ world, settings }: { world: SpatialNode; setting
         </div>
         <CommitSlider label="Planet size" hint={WORLD_HINTS.radius} unit=" (Earth is 10)" {...PLANET_SIZE.slider} step={PLANET_SIZE.step} value={size} onCommit={setSize} />
         <div className="field-pair">
-          <label className="field" title={WORLD_HINTS.radius}>
+          <label className="field" {...hinted(WORLD_HINTS.radius)}>
             <span>Size (Earth = 10)</span>
             <NumberInput value={size} min={PLANET_SIZE.min} max={PLANET_SIZE.max} onCommit={setSize} />
           </label>
-          <label className="field" title={WORLD_HINTS.radius}>
+          <label className="field" {...hinted(WORLD_HINTS.radius)}>
             <span>Planet radius (km)</span>
             <NumberInput value={settings.radiusKm} min={WORLD_RANGES.radiusKm.min} max={WORLD_RANGES.radiusKm.max} integer onCommit={(v) => update({ radiusKm: v })} />
           </label>
         </div>
         {world.parentId && <MassLink bodyId={world.parentId} />}
-        <button title={WORLD_HINTS.newShape} onClick={() => updater('node', world.id)({ seed: randomSeed() })}>
+        <button {...hinted(WORLD_HINTS.newShape)} onClick={() => updater('node', world.id)({ seed: randomSeed() })}>
           🎲 New shape
         </button>
       </fieldset>

@@ -13,7 +13,7 @@ export function MapPinPanel({ pin }: { pin: MapPin }) {
       <p className="muted small" aria-label="Where">
         {latLonLabel(pin)}
       </p>
-      <ColorField label="Pin color" value={pin.color} onCommit={(color) => update({ color })} />
+      <ColorField label="Pin color" hint="The colour of the pin on the globe, the map and the ground." value={pin.color} onCommit={(color) => update({ color })} />
       <NotesField label="Pin notes" value={pin.notes} onCommit={(notes) => update({ notes })} />
       <DeleteButton kind="mapPin" ids={[pin.id]}>
         Delete pin

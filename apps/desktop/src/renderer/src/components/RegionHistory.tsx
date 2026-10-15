@@ -4,6 +4,7 @@ import { useOwnRecords, useUi } from '../store'
 import { usePlayhead } from '../timeline/timelineStore'
 import { useCalendar } from '../world/useSky'
 import { Swatch, TimeField } from './fields'
+import { hinted } from './Hint'
 
 /**
  * A region's history (EntityChange records): when it was founded and
@@ -51,7 +52,7 @@ export function RegionHistory({ region }: { region: Region }) {
   const milestone = (change: 'appear' | 'vanish', label: string, placeholder: string) => {
     const existing = own.find((c) => c.change === change)
     return (
-      <label className="field">
+      <label className="field" {...hinted(change === 'appear' ? 'When the region comes to be: before this it isn’t on the globe or the map. Empty, it was always there.' : 'When the region is gone: after this it isn’t on the globe or the map. Empty, it lasts.')}>
         <span>{label}</span>
         <div className="field-row">
           <TimeField label={label} value={existing?.at ?? null} precision="year" allowEmpty placeholder={placeholder} onCommit={(v) => setMilestone(change, existing, v?.t ?? null)} />
