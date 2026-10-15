@@ -9,6 +9,7 @@ import { FACTION_COMMANDS, factionHandlers } from './faction-commands'
 import { FINDING_COMMANDS, findingHandlers } from './finding-commands'
 import { CONFLICT_COMMANDS, conflictHandlers } from './conflict-commands'
 import { MAP_PIN_COMMANDS, mapPinHandlers } from './map-pin-commands'
+import { MEDIA_COMMANDS, mediaHandlers } from './media-commands'
 import { LANGUAGE_COMMANDS, languageHandlers } from './language-commands'
 import { SCAR_COMMANDS, scarHandlers } from './scar-commands'
 import { POWER_COMMANDS, powerHandlers } from './power-commands'
@@ -89,6 +90,7 @@ export const Command = z.discriminatedUnion('type', [
   ...FINDING_COMMANDS,
   ...CONFLICT_COMMANDS,
   ...MAP_PIN_COMMANDS,
+  ...MEDIA_COMMANDS,
   ...LANGUAGE_COMMANDS,
   ...SCAR_COMMANDS,
   ...FACTION_COMMANDS,
@@ -117,6 +119,7 @@ export const handlers: Handlers = {
   ...findingHandlers,
   ...conflictHandlers,
   ...mapPinHandlers,
+  ...mediaHandlers,
   ...languageHandlers,
   ...scarHandlers,
   ...factionHandlers,

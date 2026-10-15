@@ -10,7 +10,7 @@ import { EntityChange, Era, EventGroup, EventLink, Lane, LinkType, TimelineEvent
 
 /** Fields of a record kind that commands may set. */
 const EventFields = TimelineEvent.pick({
-  title: true, start: true, end: true, precision: true, laneId: true, groupId: true, color: true, notes: true, tags: true, locations: true, canvas: true, canvasHidden: true, participants: true
+  title: true, start: true, end: true, precision: true, laneId: true, groupId: true, color: true, notes: true, tags: true, locations: true, canvas: true, canvasHidden: true, participants: true, media: true
 })
 const EraFields = Era.pick({ name: true, start: true, end: true, color: true, notes: true })
 const ChangeFields = EntityChange.pick({ at: true, change: true, patch: true, causeEventId: true, note: true })

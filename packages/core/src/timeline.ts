@@ -4,6 +4,7 @@ import { Id, Name, Notes, RecordMeta } from './schema'
 import { Party } from './factions'
 import { Precision, Time } from './time'
 import { HexColor, LatLon } from './world'
+import { MediaItem } from './media'
 
 /**
  * Timeline records (PLAN.md §4.4). Every node can have a timeline; its records
@@ -36,7 +37,9 @@ export const TimelineEvent = z.object({
   /** Every event gets a card on the canvas unless hidden. Older events don't have these fields. */
   canvasHidden: z.boolean().nullable().optional(),
   /** Who took part: characters and factions on the world. Older events don't have it. */
-  participants: z.array(Party).optional()
+  participants: z.array(Party).optional(),
+  /** Pictures and Blender scenes of it. Older events don't have it. */
+  media: z.array(MediaItem).optional()
 })
 export type TimelineEvent = z.infer<typeof TimelineEvent>
 

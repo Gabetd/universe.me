@@ -7,7 +7,7 @@ import { NewId, create, deleteWith, recordCrud, update } from './record-kit'
 import { Id } from './schema'
 import { Time } from './time'
 
-const CharacterFields = Character.pick({ name: true, born: true, died: true, color: true, notes: true, tags: true, stops: true })
+const CharacterFields = Character.pick({ name: true, born: true, died: true, color: true, notes: true, tags: true, stops: true, media: true })
 export type CharacterPatch = Partial<z.infer<typeof CharacterFields>>
 const characters = recordCrud('character', CharacterFields)
 
