@@ -6,6 +6,7 @@ import { Id, Name } from './schema'
 import { Time } from './time'
 import { forgetCause } from './faction-commands'
 import { connectionsOf } from './canvas-commands'
+import { forgetLawCause, lawsOf } from './law-commands'
 import { EntityChange, Era, EventGroup, EventLink, Lane, LinkType, TimelineEvent } from './timeline'
 
 /** Fields of a record kind that commands may set. */
@@ -89,7 +90,8 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
         ...live(store, 'character')
           .filter((c) => c.stops.some((s) => s.eventId === id))
           .map((c): Command => ({ type: 'character.update', payload: { id: c.id, patch: { stops: c.stops.map((s) => (s.eventId === id ? { ...s, eventId: null } : s)) } } })),
-        ...forgetCause(store, ownerId, id)
+        ...forgetCause(store, ownerId, id),
+        ...forgetLawCause(store, ownerId, id)
       ],
       remove: [...refsWhere(store, 'link', ownerId, (l) => l.fromId === id || l.toId === id), ...refsWhere(store, 'effect', ownerId, (e) => e.eventId === id), ...connectionsOf(store, ownerId, id)]
     })),
@@ -113,7 +115,8 @@ export const timelineHandlers: HandlerMap<TimelineCommand> = {
     create(store, 'era', ctx, ownerId, id, { name: p.name ?? 'New era', start: p.start, end: p.end, color: p.color ?? pickColor(ctx), notes: p.notes ?? '' }),
   'era.update': eras.update,
   // Power systems' entries for the era go with it.
-  'era.delete': (store, { id }, ctx, run) => deleteWith(store, ctx, run, { kind: 'era', id }, ({ ownerId }) => ({ remove: refsWhere(store, 'powerAge', ownerId, (a) => a.eraId === id) })),
+  'era.delete': (store, { id }, ctx, run) =>
+    deleteWith(store, ctx, run, { kind: 'era', id }, ({ ownerId }) => ({ remove: [...refsWhere(store, 'powerAge', ownerId, (a) => a.eraId === id), ...lawsOf(store, ownerId, 'era', id)] })),
 
   'lane.create': (store, { id, ownerId, name, order }, ctx) => {
     const last = Math.max(0, ...store.records('lane').byOwner(ownerId).map((l) => l.order))

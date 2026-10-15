@@ -6,6 +6,7 @@ import { NewId, clearRefs, create, deleteWith, live, recordCrud, refsWhere } fro
 import { Id } from './schema'
 import type { Store } from './store'
 import { stripUndefined } from './util'
+import { lawsOf } from './law-commands'
 
 const SpanFields = { start: true, end: true, startEventId: true, endEventId: true } as const
 const FactionFields = Faction.pick({ name: true, kind: true, color: true, emblem: true, parentId: true, summary: true, notes: true, tags: true, ...SpanFields })
@@ -59,7 +60,8 @@ export const factionHandlers: HandlerMap<FactionCommand> = {
       remove: [
         ...refsWhere(store, 'membership', ownerId, (m) => m.factionId === id),
         ...refsWhere(store, 'holding', ownerId, (h) => h.factionId === id),
-        ...relationshipsWith(store, ownerId, { kind: 'faction', id })
+        ...relationshipsWith(store, ownerId, { kind: 'faction', id }),
+        ...lawsOf(store, ownerId, 'faction', id)
       ]
     })),
   'membership.create': (store, { id, factionId, characterId, ...p }, ctx) =>

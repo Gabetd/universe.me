@@ -34,6 +34,7 @@ import { canvasValidators } from './canvas-validators'
 import { memberValidators } from './member-validators'
 import { languageValidators } from './language-validators'
 import { scarValidators } from './scar-validators'
+import { lawValidators } from './law-validators'
 
 /** Creating, updating and deleting records of any kind (records.ts), with each kind's checks. */
 
@@ -132,7 +133,8 @@ const validators: { [K in RecordKind]: (store: Store, record: RecordOf<K>, check
   conflict: () => {},
   mapPin: (store, p) => void liveWorld(store, p.ownerId),
   ...languageValidators,
-  ...scarValidators
+  ...scarValidators,
+  ...lawValidators
 }
 
 /** A blueprint by id: a built-in one or one in the project's library. */
