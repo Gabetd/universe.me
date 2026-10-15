@@ -12,7 +12,8 @@ import {
   type Party
 } from '@universe/core'
 import { useMemo, useRef, useState } from 'react'
-import { LaneToggle, MembershipRow, RelationshipList, SpanFields, execute, rowClass } from '../components/FactionParts'
+import { CauseFields, LaneToggle, MembershipRow, RelationshipList, SpanFields, execute, rowClass } from '../components/FactionParts'
+import { LawList } from '../components/LawPanels'
 import { ColorField, DeleteButton, NotesField, SelectField, Swatch, TagsField, TextField } from '../components/fields'
 import { addFaction, menuRef, openElement, openElementMenu } from '../contextMenu'
 import { flagClass, useFlaggedIds } from '../flags'
@@ -132,7 +133,6 @@ function FactionTree({ factions, selectedId, playhead, onPick }: { factions: Fac
 
 function FactionEditor({ worldId, faction, factions }: { worldId: string; faction: Faction; factions: Faction[] }) {
   const update = (patch: FactionPatch) => void execute({ type: 'faction.update', payload: { id: faction.id, patch } })
-  const events = useOwnRecords('events', worldId)
   const cal = useCalendar(worldId)
   const playhead = usePlayhead(worldId)
   const content = useRef<HTMLElement>(null)
@@ -141,22 +141,6 @@ function FactionEditor({ worldId, faction, factions }: { worldId: string; factio
   const parents = useMemo(() => factions.filter((f) => f.id !== faction.id && !wouldLoop(factions, faction.id, f.id)), [factions, faction.id])
   const self = useMemo(() => ({ kind: 'faction' as const, id: faction.id }), [faction.id])
   const exists = holdsAt(faction, playhead)
-  const eventOptions = useMemo(
-    () =>
-      [...events]
-        .sort((a, b) => a.start - b.start)
-        .map((e) => (
-          <option key={e.id} value={e.id}>
-            {formatTime(e.start, e.precision, cal)} · {e.title}
-          </option>
-        )),
-    [events, cal]
-  )
-  /** An event as the cause of its founding or end: the date follows it. */
-  const cause = (which: 'start' | 'end', eventId: string) => {
-    const e = events.find((x) => x.id === eventId)
-    update(which === 'start' ? { startEventId: e?.id ?? null, ...(e && { start: e.start }) } : { endEventId: e?.id ?? null, ...(e && { end: e.end ?? e.start }) })
-  }
 
   return (
     <div className="powers-scroll">
@@ -185,16 +169,7 @@ function FactionEditor({ worldId, faction, factions }: { worldId: string; factio
         <div className="field">
           <span>When</span>
           <SpanFields span={faction} label="Faction" from="Founded" until="Dissolved" onCommit={update} />
-          <div className="field-row">
-            <select aria-label="Founded by" value={faction.startEventId ?? ''} onChange={(e) => cause('start', e.target.value)}>
-              <option value="">Founded by an event…</option>
-              {eventOptions}
-            </select>
-            <select aria-label="Ended by" value={faction.endEventId ?? ''} onChange={(e) => cause('end', e.target.value)}>
-              <option value="">Ended by an event…</option>
-              {eventOptions}
-            </select>
-          </div>
+          <CauseFields worldId={worldId} span={faction} start="Founded by" end="Ended by" onCommit={update} />
           <p className="muted small" data-testid="faction-status">
             {exists ? `There at ${formatTime(playhead, 'year', cal)}.` : faction.start !== null && playhead < faction.start ? `Not founded yet at ${formatTime(playhead, 'year', cal)}.` : `Gone by ${formatTime(playhead, 'year', cal)}.`}
           </p>
@@ -203,6 +178,7 @@ function FactionEditor({ worldId, faction, factions }: { worldId: string; factio
         <MemberRows worldId={worldId} factionId={faction.id} />
         <TerritoryRows worldId={worldId} factionId={faction.id} />
         <RelationshipList worldId={worldId} self={self} label="Stands with" />
+        <LawList worldId={worldId} scope={{ kind: 'faction', factionId: faction.id }} />
         <TagsField label="Faction tags" tags={faction.tags} onCommit={(tags) => update({ tags })} />
         <NotesField label="Faction notes" value={faction.notes} onCommit={(notes) => update({ notes })} />
         <DeleteButton kind="faction" ids={[faction.id]}>

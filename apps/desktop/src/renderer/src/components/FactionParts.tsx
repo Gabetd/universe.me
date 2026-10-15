@@ -1,9 +1,10 @@
-import { RELATION_INFO, RELATION_TYPES, holdsAt, involves, otherParty, relationLabel, sameParty, type Membership, type Party, type Span } from '@universe/core'
+import { RELATION_INFO, RELATION_TYPES, formatTime, holdsAt, involves, otherParty, relationLabel, sameParty, type Membership, type Party, type Span } from '@universe/core'
 import { useMemo, useState } from 'react'
 import { menuRef, openElement, showFaction } from '../contextMenu'
 import { useOwnRecords, useUi } from '../store'
 import { usePlayhead, useTimelineView } from '../timeline/timelineStore'
 import { TextField, TimeField } from './fields'
+import { useCalendar } from '../world/useSky'
 
 /**
  * Pieces of the factions pages (PLAN.md §9, M14) the character panel shares:
@@ -22,6 +23,40 @@ export function SpanFields({ span, label, from = 'From', until = 'Until', onComm
       <span className="muted">–</span>
       <TimeField label={`${label} ${until.toLowerCase()}`} value={span.end} precision="year" allowEmpty placeholder={until === 'Until' ? 'Still' : until} onCommit={(v) => onCommit({ end: v?.t ?? null })} />
     </span>
+  )
+}
+
+/** The events that began and ended a span ("Founded by", "Ended by"), picked from the world's; the date follows the event picked. */
+export function CauseFields({ worldId, span, start, end, onCommit }: { worldId: string; span: Span; start: string; end: string; onCommit(patch: Partial<Span>): void }) {
+  const events = useOwnRecords('events', worldId)
+  const cal = useCalendar(worldId)
+  // Made once, not on every render: a world can have thousands of events.
+  const options = useMemo(
+    () =>
+      [...events]
+        .sort((a, b) => a.start - b.start)
+        .map((e) => (
+          <option key={e.id} value={e.id}>
+            {formatTime(e.start, e.precision, cal)} · {e.title}
+          </option>
+        )),
+    [events, cal]
+  )
+  const cause = (which: 'start' | 'end', eventId: string) => {
+    const e = events.find((x) => x.id === eventId)
+    onCommit(which === 'start' ? { startEventId: e?.id ?? null, ...(e && { start: e.start }) } : { endEventId: e?.id ?? null, ...(e && { end: e.end ?? e.start }) })
+  }
+  return (
+    <div className="field-row cause-fields">
+      <select aria-label={start} value={span.startEventId ?? ''} onChange={(e) => cause('start', e.target.value)}>
+        <option value="">{start} an event…</option>
+        {options}
+      </select>
+      <select aria-label={end} value={span.endEventId ?? ''} onChange={(e) => cause('end', e.target.value)}>
+        <option value="">{end} an event…</option>
+        {options}
+      </select>
+    </div>
   )
 }
 

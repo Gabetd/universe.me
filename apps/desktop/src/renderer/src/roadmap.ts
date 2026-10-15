@@ -39,5 +39,6 @@ export const ROADMAP: Milestone[] = [
   { id: 'M27', title: 'One zoom through space', status: 'done', summary: 'A planet and its surface one row in the tree with its moons under it, the levels of space zooming into each other as one camera, and values that say what they change when the pointer rests on them' },
   { id: 'M28', title: 'The land far and wide', status: 'done', summary: 'The ground in three rings around the view: finely within 20 km with its trees, at medium quality to 40 km, coarsely to 80 km' },
   { id: 'M29', title: 'Pictures and models', status: 'done', summary: 'Characters and events keep pictures and Blender scenes, seen large or turned in 3D when they’re selected' },
-  { id: 'M30', title: 'Worlds up close', status: 'planned', summary: 'Reshape regions by their corners, seamless lighting on the globe, finer terrain close up' }
+  { id: 'M30', title: 'Laws of eras and factions', status: 'done', summary: 'Laws an era or a faction holds people to, in force for a time, enacted and repealed by events, and the laws over each character' },
+  { id: 'M31', title: 'Worlds up close', status: 'planned', summary: 'Reshape regions by their corners, seamless lighting on the globe, finer terrain close up' }
 ]

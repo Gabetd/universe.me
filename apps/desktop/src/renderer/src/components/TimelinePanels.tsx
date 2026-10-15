@@ -1,10 +1,11 @@
-import { LINK_TYPES, PRECISIONS, type Language, type MapPin, type Scar, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type Theme, type ThemeSpan, type TimelineEvent } from '@universe/core'
+import { LINK_TYPES, PRECISIONS, type Language, type MapPin, type Scar, type Law, type Era, type EventGroup, type EventLink, type LinkType, type Precision, type Theme, type ThemeSpan, type TimelineEvent } from '@universe/core'
 import { useMemo } from 'react'
 import { updater, useEventsById, useOwnRecords, useUi, type TimelineSelection } from '../store'
 import { locationLabel } from '../timeline/labels'
 import { useEditor } from '../world/editorStore'
 import { Participants } from './FactionParts'
 import { MediaGallery } from './MediaGallery'
+import { EventLaws, LawList, LawPanel } from './LawPanels'
 import { ColorField, DeleteButton, NotesField, PanelHeader, SwatchList, TagsField, TextField, TimeField } from './fields'
 import { EventEffects } from './EventEffects'
 import { ThemePanel, ThemeSpanPanel } from './ThemePanels'
@@ -51,6 +52,8 @@ export function TimelineInspector({ selection }: { selection: TimelineSelection 
       return <LanguagePanel key={key} language={record as Language} />
     case 'scar':
       return <ScarPanel key={key} scar={record as Scar} />
+    case 'law':
+      return <LawPanel key={key} law={record as Law} />
     default:
       return null
   }
@@ -139,6 +142,7 @@ function EventPanel({ event }: { event: TimelineEvent }) {
         </label>
       </div>
       <MediaGallery owner={{ kind: 'event', id: event.id }} media={event.media ?? []} label="Scenes" />
+      <EventLaws event={event} />
       <ColorField label="Event color" hint={EVENT_HINTS.color} value={event.color} onCommit={(color) => update({ color })} />
 
       {onWorld && (
@@ -281,6 +285,7 @@ function EraPanel({ era }: { era: Era }) {
         </label>
       </div>
       <ColorField label="Era color" hint={EVENT_HINTS.eraColor} value={era.color} onCommit={(color) => update({ color })} />
+      <LawList worldId={era.ownerId} scope={{ kind: 'era', eraId: era.id }} />
       <NotesField label="Era notes" value={era.notes} onCommit={(notes) => update({ notes })} />
       <DeleteButton kind="era" ids={[era.id]}>
         Delete era

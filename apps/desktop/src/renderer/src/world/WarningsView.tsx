@@ -1,4 +1,4 @@
-import { SEVERITY_LABELS, ecosystemWarnings, factionWarnings, structureWarnings, timelineWarnings, type Finding, type FindingStatus } from '@universe/core'
+import { SEVERITY_LABELS, ecosystemWarnings, factionWarnings, lawWarnings, structureWarnings, timelineWarnings, type Finding, type FindingStatus } from '@universe/core'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { menuRef, nameOf, openElement, parseMenuRef, type ElementKind } from '../contextMenu'
 import { ConflictList, useConflicts } from '../components/Conflicts'
@@ -112,6 +112,8 @@ function useAppChecks(worldId: string) {
   const holdings = useOwnRecords('holdings', worldId)
   const relationships = useOwnRecords('relationships', worldId)
   const characters = useOwnRecords('characters', worldId)
+  const laws = useOwnRecords('laws', worldId)
+  const eras = useOwnRecords('eras', worldId)
   const regions = useUi((s) => s.regions)
   const { world, curves } = useConditionCurves(worldId)
   return useMemo(
@@ -119,9 +121,10 @@ function useAppChecks(worldId: string) {
       ...timelineWarnings({ events, links, changes }, regions),
       ...structureWarnings(world, curves),
       ...ecosystemWarnings(species, ecolinks).map((w) => ({ message: w.message, refs: w.ids.map((id) => ({ kind: 'species' as const, id })) })),
-      ...factionWarnings({ factions, memberships, holdings, relationships, characters, events }, regions)
+      ...factionWarnings({ factions, memberships, holdings, relationships, characters, events }, regions),
+      ...lawWarnings(laws, { eras, factions, events })
     ],
-    [events, links, changes, species, ecolinks, factions, memberships, holdings, relationships, characters, regions, world, curves]
+    [events, links, changes, species, ecolinks, factions, memberships, holdings, relationships, characters, laws, eras, regions, world, curves]
   )
 }
 

@@ -1,4 +1,4 @@
-import { FACTION_KIND_LABELS, eventPlace, languageAtPoint, nameIn, SCAR_LOOKS, scarName, waterwayKind, type Command, type FactionKind, type ScarKind, type Language, type Party } from '@universe/core'
+import { FACTION_KIND_LABELS, eventPlace, languageAtPoint, nameIn, SCAR_LOOKS, scarName, waterwayKind, type Command, type FactionKind, type ScarKind, type Language, type LawScope, type Party } from '@universe/core'
 import { waterwayIndex, waterwayPlace } from '@universe/procgen'
 import { create } from 'zustand'
 import { addChildCommand, addOptions, canDelete, kindLabel, opened } from './kinds'
@@ -21,7 +21,7 @@ import { goToEvent } from './world/goToEvent'
  */
 
 /** What can be right-clicked: a node, or a record a world or timeline holds. */
-export type ElementKind = 'node' | 'region' | 'structure' | 'character' | 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan' | 'species' | 'lane' | 'power' | 'faction' | 'relationship' | 'waterway' | 'member' | 'mapPin' | 'scar'
+export type ElementKind = 'node' | 'region' | 'structure' | 'character' | 'event' | 'era' | 'group' | 'link' | 'theme' | 'themeSpan' | 'species' | 'lane' | 'power' | 'faction' | 'relationship' | 'waterway' | 'member' | 'mapPin' | 'scar' | 'law'
 
 export interface ElementRef {
   kind: ElementKind
@@ -191,7 +191,8 @@ const KINDS: Record<ElementKind, { label: ByKind; nameField?: ByKind; inspector:
   // Someone the universe is shared with (in the Share dialog): removing them stops sharing it with them.
   member: { label: 'Member', inspector: false, deleteVerb: 'Remove' },
   mapPin: { label: 'Pin', nameField: 'Pin name', inspector: true },
-  scar: { label: 'Scar', nameField: 'Scar name', inspector: true }
+  scar: { label: 'Scar', nameField: 'Scar name', inspector: true },
+  law: { label: 'Law', nameField: 'Law name', inspector: true }
 }
 
 const byKind = (value: ByKind, id: string) => (typeof value === 'string' ? value : value(id))
@@ -253,6 +254,8 @@ export function nameOf({ kind, id }: ElementRef): string | undefined {
       const scar = find(t.scars)
       return scar && scarName(scar)
     }
+    case 'law':
+      return find(t.laws)?.name
   }
 }
 
@@ -293,6 +296,13 @@ export async function addMapPin(worldId: string, at: { lat: number; lon: number 
   const state = await useUi.getState().execute({ type: 'mapPin.create', payload: { ownerId: worldId, name: 'New pin', lat: at.lat, lon: at.lon } })
   const id = state?.focus?.id
   if (id) rename(() => openElement({ kind: 'mapPin', id }), KINDS.mapPin.nameField as string)
+}
+
+/** Makes a law of an era or a faction and opens it with its name ready to type. */
+export async function addLaw(scope: LawScope): Promise<void> {
+  const state = await useUi.getState().execute({ type: 'law.create', payload: { scope, name: 'New law' } })
+  const id = state?.focus?.id
+  if (id) rename(() => openElement({ kind: 'law', id }), KINDS.law.nameField as string)
 }
 
 /** Leaves a scar of a kind at a point of a world's surface, coming at the playhead, and opens it. */
@@ -378,8 +388,11 @@ function kindItems({ kind, id }: ElementRef): MenuItem[] {
   }
   if (kind === 'faction') {
     const faction = t.factions.find((f) => f.id === id)
-    return faction ? ['separator', { label: 'Add a sub-faction', run: () => void addFaction(faction.ownerId, 'other', faction.id) }] : []
+    return faction
+      ? ['separator', { label: 'Add a sub-faction', run: () => void addFaction(faction.ownerId, 'other', faction.id) }, { label: 'Add a law…', run: () => void addLaw({ kind: 'faction', factionId: id }) }]
+      : []
   }
+  if (kind === 'era') return t.eras.some((e) => e.id === id) ? ['separator', { label: 'Add a law…', run: () => void addLaw({ kind: 'era', eraId: id }) }] : []
   if (kind === 'waterway') {
     const w = waterwayOf(id)
     if (!w) return []

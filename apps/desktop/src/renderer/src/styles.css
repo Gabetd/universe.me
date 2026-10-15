@@ -3295,3 +3295,12 @@ button.small {
 .media-viewer .error {
   color: var(--danger);
 }
+
+/* The events that began and ended a span: side by side where there's room, one under the other in the inspector. */
+.cause-fields {
+  flex-wrap: wrap;
+}
+.cause-fields select {
+  flex: 1 1 12em;
+  min-width: 0;
+}
