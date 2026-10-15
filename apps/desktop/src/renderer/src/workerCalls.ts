@@ -1,10 +1,12 @@
 /**
  * Calls into a Web Worker as promises (heavy generation runs in workers to
  * keep the UI responsive): each request carries an id, and the reply with the
- * same id resolves it. The worker starts on first use; if it fails, every
- * call waiting on it is rejected and the next call starts a fresh one.
+ * same id resolves it. `handOver` names the buffers a request gives the
+ * worker rather than copies (none, unless said). The worker starts on first
+ * use; if it fails, every call waiting on it is rejected and the next call
+ * starts a fresh one.
  */
-export function workerCalls<Request, Reply>(start: () => Worker): (request: Request) => Promise<Reply> {
+export function workerCalls<Request, Reply>(start: () => Worker, handOver: (request: Request) => Transferable[] = () => []): (request: Request) => Promise<Reply> {
   let worker: Worker | undefined
   let next = 0
   const waiting = new Map<number, { resolve: (reply: Reply) => void; reject: (error: Error) => void }>()
@@ -28,7 +30,7 @@ export function workerCalls<Request, Reply>(start: () => Worker): (request: Requ
     }
     const id = ++next
     const done = new Promise<Reply>((resolve, reject) => waiting.set(id, { resolve, reject }))
-    worker.postMessage({ id, request })
+    worker.postMessage({ id, request }, handOver(request))
     return done
   }
 }

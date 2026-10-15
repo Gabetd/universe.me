@@ -208,37 +208,28 @@ export class BlendFile {
 
   /** Reads one number of a field's type at `offset`. */
   number(type: string, offset: number): number {
+    const kind = NUMBERS[type]
+    if (!kind) throw new Error(`Can’t read a ${type}`)
+    return kind.read(this.view, offset, this.little)
+  }
+
+  /**
+   * `count` elements of `size` 32-bit numbers each from a block: packed one
+   * after another, or one field of each struct in an array of them (`of`).
+   * Undefined if the block is too short for them.
+   */
+  column(block: Block | undefined, count: number, size: number, kind: 'float' | 'int', of?: { struct: Struct | undefined; field: string }): Float32Array | Int32Array | undefined {
+    if (!block) return undefined
+    const field = of?.struct?.fields.get(of.field)
+    if (of && (!field || field.pointer)) return undefined
+    const stride = of ? of.struct!.size : size * 4
+    const start = block.offset + (field?.offset ?? 0)
+    if (count > 0 && start + (count - 1) * stride + size * 4 > block.offset + block.length) return undefined
+    const out = kind === 'float' ? new Float32Array(count * size) : new Int32Array(count * size)
     const { view, little } = this
-    switch (type) {
-      case 'char':
-      case 'uchar':
-      case 'uint8_t':
-        return view.getUint8(offset)
-      case 'int8_t':
-        return view.getInt8(offset)
-      case 'short':
-      case 'int16_t':
-        return view.getInt16(offset, little)
-      case 'ushort':
-      case 'uint16_t':
-        return view.getUint16(offset, little)
-      case 'int':
-      case 'int32_t':
-        return view.getInt32(offset, little)
-      case 'uint':
-      case 'uint32_t':
-        return view.getUint32(offset, little)
-      case 'float':
-        return view.getFloat32(offset, little)
-      case 'double':
-        return view.getFloat64(offset, little)
-      case 'int64_t':
-        return Number(view.getBigInt64(offset, little))
-      case 'uint64_t':
-        return Number(view.getBigUint64(offset, little))
-      default:
-        throw new Error(`Can’t read a ${type}`)
-    }
+    for (let i = 0, at = start; i < count; i++, at += stride)
+      for (let k = 0; k < size; k++) out[i * size + k] = kind === 'float' ? view.getFloat32(at + k * 4, little) : view.getInt32(at + k * 4, little)
+    return out
   }
 
   /** A C string at `offset`, up to `max` bytes. */
@@ -299,8 +290,25 @@ export class StructView {
   }
 }
 
-const SIZES: Record<string, number> = { char: 1, uchar: 1, uint8_t: 1, int8_t: 1, short: 2, ushort: 2, int16_t: 2, uint16_t: 2, int: 4, uint: 4, int32_t: 4, uint32_t: 4, float: 4, double: 8, int64_t: 8, uint64_t: 8 }
-const typeSize = (type: string) => SIZES[type] ?? 1
+type Read = (view: DataView, offset: number, little: boolean) => number
+const kind = (size: number, read: Read) => ({ size, read })
+const u8 = kind(1, (v, o) => v.getUint8(o))
+const i16 = kind(2, (v, o, l) => v.getInt16(o, l))
+const u16 = kind(2, (v, o, l) => v.getUint16(o, l))
+const i32 = kind(4, (v, o, l) => v.getInt32(o, l))
+const u32 = kind(4, (v, o, l) => v.getUint32(o, l))
+const i64 = kind(8, (v, o, l) => Number(v.getBigInt64(o, l)))
+const u64 = kind(8, (v, o, l) => Number(v.getBigUint64(o, l)))
+
+/** The SDNA's number types: their size, and how to read one. */
+const NUMBERS: Record<string, { size: number; read: Read } | undefined> = {
+  char: u8, uchar: u8, uint8_t: u8, int8_t: kind(1, (v, o) => v.getInt8(o)),
+  short: i16, int16_t: i16, ushort: u16, uint16_t: u16,
+  int: i32, int32_t: i32, uint: u32, uint32_t: u32,
+  float: kind(4, (v, o, l) => v.getFloat32(o, l)), double: kind(8, (v, o, l) => v.getFloat64(o, l)),
+  int64_t: i64, uint64_t: u64
+}
+const typeSize = (type: string) => NUMBERS[type]?.size ?? 1
 
 /** The structs a block holds, as records (using the block's own struct, or `as`). */
 export function recordsOf(file: BlendFile, block: Block, as?: Struct): StructView[] {

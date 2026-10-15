@@ -62,12 +62,25 @@ function thumbnailOf(file: BlendFile): BlendThumbnail | null {
   return { width, height, rgba }
 }
 
-/** Reads `count` 32-bit numbers from a raw block. */
-function numbersIn(file: BlendFile, block: Block | undefined, type: 'float' | 'int', count: number): number[] | undefined {
-  if (!block || block.length < count * 4) return undefined
-  const out = new Array<number>(count)
-  for (let i = 0; i < count; i++) out[i] = file.number(type, block.offset + i * 4)
-  return out
+/** Triangles fanned across each face from its corners, leaving out any that point past the vertices (a damaged file). */
+function fan(faces: number, start: (f: number) => number, size: (f: number) => number, corners: Int32Array | undefined, vertices: number): Uint32Array | undefined {
+  if (!corners) return undefined
+  let total = 0
+  for (let f = 0; f < faces; f++) total += Math.max(0, size(f) - 2)
+  const out = new Uint32Array(total * 3)
+  let n = 0
+  for (let f = 0; f < faces; f++) {
+    const first = start(f)
+    const count = size(f)
+    if (first < 0 || first + count > corners.length) continue
+    const a = corners[first]!
+    for (let k = 1; k + 1 < count; k++) {
+      const b = corners[first + k]!
+      const c = corners[first + k + 1]!
+      if (a >= 0 && b >= 0 && c >= 0 && a < vertices && b < vertices && c < vertices) out.set([a, b, c], n++ * 3)
+    }
+  }
+  return n * 3 === out.length ? out : out.slice(0, n * 3)
 }
 
 class SceneReader {
@@ -157,39 +170,38 @@ class SceneReader {
   }
 
   private mesh(ob: StructView): BlendMesh | undefined {
-    const { file } = this
-    const me = recordOf(file, ob.follow('data'))
+    const me = recordOf(this.file, ob.follow('data'))
     if (!me) return undefined
     const vertices = me.number('totvert', 'verts_num') ?? 0
-    const local = this.positions(me, vertices)
+    const positions = this.positions(me, vertices)
     const indices = this.faces(me, vertices)
-    if (!local || !indices || indices.length === 0) return undefined
+    if (!positions || !indices || indices.length === 0) return undefined
     if (this.triangles + indices.length / 3 > MAX_TRIANGLES) {
       this.cut = true
       return undefined
     }
     this.triangles += indices.length / 3
-    const world = this.world(ob)
-    const positions = new Float32Array(vertices * 3)
-    const v = new Vector3()
-    for (let i = 0; i < vertices; i++) {
-      v.set(local[i * 3]!, local[i * 3 + 1]!, local[i * 3 + 2]!).applyMatrix4(world)
-      positions.set([v.x, v.y, v.z], i * 3)
+    // Into the world, in place.
+    const m = this.world(ob).elements
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i]!
+      const y = positions[i + 1]!
+      const z = positions[i + 2]!
+      positions[i] = m[0]! * x + m[4]! * y + m[8]! * z + m[12]!
+      positions[i + 1] = m[1]! * x + m[5]! * y + m[9]! * z + m[13]!
+      positions[i + 2] = m[2]! * x + m[6]! * y + m[10]! * z + m[14]!
     }
     return { name: ob.inner('id')?.text('name').slice(2) ?? 'Object', positions, indices, color: this.color(ob, me) }
   }
 
-  /** x, y, z per vertex, before the object's transform. */
-  private positions(me: StructView, count: number): number[] | undefined {
+  /** x, y, z per vertex, before the object's transform: in MVert structs (before 3.5), or a 'position' attribute. */
+  private positions(me: StructView, count: number): Float32Array | undefined {
     const { file } = this
-    const mvert = me.follow('mvert') ?? this.layer(me, 'vdata', (l, s) => s === 'MVert')
-    if (mvert) {
-      const struct = file.struct('MVert')!
-      return recordsOf(file, mvert, struct)
-        .slice(0, count)
-        .flatMap((r) => r.numbers('co') ?? [0, 0, 0])
-    }
-    return numbersIn(file, this.layer(me, 'vdata', (l) => l === 'position') ?? this.attribute(me, 'position'), 'float', count * 3)
+    const mvert = me.follow('mvert') ?? this.layer(me, 'vdata', (_, s) => s === 'MVert')
+    const column = mvert
+      ? file.column(mvert, count, 3, 'float', { struct: file.struct('MVert'), field: 'co' })
+      : file.column(this.layer(me, 'vdata', (l) => l === 'position') ?? this.attribute(me, 'position'), count, 3, 'float')
+    return column as Float32Array | undefined
   }
 
   /** Triangles (a fan across each face), as vertex indices. */
@@ -197,63 +209,41 @@ class SceneReader {
     const { file } = this
     const faceCount = me.number('totpoly', 'faces_num') ?? 0
     const cornerCount = me.number('totloop', 'corners_num') ?? 0
-    let starts: number[] | undefined
-    const offsets = numbersIn(file, me.follow('poly_offset_indices', 'face_offset_indices'), 'int', faceCount + 1)
-    if (offsets) starts = offsets
-    else {
-      const mpoly = me.follow('mpoly') ?? this.layer(me, 'pdata', (l, s) => s === 'MPoly')
-      if (mpoly) {
-        const polys = recordsOf(file, mpoly, file.struct('MPoly')).slice(0, faceCount)
-        starts = [...polys.map((p) => p.number('loopstart') ?? 0), cornerCount]
-        // Faces needn't be in order of their corners: each face's own count is what holds.
-        const sizes = polys.map((p) => p.number('totloop') ?? 0)
-        return this.fan(polys.map((_, i) => [starts![i]!, sizes[i]!]), this.corners(me, cornerCount), vertices)
-      }
+    const corners = () => this.corners(me, cornerCount)
+    // Blender 3.6 on: where each face's corners start, and one past the last.
+    const offsets = file.column(me.follow('poly_offset_indices', 'face_offset_indices'), faceCount + 1, 1, 'int')
+    if (offsets) return fan(faceCount, (f) => offsets[f]!, (f) => offsets[f + 1]! - offsets[f]!, corners(), vertices)
+    // Before: an MPoly per face, its first corner and how many (faces needn't be in the order of their corners).
+    const mpoly = me.follow('mpoly') ?? this.layer(me, 'pdata', (_, s) => s === 'MPoly')
+    if (mpoly) {
+      const struct = file.struct('MPoly')
+      const starts = file.column(mpoly, faceCount, 1, 'int', { struct, field: 'loopstart' })
+      const sizes = file.column(mpoly, faceCount, 1, 'int', { struct, field: 'totloop' })
+      return starts && sizes ? fan(faceCount, (f) => starts[f]!, (f) => sizes[f]!, corners(), vertices) : undefined
     }
-    if (starts) return this.fan(starts.slice(0, -1).map((s, i) => [s, starts![i + 1]! - s]), this.corners(me, cornerCount), vertices)
     return this.legacyFaces(me, vertices)
   }
 
-  /** The vertex at each corner of every face. */
-  private corners(me: StructView, count: number): number[] | undefined {
+  /** The vertex at each corner of every face: a '.corner_vert' attribute (3.6 on), or MLoop structs. */
+  private corners(me: StructView, count: number): Int32Array | undefined {
     const { file } = this
     const named = this.layer(me, 'ldata', (l) => l === '.corner_vert') ?? this.attribute(me, '.corner_vert')
-    if (named) return numbersIn(file, named, 'int', count)
-    const mloop = me.follow('mloop') ?? this.layer(me, 'ldata', (l, s) => s === 'MLoop')
-    return mloop
-      ? recordsOf(file, mloop, file.struct('MLoop'))
-          .slice(0, count)
-          .map((r) => r.number('v') ?? 0)
-      : undefined
+    if (named) return file.column(named, count, 1, 'int') as Int32Array | undefined
+    const mloop = me.follow('mloop') ?? this.layer(me, 'ldata', (_, s) => s === 'MLoop')
+    return file.column(mloop, count, 1, 'int', { struct: file.struct('MLoop'), field: 'v' }) as Int32Array | undefined
   }
 
-  private fan(faces: [start: number, size: number][], corners: number[] | undefined, vertices: number): Uint32Array | undefined {
-    if (!corners) return undefined
-    const out: number[] = []
-    for (const [start, size] of faces) {
-      if (start < 0 || start + size > corners.length) continue
-      for (let k = 1; k + 1 < size; k++) {
-        const a = corners[start]!
-        const b = corners[start + k]!
-        const c = corners[start + k + 1]!
-        if (a < vertices && b < vertices && c < vertices) out.push(a, b, c)
-      }
-    }
-    return Uint32Array.from(out)
-  }
-
-  /** Before Blender 2.63 faces were triangles and quads (MFace). */
+  /** Before Blender 2.63 faces were triangles and quads (MFace; v4 is 0 for a triangle). */
   private legacyFaces(me: StructView, vertices: number): Uint32Array | undefined {
+    const { file } = this
     const mface = me.follow('mface')
-    if (!mface) return undefined
-    const out: number[] = []
-    for (const f of recordsOf(this.file, mface, this.file.struct('MFace'))) {
-      const [a, b, c, d] = ['v1', 'v2', 'v3', 'v4'].map((k) => f.number(k) ?? 0) as [number, number, number, number]
-      if (Math.max(a, b, c) >= vertices) continue
-      out.push(a, b, c)
-      if (d !== 0 && d < vertices) out.push(a, c, d)
-    }
-    return Uint32Array.from(out)
+    const struct = file.struct('MFace')
+    const count = me.number('totface') ?? 0
+    const [v1, v2, v3, v4] = ['v1', 'v2', 'v3', 'v4'].map((field) => file.column(mface, count, 1, 'int', { struct, field }))
+    if (!v1 || !v2 || !v3 || !v4) return undefined
+    const corners = new Int32Array(count * 4)
+    for (let f = 0; f < count; f++) corners.set([v1[f]!, v2[f]!, v3[f]!, v4[f]!], f * 4)
+    return fan(count, (f) => f * 4, (f) => (v4[f] === 0 ? 3 : 4), corners, vertices)
   }
 
   /** A CustomData layer's data block: the first whose name and data's struct pass `pick`. */
@@ -335,3 +325,6 @@ function localMatrix(ob: StructView): Matrix4 {
   } else rotation = new Quaternion().setFromEuler(euler(v('drot', [0, 0, 0]), mode)).multiply(new Quaternion().setFromEuler(euler(v('rot', [0, 0, 0]), mode)))
   return new Matrix4().compose(position, rotation, scale)
 }
+
+/** Only the thumbnail: the file's blocks are skimmed, its meshes not read. */
+export const blendThumbnail = (bytes: Uint8Array): BlendThumbnail | null => thumbnailOf(new BlendFile(bytes))
