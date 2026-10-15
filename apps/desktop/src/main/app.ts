@@ -8,6 +8,7 @@ import { appFolder, isAllowedRequest } from '../shared/offline'
 import { EVENTS, INVOKE, type AppState, type BuildInfo, type ImportedModel, type InvokeMethod, type MenuAction, type RemoteMethod, type Result, type UniverseApi } from '../shared/api'
 import type { ApiController } from './api'
 import type { Session } from './session'
+import { OpenedCopies, inflateBlend } from './media'
 import { TAILNET_URLS } from './tailnet'
 import { CHANNELS, versionLabel } from '../shared/update'
 import { Updater } from './updater'
@@ -38,6 +39,8 @@ app.on('second-instance', (_event, argv, workingDirectory) => {
 if (process.env.UNIVERSE_E2E_SEED) Math.random = rng(Number(process.env.UNIVERSE_E2E_SEED))
 
 let win: BrowserWindow | null = null
+/** Copies of the project's files opened in other apps (a .blend in Blender). */
+const copies = new OpenedCopies(join(app.getPath('temp'), `${APP_NAME} files`), (path) => shell.openPath(path))
 /** Set once the project code has loaded, just after the first window is created. API calls wait for `loaded`. */
 let session: Session
 /** The local API for AI clients (PLAN.md §6); set up with the session. */
@@ -433,6 +436,13 @@ function registerIpc(): void {
   handle('getTerrain', (worldId) => wrap(() => session.terrain(worldId)))
   handle('importModel', () => wrap(importModel))
   handle('getAsset', (id) => wrap(() => session.asset(id)))
+  handle('getBlend', (id) => wrap(() => inflateBlend(session.asset(id).data)))
+  handle('openAsset', (id) =>
+    wrap(() => {
+      const { name, data } = session.asset(id)
+      return copies.show(id, name, data)
+    })
+  )
   // Commands get the new state as the reply, so it isn't pushed as well; API clients hear of them on the change feed.
   handle('execute', (command) => wrap(() => changed(session.execute(command), `Changed in the app (${(command as { type?: string }).type ?? 'a command'})`)))
   handle('undo', () => wrap(() => changed(session.undo(), 'Undone in the app')))
@@ -544,4 +554,5 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   api?.close()
   session?.close()
+  copies.clear()
 })

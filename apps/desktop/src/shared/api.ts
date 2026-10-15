@@ -266,7 +266,11 @@ export interface UniverseApi {
   getTerrain(worldId: string): Promise<Result<WorldTerrain>>
   /** Asks for a .glb/.gltf file and adds it to the project with `asset.add` (undoable). Null if cancelled. */
   importModel(): Promise<Result<ImportedModel | null>>
-  getAsset(id: string): Promise<Result<{ mime: string; data: Uint8Array }>>
+  getAsset(id: string): Promise<Result<{ name: string; mime: string; data: Uint8Array }>>
+  /** A .blend file kept in the project, inflated if Blender compressed it. */
+  getBlend(id: string): Promise<Result<Uint8Array>>
+  /** Opens a copy of a file kept in the project with the computer's app for it (a .blend in Blender). */
+  openAsset(id: string): Promise<Result<void>>
   undo(): Promise<Result<AppState>>
   redo(): Promise<Result<AppState>>
   /** Takes back every one of the latest changes an AI client made, one after another. */
@@ -362,6 +366,8 @@ export const INVOKE: Record<InvokeMethod, string> = {
   getTerrain: 'world:terrain',
   importModel: 'asset:import-model',
   getAsset: 'asset:get',
+  getBlend: 'asset:blend',
+  openAsset: 'asset:open',
   updateStatus: 'update:status',
   installUpdate: 'update:install',
   dismissUpdate: 'update:dismiss',
@@ -389,7 +395,7 @@ export const INVOKE: Record<InvokeMethod, string> = {
  * Not opening files or dialogs on the computer, the API's settings and token,
  * nor updates: those stay with whoever sits at the computer.
  */
-export const REMOTE_METHODS = ['getState', 'execute', 'undo', 'redo', 'undoAi', 'acceptProposal', 'rejectProposal', 'getTerrain', 'getAsset'] as const satisfies readonly InvokeMethod[]
+export const REMOTE_METHODS = ['getState', 'execute', 'undo', 'redo', 'undoAi', 'acceptProposal', 'rejectProposal', 'getTerrain', 'getAsset', 'getBlend'] as const satisfies readonly InvokeMethod[]
 export type RemoteMethod = (typeof REMOTE_METHODS)[number]
 export const isRemoteMethod = (name: string): name is RemoteMethod => (REMOTE_METHODS as readonly string[]).includes(name)
 

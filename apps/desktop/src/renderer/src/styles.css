@@ -3182,3 +3182,116 @@ button.small {
 .badge.view-only {
   align-self: center;
 }
+
+/* A character's or an event's pictures and Blender scenes. */
+.media-gallery {
+  border-radius: var(--radius);
+  outline: 1px dashed transparent;
+  outline-offset: 3px;
+}
+.media-gallery.dropping {
+  outline-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.media-tiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+}
+.media-tiles li {
+  position: relative;
+}
+.media-tile {
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--panel-2);
+  position: relative;
+}
+.media-tile img,
+.media-tile canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.media-placeholder {
+  font-size: 26px;
+}
+.media-badge {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #000a;
+  color: var(--text);
+}
+.media-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  padding: 0 5px;
+  font-size: 11px;
+  background: #000b;
+  opacity: 0;
+}
+.media-tiles li:hover .media-remove,
+.media-remove:focus-visible {
+  opacity: 1;
+}
+.media-viewer {
+  width: min(1100px, 94vw);
+  height: min(780px, 90vh);
+  display: flex;
+  flex-direction: column;
+  padding: 0 16px 12px;
+}
+.media-stage {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+.media-picture {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  image-rendering: auto;
+}
+.blend-view {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.blend-view > div {
+  flex: 1;
+  width: 100%;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.media-summary {
+  margin: 6px 0 0;
+}
+.media-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+}
+.media-open {
+  margin-left: auto;
+}
+.media-viewer .error {
+  color: var(--danger);
+}

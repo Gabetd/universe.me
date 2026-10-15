@@ -8,6 +8,7 @@ import { sendCharacter } from '../world/sendCharacter'
 import { LaneToggle, MembershipList, RelationshipList } from './FactionParts'
 import { ColorField, DeleteButton, NotesField, PanelHeader, Swatch, TagsField, TextField, TimeField } from './fields'
 import { hinted } from './Hint'
+import { MediaGallery } from './MediaGallery'
 
 const latLon = (p: { lat: number; lon: number }) => `${Math.abs(p.lat).toFixed(3)}°${p.lat >= 0 ? 'N' : 'S'} ${Math.abs(p.lon).toFixed(3)}°${p.lon >= 0 ? 'E' : 'W'}`
 
@@ -51,6 +52,7 @@ export function CharacterPanel({ character }: { character: Character }) {
           <TimeField label="Died" value={character.died} precision="year" allowEmpty placeholder="Still alive" onCommit={(v) => update({ died: v?.t ?? null })} />
         </label>
       </div>
+      <MediaGallery owner={self} media={character.media ?? []} label="Pictures and models" />
       <p className="small" data-testid="character-status">
         {playhead < character.born
           ? `Not born yet at ${formatTime(playhead, 'year', cal)}.`

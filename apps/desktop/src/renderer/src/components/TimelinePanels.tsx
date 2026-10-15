@@ -4,6 +4,7 @@ import { updater, useEventsById, useOwnRecords, useUi, type TimelineSelection } 
 import { locationLabel } from '../timeline/labels'
 import { useEditor } from '../world/editorStore'
 import { Participants } from './FactionParts'
+import { MediaGallery } from './MediaGallery'
 import { ColorField, DeleteButton, NotesField, PanelHeader, SwatchList, TagsField, TextField, TimeField } from './fields'
 import { EventEffects } from './EventEffects'
 import { ThemePanel, ThemeSpanPanel } from './ThemePanels'
@@ -137,6 +138,7 @@ function EventPanel({ event }: { event: TimelineEvent }) {
           </select>
         </label>
       </div>
+      <MediaGallery owner={{ kind: 'event', id: event.id }} media={event.media ?? []} label="Scenes" />
       <ColorField label="Event color" hint={EVENT_HINTS.color} value={event.color} onCommit={(color) => update({ color })} />
 
       {onWorld && (
