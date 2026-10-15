@@ -55,6 +55,9 @@ export const Law = z.object({
 })
 export type Law = z.infer<typeof Law>
 
+/** The id of the era or faction a law belongs to. */
+export const scopeId = (scope: LawScope) => (scope.kind === 'era' ? scope.eraId : scope.factionId)
+
 /** What a law's span is bounded by: its era's or its faction's. */
 export interface LawContext {
   eras: readonly Era[]
@@ -63,11 +66,17 @@ export interface LawContext {
 
 /** When a law is in force: its own dates, within its era's or faction's (null: open-ended that way). */
 export function lawSpan(law: Pick<Law, 'scope' | 'start' | 'end'>, { eras, factions }: LawContext): Pick<Span, 'start' | 'end'> {
-  const outer = law.scope.kind === 'era' ? eras.find((e) => e.id === (law.scope as { eraId: string }).eraId) : factions.find((f) => f.id === (law.scope as { factionId: string }).factionId)
+  const outer = lawOwner(law, { eras, factions })
   if (!outer) return { start: law.start, end: law.end }
   const later = (a: Time | null, b: Time | null) => (a === null ? b : b === null ? a : Math.max(a, b))
   const sooner = (a: Time | null, b: Time | null) => (a === null ? b : b === null ? a : Math.min(a, b))
   return { start: later(law.start, outer.start), end: sooner(law.end, outer.end) }
+}
+
+/** The era or faction a law belongs to, among its world's (undefined if it's gone). */
+export function lawOwner(law: Pick<Law, 'scope'>, { eras, factions }: LawContext): Era | Faction | undefined {
+  const id = scopeId(law.scope)
+  return law.scope.kind === 'era' ? eras.find((e) => e.id === id) : factions.find((f) => f.id === id)
 }
 
 /** Whether a law is in force at `t`. */
@@ -82,7 +91,7 @@ export function lawStatus(law: Law, t: Time, context: LawContext): 'in force' | 
 
 /** Whether a law is one of an era's or a faction's. */
 export const lawOf = (law: Pick<Law, 'scope'>, of: { kind: 'era' | 'faction'; id: string }) =>
-  law.scope.kind === of.kind && (law.scope.kind === 'era' ? law.scope.eraId : law.scope.factionId) === of.id
+  law.scope.kind === of.kind && scopeId(law.scope) === of.id
 
 /**
  * The laws a character lives under at `t`: every era's in force then, and
@@ -112,15 +121,13 @@ export function lawsOver(character: Pick<Character, 'id'>, t: Time, laws: readon
  * the event said to enact or repeal it.
  */
 export function lawWarnings(laws: readonly Law[], data: LawContext & { events: readonly TimelineEvent[] }): Warning[] {
-  const eras = byId(data.eras)
-  const factions = byId(data.factions)
   const events = byId(data.events)
   const warnings: Warning[] = []
   for (const law of laws) {
     const ref = { kind: 'law' as const, id: law.id }
-    const outer = law.scope.kind === 'era' ? eras.get(law.scope.eraId) : factions.get(law.scope.factionId)
+    const outer = lawOwner(law, data)
     if (outer && law.start !== null) {
-      const whose = law.scope.kind === 'era' ? `the ${outer.name}` : (outer as Faction).name
+      const whose = law.scope.kind === 'era' ? `the era ${outer.name}` : outer.name
       const outerRef = law.scope.kind === 'era' ? { kind: 'era' as const, id: outer.id } : { kind: 'faction' as const, id: outer.id }
       if (outer.start !== null && law.start < outer.start) warnings.push({ message: `${law.name} is enacted before ${whose} begins`, refs: [ref, outerRef] })
       else if (outer.end !== null && law.start > outer.end) warnings.push({ message: `${law.name} is enacted after ${whose} is over`, refs: [ref, outerRef] })

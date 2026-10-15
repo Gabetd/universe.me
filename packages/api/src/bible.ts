@@ -1,5 +1,5 @@
-import { cardTitle } from '@universe/core'
-import { biomeName, describeCalendar, describeCharacter, describeEvent, describeFactionHistory, describePowerSystem, describeRelationship, describeStructure, nodePath } from './describe'
+import { LAW_KIND_LABELS, cardTitle, lawOf, lawSpan } from '@universe/core'
+import { biomeName, describeCalendar, describeCharacter, describeEvent, describeFactionHistory, describePowerSystem, describeRelationship, describeStructure, nodePath, spanText } from './describe'
 import type { ApiContext } from './operation'
 import { htmlToText } from './text'
 import { describeWaterway, waterwaysOf } from './waterways'
@@ -41,6 +41,9 @@ async function bibleData({ models: m }: ApiContext, worldId: string) {
   const cal = m.calendar(worldId)
   const t = view.timeline
   const name = (id: string) => t.lifeforms.find((s) => s.id === id)?.name ?? '?'
+  // An era's or a faction's laws, with when each holds.
+  const laws = (of: { kind: 'era' | 'faction'; id: string }) =>
+    t.laws.filter((l) => lawOf(l, of)).map((l) => ({ name: l.name, kind: LAW_KIND_LABELS[l.kind], when: spanText(m, worldId, lawSpan(l, t)), ...(l.summary && { says: l.summary }), ...(l.penalty && { penalty: l.penalty }) }))
   return {
     world: view.node.name,
     path: nodePath(m.data().nodes, worldId),
@@ -55,7 +58,7 @@ async function bibleData({ models: m }: ApiContext, worldId: string) {
       greatest: [...w.water.rivers.slice(0, BIGGEST), ...w.water.lakes.slice(0, BIGGEST)].map((x) => describeWaterway(w, x, regions)),
       named: [...w.water.rivers, ...w.water.lakes].filter((x) => w.own.has(x.id)).map((x) => describeWaterway(w, x, regions))
     },
-    eras: [...t.eras].sort((a, b) => a.start - b.start).map((e) => ({ name: e.name, when: m.spanDates(worldId, e) })),
+    eras: [...t.eras].sort((a, b) => a.start - b.start).map((e) => ({ name: e.name, when: m.spanDates(worldId, e), laws: laws({ kind: 'era', id: e.id }) })),
     history: [...t.events].sort((a, b) => a.start - b.start).map((e) => describeEvent(m, view, e, regions, true)),
     structures: t.structures.map((s) => ({ ...describeStructure(m, view, s, curves.get(s.id), now, regions), notes: htmlToText(s.notes) })),
     characters: t.characters.map((c) => ({ ...describeCharacter(m, c, now, regions), notes: htmlToText(c.notes) })),
@@ -68,7 +71,7 @@ async function bibleData({ models: m }: ApiContext, worldId: string) {
       notes: htmlToText(s.notes)
     })),
     powers: t.powers.map((p) => describePowerSystem(m, view, p)),
-    factions: t.factions.map((f) => describeFactionHistory(m, view, f)),
+    factions: t.factions.map((f) => ({ ...describeFactionHistory(m, view, f), laws: laws({ kind: 'faction', id: f.id }) })),
     relationships: t.relationships.filter((r) => r.from.kind === 'character' && r.to.kind === 'character').map((r) => describeRelationship(m, view, r)),
     themes: t.themeSpans
       .map((sp) => ({ span: sp, theme: t.themes.find((x) => x.id === sp.themeId) }))
@@ -100,6 +103,10 @@ const md = (text: string) => text.replace(/\s*\n\s*/g, ' ').replace(SPECIAL, '\\
  * but nothing in them read as HTML, a link, code or a heading of the
  * document's own (the bible goes into wikis and editors that render HTML).
  */
+/** A law as the bible lists it: its name, kind and when, what it says and what breaking it costs. */
+const lawLine = (l: { name: string; kind: string; when: string; says?: string; penalty?: string }) =>
+  `**${md(l.name)}** (${md(l.kind.toLowerCase())}, ${md(l.when)})${l.says ? `: ${md(l.says)}` : ''}${l.penalty ? ` *Penalty: ${md(l.penalty)}.*` : ''}`
+
 const mdText = (text: string) =>
   text
     .split('\n')
@@ -139,7 +146,10 @@ function markdown(b: BibleData): string {
         ]
       : []
   )
-  section('Eras', b.eras.map((e) => `- **${md(e.name)}**, ${md(e.when)}`))
+  section(
+    'Eras',
+    b.eras.flatMap((e) => [`- **${md(e.name)}**, ${md(e.when)}`, ...e.laws.map((l) => `  - ${lawLine(l)}`)])
+  )
   section(
     'History',
     b.history.flatMap((e) => [
@@ -174,6 +184,7 @@ function markdown(b: BibleData): string {
       ...(f.summary ? [md(f.summary), ''] : []),
       ...(f.territory.length ? [`**Held:** ${f.territory.map((h) => `${md(h.region)} (${md(h.when)})`).join(', ')}`, ''] : []),
       ...(f.members.length ? [`**Members:** ${f.members.map((x) => `${md(x.name)}${x.role ? `, ${md(x.role)}` : ''} (${md(x.when)})`).join('; ')}`, ''] : []),
+      ...(f.laws.length ? ['**Laws:**', '', ...f.laws.map((l) => `- ${lawLine(l)}`), ''] : []),
       ...(f.relationships.length ? [`**Stands with:** ${f.relationships.map((r) => `${md(r.with)}: ${md(r.is)}${r.when ? ` (${md(r.when)})` : ''}`).join('; ')}`, ''] : []),
       ...para(f.notes)
     ])

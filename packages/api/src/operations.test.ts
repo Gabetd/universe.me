@@ -285,6 +285,28 @@ describe('the operations', () => {
     await expect(p.call('update_map_pin', { worldId: p.worldId, pinId: 'nope', name: 'X' })).rejects.toThrow()
   })
 
+  it('give eras and factions laws, in force within their time, changed, repealed and struck out', async () => {
+    await p.call('create_era', { worldId: p.worldId, name: 'The Long Winter', start: '1180', end: '1290' })
+    await p.call('create_faction', { worldId: p.worldId, name: 'Varn', kind: 'kingdom', founded: '421' })
+    const { eventId: decree } = await p.call<{ eventId: string }>('create_event', { worldId: p.worldId, title: 'The decree', start: '1200' })
+    const { lawId: hearth } = await p.call<{ lawId: string }>('add_law', { worldId: p.worldId, era: 'the long winter', name: 'The hearth law', kind: 'custom', says: 'No door is shut.' })
+    const { lawId: tax } = await p.call<{ lawId: string }>('add_law', { worldId: p.worldId, faction: 'Varn', name: 'The timber tax', kind: 'trade', enactedBy: decree, penalty: 'The axe' })
+    await expect(p.call('add_law', { worldId: p.worldId, name: 'Nobody’s', era: 'The Long Winter', faction: 'Varn' })).rejects.toThrow(/one of them/)
+
+    const at = await p.call<{ laws: { name: string; of: string; inForce: string; inForceThen: boolean; enactedBy?: string }[] }>('list_laws', { worldId: p.worldId, at: '1250' })
+    expect(at.laws).toEqual([
+      expect.objectContaining({ id: hearth, name: 'The hearth law', of: 'the era The Long Winter', kind: 'Custom', says: 'No door is shut.', inForce: '1180–1290', inForceThen: true }),
+      expect.objectContaining({ id: tax, name: 'The timber tax', of: 'the faction Varn', kind: 'Trade and coin', penalty: 'The axe', inForce: 'from 1200', inForceThen: true, enactedBy: 'The decree' })
+    ])
+    await p.call('update_law', { lawId: tax, repealed: '1240' })
+    const later = await p.call<{ laws: { name: string; inForceThen: boolean }[] }>('list_laws', { worldId: p.worldId, at: '1250', of: 'Varn' })
+    expect(later.laws).toEqual([expect.objectContaining({ name: 'The timber tax', inForce: '1200–1240', inForceThen: false })])
+    await p.call('remove_law', { lawId: hearth })
+    expect((await p.call<{ laws: object[] }>('list_laws', { worldId: p.worldId })).laws).toHaveLength(1)
+    const bible = await p.call<string>('export_world_bible', { worldId: p.worldId })
+    expect(bible).toContain('**The timber tax** (trade and coin, 1200–1240) *Penalty: The axe.*')
+  })
+
   it('keep pictures and Blender scenes on characters and events, and take them off', async () => {
     const { eventId } = await p.call<{ eventId: string }>('create_event', { worldId: p.worldId, title: 'The coronation', start: '1204' })
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]).toString('base64')

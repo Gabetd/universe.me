@@ -13,6 +13,7 @@ import {
   timelineWarnings,
   ecosystemWarnings,
   factionWarnings,
+  lawWarnings,
   relationshipsAt,
   BUILTIN_BLUEPRINTS,
   WaterwayKind,
@@ -445,7 +446,8 @@ export const READS = [
         ...timelineWarnings(view.timeline, m.world(worldId).regions).map((w) => ({ area: 'timeline', message: w.message, refs: w.refs })),
         ...structureWarnings(world, curves).map((w) => ({ area: 'structures', message: w.message, refs: w.refs })),
         ...ecosystemWarnings(view.timeline.lifeforms, view.timeline.ecolinks).map((w) => ({ area: 'ecosystem', message: w.message, refs: w.ids.map((id) => ({ kind: 'species', id })) })),
-        ...factionWarnings(view.timeline, view.regions).map((w) => ({ area: 'factions', message: w.message, refs: w.refs }))
+        ...factionWarnings(view.timeline, view.regions).map((w) => ({ area: 'factions', message: w.message, refs: w.refs })),
+        ...lawWarnings(view.timeline.laws, view.timeline).map((w) => ({ area: 'laws', message: w.message, refs: w.refs }))
       ]
       return { ok: warnings.length === 0, warnings }
     }

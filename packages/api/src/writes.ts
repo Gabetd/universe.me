@@ -66,7 +66,7 @@ export function write(ctx: ApiContext, commands: Command[], summary: string, ids
 }
 
 /** A client's notes and tags as a record has them. */
-const notesAndTags = (p: { notes?: string; tags?: string[] }) => ({ ...(p.notes && { notes: textToHtml(p.notes) }), ...(p.tags && { tags: p.tags }) })
+export const notesAndTags = (p: { notes?: string; tags?: string[] }) => ({ ...(p.notes && { notes: textToHtml(p.notes) }), ...(p.tags && { tags: p.tags }) })
 
 /** Answers by question (label), as a system keeps them: questions it doesn't ask yet are added, and an empty answer clears one. */
 function answered(aspects: readonly PowerAspect[], values: AspectValues, answers: Record<string, string>): { aspects: PowerAspect[]; values: AspectValues } {
@@ -107,7 +107,7 @@ function blueprintId(ctx: ApiContext, nameOrId: string): string {
 }
 
 /** A faction on a world by id or name. */
-function factionNamed(view: WorldView, nameOrId: string) {
+export function factionNamed(view: WorldView, nameOrId: string) {
   const all = view.timeline.factions
   const f = all.find((x) => x.id === nameOrId) ?? all.find((x) => x.name.toLowerCase() === nameOrId.trim().toLowerCase())
   if (!f) throw new ApiError(404, `There is no faction ${nameOrId} on ${view.node.name}${all.length ? ` (its factions: ${all.map((x) => x.name).join(', ')})` : ''}`)
@@ -122,7 +122,7 @@ const SpanInput = {
 }
 
 /** A span's fields from a client's dates and events (an event's date standing in for one not given); the bus checks the rest. */
-function spanOf(ctx: ApiContext, worldId: string, p: { from?: string | number; until?: string | number; fromEventId?: string; untilEventId?: string }) {
+export function spanOf(ctx: ApiContext, worldId: string, p: { from?: string | number; until?: string | number; fromEventId?: string; untilEventId?: string }) {
   const m = ctx.models
   const [begin, finish] = [p.fromEventId && m.event(p.fromEventId), p.untilEventId && m.event(p.untilEventId)]
   const start = p.from !== undefined ? m.when(worldId, p.from) : begin ? begin.start : null

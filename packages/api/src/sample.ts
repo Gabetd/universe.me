@@ -131,6 +131,15 @@ export async function buildSample(project: Project): Promise<void> {
   await call('update_event', { eventId: peace, who: [kingdom, clans, maelis] })
   await call('update_event', { eventId: relit, who: [oda, lampwrights] })
 
+  // What each age, and each faction, held people to.
+  const law = (input: object) => call('add_law', { ...w, ...input })
+  await law({ era: 'The Long Winter', name: 'The hearth law', kind: 'custom', says: 'No door is shut to someone out in the snow.', penalty: 'Shunned until the thaw' })
+  await law({ faction: kingdom, name: 'The timber tax', kind: 'trade', says: 'A tenth of all timber cut goes to the crown.', penalty: 'The cutter’s axe', enactedBy: crowned, repealedBy: peace })
+  await law({ faction: kingdom, name: 'The king’s peace on the roads', kind: 'crime', says: 'Whoever draws a blade on a king’s road answers to the king.', penalty: 'The hand that drew it' })
+  await law({ faction: house, name: 'Eldest takes the crown', kind: 'rule', says: 'The crown passes to the eldest child of the last king, daughter or son.' })
+  await law({ faction: clans, name: 'The oak right', kind: 'land', says: 'No one fells an oak older than their grandmother.', penalty: 'Exile past the Spine' })
+  await law({ faction: lampwrights, name: 'The lamp oath', kind: 'magic', says: 'Lamplight is caught only by a sworn lampwright.', penalty: 'Blinded with their own lamp', enacted: '760' })
+
   // The look of each age.
   const theme = async (name: string, preset: string, style: string) => (await call<{ themeId: string }>('create_theme', { name, preset, style })).themeId
   const golden = await theme('The Bright Centuries', 'Golden Age', 'Warm and unhurried; long sentences, full of trade and song.')

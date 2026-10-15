@@ -86,7 +86,7 @@ describe('laws of eras and factions', () => {
     run('law.create', { scope: { kind: 'era', eraId: era }, name: 'The curfew', start: year(1120), startEventId: decree })
     run('law.create', { scope: { kind: 'era', eraId: era }, name: 'The good law', start: year(1100), startEventId: decree })
     expect(lawWarnings(live('law'), context()).map((w) => w.message)).toEqual([
-      'The old oath is enacted before the Age of Iron begins',
+      'The old oath is enacted before the era Age of Iron begins',
       'The tithe is enacted before Arn begins',
       'The curfew is enacted outside the time of “The decree”, its cause'
     ])
