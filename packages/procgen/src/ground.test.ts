@@ -3,21 +3,20 @@ import { BIOME, BIOME_RGB } from './biomes'
 import {
   CHUNK_M,
   CHUNK_SEGMENTS,
-  FAR_GRID,
-  FAR_M,
-  FAR_SEGMENTS,
+  GROUND_RINGS,
   INSTANCE_STRIDE,
   GroundDetail,
   HORIZON_M,
-  buildFarGround,
+  RING_GRID,
+  RING_STEP,
   buildGroundChunk,
-  buildHorizonGround,
   buildGroundMap,
+  buildRingGround,
   groundMapBounds,
-  horizonBounds,
-  horizonCenter,
-  HORIZON_GRID,
-  farBounds,
+  ringBounds,
+  ringCenter,
+  ringRadii,
+  type GroundRing,
   chunkBounds,
   chunkOf,
   chunksAround,
@@ -155,76 +154,68 @@ describe('ground chunks', () => {
   })
 })
 
-describe('the distant ground', () => {
-  const center = chunkOf({ lat: 45.1, lon: 7.4 }, R)
-  const corner = chunkBounds(center, R)
-  const frame = { origin: { lat: corner.lat0, lon: corner.lon0 }, radiusKm: R }
-  const sheet = (base: BaseSampler) =>
-    buildFarGround({ center, frame, seed: 42, grid: sampleBaseGrid(base, farBounds(center, R), FAR_GRID), biomeColors: BIOME_RGB.map((c) => [...c]), seabedColor: [40, 60, 80], sinkWithin: 0 })
+describe('the rings of ground beyond the chunks', () => {
+  const id = chunkOf({ lat: 45.1, lon: 7.4 }, R)
+  const ring = (which: GroundRing, base: BaseSampler, chunks = { chunksReach: 2500 }) => {
+    const middle = ringCenter(which, id, R)
+    return buildRingGround({
+      ring: which,
+      frame: { origin: middle, radiusKm: R },
+      seed: 42,
+      grid: sampleBaseGrid(base, ringBounds(which, middle, R), RING_GRID[which]),
+      biomeColors: BIOME_RGB.map((c) => [...c]),
+      seabedColor: [40, 60, 80],
+      ...(which === 'pretty' && chunks)
+    })
+  }
+  const radiiOf = (positions: Float32Array) => Array.from({ length: positions.length / 3 }, (_, t) => Math.hypot(positions[t * 3]!, positions[t * 3 + 2]!))
 
-  it('reaches FAR_M from the middle of the view each way, with the same hills as the chunks there', () => {
-    const base = flat(BIOME.grassland)
-    const { positions, indices } = sheet(base)
-    const n = FAR_SEGMENTS + 1
-    expect(positions).toHaveLength(n * n * 3)
-    expect(indices).toHaveLength(FAR_SEGMENTS * FAR_SEGMENTS * 6)
-    const xs = Array.from({ length: n * n }, (_, t) => positions[t * 3]!)
-    const zs = Array.from({ length: n * n }, (_, t) => positions[t * 3 + 2]!)
-    // The middle of the centre chunk is (500, -500) in its corner's frame.
-    expect(Math.min(...xs) - 500).toBeCloseTo(-FAR_M, -2)
-    expect(Math.max(...xs) - 500).toBeCloseTo(FAR_M, -2)
-    expect(Math.min(...zs) + 500).toBeCloseTo(-FAR_M, -2)
-    // At the chunk's corner both are the globe's height plus the same hills.
-    const near = chunk(center, base, frame)
-    const at = (p: Float32Array, t: number) => [p[t * 3]!, p[t * 3 + 1]!, p[t * 3 + 2]!]
-    const [cx, cy, cz] = at(near.positions, 0)
-    let best = 0
-    for (let t = 1; t < n * n; t++) if (Math.hypot(xs[t]! - cx!, zs[t]! - cz!) < Math.hypot(xs[best]! - cx!, zs[best]! - cz!)) best = t
-    expect(Math.hypot(xs[best]! - cx!, zs[best]! - cz!)).toBeLessThan(180)
-    expect(Math.abs(positions[best * 3 + 1]! - cy!)).toBeLessThan(25)
-  })
-
-  it('is the same every time', () => {
-    const base = flat(BIOME.rainforest, 300)
-    expect(sheet(base).positions).toEqual(sheet(base).positions)
-  })
-
-  it('sinks out of sight where the chunks are', () => {
-    const base = flat(BIOME.grassland)
-    const open = sheet(base).positions
-    const sunk = buildFarGround({ center, frame, seed: 42, grid: sampleBaseGrid(base, farBounds(center, R), FAR_GRID), biomeColors: BIOME_RGB.map((c) => [...c]), seabedColor: [40, 60, 80], sinkWithin: 1500 }).positions
-    const middle = ((FAR_SEGMENTS / 2) * (FAR_SEGMENTS + 1) + FAR_SEGMENTS / 2) * 3 + 1
-    expect(sunk[middle]!).toBeLessThan(open[middle]! - 50)
-    expect(sunk[1]).toBe(open[1])
-  })
-})
-
-describe('the land to the horizon', () => {
-  const center = chunkOf({ lat: 45.1, lon: 7.4 }, R)
-  const middle = horizonCenter(center, R)
-  const sheet = buildHorizonGround({
-    frame: { origin: middle, radiusKm: R },
-    seed: 42,
-    grid: sampleBaseGrid(flat(BIOME.grassland), horizonBounds(middle, R), HORIZON_GRID),
-    biomeColors: BIOME_RGB.map((c) => [...c]),
-    seabedColor: [40, 60, 80]
-  })
-
-  it('reaches HORIZON_M from its middle, and sinks under the distant ground', () => {
-    const { positions } = sheet
-    let farthest = 0
-    let innerLowest = Infinity
-    let outerLowest = Infinity
-    for (let t = 0; t < positions.length; t += 3) {
-      const r = Math.hypot(positions[t]!, positions[t + 2]!)
-      farthest = Math.max(farthest, r)
-      if (r < 6500) innerLowest = Math.min(innerLowest, positions[t + 1]!)
-      if (r > FAR_M * 2) outerLowest = Math.min(outerLowest, positions[t + 1]!)
+  it('reach 20, 40 and 80 km, each finer than the next, and the next starts under the last', () => {
+    expect([GROUND_RINGS.pretty.outer, GROUND_RINGS.medium.outer, GROUND_RINGS.low.outer]).toEqual([20_000, 40_000, 80_000])
+    expect(HORIZON_M).toBe(80_000)
+    expect(GROUND_RINGS.pretty.spokes).toBeGreaterThan(GROUND_RINGS.medium.spokes)
+    expect(GROUND_RINGS.medium.spokes).toBeGreaterThan(GROUND_RINGS.low.spokes)
+    // The pretty ring moves with the view's chunk; the others with its block, up to this far from it: the next always reaches under the last.
+    const blockShift = Math.SQRT2 * ((RING_STEP / 2) * CHUNK_M + CHUNK_M / 2)
+    expect(GROUND_RINGS.medium.from).toBeLessThanOrEqual(GROUND_RINGS.pretty.outer - blockShift)
+    expect(GROUND_RINGS.low.from).toBeLessThanOrEqual(GROUND_RINGS.medium.outer)
+    for (const which of ['pretty', 'medium', 'low'] as const) {
+      const radii = ringRadii(GROUND_RINGS[which])
+      expect(radii.at(-1)).toBeCloseTo(GROUND_RINGS[which].outer, 6)
+      // Points about as far apart across the rings as along them.
+      const along = (radii.at(-1)! * 2 * Math.PI) / GROUND_RINGS[which].spokes
+      expect(radii.at(-1)! - radii.at(-2)!).toBeLessThan(along * 1.3)
     }
-    expect(farthest).toBeCloseTo(HORIZON_M, -2)
-    expect(innerLowest).toBeLessThan(-200)
-    // Out there it isn't sunk: land, above the sea.
-    expect(outerLowest).toBeGreaterThan(0)
+  })
+
+  it('are built as far out as they reach, the same every time, above the sea out there and sunk in their holes', () => {
+    const base = flat(BIOME.grassland)
+    for (const which of ['pretty', 'medium', 'low'] as const) {
+      const { positions, indices } = ring(which, base)
+      const spec = GROUND_RINGS[which]
+      expect(indices.length).toBe((ringRadii(spec).length - 1) * spec.spokes * 6)
+      const radii = radiiOf(positions)
+      expect(Math.max(...radii)).toBeCloseTo(spec.outer, -2)
+      let outerLowest = Infinity
+      let holeHighest = -Infinity
+      radii.forEach((r, t) => {
+        if (r > spec.from + 1) outerLowest = Math.min(outerLowest, positions[t * 3 + 1]!)
+        if (spec.hole && r < spec.from - 1) holeHighest = Math.max(holeHighest, positions[t * 3 + 1]!)
+      })
+      expect(outerLowest).toBeGreaterThan(0)
+      if (spec.hole) expect(holeHighest).toBeLessThan(-100)
+      expect(ring(which, base).positions).toEqual(positions)
+    }
+  })
+
+  it('have trees standing one by one only in the pretty ring, beyond the chunks, where there are woods', () => {
+    const woods = flat(BIOME.temperateForest)
+    const pretty = ring('pretty', woods)
+    const trees = Object.values(pretty.trees).flatMap((list) => Array.from({ length: list.length / INSTANCE_STRIDE }, (_, k) => [list[k * INSTANCE_STRIDE]!, list[k * INSTANCE_STRIDE + 2]!]))
+    expect(trees.length).toBeGreaterThan(1000)
+    for (const [x, z] of trees) expect(Math.max(Math.abs(x!), Math.abs(z!))).toBeGreaterThan(2400)
+    expect(Object.keys(ring('medium', woods).trees)).toEqual([])
+    expect(Object.keys(ring('pretty', flat(BIOME.desert)).trees)).toEqual([])
   })
 })
 

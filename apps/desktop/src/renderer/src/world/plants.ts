@@ -86,6 +86,31 @@ export function plantGeometry(plant: Plant, foliage: THREE.Color): THREE.BufferG
   return merged
 }
 
+/**
+ * A tree far off (in the pretty ring of ground, past the chunks): only its
+ * crown, in a few faces, as it's a few pixels high there. Its shape and size
+ * are those of the same tree up close, so the woods don't change at the
+ * chunks' edge.
+ */
+export function farTreeGeometry(plant: Plant, foliage: THREE.Color): THREE.BufferGeometry {
+  const crown = (() => {
+    switch (plant) {
+      case 'conifer':
+        return painted(new THREE.ConeGeometry(0.22, 0.85, 5).translate(0, 0.55, 0), shade(foliage, 0.62))
+      case 'palm':
+        return painted(new THREE.ConeGeometry(0.42, 0.2, 5, 1, true).rotateX(Math.PI).translate(0, 0.9, 0), shade(foliage, 1.05))
+      case 'acacia':
+        return painted(new THREE.CylinderGeometry(0.5, 0.38, 0.14, 6).translate(0, 0.66, 0), shade(foliage, 0.9))
+      default:
+        return painted(new THREE.OctahedronGeometry(0.32, 0).scale(1, 0.9, 1).translate(0, 0.62, 0), foliage)
+    }
+  })()
+  const g = mergeGeometries([trunk(0.45, 0.05), crown])!
+  g.computeVertexNormals()
+  g.computeBoundingSphere()
+  return g
+}
+
 /** Plants close to the camera only: tiny ones aren't worth drawing farther out. */
 export const NEAR_ONLY: Plant[] = ['grass', 'flower', 'reed']
 

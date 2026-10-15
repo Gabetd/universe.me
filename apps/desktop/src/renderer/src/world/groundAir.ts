@@ -1,3 +1,4 @@
+import { HORIZON_M } from '@universe/procgen'
 import * as THREE from 'three'
 
 /**
@@ -11,7 +12,11 @@ import * as THREE from 'three'
  * the camera with the planet, so the sea has a horizon and the land beyond
  * it sinks behind.
  */
-THREE.ShaderChunk.fog_fragment = THREE.ShaderChunk.fog_fragment.replace('fogDensity * fogDensity * vFogDepth * vFogDepth', 'fogDensity * vFogDepth')
+THREE.ShaderChunk.fog_fragment = THREE.ShaderChunk.fog_fragment.replace('fogDensity * fogDensity * vFogDepth * vFogDepth', 'fogDensity * vFogDepth').replace(
+  'gl_FragColor.rgb = mix(',
+  // The ground ends at HORIZON_M (the last of its rings): before then, the haze has taken all of it.
+  `fogFactor = max( fogFactor, smoothstep( ${(HORIZON_M * 0.7).toFixed(1)}, ${HORIZON_M.toFixed(1)}, vFogDepth ) );\n\tgl_FragColor.rgb = mix(`
+)
 
 /** How far the air takes to hide about two thirds of what's behind it, in metres, in the usual air: mountains 50 km off still show, paler. */
 export const HAZE_M = 55_000
@@ -37,8 +42,13 @@ export const airUniforms = {
   uZenith: { value: new THREE.Color() },
   uHorizon: { value: new THREE.Color() },
   uSunColor: { value: new THREE.Color() },
-  uSunScale: { value: 1 }
+  uSunScale: { value: 1 },
+  /** Where the chunks are, all of them built: the middle of their square (x, z in the view's frame) and how far each way the rings of ground sink under them (0 while they're being built). */
+  uUnderChunks: { value: new THREE.Vector3() }
 }
+
+/** How far the rings of ground sink where the chunks are: out of the way of what stands on them. */
+const UNDER_CHUNKS_SINK_M = 60
 
 /** Moves the clouds' frame by what the view's frame moved: they stay where they were over the land. */
 export function shiftClouds(dx: number, dz: number): void {
@@ -103,6 +113,8 @@ interface AirLook {
   water?: boolean
   /** White water where a `foam` attribute (0 to 1) says so. */
   foam?: boolean
+  /** Ground beyond the chunks: sunk where they are (see `uUnderChunks`). */
+  underChunks?: boolean
 }
 
 /**
@@ -111,11 +123,11 @@ interface AirLook {
  * or rippling like water.
  */
 export function inTheAir<M extends THREE.Material>(material: M, look: AirLook = {}): M {
-  const { shadows = true, grain = false, water = false, foam = false } = look
+  const { shadows = true, grain = false, water = false, foam = false, underChunks = false } = look
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, airUniforms)
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\nuniform float uCurve;\nvarying vec3 vAirWorld;${foam ? '\nattribute float foam;\nvarying float vFoam;' : ''}`)
+      .replace('#include <common>', `#include <common>\nuniform float uCurve;\nuniform vec3 uUnderChunks;\nvarying vec3 vAirWorld;${foam ? '\nattribute float foam;\nvarying float vFoam;' : ''}`)
       .replace(
         '#include <project_vertex>',
         /* glsl */ `
@@ -123,7 +135,7 @@ export function inTheAir<M extends THREE.Material>(material: M, look: AirLook = 
         #ifdef USE_INSTANCING
           mvPosition = instanceMatrix * mvPosition;
         #endif
-        vec4 airWorld = modelMatrix * mvPosition;
+        vec4 airWorld = modelMatrix * mvPosition;${underChunks ? `\n        if ( max( abs( airWorld.x - uUnderChunks.x ), abs( airWorld.z - uUnderChunks.y ) ) < uUnderChunks.z ) airWorld.y -= ${UNDER_CHUNKS_SINK_M.toFixed(1)};` : ''}
         vec2 airAway = airWorld.xz - cameraPosition.xz;
         airWorld.y -= dot( airAway, airAway ) * uCurve;
         vAirWorld = airWorld.xyz;${foam ? '\n        vFoam = foam;' : ''}

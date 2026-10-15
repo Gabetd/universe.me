@@ -71,6 +71,8 @@ test('on the ground, a map of the land around in the corner shows where you are 
   // The camera starts a little south of where it looks, facing north.
   await expect.poll(at).toEqual([expect.closeTo(-0.004, 2), expect.closeTo(0, 3)])
   expect(await heading()).toBe(0)
+  // Around the view, the land in three rings, finer the nearer: to 20, 40 and 80 km.
+  await expect(page.locator('[data-rings="3"]')).toBeVisible({ timeout: SLOW })
   // Looking out across it, the land goes on to the horizon, under the sky.
   await page.getByRole('radio', { name: 'Fly' }).click()
   const view = (await page.locator('[data-testid="ground"] canvas').boundingBox())!

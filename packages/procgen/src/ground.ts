@@ -525,7 +525,8 @@ export const CHUNK_SEGMENTS = 96
  * Heights over a grid of `cols` × `rows` vertices (`rows` = `cols` unless
  * given) and one more all round (so normals at its edges match its
  * neighbours'), with what shaped each, and each vertex's normal and place in
- * the frame.
+ * the frame. The grid needn't be square to the frame (a ring's is round):
+ * `onRow` is told each row before its heights are asked for.
  */
 function heightField(
   cols: number,
@@ -533,7 +534,8 @@ function heightField(
   frame: LocalFrame,
   height: (lat: number, lon: number) => number,
   shape: GroundShape,
-  rows = cols
+  rows = cols,
+  onRow?: (j: number) => void
 ) {
   const m = cols + 2
   const cells = cols * rows
@@ -545,6 +547,7 @@ function heightField(
   const shore = new Float32Array(cells)
   const surface = new Float32Array(cells)
   for (let j = -1, t = 0; j <= rows; j++) {
+    onRow?.(j)
     for (let i = -1; i <= cols; i++, t++) {
       const { lat, lon } = at(i, j)
       heights[t] = height(lat, lon)
@@ -566,10 +569,13 @@ function heightField(
     for (let i = 0; i < cols; i++) {
       const c = (j + 1) * m + i + 1
       const [e, w, n, s] = [c + 1, c - 1, c + m, c - m]
-      const gx = (heights[e]! - heights[w]!) / (xz[e * 2]! - xz[w * 2]!)
-      const gz = (heights[n]! - heights[s]!) / (xz[n * 2 + 1]! - xz[s * 2 + 1]!)
-      const len = Math.hypot(gx, 1, gz)
-      normals.set([-gx / len, 1 / len, -gz / len], (j * cols + i) * 3)
+      // Across the grid one way and the other, and the normal square to both, pointing up.
+      const [ax, ay, az] = [xz[e * 2]! - xz[w * 2]!, heights[e]! - heights[w]!, xz[e * 2 + 1]! - xz[w * 2 + 1]!]
+      const [bx, by, bz] = [xz[n * 2]! - xz[s * 2]!, heights[n]! - heights[s]!, xz[n * 2 + 1]! - xz[s * 2 + 1]!]
+      let [nx, ny, nz] = [ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx]
+      const len = Math.hypot(nx, ny, nz) * Math.sign(ny || 1)
+      ;[nx, ny, nz] = [nx / len, ny / len, nz / len]
+      normals.set([nx, ny, nz], (j * cols + i) * 3)
     }
   }
   /** A vertex of the grid (0 to cols − 1 across, rows − 1 down): its height and place. */
@@ -782,22 +788,6 @@ export function buildGroundMap(input: GroundMapInput): Uint8ClampedArray {
   return out
 }
 
-/** How far the distant ground reaches from the middle of the view, in metres. */
-export const FAR_M = 12_000
-/** Vertices along the distant ground's edge, less one: 250 m apart. */
-export const FAR_SEGMENTS = 96
-/** Samples of the globe's terrain along the distant ground's edge: 500 m apart. */
-export const FAR_GRID = 49
-
-/** The distant ground's lat/lon edges: a square FAR_M out from the middle of chunk `center` each way. */
-export function farBounds(center: ChunkId, radiusKm: number): ChunkBounds {
-  const c = chunkBounds(center, radiusKm)
-  const [lat, lon] = [(c.lat0 + c.lat1) / 2, (c.lon0 + c.lon1) / 2]
-  const dLat = FAR_M / metresPerDegLat(radiusKm)
-  const dLon = dLat / Math.max(0.02, Math.cos(lat * RAD))
-  return { lat0: Math.max(-90, lat - dLat), lat1: Math.min(90, lat + dLat), lon0: lon - dLon, lon1: lon + dLon }
-}
-
 interface GroundColors {
   /** RGB (0–255) per biome id, and for the sea bed. */
   biomeColors: number[][]
@@ -805,22 +795,6 @@ interface GroundColors {
   /** The scars on the land at the moment shown, which colour it too. */
   scars?: LandScar[]
 }
-
-export interface FarGroundInput extends GroundColors {
-  /** The rivers and lakes over it (see `watersNear`), for the land to be shaped around. */
-  waters?: GroundWaters
-  /** The chunk in the middle of the view; the sheet is built in a frame at its south-west corner, like a chunk. */
-  center: ChunkId
-  frame: LocalFrame
-  seed: number
-  /** The globe's terrain over `farBounds`, FAR_GRID samples a side. */
-  grid: BaseGrid
-  /** Within this many metres of the middle of the view (each way), the sheet is sunk out of sight: the chunks are there. */
-  sinkWithin: number
-}
-
-/** How far the distant ground is sunk where the chunks cover it. */
-const SUNK_M = 60
 
 /** A sheet of ground: a mesh in frame metres. */
 export interface GroundSheet {
@@ -832,117 +806,176 @@ export interface GroundSheet {
 }
 
 /**
- * The ground beyond the chunks, out to FAR_M: one coarse sheet with the same
- * hills and colours (no plants), drawn behind the chunks. Pure, like a chunk.
+ * The ground beyond the chunks (PLAN.md §5.2), in three rings round the
+ * view, each as fine as what's that far off can show: **pretty** out to
+ * 20 km (its hills, channels and ledges, its colours, and its trees, one by
+ * one), **medium** out to 40 km (its hills, its woods as canopy) and **low**
+ * out to 80 km (the shape of the land and its colours). Each is rings of
+ * points around its middle, spaced wider and wider outward as they get
+ * smaller on screen, so near and far are drawn alike finely as seen.
  */
-export function buildFarGround(input: FarGroundInput): GroundSheet {
-  const { frame, grid } = input
-  const detail = new GroundDetail(input.seed, frame.radiusKm, input.waters, input.scars)
-  const base = gridSampler(grid)
-  const b = grid.bounds
-  const n = FAR_SEGMENTS + 1
-  const positions = new Float32Array(n * n * 3)
-  const colors = new Float32Array(n * n * 3)
-  const indices = new Uint32Array(FAR_SEGMENTS * FAR_SEGMENTS * 6)
-  const place = (i: number, j: number) => ({ lat: b.lat0 + ((b.lat1 - b.lat0) * j) / FAR_SEGMENTS, lon: b.lon0 + ((b.lon1 - b.lon0) * i) / FAR_SEGMENTS })
-  // Too coarse for channels and ledges (250 m apart), which would show as pits: the hills alone.
-  const field = heightField(n, place, frame, (lat, lon) => detail.elevation(base, lat, lon, 1, false, FAR_M / (FAR_SEGMENTS / 2)), detail.shape)
-  for (let j = 0, t = 0; j < n; j++) {
-    for (let i = 0; i < n; i++, t++) {
-      const { lat, lon } = place(i, j)
-      const { x, y, z } = field.vertex(i, j)
-      // The middle of the centre chunk is (CHUNK_M / 2, −CHUNK_M / 2) in its corner's frame.
-      const under = Math.max(Math.abs(x - CHUNK_M / 2), Math.abs(z + CHUNK_M / 2)) < input.sinkWithin
-      groundColor(input, detail, base, lat, lon, y, { ...field.lay(t), arid: ARIDITY[detail.biome(base, lat, lon)] ?? 0 }, colors, t)
-      // Its trees, too far off to draw one by one, as the woods' canopy.
-      const top = withCanopy(detail, base, lat, lon, y, colors, t)
-      positions.set([x, under ? y - SUNK_M : top, z], t * 3)
-    }
-  }
-  for (let j = 0, index = 0; j < FAR_SEGMENTS; j++) {
-    for (let i = 0; i < FAR_SEGMENTS; i++, index += 6) {
-      const a = j * n + i
-      indices.set([a, a + 1, a + n + 1, a, a + n + 1, a + n], index)
-    }
-  }
-  return { positions, colors, indices, normals: field.normals }
+export type GroundRing = 'pretty' | 'medium' | 'low'
+
+export interface RingSpec {
+  /** Where it starts being itself and where it ends, in metres from its middle. */
+  from: number
+  outer: number
+  /** Points round each ring: the finer, the more. */
+  spokes: number
+  /** A ring sunk out of sight this far in, under the nearer ground, so no gap shows between them as the view moves. */
+  hole: number
+  /** Its channels and ledges, its trees drawn one by one, and its woods raised as canopy. */
+  fine: boolean
+  trees: boolean
+  canopy: boolean
 }
 
-/** How far the ground reaches, all told: the land beyond the distant ground, out to where the planet's curve hides even mountains. */
-export const HORIZON_M = 160_000
-/** The horizon's sheet starts this far out, inside the distant ground (which covers it there). */
-const HORIZON_INNER_M = 6000
-/** Rings of the horizon's sheet, spaced wider and wider outward, and the spokes across them. */
-export const HORIZON_RINGS = 64
-export const HORIZON_SPOKES = 192
-/** Samples of the globe's terrain along the horizon's square's edge: about 4 km apart. */
-export const HORIZON_GRID = 81
-/** The horizon's sheet is built again when the view has moved this many chunks from its middle, each way. */
-export const HORIZON_STEP = 8
-
-/** The horizon's lat/lon edges: a square HORIZON_M out from `center` each way. */
-export function horizonBounds(center: LatLon, radiusKm: number): ChunkBounds {
-  const dLat = HORIZON_M / metresPerDegLat(radiusKm)
-  const dLon = dLat / Math.max(0.02, Math.cos(center.lat * RAD))
-  return { lat0: Math.max(-90, center.lat - dLat), lat1: Math.min(90, center.lat + dLat), lon0: center.lon - dLon, lon1: center.lon + dLon }
+/** The rings: the pretty one centred on the view's chunk, built again chunk by chunk; the others on the corner of its block of RING_STEP chunks, built again block by block. */
+export const GROUND_RINGS: Record<GroundRing, RingSpec> = {
+  pretty: { from: 1000, outer: 20_000, spokes: 384, hole: 0, fine: true, trees: true, canopy: false },
+  medium: { from: 16_400, outer: 40_000, spokes: 256, hole: 15_000, fine: false, trees: false, canopy: true },
+  low: { from: 40_000, outer: 80_000, spokes: 160, hole: 38_000, fine: false, trees: false, canopy: false }
 }
+/** How far the ground reaches, all told: past it, only the haze. */
+export const HORIZON_M = GROUND_RINGS.low.outer
+/** The medium and low rings are built again when the view's middle moves into another block of this many chunks each way. */
+export const RING_STEP = 4
+/** Samples of the globe's terrain along each ring's square's edge: 500 m, 1.7 km and 4 km apart. */
+export const RING_GRID: Record<GroundRing, number> = { pretty: 81, medium: 49, low: 41 }
 
-/** The middle of the horizon's sheet for a view whose middle is in chunk `id`: the corner of its block of HORIZON_STEP chunks. */
-export function horizonCenter(id: ChunkId, radiusKm: number): LatLon {
-  const step = (n: number) => Math.round(n / HORIZON_STEP) * HORIZON_STEP
+/** Where a ring's middle is, for a view whose middle is in chunk `id`: the middle of that chunk (pretty), or the corner of its block (the others). */
+export function ringCenter(ring: GroundRing, id: ChunkId, radiusKm: number): LatLon {
+  if (ring === 'pretty') {
+    const b = chunkBounds(id, radiusKm)
+    return { lat: (b.lat0 + b.lat1) / 2, lon: (b.lon0 + b.lon1) / 2 }
+  }
+  const step = (n: number) => Math.round(n / RING_STEP) * RING_STEP
   const b = chunkBounds({ row: step(id.row), col: step(id.col) }, radiusKm)
   return { lat: b.lat0, lon: b.lon0 }
 }
 
-export interface HorizonGroundInput extends GroundColors {
-  /** The sheet's middle (see `horizonCenter`); it's built in a frame there. */
-  frame: LocalFrame
-  seed: number
-  /** The globe's terrain over `horizonBounds`, HORIZON_GRID samples a side. */
-  grid: BaseGrid
+/** A ring's lat/lon edges: a square its outer reach from `center` each way. */
+export function ringBounds(ring: GroundRing, center: LatLon, radiusKm: number): ChunkBounds {
+  const dLat = GROUND_RINGS[ring].outer / metresPerDegLat(radiusKm)
+  const dLon = dLat / Math.max(0.02, Math.cos(center.lat * RAD))
+  return { lat0: Math.max(-90, center.lat - dLat), lat1: Math.min(90, center.lat + dLat), lon0: center.lon - dLon, lon1: center.lon + dLon }
 }
 
-/**
- * The land beyond the distant ground, to the horizon: rings of ever wider
- * spacing around the middle, with the globe's terrain and colours and the
- * hills fading out as they get too small to see. It's drawn only where the
- * nearer ground isn't (and sinks under it); the planet's curve, drawn by the
- * view, takes it down behind the horizon. Pure, like a chunk.
- */
-export function buildHorizonGround(input: HorizonGroundInput): GroundSheet {
+/** The radii of a ring's circles of points: its hole's, if it has one, then from `from` to `outer`, each the last times the same, so the points are about as far apart along a circle as across. */
+export function ringRadii({ from, outer, spokes, hole }: RingSpec): number[] {
+  const grow = 1 + TAU / spokes
+  const count = Math.max(2, Math.ceil(Math.log(outer / from) / Math.log(grow)) + 1)
+  const step = Math.pow(outer / from, 1 / (count - 1))
+  return [...(hole ? [hole] : []), ...Array.from({ length: count }, (_, k) => from * Math.pow(step, k))]
+}
+
+export interface RingGroundInput extends GroundColors {
+  ring: GroundRing
+  /** The ring's middle (see `ringCenter`); it's built in a frame there. */
+  frame: LocalFrame
+  seed: number
+  /** The globe's terrain over `ringBounds`, RING_GRID samples a side. */
+  grid: BaseGrid
+  /** The rivers and lakes over it (the pretty ring's), for the land to be shaped around. */
+  waters?: GroundWaters
+  /** The pretty ring: within this many metres of its middle each way the chunks are, with their own trees, so it grows none there. (The view sinks it under them once they're built.) */
+  chunksReach?: number
+}
+
+/** A ring of ground: its sheet, and (the pretty one) its trees, `INSTANCE_STRIDE` numbers each, as plants are. */
+export interface RingGround extends GroundSheet {
+  trees: Partial<Record<Plant, Float32Array>>
+}
+
+/** Points farther apart than this (metres) leave out the channels and ledges, which would only show as pits between them. */
+const FINE_SPACING_M = 60
+
+/** How far a ring's hole is sunk: well out of the way of the ground over it. */
+const HOLE_SUNK_M = 400
+
+/** Builds one of the rings of ground beyond the chunks (see `GroundRing`). Pure, like a chunk. */
+export function buildRingGround(input: RingGroundInput): RingGround {
   const { frame, grid } = input
-  const detail = new GroundDetail(input.seed, frame.radiusKm, undefined, input.scars)
+  const spec = GROUND_RINGS[input.ring]
+  const detail = new GroundDetail(input.seed, frame.radiusKm, spec.fine ? input.waters : undefined, input.scars)
   const base = gridSampler(grid)
-  const vertices = HORIZON_RINGS * HORIZON_SPOKES
-  const positions = new Float32Array(vertices * 3)
-  const colors = new Float32Array(vertices * 3)
-  const indices = new Uint32Array((HORIZON_RINGS - 1) * HORIZON_SPOKES * 6)
-  const grow = Math.pow(HORIZON_M / HORIZON_INNER_M, 1 / (HORIZON_RINGS - 1))
-  for (let k = 0, t = 0; k < HORIZON_RINGS; k++) {
-    const r = HORIZON_INNER_M * Math.pow(grow, k)
-    // What's too small to show between the ring's points is left out: far off, the mountains and the biggest hills.
-    const spacing = (r * TAU) / HORIZON_SPOKES
-    for (let s = 0; s < HORIZON_SPOKES; s++, t++) {
-      const a = (s / HORIZON_SPOKES) * TAU
-      const [x, z] = [Math.cos(a) * r, Math.sin(a) * r]
-      const { lat, lon } = fromLocal(frame, x, z)
-      const y = detail.elevation(base, lat, lon, 1, false, spacing)
-      // Under the distant ground (FAR_M each way from wherever the view's middle is in this block), sunk well out of the way.
-      const under = Math.max(Math.abs(x), Math.abs(z)) < FAR_M - (HORIZON_STEP / 2 + 1) * CHUNK_M
-      groundColor(input, detail, base, lat, lon, y, { up: 1, bed: 0, arid: ARIDITY[detail.biome(base, lat, lon)] ?? 0, wet: 0, shore: Infinity }, colors, t)
-      const top = withCanopy(detail, base, lat, lon, y, colors, t)
-      positions.set([x, under ? y - 400 : top, z], t * 3)
+  const radii = ringRadii(spec)
+  const S = spec.spokes
+  const rows = radii.length
+  const angle = (i: number) => (((i % S) + S) % S) * (TAU / S)
+  // Beyond its ends, one more circle each way (for the normals there): the next of the same spacing.
+  const radius = (j: number) => (j < 0 ? radii[0]! * (radii[0]! / radii[1]!) : j >= rows ? radii[rows - 1]! * (radii[rows - 1]! / radii[rows - 2]!) : radii[j]!)
+  const place = (i: number, j: number) => fromLocal(frame, Math.cos(angle(i)) * radius(j), Math.sin(angle(i)) * radius(j))
+  /** How far apart points are around radius r: what's smaller than that is left out of the hills. */
+  const spacing = (r: number) => (r * TAU) / S
+  let row = 0
+  // Channels and ledges only where the points are close enough to show them: farther apart, they'd be pits.
+  const fineAt = (r: number) => spec.fine && spacing(r) <= FINE_SPACING_M
+  const field = heightField(S, place, frame, (lat, lon) => detail.elevation(base, lat, lon, 1, fineAt(radius(row)), spacing(radius(row))), detail.shape, rows, (j) => (row = j))
+  const positions = new Float32Array(S * rows * 3)
+  const colors = new Float32Array(S * rows * 3)
+  const indices = new Uint32Array((rows - 1) * S * 6)
+  const trees: Partial<Record<Plant, number[]>> = {}
+  const under = (x: number, z: number, within = 0) => Math.max(Math.abs(x), Math.abs(z)) < within
+  for (let j = 0, t = 0; j < rows; j++) {
+    const r = radii[j]!
+    const sunk = spec.hole > 0 && j === 0
+    for (let i = 0; i < S; i++, t++) {
+      const { lat, lon } = place(i, j)
+      const { x, y, z } = field.vertex(i, j)
+      const lay = field.lay(t)
+      groundColor(input, detail, base, lat, lon, y, fineAt(r) ? lay : { ...lay, arid: ARIDITY[detail.biome(base, lat, lon)] ?? 0 }, colors, t)
+      // Woods: from afar a canopy over the ground; nearer, darker ground with its trees standing on it.
+      const top = spec.canopy ? withCanopy(detail, base, lat, lon, y, colors, t) : spec.trees ? shadeWoods(detail, base, lat, lon, y, colors, t) : y
+      if (spec.trees && !under(x, z, input.chunksReach)) standTree(detail, base, lat, lon, x, y, z, spacing(r), trees)
+      positions.set([x, sunk ? y - HOLE_SUNK_M : top, z], t * 3)
     }
   }
-  for (let k = 0, index = 0; k < HORIZON_RINGS - 1; k++) {
-    for (let s = 0; s < HORIZON_SPOKES; s++, index += 6) {
-      const a = k * HORIZON_SPOKES + s
-      const b = k * HORIZON_SPOKES + ((s + 1) % HORIZON_SPOKES)
+  for (let j = 0, index = 0; j < rows - 1; j++) {
+    for (let i = 0; i < S; i++, index += 6) {
+      const a = j * S + i
+      const b = j * S + ((i + 1) % S)
       // Counter-clockwise seen from above (x east, z south).
-      indices.set([a, b, a + HORIZON_SPOKES, b, b + HORIZON_SPOKES, a + HORIZON_SPOKES], index)
+      indices.set([a, b, a + S, b, b + S, a + S], index)
     }
   }
-  return { positions, colors, indices }
+  return { positions, colors, indices, normals: field.normals, trees: Object.fromEntries(Object.entries(trees).map(([k, v]) => [k, new Float32Array(v)])) }
+}
+
+/** Darkens a vertex of the pretty ring by the woods there (their trees stand on it); returns its height. */
+function shadeWoods(detail: GroundDetail, base: BaseSampler, lat: number, lon: number, y: number, colors: Float32Array, t: number): number {
+  if (y < 1.5) return y
+  const woods = canopy(detail, base, lat, lon)
+  for (let c = 0; c < 3; c++) colors[t * 3 + c]! *= 1 - CANOPY_SHADE * woods
+  return y
+}
+
+/** Below this, the woods at a point of the pretty ring have no tree drawn there. */
+const SPARSE_WOODS = 0.2
+
+/** Trees of the pretty ring at a point, at most: where the woods are thick, this many share its patch of ground. */
+const TREES_PER_POINT = 3
+
+/**
+ * The trees of the pretty ring at a point, as many as the woods there have:
+ * the biome's commonest tree, scattered over the point's share of the ring,
+ * and bigger where the points are farther apart (each stands for a stand of them).
+ */
+function standTree(detail: GroundDetail, base: BaseSampler, lat: number, lon: number, x: number, y: number, z: number, spacing: number, out: Partial<Record<Plant, number[]>>): void {
+  if (y < 1.5) return
+  const woods = canopy(detail, base, lat, lon)
+  if (woods < SPARSE_WOODS) return
+  const flora = FLORA[detail.biome(base, lat, lon)]
+  const kind = TREES.reduce<Plant | undefined>((best, t) => ((flora?.[t]?.[0] ?? 0) > (best ? (flora?.[best]?.[0] ?? 0) : 0) ? t : best), undefined)
+  if (!kind) return
+  const [lo, hi] = SIZE[kind]
+  const stand = clamp(spacing / 30, 1, 3)
+  for (let k = 0; k < TREES_PER_POINT; k++) {
+    const salt = k * 7
+    if (scatterHash(x, z, 1 + salt) > woods) continue
+    const [dx, dz] = [(scatterHash(x, z, 2 + salt) - 0.5) * spacing, (scatterHash(x, z, 3 + salt) - 0.5) * spacing]
+    ;(out[kind] ??= []).push(x + dx, y, z + dz, (lo + (hi - lo) * scatterHash(x, z, 4 + salt)) * stand, scatterHash(x, z, 5 + salt) * TAU, scatterHash(x, z, 6 + salt))
+  }
 }
 
 /** 0 to 1, the same for a plant at the same spot every time: whether a scar kills it. */

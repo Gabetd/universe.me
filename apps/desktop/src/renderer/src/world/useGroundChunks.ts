@@ -1,33 +1,32 @@
 import {
-  FAR_GRID,
-  HORIZON_GRID,
+  RING_GRID,
   chunkBounds,
   chunkKey,
-  farBounds,
-  horizonBounds,
-  horizonCenter,
   modelSampler,
+  ringBounds,
+  ringCenter,
   sampleBaseGrid,
   worldPalette,
   type ChunkId,
   type GroundChunk,
   type GroundChunkInput,
-  type GroundSheet,
+  type GroundRing,
+  type RingGround,
+  type RingGroundInput,
   type TerrainModel,
   watersNear
 } from '@universe/procgen'
 import type { LatLon } from '@universe/core'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { workerCalls, workerPool } from '../workerCalls'
-import type { DistanceInput } from './far-ground.worker'
 import type { AreaWaters } from './groundWater'
-import FarGroundWorker from './far-ground.worker?worker'
 import GroundWorker from './ground.worker?worker'
+import RingGroundWorker from './ring-ground.worker?worker'
 import { failure } from './terrainSource'
 
 /** Chunks are built two at a time: a view needs 25 of them at once. */
 const build = workerPool<GroundChunkInput, GroundChunk>(() => new GroundWorker(), 2)
-const buildDistance = workerCalls<DistanceInput, GroundSheet>(() => new FarGroundWorker())
+const buildRing = workerCalls<RingGroundInput, RingGround>(() => new RingGroundWorker())
 
 /** Chunks kept around after leaving their area, so walking back is instant. */
 const KEEP = 60
@@ -107,69 +106,50 @@ export function sources(model: TerrainModel) {
   return { palette: { biomeColors: palette.biomes, seabedColor: palette.shallow.map((c) => c * 0.7), scars: [...model.landScars] }, water: palette.shallow, base: modelSampler(model) }
 }
 
-/**
- * The ground beyond the chunks, out to 12 km, around chunk `center` (built in
- * a worker, again as the middle of the view moves into another chunk), sunk
- * out of sight within `sinkWithin` metres of it. Until the first is built,
- * undefined; while the next is, the last.
- */
-export function useFarGround(
-  model: TerrainModel,
-  generation: object,
-  seed: number,
-  center: ChunkId,
-  sinkWithin: number,
-  waters: AreaWaters | undefined
-): { center: ChunkId; sheet: GroundSheet } | undefined {
-  const [far, setFar] = useState<{ center: ChunkId; sheet: GroundSheet }>()
-  const key = chunkKey(center)
-  useEffect(() => {
-    let current = true
-    const radiusKm = model.settings.radiusKm
-    const { palette, base } = sources(model)
-    const corner = chunkBounds(center, radiusKm)
-    void buildDistance({
-      kind: 'far',
-      center,
-      frame: { origin: { lat: corner.lat0, lon: corner.lon0 }, radiusKm },
-      seed,
-      grid: sampleBaseGrid(base, farBounds(center, radiusKm), FAR_GRID),
-      waters: waters && watersNear(waters, farBounds(center, radiusKm), radiusKm),
-      sinkWithin,
-      ...palette
-    }).then(
-      (sheet) => current && setFar({ center, sheet }),
-      // The chunks say when the ground can't be built; without the distance, the fog has it.
-      () => {}
-    )
-    return () => void (current = false)
-    // Again with the next block's waters too: the same where they meet, but they reach farther that way.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` stands for `center`
-  }, [key, model, generation, seed, sinkWithin, waters])
-  return far
+/** Where the chunks are, for the pretty ring: within `chunksReach` metres of its middle each way, it grows no trees of its own. */
+export interface ChunksCover {
+  chunksReach: number
 }
 
 /**
- * The land beyond the distant ground, to the horizon, around the corner of
- * the block of chunks the view's middle `center` is in (built in a worker,
- * again as the view moves into another block). Undefined until the first is
- * built; while the next is, the last.
+ * One of the rings of ground beyond the chunks (see `GroundRing`), around
+ * the view's chunk `center` (the pretty one) or its block (the others),
+ * built in a worker, again as the view moves into another chunk or block.
+ * Undefined until the first is built; while the next is, the last. Only the
+ * pretty one is shaped by the rivers and lakes (`waters`).
  */
-export function useHorizonGround(model: TerrainModel, generation: object, seed: number, center: ChunkId): { middle: LatLon; sheet: GroundSheet } | undefined {
-  const [horizon, setHorizon] = useState<{ middle: LatLon; sheet: GroundSheet }>()
+export function useRingGround(
+  model: TerrainModel,
+  generation: object,
+  seed: number,
+  ring: GroundRing,
+  center: ChunkId,
+  waters: AreaWaters | undefined,
+  cover?: ChunksCover
+): { middle: LatLon; ground: RingGround } | undefined {
+  const [built, setBuilt] = useState<{ middle: LatLon; ground: RingGround }>()
   const radiusKm = model.settings.radiusKm
-  const middle = horizonCenter(center, radiusKm)
+  const middle = ringCenter(ring, center, radiusKm)
   const key = `${middle.lat},${middle.lon}`
   useEffect(() => {
     let current = true
     const { palette, base } = sources(model)
-    void buildDistance({ kind: 'horizon', frame: { origin: middle, radiusKm }, seed, grid: sampleBaseGrid(base, horizonBounds(middle, radiusKm), HORIZON_GRID), ...palette }).then(
-      (sheet) => current && setHorizon({ middle, sheet }),
-      // Without the horizon, the sky shows past the distant ground.
+    const bounds = ringBounds(ring, middle, radiusKm)
+    void buildRing({
+      ring,
+      frame: { origin: middle, radiusKm },
+      seed,
+      grid: sampleBaseGrid(base, bounds, RING_GRID[ring]),
+      waters: waters && watersNear(waters, bounds, radiusKm),
+      ...cover,
+      ...palette
+    }).then(
+      (ground) => current && setBuilt({ middle, ground }),
+      // The chunks say when the ground can't be built; without the rings, the haze has it.
       () => {}
     )
     return () => void (current = false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` stands for `middle`
-  }, [key, model, generation, seed, radiusKm])
-  return horizon
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` stands for `middle`, and the cover's number for it
+  }, [key, model, generation, seed, radiusKm, ring, waters, cover?.chunksReach])
+  return built
 }

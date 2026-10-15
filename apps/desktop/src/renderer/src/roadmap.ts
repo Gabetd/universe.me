@@ -37,5 +37,6 @@ export const ROADMAP: Milestone[] = [
   { id: 'M25', title: 'Scarred land', status: 'done', summary: 'Craters, war, fire, drought, radiation and poison left on a world’s land at a time, healing over years, shown on the globe, the map and the ground and damaging what’s built' },
   { id: 'M26', title: 'Space, beautiful', status: 'done', summary: 'Galaxies painted from their shapes with dust lanes, nebulae, supernova remnants and named constellations, no web of lines, and nothing in space drawn over anything else' },
   { id: 'M27', title: 'One zoom through space', status: 'done', summary: 'A planet and its surface one row in the tree with its moons under it, the levels of space zooming into each other as one camera, and values that say what they change when the pointer rests on them' },
-  { id: 'M28', title: 'Worlds up close', status: 'planned', summary: 'Reshape regions by their corners, seamless lighting on the globe, finer terrain close up' }
+  { id: 'M28', title: 'The land far and wide', status: 'done', summary: 'The ground in three rings around the view: finely within 20 km with its trees, at medium quality to 40 km, coarsely to 80 km' },
+  { id: 'M29', title: 'Worlds up close', status: 'planned', summary: 'Reshape regions by their corners, seamless lighting on the globe, finer terrain close up' }
 ]

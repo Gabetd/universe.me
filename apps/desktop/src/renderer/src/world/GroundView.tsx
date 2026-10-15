@@ -2,7 +2,7 @@ import { findBlueprint, insidePolygon, type Blueprint, type BlueprintPart, type 
 import {
   CHUNK_M,
   CHUNK_SEGMENTS,
-  FAR_M,
+  GROUND_RINGS,
   GroundDetail,
   HORIZON_M,
   SKIRT_M,
@@ -17,6 +17,7 @@ import {
   toLocal,
   type ChunkId,
   type GroundChunk,
+  type GroundRing,
   type GroundSheet,
   type LocalFrame,
   type Plant,
@@ -32,7 +33,7 @@ import { noRaycast, toolPress, usePick, usePickInstances } from './pick'
 import { viewLabels, type ViewLabel } from './labels'
 import { selectMapPin, useMapPins } from './useMapPins'
 import { openSurfaceMenu } from '../contextMenu'
-import { NEAR_ONLY, instanceTint, plantGeometry } from './plants'
+import { NEAR_ONLY, farTreeGeometry, instanceTint, plantGeometry } from './plants'
 import { WEATHERED_COLOR, blueprintExtent, blueprintMassing, slumpOf, standingParts, weatheringOf } from './structureLook'
 import { BlueprintBatch, BlueprintParts } from './StructureMesh'
 import { SelectionRing } from './SelectionRing'
@@ -40,8 +41,8 @@ import { SurfaceCanvas, useReadyWhenDrawn } from './SurfaceCanvas'
 import { useLandTint, useThemeName } from './ThemeTint'
 import { useViewTheme } from './useThemeLook'
 import { multiply } from './viewTheme'
-import { useFarGround, useGroundChunks, useHorizonGround } from './useGroundChunks'
-import { HAZE_M, SUN_POSITION, inTheAir, setCurve, shiftClouds } from './groundAir'
+import { useGroundChunks, useRingGround, type ChunksCover } from './useGroundChunks'
+import { HAZE_M, SUN_POSITION, airUniforms, inTheAir, setCurve, shiftClouds } from './groundAir'
 import { GroundSky } from './groundSky'
 import { GroundWater, useGroundWaters, type AreaWaters } from './groundWater'
 import { GroundMinimap, useGroundPose } from './GroundMinimap'
@@ -60,8 +61,8 @@ const HEMISPHERE = ['#dce9f7', '#4a4536'] as const
 const RING = 2
 /** Farthest the camera pulls back; scrolling out past it returns to the globe. */
 const MAX_DISTANCE = 2600
-/** Things farther than this from the middle of the view aren't drawn (the fog has them). */
-const DRAW_M = FAR_M
+/** Things farther than this from the middle of the view aren't drawn: past the pretty ring of ground, they'd be too small to see. */
+const DRAW_M = GROUND_RINGS.pretty.outer
 const RAD = Math.PI / 180
 const inView = (x: number, z: number) => Math.hypot(x, z) <= DRAW_M
 const smooth = (t: number) => t * t * (3 - 2 * t)
@@ -167,12 +168,16 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
   const items = useMemo(() => groundLabels(structures, characters, pins, mapPins, ground), [structures, characters, pins, mapPins, ground])
   // The regions the middle of the view lies in: their own themes show here.
   const here = useByValue(useMemo(() => regions.flatMap((r) => (insidePolygon(center, r.points) ? [r.id] : [])), [regions, center]))
-  // One material for every chunk's ground (its colours are the chunk's), one for the distant ground and one for the land to the horizon, tinted by the theme in force.
-  // Each marks where it's drawn, and the next is drawn only where none before it was: close by, the chunks always win, then the distant ground.
+  // Which rings of ground have been built at least once, for tests to wait on.
+  const [ringsIn, setRingsIn] = useState<ReadonlySet<GroundRing>>(new Set())
+  const ringBuilt = useCallback((ring: GroundRing) => setRingsIn((prev) => (prev.has(ring) ? prev : new Set([...prev, ring]))), [])
+  // One material for every chunk's ground (its colours are the chunk's), and one for each ring of ground beyond (pretty, medium, low), tinted by the theme in force.
+  // Each marks where it's drawn, and the next is drawn only where none before it was: close by, the chunks always win, then each ring over the next.
   const land = useMemo(() => {
-    const ground = (stencilFunc: THREE.StencilFunc) =>
-      inTheAir(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, stencilWrite: true, stencilRef: 1, stencilFunc, stencilZPass: THREE.ReplaceStencilOp }), { grain: true })
-    return [ground(THREE.AlwaysStencilFunc), ground(THREE.NotEqualStencilFunc), ground(THREE.NotEqualStencilFunc)]
+    // The rings sink under the chunks, once they're in.
+    const ground = (stencilFunc: THREE.StencilFunc, underChunks: boolean) =>
+      inTheAir(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, stencilWrite: true, stencilRef: 1, stencilFunc, stencilZPass: THREE.ReplaceStencilOp }), { grain: true, underChunks })
+    return [ground(THREE.AlwaysStencilFunc, false), ...RINGS.map(() => ground(THREE.NotEqualStencilFunc, true))]
   }, [])
   useEffect(() => setCurve(radiusKm), [radiusKm])
   useEffect(() => () => land.forEach((m) => m.dispose()), [land])
@@ -186,8 +191,8 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
       navigate={THREE.MOUSE.PAN}
       controls={CONTROLS}
       labels={items}
-      // How many chunks are in, for tests to wait on.
-      wrap={{ 'data-chunks': loaded }}
+      // How many chunks and rings of ground are in, for tests to wait on.
+      wrap={{ 'data-chunks': loaded, 'data-rings': ringsIn.size }}
       overlay={
         <>
           <GroundReadout ground={ground} error={failed} />
@@ -199,8 +204,9 @@ export const GroundView = memo(function GroundView(props: SurfaceViewProps & { s
       <Rig ground={ground} onRebase={setOrigin} onCenter={setCenter} />
       <WalkKeys />
       <Chunks {...props} ground={ground} center={center} waters={waters} land={land[0]!} onLoaded={setLoaded} onFailed={setFailed} />
-      <FarGround {...props} ground={ground} center={center} waters={waters} material={land[1]!} />
-      <HorizonGround {...props} ground={ground} center={center} material={land[2]!} />
+      {RINGS.map((ring, k) => (
+        <RingGroundView key={ring} {...props} ring={ring} order={k + 1} ground={ground} center={center} waters={ring === 'pretty' ? waters : undefined} material={land[k + 1]!} onBuilt={ringBuilt} />
+      ))}
       <GroundStructures structures={props.structures} ground={ground} onClick={props.onStructureClick} />
       {props.characters.map((c) => (
         <Figure key={c.character.id} id={c.character.id} at={c.place} color={c.character.color} selected={c.selected} ground={ground} onClick={props.onCharacterClick} />
@@ -414,8 +420,18 @@ function Chunks(
   const { chunks, error } = useGroundChunks(model, change, seed, wanted, props.waters)
   useEffect(() => onLoaded(chunks.size), [chunks.size, onLoaded])
   useEffect(() => onFailed(error), [error, onFailed])
-  useReadyWhenDrawn(chunks.size === wanted.length)
+  const all = chunks.size === wanted.length
+  useReadyWhenDrawn(all)
   const middle = chunkOf(center, radiusKm)
+  // Once every chunk is in, the rings of ground sink under them; until then, they show through where chunks are missing.
+  const invalidate = useThree((s) => s.invalidate)
+  useEffect(() => {
+    const b = chunkBounds(middle, radiusKm)
+    const [x, z] = toLocal(ground.frame, { lat: (b.lat0 + b.lat1) / 2, lon: (b.lon0 + b.lon1) / 2 })
+    airUniforms.uUnderChunks.value.set(x, z, all ? UNDER_CHUNKS_M : 0)
+    invalidate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `middle` by its row and column
+  }, [all, middle.row, middle.col, ground.frame, radiusKm, invalidate])
   const vegetationColor = model.settings.terrain.vegetationColor
   const plants = useMemo(() => new PlantGeometries(new THREE.Color(vegetationColor)), [vegetationColor])
   useEffect(() => () => plants.dispose(), [plants])
@@ -465,46 +481,52 @@ function placement(id: ChunkId, frame: LocalFrame) {
   return { x, z, stretch: Math.cos(frame.origin.lat * RAD) / Math.cos(bounds.lat0 * RAD) }
 }
 
-/** Within this many metres of the middle of the view, the chunks cover the distant ground: it's sunk there, out of the way of what stands on them. */
+/** The rings of ground beyond the chunks, nearest first (see `GroundRing`): pretty to 20 km, medium to 40 km, low to 80 km. */
+const RINGS: GroundRing[] = ['pretty', 'medium', 'low']
+
+/** Where the chunks cover the pretty ring: its own trees start where they end. */
+const CHUNKS_COVER: ChunksCover = { chunksReach: (RING + 0.5) * CHUNK_M }
+/** Within this many metres of the middle of the view each way, the rings of ground sink under the chunks once they're all built (out of the way of what stands on them). */
 const UNDER_CHUNKS_M = (RING - 0.5) * CHUNK_M
 
-/** The ground beyond the chunks, out to 12 km: coarse, without plants, and drawn only where the chunks aren't. */
-function FarGround({
+/** Trees, last of all: the rings of ground have marked where they're drawn by then, so none is drawn over them. */
+const TREES_ORDER = RINGS.length + 1
+
+/** One ring of ground beyond the chunks, drawn only where the nearer ground isn't (`order` after it); the pretty one with its trees. */
+function RingGroundView({
+  ring,
+  order,
   model,
   change,
   seed,
   ground,
   center,
   waters,
-  material
-}: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; waters: AreaWaters | undefined; material: THREE.Material }) {
-  const far = useFarGround(model, change, seed, chunkOf(center, ground.frame.radiusKm), UNDER_CHUNKS_M, waters)
-  const geometry = useMemo(() => far && sheetGeometry(far.sheet), [far])
+  material,
+  onBuilt
+}: SurfaceViewProps & { ring: GroundRing; order: number; seed: number; ground: Ground; center: LatLon; waters: AreaWaters | undefined; material: THREE.Material; onBuilt(ring: GroundRing): void }) {
+  const built = useRingGround(model, change, seed, ring, chunkOf(center, ground.frame.radiusKm), waters, ring === 'pretty' ? CHUNKS_COVER : undefined)
+  useEffect(() => void (built && onBuilt(ring)), [built, ring, onBuilt])
+  const geometry = useMemo(() => built && sheetGeometry(built.ground), [built])
   useEffect(() => () => geometry?.dispose(), [geometry])
-  if (!far || !geometry) return null
-  const { x, z, stretch } = placement(far.center, ground.frame)
+  const vegetationColor = model.settings.terrain.vegetationColor
+  const trees = useMemo(() => new PlantGeometries(new THREE.Color(vegetationColor), farTreeGeometry, TREES_ORDER), [vegetationColor])
+  useEffect(() => () => trees.dispose(), [trees])
+  if (!built || !geometry) return null
+  const [x, z] = toLocal(ground.frame, built.middle)
   return (
-    <group position={[x, 0, z]} scale={[stretch, 1, 1]}>
-      {/* After the chunks, so they've marked where they are. */}
-      <mesh geometry={geometry} material={material} renderOrder={1} raycast={noRaycast} />
+    <group position={[x, 0, z]} scale={[Math.cos(ground.frame.origin.lat * RAD) / Math.cos(built.middle.lat * RAD), 1, 1]}>
+      <mesh geometry={geometry} material={material} renderOrder={order} raycast={noRaycast} />
+      {Object.entries(built.ground.trees).map(([plant, list]) => (
+        <PlantInstances key={plant} plant={plant as Plant} list={list} share={1} plants={trees} footprints={NO_FOOTPRINTS} level={standing} />
+      ))}
     </group>
   )
 }
 
-/** The land beyond the distant ground, to the horizon: drawn only where the nearer ground isn't. */
-function HorizonGround({ model, change, seed, ground, center, material }: SurfaceViewProps & { seed: number; ground: Ground; center: LatLon; material: THREE.Material }) {
-  const horizon = useHorizonGround(model, change, seed, chunkOf(center, ground.frame.radiusKm))
-  const geometry = useMemo(() => horizon && sheetGeometry(horizon.sheet), [horizon])
-  useEffect(() => () => geometry?.dispose(), [geometry])
-  if (!horizon || !geometry) return null
-  const [x, z] = toLocal(ground.frame, horizon.middle)
-  return (
-    <group position={[x, 0, z]} scale={[Math.cos(ground.frame.origin.lat * RAD) / Math.cos(horizon.middle.lat * RAD), 1, 1]}>
-      {/* After the distant ground, so it's marked where it is. */}
-      <mesh geometry={geometry} material={material} renderOrder={2} raycast={noRaycast} />
-    </group>
-  )
-}
+const NO_FOOTPRINTS: Footprint[] = []
+/** A far tree stands where it was built: no structures level the ground under it. */
+const standing = (_x: number, _z: number, y: number) => y
 
 /** A sheet's mesh; its colours are sRGB, like the map's, and the renderer works in linear light. Its normals are its own if it has them and its heights are as built. */
 function sheetGeometry(sheet: GroundSheet, positions = sheet.positions): THREE.BufferGeometry {
@@ -594,11 +616,16 @@ class PlantGeometries {
   private made = new Map<Plant, THREE.BufferGeometry>()
   /** What every plant is drawn with: its colours are its own, in the clouds' shadows like the ground. */
   readonly material = inTheAir(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, flatShading: true }))
-  constructor(private foliage: THREE.Color) {}
+  /** `make` shapes each plant (up close, or far off); `order` is when they're drawn among the ground's layers. */
+  constructor(
+    private foliage: THREE.Color,
+    private make = plantGeometry,
+    readonly order = 0
+  ) {}
 
   get(plant: Plant): THREE.BufferGeometry {
     let g = this.made.get(plant)
-    if (!g) this.made.set(plant, (g = plantGeometry(plant, this.foliage)))
+    if (!g) this.made.set(plant, (g = this.make(plant, this.foliage)))
     return g
   }
 
@@ -661,7 +688,7 @@ function PlantInstances({
   }, [kept, list, plant, level, invalidate])
   if (!kept.length) return null
   return (
-    <instancedMesh key={kept.length} ref={mesh} args={[plants.get(plant), plants.material, kept.length]} raycast={noRaycast} />
+    <instancedMesh key={kept.length} ref={mesh} args={[plants.get(plant), plants.material, kept.length]} renderOrder={plants.order} raycast={noRaycast} />
   )
 }
 
