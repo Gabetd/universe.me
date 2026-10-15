@@ -18,7 +18,8 @@ export interface ChangeEvent {
   at: string
 }
 
-const MAX_BODY = 2 * 1024 * 1024
+// Room for a picture or a .blend file as base64 (attach_media: up to 16 MB).
+const MAX_BODY = 24 * 1024 * 1024
 
 export interface ApiServerOptions {
   token: string

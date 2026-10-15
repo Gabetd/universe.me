@@ -285,6 +285,19 @@ describe('the operations', () => {
     await expect(p.call('update_map_pin', { worldId: p.worldId, pinId: 'nope', name: 'X' })).rejects.toThrow()
   })
 
+  it('keep pictures and Blender scenes on characters and events, and take them off', async () => {
+    const { eventId } = await p.call<{ eventId: string }>('create_event', { worldId: p.worldId, title: 'The coronation', start: '1204' })
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]).toString('base64')
+    const on = { worldId: p.worldId, kind: 'event', id: eventId }
+    const { assetId } = await p.call<{ assetId: string }>('attach_media', { ...on, name: 'crown.png', data: png })
+    expect(await p.call('list_media', on)).toEqual({ media: [{ assetId, name: 'crown.png', kind: 'image' }] })
+    await expect(p.call('attach_media', { ...on, name: 'notes.png', data: Buffer.from('words').toString('base64') })).rejects.toThrow(/isn’t a picture/)
+    await expect(p.call('list_media', { ...on, kind: 'character' })).rejects.toThrow(/no character/)
+    await p.call('remove_media', { ...on, assetId })
+    expect(await p.call('list_media', on)).toEqual({ media: [] })
+    await expect(p.call('remove_media', { ...on, assetId })).rejects.toThrow(/no file/)
+  })
+
   it('scar a world’s land: a crater for good, a war that heals after it ends, listed with how much is left at a date', async () => {
     const { scarId: crater } = await p.call<{ scarId: string }>('add_scar', { worldId: p.worldId, kind: 'crater', lat: 10, lon: 20, from: '1204', radiusKm: 3 })
     const { scarId: war } = await p.call<{ scarId: string }>('add_scar', { worldId: p.worldId, kind: 'war', lat: 11, lon: 20, from: '1200', until: '1210', notes: 'The long siege.' })
